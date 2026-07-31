@@ -142,6 +142,7 @@ pub struct AnchorState {
     pub anchor: Anchor,
     pub state: State,
     pub latest: Option<Observation>,
+    pub latest_seq: Option<Seq>,
     pub closed: bool,
     pub attempts: u32,
     pub last_sighting: Option<DateTime<Utc>>,
@@ -171,6 +172,7 @@ pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
                     anchor: (**anchor).clone(),
                     state: state.clone(),
                     latest: Some(observation.clone()),
+                    latest_seq: Some(*seq),
                     closed: false,
                     attempts: 0,
                     last_sighting: Some(*at),
@@ -190,6 +192,7 @@ pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
                 }
                 s.state = state.clone();
                 s.latest = Some(observation.clone());
+                s.latest_seq = Some(*seq);
                 s.attempts = 0;
                 s.last_sighting = Some(*at);
                 s.head = *seq;
@@ -456,6 +459,69 @@ mod tests {
             ),
         ];
         assert!(fold(&log).unwrap().closed);
+    }
+
+    #[test]
+    fn a_still_moves_the_sighting_clock_but_not_the_observations_origin() {
+        let log = vec![
+            opened(&[], json!({ STATUS: "ok" })),
+            (
+                2,
+                Entry::Still {
+                    ref_entry: 1,
+                    at: at(10),
+                    versions: versions(),
+                },
+            ),
+            (
+                3,
+                Entry::Still {
+                    ref_entry: 1,
+                    at: at(20),
+                    versions: versions(),
+                },
+            ),
+        ];
+        let s = fold(&log).unwrap();
+        assert_eq!(s.latest_seq, Some(1), "still 不带来新观测，出处还是 open");
+        assert_eq!(s.last_sighting, Some(at(20)), "但我们确实又看了一次");
+    }
+
+    #[test]
+    fn a_transition_moves_the_observations_origin() {
+        let log = vec![
+            opened(&[], json!({ STATUS: "ok" })),
+            (
+                7,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ STATUS: "drifted" })),
+                    at: at(10),
+                },
+            ),
+        ];
+        assert_eq!(fold(&log).unwrap().latest_seq, Some(7));
+    }
+
+    #[test]
+    fn a_revise_moves_the_state_but_not_the_observations_origin() {
+        let log = vec![
+            opened(&[], json!({ POSITION: "a.rs", STATUS: "ok" })),
+            (
+                2,
+                Entry::Revise {
+                    change: Change::Restate {
+                        state: State::new(json!({ POSITION: "b.rs", STATUS: "ok" })),
+                    },
+                    context: seal(),
+                    rationale: seal(),
+                    at: at(10),
+                },
+            ),
+        ];
+        let s = fold(&log).unwrap();
+        assert_eq!(s.state.position(), &json!("b.rs"), "作者动了状态");
+        assert_eq!(s.latest_seq, Some(1), "但没人重新观测过世界");
     }
 
     #[test]

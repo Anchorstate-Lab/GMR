@@ -1,7 +1,7 @@
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, FactAddress, Observation, Outcome, ReasonClass, State, Versions,
-    fold, should_still,
+    Anchor, AnchorKey, Entry, Observation, Outcome, ReasonClass, State, Versions, fold,
+    should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
 use gmr_store::Fence;
@@ -61,40 +61,40 @@ impl Runtime {
             }
         };
 
-        let last = last_sighting(&entries);
-        let still = !gmr_core::journal::always_full(&s.anchor)
-            && last.as_ref().is_some_and(|(_, state, address)| {
-                should_still(
-                    state,
-                    address.as_ref(),
-                    &next,
-                    observation.fact_address.as_ref(),
-                )
-            });
+        let still_ref = if gmr_core::journal::always_full(&s.anchor) {
+            None
+        } else {
+            should_still(
+                &s.state,
+                s.latest.as_ref().and_then(|o| o.fact_address.as_ref()),
+                &next,
+                observation.fact_address.as_ref(),
+            )
+            .then_some(s.latest_seq)
+            .flatten()
+        };
 
-        let entry = if still {
-            Entry::Still {
-                ref_entry: last.expect("still 要求有上一次观测").0,
+        let entry = match still_ref {
+            Some(ref_entry) => Entry::Still {
+                ref_entry,
                 at,
                 versions: observation.versions.clone(),
-            }
-        } else {
-            Entry::Transition {
+            },
+            None => Entry::Transition {
                 observation,
                 state: next.clone(),
                 at,
-            }
+            },
         };
 
         self.journal.append(key, &entry, fence).await?;
 
-        Ok(if still {
-            Observed::Still
-        } else {
-            Observed::Transitioned {
+        Ok(match still_ref {
+            Some(_) => Observed::Still,
+            None => Observed::Transitioned {
                 from: s.state,
                 to: next,
-            }
+            },
         })
     }
 
@@ -151,31 +151,5 @@ pub(crate) fn observe_into(anchor: &Anchor, outcome: Outcome) -> Observation {
         outcome,
         fact_address,
         versions,
-    }
-}
-
-fn last_sighting(entries: &[(u64, Entry)]) -> Option<(u64, State, Option<FactAddress>)> {
-    let mut carried: Option<(State, Option<FactAddress>)> = None;
-    let mut seq: Option<u64> = None;
-
-    for (n, entry) in entries {
-        match entry {
-            Entry::Open {
-                observation, state, ..
-            }
-            | Entry::Transition {
-                observation, state, ..
-            } => {
-                carried = Some((state.clone(), observation.fact_address.clone()));
-                seq = Some(*n);
-            }
-            Entry::Still { .. } => seq = Some(*n),
-            _ => {}
-        }
-    }
-
-    match (seq, carried) {
-        (Some(seq), Some((state, address))) => Some((seq, state, address)),
-        _ => None,
     }
 }

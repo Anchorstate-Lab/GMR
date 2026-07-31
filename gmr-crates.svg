@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 860" width="1280" height="860" role="img" aria-labelledby="title desc">
+  <title id="title">GMR crates 分层图</title>
+  <desc id="desc">展示 gmr、gmr-runtime、gmr-probe、gmr-expr、gmr-store、gmr-core 六个 crate 的职责和依赖方向。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263238"/>
+    </marker>
+    <style>
+      .title { font:700 32px "Avenir Next","PingFang SC","Hiragino Sans GB",sans-serif; fill:#172126; }
+      .sub { font:500 15px "Avenir Next","PingFang SC","Hiragino Sans GB",sans-serif; fill:#5b6870; }
+      .name { font:800 20px "SF Mono","JetBrains Mono",Menlo,monospace; fill:#172126; }
+      .role { font:700 15px "Avenir Next","PingFang SC","Hiragino Sans GB",sans-serif; fill:#304047; }
+      .body { font:500 13px "Avenir Next","PingFang SC","Hiragino Sans GB",sans-serif; fill:#53636a; }
+      .note { font:700 12px "Avenir Next","PingFang SC","Hiragino Sans GB",sans-serif; fill:#ffffff; }
+      .line { fill:none; stroke:#263238; stroke-width:2.2; marker-end:url(#arrow); }
+      .soft { fill:none; stroke:#87959b; stroke-width:1.8; marker-end:url(#arrow); stroke-dasharray:7 6; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="860" fill="#f7f5ef"/>
+  <text x="64" y="66" class="title">crates/ 的简单结构</text>
+  <text x="64" y="96" class="sub">读法：上层调用下层；越下面越稳定，越上面越接近用户动作。</text>
+
+  <!-- facade -->
+  <rect x="432" y="132" width="416" height="82" rx="10" fill="#ffffff" stroke="#8a9ba3" stroke-width="2"/>
+  <text x="640" y="166" class="name" text-anchor="middle">gmr</text>
+  <text x="640" y="194" class="body" text-anchor="middle">门面包：只 re-export，不定义逻辑</text>
+
+  <!-- runtime -->
+  <rect x="326" y="282" width="628" height="126" rx="12" fill="#edf6f8" stroke="#2f6f7e" stroke-width="2.4"/>
+  <text x="640" y="322" class="name" text-anchor="middle">gmr-runtime</text>
+  <text x="640" y="354" class="role" text-anchor="middle">编排者：把观察、求值、存储串成 open / observe / read / revise</text>
+  <text x="640" y="382" class="body" text-anchor="middle">这是唯一同时看见 probe、expr、store 的 crate</text>
+
+  <!-- contracts row -->
+  <rect x="82" y="496" width="310" height="140" rx="10" fill="#fffaf0" stroke="#a9823a" stroke-width="2"/>
+  <text x="237" y="532" class="name" text-anchor="middle">gmr-probe</text>
+  <text x="237" y="562" class="role" text-anchor="middle">怎么看世界</text>
+  <text x="237" y="592" class="body" text-anchor="middle">Transport trait</text>
+  <text x="237" y="616" class="body" text-anchor="middle">Outcome / ProbeError</text>
+
+  <rect x="485" y="496" width="310" height="140" rx="10" fill="#f4eff7" stroke="#8e6aa2" stroke-width="2"/>
+  <text x="640" y="532" class="name" text-anchor="middle">gmr-expr</text>
+  <text x="640" y="562" class="role" text-anchor="middle">怎么算规则</text>
+  <text x="640" y="592" class="body" text-anchor="middle">parse / eval / bind</text>
+  <text x="640" y="616" class="body" text-anchor="middle">只认 JSON 和四个槽</text>
+
+  <rect x="888" y="496" width="310" height="140" rx="10" fill="#fff2f2" stroke="#a85b5b" stroke-width="2"/>
+  <text x="1043" y="532" class="name" text-anchor="middle">gmr-store</text>
+  <text x="1043" y="562" class="role" text-anchor="middle">怎么存</text>
+  <text x="1043" y="592" class="body" text-anchor="middle">Journal / BindingStore / Queue</text>
+  <text x="1043" y="616" class="body" text-anchor="middle">sqlite 是可选后端</text>
+
+  <!-- core -->
+  <rect x="180" y="724" width="920" height="86" rx="12" fill="#ffffff" stroke="#263238" stroke-width="2.4"/>
+  <text x="640" y="759" class="name" text-anchor="middle">gmr-core</text>
+  <text x="640" y="790" class="body" text-anchor="middle">词汇表：Anchor · Probe · State · Entry · Observation · Binding · ContentHash · fold</text>
+
+  <!-- arrows -->
+  <path d="M640 214 V282" class="line"/>
+  <path d="M520 408 C420 452, 300 452, 237 496" class="line"/>
+  <path d="M640 408 V496" class="line"/>
+  <path d="M760 408 C860 452, 980 452, 1043 496" class="line"/>
+  <path d="M237 636 C330 690, 470 700, 560 724" class="line"/>
+  <path d="M640 636 V724" class="line"/>
+  <path d="M1043 636 C950 690, 810 700, 720 724" class="line"/>
+
+  <!-- side adapters -->
+  <rect x="82" y="690" width="190" height="34" rx="17" fill="#a9823a"/>
+  <text x="177" y="712" class="note" text-anchor="middle">batteries/ 实现 probe</text>
+  <path d="M177 690 C170 666, 190 650, 210 636" class="soft"/>
+
+  <rect x="1008" y="690" width="190" height="34" rx="17" fill="#a85b5b"/>
+  <text x="1103" y="712" class="note" text-anchor="middle">sqlite 实现 store</text>
+  <path d="M1103 690 C1110 666, 1090 650, 1070 636" class="soft"/>
+
+  <rect x="64" y="246" width="210" height="96" rx="10" fill="#ffffff" stroke="#ccd2d5"/>
+  <text x="88" y="278" class="role">最重要的分工</text>
+  <text x="88" y="306" class="body">core 定义词</text>
+  <text x="88" y="328" class="body">runtime 办事情</text>
+
+  <rect x="1006" y="246" width="210" height="96" rx="10" fill="#172126"/>
+  <text x="1030" y="278" class="note">判断是否清晰</text>
+  <text x="1030" y="306" font-size="13" font-weight="500" fill="#e7eeee" font-family="Avenir Next, PingFang SC, sans-serif">新增代码先问：</text>
+  <text x="1030" y="328" font-size="13" font-weight="500" fill="#e7eeee" font-family="Avenir Next, PingFang SC, sans-serif">它在“看、算、存、编排”哪一格？</text>
+</svg>

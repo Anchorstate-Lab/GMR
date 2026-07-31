@@ -424,3 +424,64 @@ async fn accepting_a_change_by_hand_is_sealed() {
             .is_some()
     );
 }
+
+#[tokio::test]
+async fn a_world_that_did_not_move_stays_still_even_right_after_a_restate() {
+    let w = World::new();
+    w.write(r#"{"shape":"(a)->c"}"#);
+    w.open(
+        &[(
+            "changed(\"shape\")",
+            r#"{ shape: obs.shape, status: "drifted" }"#,
+        )],
+        &[],
+    )
+    .await;
+
+    w.rt.revise(
+        &key(),
+        Change::Restate {
+            state: State::new(serde_json::json!({ "shape": "(a)->c", "status": "ok" })),
+        },
+        "接受当下".as_bytes(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        w.observe().await,
+        Observed::Still,
+        "世界一动没动 —— 作者改了状态不是世界的一次转换"
+    );
+    assert_eq!(w.status().await.as_deref(), Some("ok"));
+}
+
+#[tokio::test]
+async fn every_still_in_a_run_points_at_the_record_it_was_compared_against() {
+    let w = World::new();
+    w.write(r#"{"shape":"(a)->c"}"#);
+    w.open(&[("changed(\"shape\")", r#"{ shape: obs.shape }"#)], &[])
+        .await;
+
+    for _ in 0..3 {
+        assert_eq!(w.observe().await, Observed::Still);
+    }
+
+    let refs: Vec<u64> =
+        w.rt.journal()
+            .entries(&key(), 0)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter_map(|(_, e)| match e {
+                gmr_core::Entry::Still { ref_entry, .. } => Some(ref_entry),
+                _ => None,
+            })
+            .collect();
+
+    assert_eq!(
+        refs,
+        vec![1, 1, 1],
+        "每条 still 都指回那条完整记录，而不是串成一条链"
+    );
+}
