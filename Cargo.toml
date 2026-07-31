@@ -1,0 +1,61 @@
+# GMR — 接地记忆运行时。契约见 CLAUDE.md，设计见 GMR.md。
+#
+# crates/ 下平铺，目录名 = 包名。每个包一句话，互不重叠：
+#
+#   gmr-core          名词：探针声明 · 锚 · 条目 · 绑定；它们的地址；日志→状态的纯折叠
+#   gmr-expr          求值：JSON + 命名槽 → 值 | ⌀ | ⊥ₑ。自带 EVALUATOR_VERSION
+#   gmr-probe         调用的契约：探针声明 → 输出。传输的实现是电池
+#   gmr-store         存储：契约（只出动词）+ 可选后端（feature，不是包）
+#   gmr-runtime       编排：把上面四个装成 open/observe/bind/revise/close/read
+#   gmr               门面。只许 pub use，不许定义任何类型或函数
+
+# batteries/ 是可复用的具体实现：传输、内容提供方。**基底 ship 接口，
+# 不 ship 后端** —— 挑哪一块是域的决定，那个决定住在域的装配里。
+#
+# domains/ 每个域一个 workspace 成员：它自己的探针实现、判据声明、记忆，
+# 以及把上面这些装配起来的命令行。**包数不随域的数量增长**，增长的只有
+# 域自己那一份。
+#
+# gmr-core 与 gmr-expr 是两个纯根：零 workspace 依赖，且 gmr-expr 的
+# 依赖清单里不得出现任何 IO —— 纯度由 crate 边界扛，不由 trait 分裂扛。
+
+[workspace]
+members = [
+    # 基底 —— 领域无关，不产二进制
+    "crates/gmr-core",
+    "crates/gmr-expr",
+    "crates/gmr-probe",
+    "crates/gmr-store",
+    "crates/gmr-runtime",
+    "crates/gmr",
+    # 电池 —— 可复用的具体实现，不属于任何单一域
+    "batteries/transport-shell",
+    "batteries/provider-git",
+    # 探针作者的共同约定。**探针二进制自己不在这个 workspace 里** ——
+    # 它们是 exec 的不是链接的，各自独立，按 path 依赖这一个库。
+    "batteries/probe-coord",
+    # 域 —— 装配 + 探针实现 + 判据 + 记忆
+    "domains/coding/cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88.0"
+license = "MIT"
+
+[workspace.lints.clippy]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+async-trait = "0.1"
+sha2 = "0.10"
+tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "time", "io-util"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+tempfile = "3"

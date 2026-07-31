@@ -1,0 +1,118 @@
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Utc};
+use gmr_core::{AnchorKey, Change, Entry, Seq, State, fold};
+use serde::Serialize;
+
+use crate::assembly::Runtime;
+use crate::error::RuntimeError;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AnchorHealth {
+    pub anchor: AnchorKey,
+    pub revisions: BTreeMap<String, u32>,
+    pub restate_count: u32,
+    pub restate_interval_secs: Vec<i64>,
+    pub state_drifted: bool,
+    pub rationale_sizes: Vec<usize>,
+    pub stall_ratio: f64,
+    pub last_failure: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CorpusHealth {
+    pub bound_refs: usize,
+    pub active_anchors: usize,
+    pub memories_per_anchor: BTreeMap<String, usize>,
+    pub barren_anchors: Vec<AnchorKey>,
+}
+
+const RECENT: usize = 50;
+
+impl Runtime {
+    pub async fn health(&self, key: &AnchorKey) -> Result<AnchorHealth, RuntimeError> {
+        let entries = self.journal.entries(key, 0).await?;
+        let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+
+        let mut restate_at: Vec<DateTime<Utc>> = Vec::new();
+        let mut rationale_sizes = Vec::new();
+        let mut initial: Option<State> = None;
+        let mut last_failure = None;
+
+        for (_, entry) in &entries {
+            match entry {
+                Entry::Open { state, .. } => initial = Some(state.clone()),
+                Entry::Attempt {
+                    reason, message, ..
+                } => {
+                    last_failure = Some(format!("{reason:?}: {message}"));
+                }
+                Entry::Revise {
+                    change,
+                    rationale,
+                    at,
+                    ..
+                } => {
+                    if matches!(change, Change::Restate { .. }) {
+                        restate_at.push(*at);
+                    }
+                    if let Some(bytes) = self.bindings.sealed(rationale).await? {
+                        rationale_sizes.push(bytes.len());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let recent: Vec<&(Seq, Entry)> = entries.iter().rev().take(RECENT).collect();
+        let failed = recent
+            .iter()
+            .filter(|(_, e)| matches!(e, Entry::Attempt { .. }))
+            .count();
+
+        Ok(AnchorHealth {
+            anchor: key.clone(),
+            restate_count: *s.revisions.get("restate").unwrap_or(&0),
+            restate_interval_secs: restate_at
+                .windows(2)
+                .map(|w| (w[1] - w[0]).num_seconds())
+                .collect(),
+            state_drifted: initial.is_some_and(|start| start != s.state),
+            revisions: s.revisions,
+            rationale_sizes,
+            stall_ratio: if recent.is_empty() {
+                0.0
+            } else {
+                failed as f64 / recent.len() as f64
+            },
+            last_failure,
+        })
+    }
+
+    pub async fn corpus_health(&self) -> Result<CorpusHealth, RuntimeError> {
+        let bindings = self.bindings.all().await?;
+        let anchors = self.journal.anchors().await?;
+
+        let mut per_anchor: BTreeMap<String, usize> = BTreeMap::new();
+        let mut active = 0;
+        let mut barren = Vec::new();
+        for key in &anchors {
+            let n = bindings.iter().filter(|b| b.anchors.contains(key)).count();
+            per_anchor.insert(key.to_string(), n);
+            let entries = self.journal.entries(key, 0).await?;
+            if fold(&entries).is_some_and(|s| !s.closed) {
+                active += 1;
+                if n == 0 {
+                    barren.push(key.clone());
+                }
+            }
+        }
+
+        Ok(CorpusHealth {
+            bound_refs: bindings.len(),
+            active_anchors: active,
+            memories_per_anchor: per_anchor,
+            barren_anchors: barren,
+        })
+    }
+}

@@ -1,0 +1,39 @@
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, Utc};
+use gmr_core::AnchorKey;
+
+use crate::error::StoreError;
+use crate::journal::Fence;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ticket {
+    pub anchor: AnchorKey,
+    pub fence: Fence,
+    pub lease_until: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disposition {
+    Reschedule { after_secs: i64 },
+    Backoff { after_secs: i64 },
+    Retire,
+}
+
+#[async_trait]
+pub trait Queue: Send + Sync {
+    async fn enqueue(&self, anchor: &AnchorKey, due: DateTime<Utc>) -> Result<(), StoreError>;
+
+    async fn due(
+        &self,
+        now: DateTime<Utc>,
+        lease: Duration,
+        limit: usize,
+    ) -> Result<Vec<Ticket>, StoreError>;
+
+    async fn settle(
+        &self,
+        ticket: &Ticket,
+        disposition: Disposition,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError>;
+}

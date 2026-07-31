@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1240" width="1440" height="1240" font-family="'PingFang SC','Hiragino Sans GB','Noto Sans CJK SC','Microsoft YaHei',-apple-system,sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker><marker id="e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b07f2a"/></marker></defs>
+<rect width="1440" height="1240" fill="#fbfcfa"/>
+<text x="30" y="42" font-size="23" fill="#14181d" text-anchor="start" font-weight="600">GMR 模块图 —— 每个模块负责什么，箭头是依赖方向</text>
+<text x="30" y="66" font-size="13" fill="#5c635f" text-anchor="start" font-weight="normal">锚 = 探针（谁去看）+ 位置（看哪儿）+ 转换表（什么算变了）+ 终结集合（什么算了结）。前两样在电池与用法里，后两样是数据。</text>
+<text x="30" y="108" font-size="13" fill="#4a7a60" text-anchor="start" font-weight="600">用法 —— 仓库根的数据，不是代码</text>
+<rect x="30" y="118" width="330" height="56" rx="3" fill="#f4faf5" stroke="#4a7a60" stroke-dasharray="4 3"/>
+<text x="42" y="139" font-size="12" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">anchors.toml</text>
+<text x="42" y="158" font-size="10.5" fill="#5c7a6a" text-anchor="start" font-weight="normal">每个锚：probe · position · rules · terminal</text>
+<rect x="375" y="118" width="330" height="56" rx="3" fill="#f4faf5" stroke="#4a7a60" stroke-dasharray="4 3"/>
+<text x="387" y="139" font-size="12" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">memories/</text>
+<text x="387" y="158" font-size="10.5" fill="#5c7a6a" text-anchor="start" font-weight="normal">手册。front-matter 声明挂在哪几个锚上</text>
+<rect x="720" y="118" width="330" height="56" rx="3" fill="#f4faf5" stroke="#4a7a60" stroke-dasharray="4 3"/>
+<text x="732" y="139" font-size="12" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">architecture.toml</text>
+<text x="732" y="158" font-size="10.5" fill="#5c7a6a" text-anchor="start" font-weight="normal">目标架构。gate.sh 读它查禁区与分层</text>
+<rect x="30" y="196" width="1020" height="168" rx="3" fill="#f8fbf8" stroke="#4a7a60"/>
+<text x="42" y="218" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">domains/coding/cli — 域</text>
+<text x="42" y="236" font-size="11" fill="#5c635f" text-anchor="start" font-weight="normal">装配 + 分发。里面没有一个 coding 相关的东西</text>
+<text x="42.0" y="256" font-size="11" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">main</text>
+<text x="120.0" y="256" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">装配：Shell 传输 · Git 提供方 · sqlite 后端</text>
+<text x="42.0" y="273" font-size="11" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">cli</text>
+<text x="120.0" y="273" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">命令面</text>
+<text x="42.0" y="290" font-size="11" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">rules</text>
+<text x="120.0" y="290" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">把「守卫 =&gt; 新状态」解析成转换表</text>
+<text x="42.0" y="307" font-size="11" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">render</text>
+<text x="120.0" y="307" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">输出</text>
+<text x="42.0" y="324" font-size="11" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">verbs/</text>
+<text x="120.0" y="324" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">sync · open · observe · read · edges · pass · doctor · bind · close</text>
+<text x="42.0" y="341" font-size="11" fill="#4a7a60" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="120.0" y="341" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">reprobe · retransition · reterminal · restate —— 四种判据修订</text>
+<text x="30" y="382" font-size="13" fill="#5b6b80" text-anchor="start" font-weight="600">基底 crates/ —— 领域无关，不产二进制</text>
+<rect x="30" y="390" width="1020" height="57" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="42" y="412" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr — 门面</text>
+<text x="42.0" y="424" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="120.0" y="424" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">只重导出，不定义任何东西。出现一个定义就是第七个包</text>
+<rect x="30" y="469" width="1020" height="185" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="42" y="491" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-runtime — 调度与动词</text>
+<text x="42" y="509" font-size="11" fill="#5c635f" text-anchor="start" font-weight="normal">唯一同时看得见探针 · 求值 · 存储的地方</text>
+<text x="42.0" y="529" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">assembly</text>
+<text x="120.0" y="529" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">装配 Runtime：传输·提供方·日志·绑定库·队列</text>
+<text x="540.0" y="529" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">observe</text>
+<text x="618.0" y="529" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">一次观测：读日志→fold→终结判定→跑探针→转换→写条目</text>
+<text x="42.0" y="546" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">translate</text>
+<text x="120.0" y="546" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">私有。应用转换表：To / Unchanged / Unevaluable</text>
+<text x="540.0" y="546" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">open</text>
+<text x="618.0" y="546" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">开锚：首次观测 + 起点状态（含 position）</text>
+<text x="42.0" y="563" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">revise</text>
+<text x="120.0" y="563" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">四种判据修订，每次两份密封</text>
+<text x="540.0" y="563" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">read</text>
+<text x="618.0" y="563" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">锚 + 状态 + 挂着的记忆一起交回</text>
+<text x="42.0" y="580" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">edges</text>
+<text x="120.0" y="580" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">边沿：转换 · 终结 · 观测失败 · 记录改写</text>
+<text x="540.0" y="580" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">pass</text>
+<text x="618.0" y="580" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">轮询一批到期的锚</text>
+<text x="42.0" y="597" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">policy</text>
+<text x="120.0" y="597" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">退避</text>
+<text x="540.0" y="597" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">health</text>
+<text x="618.0" y="597" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">光杆锚 · 停摆 · 陈旧</text>
+<text x="42.0" y="614" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">bind</text>
+<text x="120.0" y="614" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">记录挂靠到锚</text>
+<text x="540.0" y="614" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">content</text>
+<text x="618.0" y="614" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">向内容提供方取回记忆</text>
+<text x="42.0" y="631" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">close</text>
+<text x="120.0" y="631" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">显式收摊</text>
+<text x="540.0" y="631" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">error</text>
+<text x="618.0" y="631" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal"></text>
+<rect x="30" y="676" width="330" height="216" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="42" y="698" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-expr — 求值</text>
+<text x="42" y="716" font-size="11" fill="#5c635f" text-anchor="start" font-weight="normal">纯：无 IO · 无时钟 · 无随机</text>
+<text x="42.0" y="736" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">ast</text>
+<text x="120.0" y="736" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">四个槽：obs · state</text>
+<text x="42.0" y="751" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="120.0" y="751" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">taken_at · entered_at</text>
+<text x="42.0" y="766" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">parse</text>
+<text x="120.0" y="766" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">文本 → Node</text>
+<text x="42.0" y="781" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="120.0" y="781" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">唯一持有语法的地方</text>
+<text x="42.0" y="796" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">ctx</text>
+<text x="120.0" y="796" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">求值上下文</text>
+<text x="42.0" y="811" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">eval</text>
+<text x="120.0" y="811" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">Node × Ctx →</text>
+<text x="42.0" y="826" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="120.0" y="826" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">值 | 缺失 | 故障</text>
+<text x="42.0" y="841" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">bind</text>
+<text x="120.0" y="841" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">样本上的绑定检查</text>
+<text x="42.0" y="856" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="120.0" y="856" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">只警告，不拒绝</text>
+<text x="42.0" y="871" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">version</text>
+<text x="120.0" y="871" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">求值器版本</text>
+<rect x="375" y="676" width="330" height="171" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="387" y="698" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-probe — 探针契约</text>
+<text x="387" y="716" font-size="11" fill="#5c635f" text-anchor="start" font-weight="normal">只有契约，没有任何实现</text>
+<text x="387.0" y="736" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">Transport</text>
+<text x="465.0" y="736" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">位置进 → Outcome 出</text>
+<text x="387.0" y="751" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">Outcome</text>
+<text x="465.0" y="751" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">Found | NotFound</text>
+<text x="387.0" y="766" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="465.0" y="766" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">「那儿什么都没有」</text>
+<text x="387.0" y="781" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="465.0" y="781" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">是关于世界的答案</text>
+<text x="387.0" y="796" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">ProbeError</text>
+<text x="465.0" y="796" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">unreachable 跑不起来</text>
+<text x="387.0" y="811" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="465.0" y="811" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">unusable 形状不对</text>
+<text x="387.0" y="826" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="465.0" y="826" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">这两条才是「我没看成」</text>
+<rect x="720" y="676" width="330" height="171" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="732" y="698" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-store — 存储接口</text>
+<text x="732" y="716" font-size="11" fill="#5c635f" text-anchor="start" font-weight="normal">按可变性分，不按用途分</text>
+<text x="732.0" y="736" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">journal</text>
+<text x="810.0" y="736" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">只增不改 + 写入令牌</text>
+<text x="732.0" y="751" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">bindings</text>
+<text x="810.0" y="751" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">只增不改</text>
+<text x="732.0" y="766" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">queue</text>
+<text x="810.0" y="766" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">可变：到期·租约·失败计数</text>
+<text x="732.0" y="781" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">error</text>
+<text x="810.0" y="781" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal"></text>
+<text x="732.0" y="796" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">testkit</text>
+<text x="810.0" y="796" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">内存参考实现</text>
+<text x="732.0" y="811" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">sqlite</text>
+<text x="810.0" y="811" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">可选特性。基底 ship 接口</text>
+<text x="732.0" y="826" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace"></text>
+<text x="810.0" y="826" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">不 ship 后端</text>
+<rect x="30" y="914" width="1020" height="151" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="42" y="936" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-core — 词汇</text>
+<text x="42" y="954" font-size="11" fill="#5c635f" text-anchor="start" font-weight="normal">纯根：零 workspace 依赖。不知道怎么拿事实、怎么求值、怎么存</text>
+<text x="42.0" y="974" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">addr</text>
+<text x="120.0" y="974" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">canonical JSON · 内容哈希</text>
+<text x="42.0" y="991" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">probe</text>
+<text x="120.0" y="991" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">Probe · ProbeVersion · Outcome · Facts · FactAddress</text>
+<text x="42.0" y="1008" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">anchor</text>
+<text x="120.0" y="1008" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">Anchor · State（position 就是它的一个字段）· Transitions · Rule</text>
+<text x="42.0" y="1025" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">journal</text>
+<text x="120.0" y="1025" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">Entry 六种 · Change 四种 · ReasonClass 三种 · Versions · fold</text>
+<text x="42.0" y="1042" font-size="11" fill="#5b6b80" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">memory</text>
+<text x="120.0" y="1042" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">Ref · Binding · Link · Version —— 只存引用，不存内容</text>
+<rect x="1072" y="88" width="352" height="695" rx="4" fill="#fbf2e6" stroke="#b07f2a" stroke-width="1.5"/>
+<text x="1248" y="112" font-size="14.5" fill="#8a6520" text-anchor="middle" font-weight="600">电池 batteries/</text>
+<text x="1248" y="130" font-size="11" fill="#a07c3a" text-anchor="middle" font-weight="normal">可复用，不属于任何单一域</text>
+<rect x="1090" y="148" width="316" height="86" rx="3" fill="#fffaf3" stroke="#b07f2a"/>
+<text x="1102" y="168" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-transport-shell</text>
+<text x="1102" y="185" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">实现 gmr-probe::Transport</text>
+<text x="1102" y="201" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">exec 脚本，位置经 GMR_POSITION</text>
+<text x="1102" y="216" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">非零退出 = 我没看成</text>
+<rect x="1090" y="246" width="316" height="86" rx="3" fill="#fffaf3" stroke="#b07f2a"/>
+<text x="1102" y="266" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-provider-git</text>
+<text x="1102" y="283" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">内容提供方</text>
+<text x="1102" y="299" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">按 id 取回 + 按版本取回</text>
+<text x="1102" y="314" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">记忆内容住这儿，基底不复制</text>
+<rect x="1090" y="344" width="316" height="101" rx="3" fill="#fffaf3" stroke="#b07f2a"/>
+<text x="1102" y="364" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">gmr-probe-coord</text>
+<text x="1102" y="381" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">探针作者的共同约定</text>
+<text x="1102" y="397" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">打分 · 取最优 · 报形状</text>
+<text x="1102" y="412" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">matched · missed · at</text>
+<text x="1102" y="427" font-size="10.5" fill="#5c635f" text-anchor="start" font-weight="normal">candidates · exact · matches</text>
+<rect x="1090" y="457" width="316" height="52" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1102" y="477" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">probe-ast</text>
+<text x="1102" y="494" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">文件·种类·可见性·名字·签名</text>
+<rect x="1090" y="521" width="316" height="52" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1102" y="541" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">probe-prose</text>
+<text x="1102" y="558" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">文件·标题路径·内容指纹</text>
+<rect x="1090" y="585" width="316" height="52" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1102" y="605" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">probe-name</text>
+<text x="1102" y="622" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">名字·作用范围</text>
+<rect x="1090" y="649" width="316" height="52" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1102" y="669" font-size="12" fill="#14181d" text-anchor="start" font-weight="600" font-family="'SF Mono','JetBrains Mono',Menlo,Consolas,monospace">probe-addr</text>
+<text x="1102" y="686" font-size="10.5" fill="#8a6520" text-anchor="start" font-weight="normal">路径·基名·内容指纹</text>
+<text x="1102" y="729" font-size="11" fill="#8a6520" text-anchor="start" font-weight="600">虚线框 = 内容寻址的可执行物</text>
+<text x="1102" y="746" font-size="10.5" fill="#a07c3a" text-anchor="start" font-weight="normal">各自独立 workspace，被 exec 不被链接。</text>
+<text x="1102" y="761" font-size="10.5" fill="#a07c3a" text-anchor="start" font-weight="normal">换一门语言 = 给 probe-ast 加一张表。</text>
+<path d="M 540 174 L 540 196" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 540 364 L 540 390" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 540 447 L 540 469" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 195 654 L 195 676" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 195 892 L 195 914" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 540 654 L 540 676" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 540 892 L 540 914" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 885 654 L 885 676" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 885 892 L 885 914" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M 1050 254 L 1090 190" fill="none" stroke="#b07f2a" stroke-width="1.5" marker-end="url(#e)"/>
+<path d="M 1050 274 L 1090 300" fill="none" stroke="#b07f2a" stroke-width="1.5" marker-end="url(#e)"/>
+<line x1="30" y1="1095" x2="1424" y2="1095" stroke="#d3d7cf"/>
+<text x="30" y="1121" font-size="13.5" fill="#14181d" text-anchor="start" font-weight="600">转换关系</text>
+<text x="30" y="1143" font-size="12" fill="#5c635f" text-anchor="start" font-weight="normal">δ(state, obs, 时间) → state&#x27;　　转换表逐条匹配「守卫 =&gt; 新状态」，第一条即生效；一条都不匹配 = 状态不动。</text>
+<text x="30" y="1163" font-size="12" fill="#5c635f" text-anchor="start" font-weight="normal">日志条目　Open · Transition · Still · Attempt · Revise · Close　—— 状态不存盘，每次由 fold 从这些条目算出来。</text>
+<text x="30" y="1183" font-size="12" fill="#5c635f" text-anchor="start" font-weight="normal">判据修订　Reprobe 换探针 · Retransition 改转换表 · Reterminal 改终结集合 · Restate 手动设状态（挪位置就是这一种）。</text>
+<text x="30" y="1203" font-size="12" fill="#5c635f" text-anchor="start" font-weight="normal">　　　　　每次两份分开密封：基底捕获的证据 + 作者写的理由。基底只担保不可篡改，不担保理由成立。</text>
+</svg>

@@ -1,0 +1,21 @@
+[package]
+name = "gmr"
+description = "门面。只重导出，不定义任何类型或函数 —— 这条由 facade::reexport-only 锚看守。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+sqlite = ["gmr-store/sqlite"]
+
+[dependencies]
+gmr-core = { path = "../gmr-core" }
+gmr-expr = { path = "../gmr-expr" }
+gmr-probe = { path = "../gmr-probe" }
+gmr-store = { path = "../gmr-store" }
+gmr-runtime = { path = "../gmr-runtime" }
+
+[lints]
+workspace = true

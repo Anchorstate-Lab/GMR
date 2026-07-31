@@ -1,0 +1,17 @@
+[package]
+name = "gmr-core"
+description = "GMR 的名词：探针声明 · 锚 · 日志条目 · 绑定；它们的地址；日志→状态的纯折叠。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# 纯根。零 workspace 依赖 —— 这条由 crates::pure-roots 锚看守。
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1090" width="1200" height="1090" font-family="'PingFang SC','Hiragino Sans GB','Noto Sans CJK SC','Microsoft YaHei',-apple-system,sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="af" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9c3a2c"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1090" fill="#fbfcfa"/>
+
+  <text x="30" y="42" font-size="24" font-weight="600" fill="#14181d">GMR 一次观测的流程 —— 每一步归哪一层</text>
+  <text x="30" y="66" font-size="13.5" fill="#5c635f">基底不产二进制、领域无关　·　电池可复用、不属于任何单一域　·　域只做装配与命令行　·　用法是这个仓库对工具的使用</text>
+
+  <!-- lanes -->
+  <rect x="30"  y="86" width="290" height="912" rx="4" fill="#eef4ef" stroke="#6f9e7d" stroke-width="1.5"/>
+  <rect x="345" y="86" width="460" height="912" rx="4" fill="#eceff3" stroke="#7c8b9e" stroke-width="1.5"/>
+  <rect x="830" y="86" width="340" height="912" rx="4" fill="#fbf2e6" stroke="#c9963c" stroke-width="1.5"/>
+
+  <text x="175" y="112" font-size="15" font-weight="600" fill="#2f5d4e" text-anchor="middle">域 + 用法</text>
+  <text x="175" y="131" font-size="11.5" fill="#5c7a6a" text-anchor="middle">domains/coding/cli · 仓库根的声明与日志</text>
+  <text x="575" y="112" font-size="15" font-weight="600" fill="#334155" text-anchor="middle">基底</text>
+  <text x="575" y="131" font-size="11.5" fill="#64748b" text-anchor="middle">crates/ —— 领域无关，不产二进制</text>
+  <text x="1000" y="112" font-size="15" font-weight="600" fill="#8a6520" text-anchor="middle">电池</text>
+  <text x="1000" y="131" font-size="11.5" fill="#a07c3a" text-anchor="middle">batteries/ —— 可复用，exec 不链接</text>
+
+  <g font-size="13" fill="#14181d">
+
+    <!-- 1 域 -->
+    <rect x="45" y="152" width="260" height="50" rx="3" fill="#fff" stroke="#6f9e7d"/>
+    <text x="175" y="172" text-anchor="middle" font-weight="600">anchor observe</text>
+    <text x="175" y="190" text-anchor="middle" font-size="11.5" fill="#5c635f">装配：Shell 传输 · Git 提供方 · sqlite</text>
+
+    <!-- 2 -->
+    <rect x="380" y="227" width="390" height="42" rx="3" fill="#fff" stroke="#7c8b9e"/>
+    <text x="575" y="253" text-anchor="middle">gmr-store：读这个锚的全部日志条目</text>
+
+    <!-- 3 -->
+    <rect x="380" y="302" width="390" height="50" rx="3" fill="#fff" stroke="#7c8b9e"/>
+    <text x="575" y="322" text-anchor="middle">gmr-core：fold 折叠出当前状态</text>
+    <text x="575" y="340" text-anchor="middle" font-size="11.5" fill="#5c635f">状态不存盘，每次从只增不改的日志算出来</text>
+
+    <!-- 4 -->
+    <rect x="380" y="377" width="390" height="50" rx="3" fill="#f1f5f9" stroke="#7c8b9e" stroke-dasharray="4 3"/>
+    <text x="575" y="397" text-anchor="middle">已终结？—— 基底唯一解释的语义</text>
+    <text x="575" y="415" text-anchor="middle" font-size="11.5" fill="#5c635f">是 → 停止调度，拒绝一切后续转换</text>
+
+    <!-- 5 -->
+    <rect x="380" y="452" width="390" height="50" rx="3" fill="#fff" stroke="#7c8b9e"/>
+    <text x="575" y="472" text-anchor="middle">从 state 里取出 position</text>
+    <text x="575" y="490" text-anchor="middle" font-size="11.5" fill="#5c635f">基底带着它，但从不读进去</text>
+
+    <!-- 用法喂 position -->
+    <rect x="45" y="452" width="260" height="50" rx="3" fill="#f4faf5" stroke="#6f9e7d" stroke-dasharray="4 3"/>
+    <text x="175" y="472" text-anchor="middle" font-size="12">anchors.toml · position</text>
+    <text x="175" y="490" text-anchor="middle" font-size="11" fill="#5c7a6a">{ kind: "module", vis: "pub" }</text>
+
+    <!-- 6 电池 -->
+    <rect x="845" y="527" width="310" height="50" rx="3" fill="#fff" stroke="#c9963c"/>
+    <text x="1000" y="547" text-anchor="middle">transport-shell：exec 探针</text>
+    <text x="1000" y="565" text-anchor="middle" font-size="11.5" fill="#8a6520">位置经 GMR_POSITION 进去</text>
+
+    <!-- 7 -->
+    <rect x="845" y="602" width="310" height="50" rx="3" fill="#fff" stroke="#c9963c"/>
+    <text x="1000" y="622" text-anchor="middle">probe-ast · prose · name · addr</text>
+    <text x="1000" y="640" text-anchor="middle" font-size="11.5" fill="#8a6520">各自独立 workspace，按坐标找</text>
+
+    <!-- 8 -->
+    <rect x="845" y="677" width="310" height="50" rx="3" fill="#fff" stroke="#c9963c"/>
+    <text x="1000" y="697" text-anchor="middle">probe-coord：统一的报告形状</text>
+    <text x="1000" y="715" text-anchor="middle" font-size="11" fill="#8a6520">matched · missed · at · candidates · exact</text>
+
+    <!-- 9 -->
+    <rect x="380" y="752" width="390" height="50" rx="3" fill="#fff" stroke="#7c8b9e"/>
+    <text x="575" y="772" text-anchor="middle">gmr-expr：转换表逐条求值</text>
+    <text x="575" y="790" text-anchor="middle" font-size="11.5" fill="#5c635f">守卫 =&gt; 新状态，第一条匹配即生效</text>
+
+    <!-- 用法喂 转换表 -->
+    <rect x="45" y="752" width="260" height="50" rx="3" fill="#f4faf5" stroke="#6f9e7d" stroke-dasharray="4 3"/>
+    <text x="175" y="772" text-anchor="middle" font-size="12">anchors.toml · rules</text>
+    <text x="175" y="790" text-anchor="middle" font-size="11" fill="#5c7a6a">终结集合也在这儿声明</text>
+
+    <!-- 10 -->
+    <rect x="380" y="827" width="390" height="50" rx="3" fill="#fff" stroke="#7c8b9e"/>
+    <text x="575" y="847" text-anchor="middle">gmr-core：写一条条目 + 发边沿</text>
+    <text x="575" y="865" text-anchor="middle" font-size="11.5" fill="#5c635f">Transition · Still · Attempt，各带两个版本号</text>
+
+    <!-- 11 -->
+    <rect x="380" y="922" width="390" height="50" rx="3" fill="#fff" stroke="#7c8b9e"/>
+    <text x="575" y="942" text-anchor="middle">gmr-store：只增不改的日志接口</text>
+    <text x="575" y="960" text-anchor="middle" font-size="11.5" fill="#5c635f">基底 ship 接口，不 ship 后端</text>
+
+    <rect x="45" y="922" width="260" height="50" rx="3" fill="#fff" stroke="#6f9e7d"/>
+    <text x="175" y="942" text-anchor="middle" font-size="12">.anchor/ · sqlite</text>
+    <text x="175" y="960" text-anchor="middle" font-size="11" fill="#5c7a6a">挑哪个后端是域的决定</text>
+
+  </g>
+
+  <!-- arrows -->
+  <g fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#a)">
+    <path d="M175 202 L175 214 L575 214 L575 227"/>
+    <path d="M575 269 L575 302"/>
+    <path d="M575 352 L575 377"/>
+    <path d="M575 427 L575 452"/>
+    <path d="M305 477 L380 477"/>
+    <path d="M575 502 L575 514 L1000 514 L1000 527"/>
+    <path d="M1000 577 L1000 602"/>
+    <path d="M1000 652 L1000 677"/>
+    <path d="M1000 727 L1000 739 L575 739 L575 752"/>
+    <path d="M305 777 L380 777"/>
+    <path d="M575 802 L575 827"/>
+    <path d="M575 877 L575 922"/>
+    <path d="M380 947 L305 947"/>
+  </g>
+
+  <!-- failure paths -->
+  <g fill="none" stroke="#9c3a2c" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#af)">
+    <path d="M845 640 L800 640 L800 852 L770 852"/>
+    <path d="M770 777 L800 777"/>
+  </g>
+  <text x="812" y="632" font-size="10.5" fill="#9c3a2c">跑不起来 / 形状不对</text>
+  <text x="812" y="772" font-size="10.5" fill="#9c3a2c">守卫算不出来</text>
+  <text x="812" y="870" font-size="10.5" fill="#9c3a2c">→ Attempt</text>
+
+  <!-- footer -->
+  <line x1="30" y1="1018" x2="1170" y2="1018" stroke="#d3d7cf"/>
+  <text x="30" y="1042" font-size="12.5" fill="#14181d" font-weight="600">三条红色虚线是「关于我们的失败」</text>
+  <text x="30" y="1062" font-size="12" fill="#5c635f">不成观测、但一定发边沿。探针说「我看了，那儿什么都没有」不走这条 —— 那是关于世界的答案，照样成为条目。</text>
+  <text x="30" y="1082" font-size="12" fill="#5c635f">记忆回路：边沿交回时，域读 anchors 上挂着的 memories/，由电池 provider-git 按绑定时那一版取回内容 —— 基底只存引用与版本，不复制。</text>
+</svg>

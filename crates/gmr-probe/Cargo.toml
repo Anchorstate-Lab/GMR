@@ -1,0 +1,17 @@
+[package]
+name = "gmr-probe"
+description = "调用的契约：探针声明 → 输出。传输的实现是电池，不在这里。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gmr-core = { path = "../gmr-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

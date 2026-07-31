@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1000" width="100%" height="100%" style="background-color: #f4f6f9; font-family: 'Segoe UI', -apple-system, sans-serif;">
+  <defs>
+    <!-- 箭头定义 -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6c757d" />
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0d6efd" />
+    </marker>
+    <marker id="arrow-dashed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#adb5bd" />
+    </marker>
+    
+    <!-- 阴影滤镜 -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.1" />
+    </filter>
+    <filter id="light-shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.05" />
+    </filter>
+    
+    <!-- 渐变定义 -->
+    <linearGradient id="grad-fact" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e3f2fd" />
+      <stop offset="100%" stop-color="#bbdefb" />
+    </linearGradient>
+    <linearGradient id="grad-anchor" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e8f5e9" />
+      <stop offset="100%" stop-color="#c8e6c9" />
+    </linearGradient>
+    <linearGradient id="grad-memory" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f3e5f5" />
+      <stop offset="100%" stop-color="#e1bee7" />
+    </linearGradient>
+    <linearGradient id="grad-plugin" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fff3e0" />
+      <stop offset="100%" stop-color="#ffe0b2" />
+    </linearGradient>
+    <linearGradient id="grad-storage" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffebee" />
+      <stop offset="100%" stop-color="#ffcdd2" />
+    </linearGradient>
+    <linearGradient id="grad-physical" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#eceff1" />
+      <stop offset="100%" stop-color="#cfd8dc" />
+    </linearGradient>
+  </defs>
+
+  <!-- 标题 -->
+  <text x="600" y="40" font-size="28" font-weight="bold" fill="#212529" text-anchor="middle" letter-spacing="1">GMR 架构图</text>
+  <text x="600" y="65" font-size="14" fill="#6c757d" text-anchor="middle">保证记录不会沿作者声明的方向与世界脱节而无人知晓</text>
+
+  <!-- ================= 各层区域 ================= -->
+  
+  <!-- 1. 事实层 -->
+  <rect x="50" y="90" width="1100" height="120" rx="10" fill="url(#grad-fact)" stroke="#90caf9" stroke-width="2" filter="url(#shadow)" />
+  <text x="70" y="115" font-size="18" font-weight="bold" fill="#1565c0">事实层（外部世界）</text>
+  <text x="70" y="135" font-size="12" fill="#495057">GMR 不存储、不摄入、不维护覆盖率。引用严格单向：记录 → 锚 → 事实。</text>
+  
+  <rect x="150" y="150" width="200" height="40" rx="5" fill="#ffffff" stroke="#0d6efd" stroke-width="1.5" filter="url(#light-shadow)" />
+  <text x="250" y="175" font-size="14" fill="#0d6efd" text-anchor="middle" font-weight="bold">可重取目标 / 观测源</text>
+  
+  <rect x="450" y="150" width="200" height="40" rx="5" fill="#ffffff" stroke="#0d6efd" stroke-width="1.5" filter="url(#light-shadow)" />
+  <text x="550" y="175" font-size="14" fill="#0d6efd" text-anchor="middle" font-weight="bold">外部状态（事实约束）</text>
+
+  <!-- 2. 锚定层 + 插件（核心） -->
+  <rect x="50" y="240" width="1100" height="320" rx="10" fill="url(#grad-anchor)" stroke="#a5d6a7" stroke-width="2" filter="url(#shadow)" />
+  <text x="70" y="265" font-size="18" font-weight="bold" fill="#2e7d32">锚定层（GMR 的全部实质）</text>
+  <text x="70" y="285" font-size="12" fill="#495057">一台状态机 δ(state, obs, 时间) → state'。状态装两样东西：探针位置 · 域自己的累积量。</text>
+
+  <!-- 锚定层内部组件 -->
+  <!-- 状态机 -->
+  <rect x="350" y="305" width="240" height="50" rx="25" fill="#1b5e20" filter="url(#shadow)" />
+  <text x="470" y="335" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">状态机 δ(state, obs, time)</text>
+  
+  <!-- 状态 -->
+  <rect x="150" y="380" width="220" height="70" rx="8" fill="#ffffff" stroke="#2e7d32" stroke-width="2" filter="url(#light-shadow)" />
+  <text x="260" y="405" font-size="14" font-weight="bold" fill="#2e7d32" text-anchor="middle">状态 state</text>
+  <text x="260" y="425" font-size="12" fill="#495057" text-anchor="middle">• 探针位置</text>
+  <text x="260" y="440" font-size="12" fill="#495057" text-anchor="middle">• 域累积量（不透明）</text>
+
+  <!-- 转换表 -->
+  <rect x="550" y="380" width="260" height="70" rx="8" fill="#ffffff" stroke="#2e7d32" stroke-width="2" filter="url(#light-shadow)" />
+  <text x="680" y="405" font-size="14" font-weight="bold" fill="#2e7d32" text-anchor="middle">转换表（规则）</text>
+  <text x="680" y="425" font-size="12" fill="#495057" text-anchor="middle">守卫条件 → 新状态</text>
+  <text x="680" y="440" font-size="12" fill="#495057" text-anchor="middle">第一条匹配即生效</text>
+
+  <!-- 终结态 -->
+  <rect x="880" y="380" width="180" height="70" rx="8" fill="#ffffff" stroke="#d32f2f" stroke-width="2" filter="url(#light-shadow)" />
+  <text x="970" y="405" font-size="14" font-weight="bold" fill="#d32f2f" text-anchor="middle">终结态集合</text>
+  <text x="970" y="425" font-size="12" fill="#495057" text-anchor="middle">进入后停止调度</text>
+  <text x="970" y="440" font-size="12" fill="#495057" text-anchor="middle">拒绝任何后续转换</text>
+
+  <!-- 转换箭头 -->
+  <path d="M 260 450 L 260 480 L 470 480 L 470 365" fill="none" stroke="#2e7d32" stroke-width="2" marker-end="url(#arrow)" />
+  <path d="M 680 450 L 680 480 L 470 480" fill="none" stroke="#2e7d32" stroke-width="2" marker-end="url(#arrow)" />
+  <path d="M 880 450 L 880 480 L 470 480" fill="none" stroke="#d32f2f" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)" />
+
+  <!-- 插件（内容寻址） -->
+  <rect x="50" y="400" width="220" height="100" rx="8" fill="url(#grad-plugin)" stroke="#ffcc80" stroke-width="2" filter="url(#shadow)" />
+  <text x="160" y="425" font-size="16" font-weight="bold" fill="#e65100" text-anchor="middle">插件</text>
+  <text x="160" y="445" font-size="12" fill="#495057" text-anchor="middle">内容寻址的可执行物</text>
+  <text x="160" y="465" font-size="12" fill="#495057" text-anchor="middle">版本 = 内容哈希</text>
+  <text x="160" y="485" font-size="12" fill="#495057" text-anchor="middle">（哈希，挣来的）</text>
+  
+  <path d="M 270 450 L 340 450" fill="none" stroke="#e65100" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="305" y="440" font-size="11" fill="#e65100" text-anchor="middle">观测 →</text>
+  <text x="305" y="465" font-size="11" fill="#e65100" text-anchor="middle">{ 位置, 状态向量 }</text>
+
+  <!-- 3. 记忆层 -->
+  <rect x="50" y="590" width="1100" height="130" rx="10" fill="url(#grad-memory)" stroke="#ce93d8" stroke-width="2" filter="url(#shadow)" />
+  <text x="70" y="615" font-size="18" font-weight="bold" fill="#6a1b9a">记忆层（主观记录的引用）</text>
+  <text x="70" y="635" font-size="12" fill="#495057">GMR 只存引用与绑定时那一版的标识，不复制内容。内容住在外部提供方，靠提供方按版本取回。</text>
+
+  <rect x="120" y="655" width="240" height="40" rx="5" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.5" filter="url(#light-shadow)" />
+  <text x="240" y="680" font-size="14" fill="#6a1b9a" text-anchor="middle" font-weight="bold">绑定：记录是关于这个锚的</text>
+
+  <rect x="480" y="655" width="240" height="40" rx="5" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.5" filter="url(#light-shadow)" />
+  <text x="600" y="680" font-size="14" fill="#6a1b9a" text-anchor="middle" font-weight="bold">订阅：我关心哪些转换</text>
+
+  <rect x="840" y="655" width="240" height="40" rx="5" fill="#ffffff" stroke="#6a1b9a" stroke-width="1.5" filter="url(#light-shadow)" />
+  <text x="960" y="680" font-size="14" fill="#6a1b9a" text-anchor="middle" font-weight="bold">引用严格单向（无反向引用）</text>
+
+  <!-- 从锚定层到记忆层的箭头 -->
+  <path d="M 470 560 L 470 580 L 470 585" fill="none" stroke="#6a1b9a" stroke-width="3" marker-end="url(#arrow)" stroke-dasharray="8,4" />
+
+  <!-- 4. 存储层 -->
+  <rect x="50" y="750" width="1100" height="110" rx="10" fill="url(#grad-storage)" stroke="#ef9a9a" stroke-width="2" filter="url(#shadow)" />
+  <text x="70" y="775" font-size="18" font-weight="bold" fill="#b71c1c">存储（按可变性分）</text>
+  <text x="70" y="795" font-size="12" fill="#495057">只增不改由存储层拒绝更新与删除来兑现，不靠自觉。基底 ship 接口，不 ship 后端。</text>
+
+  <rect x="100" y="815" width="280" height="30" rx="5" fill="#ffffff" stroke="#d32f2f" stroke-width="1.5" />
+  <text x="240" y="835" font-size="13" fill="#d32f2f" text-anchor="middle" font-weight="bold">日志（只增不改，带写入令牌）</text>
+
+  <rect x="460" y="815" width="280" height="30" rx="5" fill="#ffffff" stroke="#d32f2f" stroke-width="1.5" />
+  <text x="600" y="835" font-size="13" fill="#d32f2f" text-anchor="middle" font-weight="bold">绑定库（只增不改）</text>
+
+  <rect x="820" y="815" width="280" height="30" rx="5" fill="#ffffff" stroke="#d32f2f" stroke-width="1.5" />
+  <text x="960" y="835" font-size="13" fill="#d32f2f" text-anchor="middle" font-weight="bold">队列（可变，仅轮询部署可选）</text>
+
+  <!-- 5. 物理结构层 -->
+  <rect x="50" y="890" width="1100" height="80" rx="10" fill="url(#grad-physical)" stroke="#b0bec5" stroke-width="2" filter="url(#shadow)" />
+  <text x="70" y="915" font-size="18" font-weight="bold" fill="#37474f">物理结构</text>
+  
+  <rect x="150" y="930" width="240" height="30" rx="5" fill="#ffffff" stroke="#37474f" stroke-width="1.5" />
+  <text x="270" y="950" font-size="13" fill="#37474f" text-anchor="middle" font-weight="bold">基底（领域无关，不产二进制）</text>
+
+  <rect x="480" y="930" width="240" height="30" rx="5" fill="#ffffff" stroke="#37474f" stroke-width="1.5" />
+  <text x="600" y="950" font-size="13" fill="#37474f" text-anchor="middle" font-weight="bold">电池（可复用：传输 / 提供方 / 后端）</text>
+
+  <rect x="810" y="930" width="240" height="30" rx="5" fill="#ffffff" stroke="#37474f" stroke-width="1.5" />
+  <text x="930" y="950" font-size="13" fill="#37474f" text-anchor="middle" font-weight="bold">域（插件 · 锚声明 · 记忆 · 装配）</text>
+
+  <!-- 连接各层的虚线（表示横切关注点） -->
+  <path d="M 600 890 L 600 860" fill="none" stroke="#37474f" stroke-width="1.5" stroke-dasharray="4,4" />
+  <path d="M 600 750 L 600 720" fill="none" stroke="#37474f" stroke-width="1.5" stroke-dasharray="4,4" />
+
+  <!-- 底部注释 / 关键约束 -->
+  <rect x="50" y="980" width="1100" height="20" rx="0" fill="none" />
+  <text x="600" y="995" font-size="11" fill="#6c757d" text-anchor="middle">确定性不是客观性 · 记录改写不来自日志 · 接地的质量上限等于判据作者的水平上限 · 基底不沙箱插件</text>
+
+  <!-- 图例 -->
+  <g transform="translate(900, 265)">
+    <rect x="0" y="0" width="220" height="80" rx="5" fill="#ffffff" stroke="#dee2e6" stroke-width="1" filter="url(#light-shadow)" />
+    <text x="110" y="20" font-size="12" font-weight="bold" fill="#495057" text-anchor="middle">图例</text>
+    <line x1="15" y1="35" x2="45" y2="35" stroke="#2e7d32" stroke-width="2" marker-end="url(#arrow)" />
+    <text x="55" y="38" font-size="11" fill="#495057">数据 / 观测流</text>
+    <line x1="15" y1="55" x2="45" y2="55" stroke="#6a1b9a" stroke-width="2" stroke-dasharray="4,4" marker-end="url(#arrow)" />
+    <text x="55" y="58" font-size="11" fill="#495057">引用 / 元数据流</text>
+    <line x1="15" y1="75" x2="45" y2="75" stroke="#37474f" stroke-width="1.5" stroke-dasharray="4,4" />
+    <text x="55" y="78" font-size="11" fill="#495057">构成 / 部署关系</text>
+  </g>
+</svg>

@@ -1,0 +1,16 @@
+[package]
+name = "gmr-provider-git"
+description = "电池：记忆的正文住在 git 仓库的文件里。按版本取回靠 git cat-file。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gmr-core = { path = "../../crates/gmr-core" }
+gmr-runtime = { path = "../../crates/gmr-runtime" }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

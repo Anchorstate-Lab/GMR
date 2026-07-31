@@ -1,0 +1,14 @@
+# 自成一个 workspace。**探针实现**：GMR 不链接它，只通过 shell 传输 exec 它
+# —— 跟 domains/coding/plugin 一样。放 batteries/ 是因为它不属于任何单一域。
+[workspace]
+
+[package]
+name = "ast-map"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+serde_json = "1"
+gmr-probe-coord = { path = "../probe-coord" }

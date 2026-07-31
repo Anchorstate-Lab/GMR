@@ -1,0 +1,29 @@
+[package]
+name = "coding-anchor"
+description = "coding 域的装配：把基底、脚本传输与 git 内容提供方接起来，跑这个仓库自己的判据。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "anchor"
+path = "src/main.rs"
+
+[dependencies]
+# 基底
+gmr = { path = "../../../crates/gmr", features = ["sqlite"] }
+# 电池 —— **挑哪一块是域的决定**，这三行就是那个决定
+gmr-transport-shell = { path = "../../../batteries/transport-shell" }
+gmr-provider-git = { path = "../../../batteries/provider-git" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+toml = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+[lints]
+workspace = true

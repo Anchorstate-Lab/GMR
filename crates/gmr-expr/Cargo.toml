@@ -1,0 +1,16 @@
+[package]
+name = "gmr-expr"
+description = "切面与期望的求值器。输入是 JSON + 命名槽，它不认识锚。自带 EVALUATOR_VERSION。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# 纯根。零 workspace 依赖，且**依赖清单里不得出现任何 IO** ——
+# 纯度由 crate 边界扛，不由 trait 分裂扛。这条由 expr::no-io 锚看守。
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

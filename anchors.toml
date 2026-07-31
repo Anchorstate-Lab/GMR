@@ -1,0 +1,366 @@
+[[anchor]]
+key = "packages::workspace"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-addr/Cargo.toml >&2
+batteries/probe-addr/target/release/addr-map .'''
+position = { name = "Cargo.toml" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "modules::gmr-core"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-core'''
+position = { kind = "module", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "surface::gmr-core"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-core'''
+position = { kind = "function", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "modules::gmr-expr"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-expr'''
+position = { kind = "module", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "surface::gmr-expr"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-expr'''
+position = { kind = "function", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "surface::gmr-probe"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-probe'''
+position = { kind = "function", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "modules::gmr-store"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-store'''
+position = { kind = "module", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "surface::gmr-store"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-store'''
+position = { kind = "function", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "modules::gmr-runtime"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-runtime'''
+position = { kind = "module", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "surface::gmr-runtime"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map crates/gmr-runtime'''
+position = { kind = "function", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "modules::anchor-cli"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map domains/coding/cli'''
+position = { kind = "module", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "surface::anchor-cli"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-ast/Cargo.toml >&2
+batteries/probe-ast/target/release/ast-map domains/coding/cli'''
+position = { kind = "function", vis = "pub" }
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+
+[[anchor]]
+key = "doctrine::decisions"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-prose/Cargo.toml >&2
+batteries/probe-prose/target/release/prose-map .'''
+position = { file = "CLAUDE.md", heading = "一、这十三条是 owner 定的，不要重新论证" }
+rules = [
+  'not exists(state.fingerprint) => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }',
+  'obs.found == false => { position: state.position, fingerprint: state.fingerprint, status: "section-gone" }',
+  'obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }',
+]
+
+[[anchor]]
+key = "doctrine::red-cards"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-prose/Cargo.toml >&2
+batteries/probe-prose/target/release/prose-map .'''
+position = { file = "CLAUDE.md", heading = "四、红牌 —— 违反了不会有人发现的那些" }
+rules = [
+  'not exists(state.fingerprint) => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }',
+  'obs.found == false => { position: state.position, fingerprint: state.fingerprint, status: "section-gone" }',
+  'obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }',
+]
+
+[[anchor]]
+key = "dead::Baseline"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "Baseline", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::BaselineEntry"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "BaselineEntry", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::Delta"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "Delta", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::Expect"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "Expect", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::ExpectValue"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "ExpectValue", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::FacetName"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "FacetName", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::FacetOutcome"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "FacetOutcome", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::FacetValue"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "FacetValue", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::Facets"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "Facets", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::FactStore"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "FactStore", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::SourceArchive"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "SourceArchive", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::delta_of"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "delta_of", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::located_at"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "located_at", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::prev"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "prev", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "dead::streak"
+probe = '''cargo build --release --quiet --manifest-path batteries/probe-name/Cargo.toml >&2
+batteries/probe-name/target/release/name-map .'''
+position = { name = "streak", scope = "crates" }
+rules = [
+  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
+  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
+  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
+]
+
+[[anchor]]
+key = "tests::roster"
+probe = '''set -e
+M=Cargo.toml
+a=$(mktemp); i=$(mktemp); trap 'rm -f "$a" "$i"' EXIT
+cargo test --workspace --manifest-path $M --no-run --quiet >&2
+cargo test --workspace --manifest-path $M -- --list > "$a"
+cargo test --workspace --manifest-path $M -- --list --ignored > "$i"
+grep -q ': test$' "$a" || { echo "--list 一条测试都没列出来 —— 更可能是我读错了" >&2; exit 1; }
+jq -n --rawfile all "$a" --rawfile ign "$i" '
+  def roster: split("\n") | map(select(endswith(": test")) | rtrimstr(": test")) | sort;
+  ($all|roster) as $t | ($ign|roster) as $g
+  | { test_count: ($t|length), ignored_count: ($g|length), tests: $t, ignored: $g }'
+'''
+rules = [
+  'not exists(state.tests) => { test_count: obs.test_count, ignored_count: obs.ignored_count, tests: obs.tests, ignored: obs.ignored, status: "captured" }',
+  # 名册变短 = 一条契约被撤回。CI 看不见,这里看得见。
+  'obs.test_count < state.test_count => { test_count: obs.test_count, ignored_count: obs.ignored_count, tests: obs.tests, ignored: obs.ignored, was: state.tests, status: "test-removed" }',
+  # 契约还在文件里,但不再被兑现。
+  'obs.ignored_count > state.ignored_count => { test_count: obs.test_count, ignored_count: obs.ignored_count, tests: obs.tests, ignored: obs.ignored, was: state.ignored, status: "test-ignored" }',
+  # 数量没少但名册动了:纯新增,或者删N加N。两份都留下,差集归读的人。
+  'changed("tests") => { test_count: obs.test_count, ignored_count: obs.ignored_count, tests: obs.tests, ignored: obs.ignored, was: state.tests, status: "roster-changed" }',
+]

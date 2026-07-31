@@ -1,0 +1,155 @@
+# 目标架构的声明。**判据的来源，不是文档。**
+#
+# 它由作者维护、住在作者的仓库里 —— 探针只是把「这里现在写着什么」搬回来。
+# 工具不 ship 它：ship 一份「该检测什么」的清单是红牌，判据是所有权而不是
+# 逻辑结构（GMR.md §6.4）。
+#
+# 改这个文件 = 改判据的判据。停下来读全文。
+
+# ── 命名的库清单 ───────────────────────────────────────────────
+# 判据引用这些名字，**探针不再各自硬编码**。改一处，全部引用它的锚跟着变。
+
+[libs]
+domain = ["syn", "proc-macro2", "quote", "tree-sitter", "swc_ecma_parser", "rustc_ast", "regex-syntax"]
+io     = ["tokio", "reqwest", "hyper", "mio", "socket2", "sqlx", "sqlx-core", "async-std", "rusqlite", "libsqlite3-sys"]
+db     = ["sqlx", "rusqlite", "libsqlite3-sys", "postgres", "tokio-postgres"]
+
+# ── 层 ─────────────────────────────────────────────────────────
+# 每层的规则必须是**探针能读的字段**，不是散文 —— 散文没人读，真规则会跑到
+# 探针里去，然后复制成好几份。写不成字段的那些写进 memories/。
+#
+# 层内的依赖顺序**不在这里**：层只有 5 个，而基底内部有 5 级顺序，层级
+# rank 算术表达不了它 —— 我试过，结果每条合法依赖都被判成违反。精确的规则
+# 在成员的 may_depend_on 上：依赖图本身就是这一级的架构，不用再抽象一层。
+
+[layer.substrate]
+zh         = "基底"
+why        = "领域无关"
+forbidden  = ["domain"]
+
+[layer.shell]
+zh         = "产品壳"
+why        = "领域无关：只装配与分发，判断住在探针与表达式里"
+forbidden  = ["domain"]
+
+[layer.probe-impl]
+zh         = "探针实现"
+why        = "GMR 不链接它，只通过传输 exec 它"
+forbidden  = []
+linkable   = false          # 不许被任何 crates/ 下的包依赖
+
+[layer.data]
+zh         = "数据"
+why        = "声明与模板：锚可以覆盖，用户不必用"
+forbidden  = []
+
+[layer.spec]
+zh         = "规格"
+why        = "只写长期契约；机械可查的约束不写在这里"
+forbidden  = []
+
+# ── 成员 ───────────────────────────────────────────────────────
+# 一个成员声明一次，带它的层与种类。**种类决定它必须被哪些维度盯住** ——
+# 加一个成员，覆盖矩阵立刻要求对应的格子，不靠人记得。
+
+[[member]]
+name   = "repo"
+layer  = "data"
+kind   = "whole"
+path   = "."
+[[member]]
+name   = "workspace"
+layer  = "substrate"
+kind   = "whole"
+path   = "Cargo.toml"
+[[member]]
+name          = "gmr-core"
+may_depend_on = []
+layer     = "substrate"
+kind      = "package"
+path      = "crates/gmr-core"
+pure_root = true
+[[member]]
+name          = "gmr-expr"
+may_depend_on = []
+layer     = "substrate"
+kind      = "package"
+path      = "crates/gmr-expr"
+pure_root = true
+forbidden = ["io"]          # 纯根之外：求值那一跳不许碰世界
+[[member]]
+name          = "gmr-probe"
+may_depend_on = ["gmr-core"]
+layer  = "substrate"
+kind   = "package"
+path   = "crates/gmr-probe"
+[[member]]
+name          = "gmr-store"
+may_depend_on = ["gmr-core"]
+layer  = "substrate"
+kind   = "package"
+path   = "crates/gmr-store"
+forbidden_default = ["db"]  # 后端是 feature：默认 feature 集里不许有数据库
+[[member]]
+name          = "gmr-runtime"
+may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-store"]
+layer  = "substrate"
+kind   = "package"
+path   = "crates/gmr-runtime"
+[[member]]
+name          = "gmr"
+may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-store", "gmr-runtime"]
+layer  = "substrate"
+kind   = "package"
+path   = "crates/gmr"
+[[member]]
+name          = "gmr-cli"
+may_depend_on = ["gmr"]
+layer  = "shell"
+kind   = "package"
+path   = "crates/gmr-cli"
+[[member]]
+name   = "probes-surface"
+layer  = "probe-impl"
+kind   = "probe-impl"
+path   = "probes/surface"
+[[member]]
+name   = "constitution"
+layer  = "spec"
+kind   = "document"
+path   = "CLAUDE.md"
+[[member]]
+name   = "architecture"
+layer  = "spec"
+kind   = "document"
+path   = "GMR.md"
+[[member]]
+name   = "declaration"
+layer  = "data"
+kind   = "document"
+path   = "architecture.toml"
+[[member]]
+name   = "tests"
+layer  = "substrate"
+kind   = "corpus"
+path   = "crates"
+# ── 覆盖矩阵 ───────────────────────────────────────────────────
+# 维度是「变化该被怎么响应」的分类，不是「探针怎么实现」。
+#
+#   inventory  这一层的成员是封闭的         名单 / 计数 —— 增删要问为什么
+#   shape      成员各自长什么样             签名 / 表结构 / 规模 —— 变了要读 diff
+#   rule       跟目标架构比有没有违反        非空即违规，不需要人判断
+#
+# 锚的键必须是 `<dimension>::<member>[-<aspect>]`。**覆盖由键集直接推出**，
+# 不维护第二份真相 —— 键是锚的身份，不可能跟自己漂移。
+#
+# 它挡不住两件事，写在这里而不是藏起来：
+#   · 新维度 —— 列是我们列的，谁都没想到的维度仍然静默
+#   · 锚的质量 —— 矩阵只说格子该有锚，不说那个锚有用。一条废锚照样填满格子
+
+[required]
+whole      = ["inventory", "rule"]
+package    = ["inventory", "shape", "rule"]
+probe-impl = ["shape", "rule"]
+document   = ["inventory"]
+corpus     = ["inventory", "rule"]
