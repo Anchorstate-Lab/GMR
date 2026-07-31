@@ -49,8 +49,9 @@ why        = "只写长期契约；机械可查的约束不写在这里"
 forbidden  = []
 
 # ── 成员 ───────────────────────────────────────────────────────
-# 一个成员声明一次，带它的层与种类。**种类决定它必须被哪些维度盯住** ——
-# 加一个成员，覆盖矩阵立刻要求对应的格子，不靠人记得。
+# 一个成员声明一次，带它的层与种类。**name 必须是 cargo 认得的包名** ——
+# 禁区检查是 `cargo tree -p <name>`，名字对不上就静默跳过，写了等于没写。
+# 这条不是风格约定，是它能不能被查到的唯一条件。
 
 [[member]]
 name   = "repo"
@@ -103,16 +104,11 @@ layer  = "substrate"
 kind   = "package"
 path   = "crates/gmr"
 [[member]]
-name          = "gmr-cli"
+name          = "coding-anchor"
 may_depend_on = ["gmr"]
 layer  = "shell"
 kind   = "package"
-path   = "crates/gmr-cli"
-[[member]]
-name   = "probes-surface"
-layer  = "probe-impl"
-kind   = "probe-impl"
-path   = "probes/surface"
+path   = "domains/coding/cli"
 [[member]]
 name   = "constitution"
 layer  = "spec"
@@ -133,23 +129,13 @@ name   = "tests"
 layer  = "substrate"
 kind   = "corpus"
 path   = "crates"
-# ── 覆盖矩阵 ───────────────────────────────────────────────────
-# 维度是「变化该被怎么响应」的分类，不是「探针怎么实现」。
-#
-#   inventory  这一层的成员是封闭的         名单 / 计数 —— 增删要问为什么
-#   shape      成员各自长什么样             签名 / 表结构 / 规模 —— 变了要读 diff
-#   rule       跟目标架构比有没有违反        非空即违规，不需要人判断
-#
-# 锚的键必须是 `<dimension>::<member>[-<aspect>]`。**覆盖由键集直接推出**，
-# 不维护第二份真相 —— 键是锚的身份，不可能跟自己漂移。
-#
-# 它挡不住两件事，写在这里而不是藏起来：
-#   · 新维度 —— 列是我们列的，谁都没想到的维度仍然静默
-#   · 锚的质量 —— 矩阵只说格子该有锚，不说那个锚有用。一条废锚照样填满格子
 
-[required]
-whole      = ["inventory", "rule"]
-package    = ["inventory", "shape", "rule"]
-probe-impl = ["shape", "rule"]
-document   = ["inventory"]
-corpus     = ["inventory", "rule"]
+# ── 这里曾经有一张覆盖矩阵，删了 ────────────────────────────────
+# 它按 kind 要求每个成员被 inventory / shape / rule 三个维度盯住，锚的键要写成
+# `<dimension>::<member>`。**这三个词没有一条锚在用** —— 真实的键用的是
+# modules / surface / packages / tests / dead / doctrine。矩阵从来没兑现过，
+# 也没有任何机制会发现它没兑现：gate.sh 不读它。
+#
+# 一份没人兑现的覆盖承诺比没有承诺更坏 —— 它让「这块有没有人看」这个问题
+# 得到一个假的肯定答案。所以删掉，而不是把词表调成对得上的样子：
+# 该锚什么、按什么维度切，是作者每次单独的判断，不是一张表能替他答的。
