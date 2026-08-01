@@ -87,7 +87,7 @@ async fn journal_hands_back_what_it_was_given<J: Journal>(j: &J) {
     let key = AnchorKey::new("core::modules");
     let entry = open_entry("core::modules", &["count"], serde_json::json!(5));
 
-    let seq = j.append(&key, &entry, Fence::NONE).await.unwrap();
+    let seq = j.append(&key, &entry, Fence::Unleased).await.unwrap();
     let back = j.entries(&key, 0).await.unwrap();
 
     assert_eq!(back.len(), 1);
@@ -102,14 +102,14 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
     j.append(
         &a,
         &open_entry("a", &["x"], serde_json::json!(1)),
-        Fence::NONE,
+        Fence::Unleased,
     )
     .await
     .unwrap();
     j.append(
         &b,
         &open_entry("b", &["x"], serde_json::json!(2)),
-        Fence::NONE,
+        Fence::Unleased,
     )
     .await
     .unwrap();
@@ -120,7 +120,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
             message: "boom".into(),
             at: at(10),
         },
-        Fence::NONE,
+        Fence::Unleased,
     )
     .await
     .unwrap();
@@ -134,22 +134,38 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
     assert_eq!(anchors, vec![a, b]);
 }
 
+fn author_entry() -> Entry {
+    Entry::Close {
+        context: gmr_core::ContentHash::new("e".repeat(64)),
+        rationale: gmr_core::ContentHash::new("f".repeat(64)),
+        at: at(20),
+    }
+}
+
 async fn journal_refuses_a_stale_fencing_token<J: Journal>(j: &J) {
     let key = AnchorKey::new("fenced");
     let entry = open_entry("fenced", &["x"], serde_json::json!(1));
 
-    j.append(&key, &entry, Fence::NONE).await.unwrap();
-    j.append(&key, &entry, Fence::NONE).await.unwrap();
+    j.append(&key, &entry, Fence::Unleased).await.unwrap();
+    j.append(&key, &entry, Fence::Unleased).await.unwrap();
 
-    j.append(&key, &entry, Fence(7)).await.unwrap();
+    j.append(&key, &entry, Fence::Held(7)).await.unwrap();
 
-    let err = j.append(&key, &entry, Fence(3)).await.unwrap_err();
+    let err = j.append(&key, &entry, Fence::Held(3)).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Constraint);
     assert!(!err.kind.is_retryable(), "过期令牌重试也没用");
 
-    j.append(&key, &entry, Fence(8)).await.unwrap();
+    j.append(&key, &entry, Fence::Held(8)).await.unwrap();
 
-    j.append(&key, &entry, Fence::NONE).await.unwrap();
+    // 这个锚已经交给租约了：再从旁边塞一条观测进来，正是租约要防的第二
+    // 个写者。作者的修订不受此限 —— 它不是观测。
+    let err = j.append(&key, &entry, Fence::Unleased).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Constraint);
+    assert!(err.message.contains("租约在管"), "{}", err.message);
+
+    j.append(&key, &author_entry(), Fence::Unleased)
+        .await
+        .unwrap();
     assert_eq!(j.entries(&key, 0).await.unwrap().len(), 5);
 }
 
@@ -158,7 +174,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
     j.append(
         &key,
         &open_entry("folded", &["shape"], serde_json::json!("old")),
-        Fence::NONE,
+        Fence::Unleased,
     )
     .await
     .unwrap();
@@ -169,7 +185,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
             state: state_of(&["shape"], &serde_json::json!("new")),
             at: at(10),
         },
-        Fence::NONE,
+        Fence::Unleased,
     )
     .await
     .unwrap();
@@ -318,7 +334,11 @@ async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
     let due = q.due(t0, Duration::seconds(60), 10).await.unwrap();
     assert_eq!(due.len(), 1, "b 还没到点");
     assert_eq!(due[0].anchor, a);
-    assert_eq!(due[0].fence.0, 1, "每发一次租约 epoch 递增，从 1 起");
+    assert_eq!(
+        due[0].fence.epoch(),
+        Some(1),
+        "每发一次租约 epoch 递增，从 1 起"
+    );
 
     let again = q
         .due(t0 + Duration::seconds(10), Duration::seconds(60), 10)
@@ -332,7 +352,8 @@ async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
         .unwrap();
     assert_eq!(expired.len(), 1, "租约到期 → 可再租");
     assert_eq!(
-        expired[0].fence.0, 2,
+        expired[0].fence.epoch(),
+        Some(2),
         "epoch 继续涨 —— 旧持有者被 fencing 挡在日志外"
     );
 
@@ -380,14 +401,14 @@ async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
         .unwrap();
     assert_eq!(reborn.len(), 1);
     assert!(
-        reborn[0].fence.0 > 2,
+        reborn[0].fence.epoch().unwrap() > 2,
         "退场删掉了计数器就等于把令牌清零：拿到 {} ，而日志已经见过 2",
-        reborn[0].fence.0
+        reborn[0].fence.epoch().unwrap()
     );
 
     let ghost = Ticket {
         anchor: AnchorKey::new("ghost"),
-        fence: gmr_store::Fence(1),
+        fence: gmr_store::Fence::Held(1),
         lease_until: t0,
     };
     q.settle(&ghost, Disposition::Reschedule { after_secs: 1 }, t0)

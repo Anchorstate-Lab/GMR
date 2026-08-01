@@ -89,7 +89,7 @@ impl Runtime {
         Ok(out)
     }
 
-    async fn cadence_of(&self, key: &gmr_core::AnchorKey) -> Result<i64, RuntimeError> {
+    pub(crate) async fn cadence_of(&self, key: &gmr_core::AnchorKey) -> Result<i64, RuntimeError> {
         let entries = self.journal.entries(key, 0).await?;
         Ok(fold(&entries)
             .and_then(|s| s.anchor.cadence_secs)

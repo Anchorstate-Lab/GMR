@@ -35,18 +35,13 @@ impl Journal for SqliteJournal {
                 .await
                 .map_err(db_err)?;
 
-        if fence.0 > 0 && (fence.0 as i64) < seen {
-            return Err(StoreError::constraint(format!(
-                "fencing 令牌 {} 已过期（已见 {seen}）—— 租约到期不等于持有者停工",
-                fence.0
-            )));
-        }
+        crate::journal::guard(fence, seen, entry)?;
 
         let seq: i64 = sqlx::query_scalar(
             "INSERT INTO journal (anchor, fence, body) VALUES (?1, ?2, ?3) RETURNING seq",
         )
         .bind(anchor.as_str())
-        .bind(fence.0 as i64)
+        .bind(fence.epoch().unwrap_or(0) as i64)
         .bind(&body)
         .fetch_one(&mut *tx)
         .await

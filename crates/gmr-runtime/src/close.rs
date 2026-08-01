@@ -35,7 +35,7 @@ impl Runtime {
                     rationale,
                     at: Utc::now(),
                 },
-                Fence::NONE,
+                Fence::Unleased,
             )
             .await?;
         Ok(())

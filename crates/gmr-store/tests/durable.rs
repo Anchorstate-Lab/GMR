@@ -46,7 +46,11 @@ async fn the_log_refuses_rewriting_itself() {
     let store = gmr_store::sqlite::open_in_memory().await.unwrap();
     store
         .journal()
-        .append(&AnchorKey::new("core::pure"), &entry("old"), Fence::NONE)
+        .append(
+            &AnchorKey::new("core::pure"),
+            &entry("old"),
+            Fence::Unleased,
+        )
         .await
         .unwrap();
 
@@ -90,7 +94,7 @@ async fn a_state_outlives_the_process_that_captured_it() {
         let store = gmr_store::sqlite::open(&path).await.unwrap();
         store
             .journal()
-            .append(&key, &entry("captured-first"), Fence::NONE)
+            .append(&key, &entry("captured-first"), Fence::Unleased)
             .await
             .unwrap();
         store.close().await;

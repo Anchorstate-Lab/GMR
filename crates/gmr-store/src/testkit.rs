@@ -33,13 +33,10 @@ impl Journal for MemoryJournal {
     ) -> Result<Seq, StoreError> {
         let mut inner = self.inner.lock().unwrap();
         let seen = inner.fences.get(anchor).copied().unwrap_or(0);
-        if fence.0 > 0 && fence.0 < seen {
-            return Err(StoreError::constraint(format!(
-                "fencing 令牌 {} 已过期（已见 {seen}）—— 租约到期不等于持有者停工",
-                fence.0
-            )));
-        }
-        inner.fences.insert(anchor.clone(), fence.0.max(seen));
+        crate::journal::guard(fence, seen as i64, entry)?;
+        inner
+            .fences
+            .insert(anchor.clone(), fence.epoch().unwrap_or(0).max(seen));
         inner.next += 1;
         let seq = inner.next;
         inner.entries.push((anchor.clone(), seq, entry.clone()));
@@ -185,12 +182,34 @@ impl Queue for MemoryQueue {
                 slot.lease_until = Some(now + lease);
                 out.push(Ticket {
                     anchor: key,
-                    fence: Fence(slot.epoch),
+                    fence: Fence::Held(slot.epoch),
                     lease_until: now + lease,
                 });
             }
         }
         Ok(out)
+    }
+
+    async fn lease(
+        &self,
+        anchor: &AnchorKey,
+        now: DateTime<Utc>,
+        lease: Duration,
+    ) -> Result<Option<Ticket>, StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        let Some(slot) = inner.get_mut(anchor) else {
+            return Ok(None);
+        };
+        if slot.lease_until.is_some_and(|u| u > now) {
+            return Ok(None);
+        }
+        slot.epoch += 1;
+        slot.lease_until = Some(now + lease);
+        Ok(Some(Ticket {
+            anchor: anchor.clone(),
+            fence: Fence::Held(slot.epoch),
+            lease_until: now + lease,
+        }))
     }
 
     async fn settle(

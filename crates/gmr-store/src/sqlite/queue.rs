@@ -59,10 +59,36 @@ impl Queue for SqliteQueue {
             .into_iter()
             .map(|r| Ticket {
                 anchor: AnchorKey::new(r.get::<String, _>("anchor")),
-                fence: Fence(r.get::<i64, _>("epoch") as u64),
+                fence: Fence::Held(r.get::<i64, _>("epoch") as u64),
                 lease_until: until,
             })
             .collect())
+    }
+
+    async fn lease(
+        &self,
+        anchor: &AnchorKey,
+        now: DateTime<Utc>,
+        lease: Duration,
+    ) -> Result<Option<Ticket>, StoreError> {
+        let until = now + lease;
+        let row = sqlx::query(
+            "UPDATE queue SET lease_until = ?1, epoch = epoch + 1
+             WHERE anchor = ?2 AND lease_until <= ?3
+             RETURNING epoch",
+        )
+        .bind(until.timestamp())
+        .bind(anchor.as_str())
+        .bind(now.timestamp())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?;
+
+        Ok(row.map(|r| Ticket {
+            anchor: anchor.clone(),
+            fence: Fence::Held(r.get::<i64, _>("epoch") as u64),
+            lease_until: until,
+        }))
     }
 
     async fn settle(

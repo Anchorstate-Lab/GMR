@@ -95,7 +95,7 @@ impl Runtime {
                     state: state.clone(),
                     at,
                 },
-                Fence::NONE,
+                Fence::Unleased,
             )
             .await?;
 

@@ -64,7 +64,7 @@ impl Runtime {
                     rationale: rationale.clone(),
                     at: Utc::now(),
                 },
-                Fence::NONE,
+                Fence::Unleased,
             )
             .await?;
 

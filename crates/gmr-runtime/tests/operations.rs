@@ -580,3 +580,52 @@ async fn the_world_being_out_of_reach_still_waits_for_the_streak() {
         "一次够不着还不算停摆"
     );
 }
+
+#[tokio::test]
+async fn a_hand_run_observation_takes_the_lease_instead_of_slipping_past_it() {
+    let w = World::polled(Policy::default());
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    // 先让轮询写一次：这个锚从此归租约管。
+    w.runtime.pass().await.unwrap();
+
+    // 手工观测仍然可用 —— 它取租约，不是绕过令牌。
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    assert_eq!(
+        w.runtime.read(&key()).await.unwrap().state.as_value()["x"],
+        2
+    );
+}
+
+#[tokio::test]
+async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() {
+    use gmr_store::Fence;
+
+    let w = World::polled(Policy::default());
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime.pass().await.unwrap();
+
+    // 直接照着存储层塞一条观测进去 —— 这正是租约要防的那个写者。
+    let entries = w.runtime.journal().entries(&key(), 0).await.unwrap();
+    let (_, sighting) = entries
+        .iter()
+        .find(|(_, e)| e.is_sighting())
+        .unwrap()
+        .clone();
+    let err = w
+        .runtime
+        .journal()
+        .append(&key(), &sighting, Fence::Unleased)
+        .await
+        .unwrap_err();
+    assert!(err.message.contains("租约在管"), "{}", err.message);
+}

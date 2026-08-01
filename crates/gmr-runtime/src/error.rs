@@ -26,6 +26,9 @@ pub enum RuntimeError {
     #[error("这个部署没有配置 Queue —— pass 是仅轮询部署的动词")]
     NoQueue,
 
+    #[error("`{key}` 的租约正被别人持着 —— 让持有者写完，别从旁边塞一条进去")]
+    Leased { key: AnchorKey },
+
     #[error(transparent)]
     Store(#[from] gmr_store::StoreError),
 }

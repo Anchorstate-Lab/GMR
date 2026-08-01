@@ -3,7 +3,7 @@ use gmr_core::{
     Anchor, AnchorKey, Entry, Observation, ReasonClass, State, Versions, fold, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
-use gmr_store::Fence;
+use gmr_store::{Disposition, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -24,8 +24,30 @@ pub enum Observed {
 }
 
 impl Runtime {
+    /// 手工观测一个锚。
+    ///
+    /// 有队列的部署里先取这个锚的租约再写 —— 绕过令牌去写，正是租约要防的
+    /// 第二个写者。别人正持着就让别人写。
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
-        self.observe_with(key, Fence::NONE).await
+        let Some(queue) = self.queue.as_ref() else {
+            return self.observe_with(key, Fence::Unleased).await;
+        };
+
+        let now = chrono::Utc::now();
+        let lease = chrono::Duration::seconds(self.policy.lease_secs as i64);
+        let Some(ticket) = queue.lease(key, now, lease).await? else {
+            return Err(RuntimeError::Leased { key: key.clone() });
+        };
+
+        let seen = self.observe_with(key, ticket.fence).await;
+        let after = match &seen {
+            Ok(Observed::Closed) => Disposition::Retire,
+            _ => Disposition::Reschedule {
+                after_secs: self.cadence_of(key).await?,
+            },
+        };
+        queue.settle(&ticket, after, Utc::now()).await?;
+        seen
     }
 
     pub(crate) async fn observe_with(
