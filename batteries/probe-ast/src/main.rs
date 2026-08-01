@@ -117,8 +117,11 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
 }
 
 fn main() {
-    let root = std::env::args().nth(1).unwrap_or_else(|| ".".to_owned());
-    coord::emit(coord::position().and_then(|pos| probe(Path::new(&root), &pos)))
+    coord::emit(
+        coord::params()
+            .and_then(|params| Ok((coord::root(&params), coord::position()?)))
+            .and_then(|(root, pos)| probe(Path::new(&root), &pos)),
+    )
 }
 
 #[cfg(test)]

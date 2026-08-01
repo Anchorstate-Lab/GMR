@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Kind, OpenRequest, Probe, Retain, Runtime, Supersede};
+use gmr::{AnchorKey, OpenRequest, Retain, Runtime, Supersede};
 
 use crate::cli::OpenArgs;
 use crate::error::CliError;
@@ -13,7 +13,7 @@ pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliErr
     let opened = rt
         .open(OpenRequest {
             key: key.clone(),
-            probe: Probe::new(Kind::new("shell"), serde_json::json!({ "run": args.probe })),
+            probe: rules::probe(&args.artifact, &args.params)?,
             transitions: rules::transitions(&args.rules)?,
             terminal: rules::terminal(&args.terminal),
             initial: None,

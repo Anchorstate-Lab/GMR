@@ -1,7 +1,6 @@
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, Observation, Outcome, ReasonClass, State, Versions, fold,
-    should_still,
+    Anchor, AnchorKey, Entry, Observation, ReasonClass, State, Versions, fold, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
 use gmr_store::Fence;
@@ -43,12 +42,12 @@ impl Runtime {
 
         let at = Utc::now();
 
-        let outcome = match self.invoke(&s.anchor, s.position()).await {
+        let sighted = match self.invoke(&s.anchor, s.position()).await {
             Ok(o) => o,
             Err(e) => return self.record_attempt(key, e.reason, e.message, fence).await,
         };
 
-        let observation = observe_into(&s.anchor, outcome);
+        let observation = observe_into(&s.anchor, sighted);
         let entered_at = s.entered_at.unwrap_or(at);
 
         let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
@@ -64,14 +63,17 @@ impl Runtime {
         let still_ref = if gmr_core::journal::always_full(&s.anchor) {
             None
         } else {
-            should_still(
-                &s.state,
-                s.latest.as_ref().and_then(|o| o.fact_address.as_ref()),
-                &next,
-                observation.fact_address.as_ref(),
-            )
-            .then_some(s.latest_seq)
-            .flatten()
+            s.latest
+                .as_ref()
+                .filter(|last| {
+                    should_still(
+                        &s.state,
+                        &last.fact_address,
+                        &next,
+                        &observation.fact_address,
+                    )
+                })
+                .and(s.latest_seq)
         };
 
         let entry = match still_ref {
@@ -123,7 +125,7 @@ impl Runtime {
         &self,
         anchor: &Anchor,
         position: &serde_json::Value,
-    ) -> Result<Outcome, gmr_probe::ProbeError> {
+    ) -> Result<gmr_probe::Sighted, gmr_probe::ProbeError> {
         let transport = self
             .transports
             .iter()
@@ -134,22 +136,25 @@ impl Runtime {
                     anchor.probe.kind
                 ))
             })?;
-        transport.invoke(&anchor.probe.declaration, position).await
+        transport.invoke(&anchor.probe, position).await
     }
 }
 
-pub(crate) fn observe_into(anchor: &Anchor, outcome: Outcome) -> Observation {
-    let versions = Versions {
-        probe: anchor.probe.version(),
-        evaluator: EVALUATOR_VERSION.to_owned(),
-    };
-    let fact_address = match &outcome {
-        Outcome::Found { facts } => Some(facts.address(&versions.probe)),
-        Outcome::NotFound => None,
-    };
+pub(crate) fn observe_into(anchor: &Anchor, sighted: gmr_probe::Sighted) -> Observation {
+    let gmr_probe::Sighted {
+        outcome,
+        derivation,
+    } = sighted;
+    // 地址由**实际算出它的规则**决定，不是由锚上写的那句声明决定；
+    // NotFound 也有地址 —— 「世界说没有」也是一个答案。
+    let fact_address = outcome.address(&derivation.version);
     Observation {
         outcome,
         fact_address,
-        versions,
+        versions: Versions {
+            declaration: anchor.probe.declaration_hash(),
+            derivation,
+            evaluator: EVALUATOR_VERSION.to_owned(),
+        },
     }
 }

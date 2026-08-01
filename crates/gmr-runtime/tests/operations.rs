@@ -1,11 +1,20 @@
 use std::sync::Arc;
 
 use gmr_core::{
-    AnchorKey, Change, Expr, Kind, Probe, Ref, Retain, Rule, State, StatusId, Transitions, Version,
+    AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, State, StatusId, Transitions,
+    Version,
 };
 use gmr_runtime::{Edge, OpenRequest, Policy, Runtime, Stall};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
+
+/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
+/// 生产路径上成立，测试反而绕过了它。
+fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
+    let version =
+        gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
+    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+}
 
 struct World {
     dir: tempfile::TempDir,
@@ -24,7 +33,7 @@ impl World {
     fn with(policy: Policy, queue: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let mut b = Runtime::builder()
-            .transport(Arc::new(Shell::new(dir.path())))
+            .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(Arc::new(MemoryJournal::default()))
             .bindings(Arc::new(MemoryBindings::default()))
             .policy(policy);
@@ -70,13 +79,10 @@ fn watching(direction: &str) -> Transitions {
     )])
 }
 
-fn request(transitions: Transitions) -> OpenRequest {
+fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
     OpenRequest {
         key: key(),
-        probe: Probe::new(
-            Kind::new("shell"),
-            serde_json::json!({ "run": "cat world.json" }),
-        ),
+        probe: cat_probe(root),
         transitions,
         terminal: Default::default(),
         initial: None,
@@ -94,7 +100,10 @@ async fn every_failure_path_emits_an_edge() {
         ..Default::default()
     });
     w.write(r#"{"shape":"old"}"#);
-    w.runtime.open(request(watching("shape"))).await.unwrap();
+    w.runtime
+        .open(request(w.dir.path(), watching("shape")))
+        .await
+        .unwrap();
     let start = w.runtime.changed_since(0, None).await.unwrap().cursor;
 
     w.write(r#"{"signature":"old"}"#);
@@ -140,7 +149,11 @@ async fn every_failure_path_emits_an_edge() {
         .revise(
             &key(),
             Change::Reprobe {
-                probe: Probe::new(Kind::new("nonesuch"), serde_json::json!({})),
+                probe: ProbeRef::new(
+                    Kind::new("nonesuch"),
+                    gmr_core::ProbeVersion::new("2".repeat(64)),
+                    serde_json::json!({}),
+                ),
             },
             b"switch to a transport nobody registered",
         )
@@ -166,7 +179,10 @@ async fn every_failure_path_emits_an_edge() {
 async fn a_cursor_makes_the_answer_incremental() {
     let w = World::new();
     w.write(r#"{"shape":"old"}"#);
-    w.runtime.open(request(watching("shape"))).await.unwrap();
+    w.runtime
+        .open(request(w.dir.path(), watching("shape")))
+        .await
+        .unwrap();
 
     let first = w.runtime.changed_since(0, None).await.unwrap();
     w.write(r#"{"shape":"new"}"#);
@@ -185,16 +201,19 @@ async fn edges_can_be_filtered_by_status() {
     let w = World::new();
     w.write(r#"{"shape":"a","body":"1"}"#);
     w.runtime
-        .open(request(rules(&[
-            (
-                "changed(\"shape\")",
-                r#"{ shape: obs.shape, body: obs.body, status: "shape-moved" }"#,
-            ),
-            (
-                "changed(\"body\")",
-                r#"{ shape: obs.shape, body: obs.body, status: "body-moved" }"#,
-            ),
-        ])))
+        .open(request(
+            w.dir.path(),
+            rules(&[
+                (
+                    "changed(\"shape\")",
+                    r#"{ shape: obs.shape, body: obs.body, status: "shape-moved" }"#,
+                ),
+                (
+                    "changed(\"body\")",
+                    r#"{ shape: obs.shape, body: obs.body, status: "body-moved" }"#,
+                ),
+            ]),
+        ))
         .await
         .unwrap();
     let start = w.runtime.changed_since(0, None).await.unwrap().cursor;
@@ -229,7 +248,10 @@ async fn entering_a_terminal_state_emits_both_edges() {
     w.runtime
         .open(OpenRequest {
             terminal: [StatusId::new("done")].into_iter().collect(),
-            ..request(rules(&[("obs.done == true", r#"{ status: "done" }"#)]))
+            ..request(
+                w.dir.path(),
+                rules(&[("obs.done == true", r#"{ status: "done" }"#)]),
+            )
         })
         .await
         .unwrap();
@@ -264,7 +286,10 @@ async fn reading_the_previous_state_without_a_lease_only_warns() {
     w.write(r#"{"x":1}"#);
     let opened = w
         .runtime
-        .open(request(rules(&[("true", "{ n: state.n + 1 }")])))
+        .open(request(
+            w.dir.path(),
+            rules(&[("true", "{ n: state.n + 1 }")]),
+        ))
         .await
         .unwrap();
     assert!(
@@ -277,7 +302,10 @@ async fn reading_the_previous_state_without_a_lease_only_warns() {
     w.write(r#"{"x":1}"#);
     let opened = w
         .runtime
-        .open(request(rules(&[("true", "{ n: state.n + 1 }")])))
+        .open(request(
+            w.dir.path(),
+            rules(&[("true", "{ n: state.n + 1 }")]),
+        ))
         .await
         .unwrap();
     assert!(opened.warnings.is_empty(), "{:?}", opened.warnings);
@@ -290,7 +318,10 @@ async fn a_pass_observes_due_anchors_and_reschedules_them() {
         ..Default::default()
     });
     w.write(r#"{"x":1}"#);
-    w.runtime.open(request(watching("x"))).await.unwrap();
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
 
     let p = w.runtime.pass().await.unwrap();
     assert_eq!(p.observed, 1);
@@ -302,7 +333,10 @@ async fn a_pass_observes_due_anchors_and_reschedules_them() {
 async fn pass_without_a_queue_says_so() {
     let w = World::new();
     w.write("{}");
-    w.runtime.open(request(watching("x"))).await.unwrap();
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
     assert!(w.runtime.pass().await.is_err());
 }
 
@@ -310,7 +344,10 @@ async fn pass_without_a_queue_says_so() {
 async fn health_exposes_the_drift_quantities() {
     let w = World::new();
     w.write(r#"{"shape":"v1"}"#);
-    w.runtime.open(request(watching("shape"))).await.unwrap();
+    w.runtime
+        .open(request(w.dir.path(), watching("shape")))
+        .await
+        .unwrap();
 
     w.write(r#"{"shape":"v2"}"#);
     w.runtime.observe(&key()).await.unwrap();
@@ -339,7 +376,10 @@ async fn health_exposes_the_drift_quantities() {
 async fn corpus_health_sees_barren_anchors() {
     let w = World::new();
     w.write("{}");
-    w.runtime.open(request(watching("x"))).await.unwrap();
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
 
     let c = w.runtime.corpus_health().await.unwrap();
     assert_eq!(c.active_anchors, 1);

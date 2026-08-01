@@ -40,10 +40,24 @@ pub enum Command {
         moved: bool,
     },
 
+    /// 把一棵目录发布成探针 artifact，打印它挣来的版本号。
+    Publish {
+        from: String,
+        #[arg(long, default_value = "probe")]
+        entrypoint: String,
+        #[arg(long = "arg")]
+        args: Vec<String>,
+        /// 声明探针需要的环境（K=V）。它进版本号 —— 也进你要负的责任。
+        #[arg(long = "env")]
+        env: Vec<String>,
+    },
+
     Reprobe {
         key: String,
         #[arg(long)]
-        probe: String,
+        artifact: String,
+        #[arg(long, default_value = "{}")]
+        params: String,
         #[arg(long)]
         why: String,
     },
@@ -105,8 +119,11 @@ pub enum Command {
 #[derive(clap::Args)]
 pub struct OpenArgs {
     pub key: String,
+    /// 探针 artifact 的版本号（anchor publish 打印的那个）。
     #[arg(long)]
-    pub probe: String,
+    pub artifact: String,
+    #[arg(long, default_value = "{}")]
+    pub params: String,
     #[arg(long = "rule", value_name = "守卫 => 新状态")]
     pub rules: Vec<String>,
     #[arg(long = "terminal", value_delimiter = ',')]

@@ -92,7 +92,7 @@ pub(crate) fn bind_warnings(anchor: &Anchor, observation: &Observation) -> Vec<S
 mod tests {
     use super::*;
     use gmr_core::{
-        AnchorKey, Expr, Facts, Kind, Outcome, Probe, ProbeVersion, Retain, Rule, StatusId,
+        AnchorKey, Expr, Facts, Kind, Outcome, ProbeRef, ProbeVersion, Retain, Rule, StatusId,
         Transitions, Versions,
     };
     use serde_json::json;
@@ -112,7 +112,11 @@ mod tests {
     fn anchor(t: Transitions) -> Anchor {
         Anchor {
             key: AnchorKey::new("a"),
-            probe: Probe::new(Kind::new("shell"), json!({ "run": "x" })),
+            probe: ProbeRef::new(
+                Kind::new("shell"),
+                ProbeVersion::new("1".repeat(64)),
+                json!({}),
+            ),
             transitions: t,
             terminal: [StatusId::new("settled")].into_iter().collect(),
             retain: Retain::Tick,
@@ -126,10 +130,14 @@ mod tests {
             outcome: Outcome::Found {
                 facts: Facts::new(facts),
             },
-            fact_address: None,
+            fact_address: gmr_core::FactAddress::new("b".repeat(64)),
             versions: Versions {
-                probe: ProbeVersion::new("a".repeat(64)),
-                evaluator: "eval-1".into(),
+                declaration: gmr_core::ContentHash::new("d".repeat(64)),
+                derivation: gmr_core::Derivation {
+                    version: ProbeVersion::new("a".repeat(64)),
+                    verifiability: gmr_core::Verifiability::ContentAddressed,
+                },
+                evaluator: "eval-1".to_owned(),
             },
         }
     }

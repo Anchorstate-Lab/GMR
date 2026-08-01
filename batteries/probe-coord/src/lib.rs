@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 
 pub const POSITION_ENV: &str = "GMR_POSITION";
 
+pub const PARAMS_ENV: &str = "GMR_PARAMS";
+
 pub fn hash(s: &str) -> String {
     format!("{:x}", Sha256::digest(s.as_bytes()))
 }
@@ -26,6 +28,24 @@ pub fn position() -> Result<Value, String> {
         return Ok(json!({}));
     }
     serde_json::from_str(&raw).map_err(|e| format!("{POSITION_ENV} 不是 JSON：{e}"))
+}
+
+pub fn params() -> Result<Value, String> {
+    let raw = std::env::var(PARAMS_ENV).unwrap_or_default();
+    if raw.trim().is_empty() {
+        return Ok(json!({}));
+    }
+    serde_json::from_str(&raw).map_err(|e| format!("{PARAMS_ENV} 不是 JSON：{e}"))
+}
+
+/// 探针要看的那一块。**从参数来，不从 argv 来** —— 参数进声明哈希，
+/// argv 由清单锁死，两者都不是探针自己捡的。
+pub fn root(params: &Value) -> String {
+    params
+        .get("root")
+        .and_then(Value::as_str)
+        .unwrap_or(".")
+        .to_owned()
 }
 
 pub type Want = Vec<(String, String)>;

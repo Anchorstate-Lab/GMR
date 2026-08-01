@@ -8,12 +8,14 @@ pub use gmr_store as store;
 pub use gmr_store::sqlite;
 
 pub use gmr_core::{
-    Anchor, AnchorKey, AnchorState, Binding, Change, ContentHash, Entry, Expr, ExternalId, Facts,
-    Kind, Link, LinkKind, Observation, Outcome, Probe, ProbeVersion, ProviderId, ReasonClass, Ref,
-    Retain, Rule, State, StatusId, Superseded, Transitions, Version, fold,
+    Anchor, AnchorKey, AnchorState, Binding, Change, ContentHash, Derivation, Entry, Expr,
+    ExternalId, Facts, FileEntry, Kind, Link, LinkKind, MANIFEST_SCHEMA, Manifest,
+    OUTCOME_CONTRACT, Observation, Outcome, Platform, ProbeRef, ProbeVersion, ProviderId,
+    ReasonClass, Ref, Retain, Rule, State, StatusId, Superseded, Transitions, Verifiability,
+    Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;
-pub use gmr_probe::{ProbeError, Transport};
+pub use gmr_probe::{ProbeError, Sighted, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorView, ContentError, ContentProvider, CorpusHealth, Edge, Edges, Fetched,
     MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised, Runtime, RuntimeError,

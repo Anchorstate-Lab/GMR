@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Change, Kind, Probe, Runtime};
+use gmr::{AnchorKey, Change, Runtime};
 
 use crate::error::CliError;
 use crate::verbs::sealed;
@@ -6,19 +6,15 @@ use crate::verbs::sealed;
 pub async fn run(
     rt: &Runtime,
     key: String,
-    probe: String,
+    artifact: String,
+    params: String,
     why: String,
     json: bool,
 ) -> Result<i32, CliError> {
     let key = AnchorKey::new(key);
+    let probe = crate::rules::probe(&artifact, &params)?;
     let revised = rt
-        .revise(
-            &key,
-            Change::Reprobe {
-                probe: Probe::new(Kind::new("shell"), serde_json::json!({ "run": probe })),
-            },
-            why.as_bytes(),
-        )
+        .revise(&key, Change::Reprobe { probe }, why.as_bytes())
         .await?;
 
     if json {

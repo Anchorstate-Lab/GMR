@@ -5,6 +5,7 @@ pub mod edges;
 pub mod observe;
 pub mod open;
 pub mod pass;
+pub mod publish;
 pub mod read;
 pub mod reprobe;
 pub mod restate;

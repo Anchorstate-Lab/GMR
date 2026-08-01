@@ -1,6 +1,7 @@
 use gmr_core::{
-    Anchor, AnchorKey, Binding, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, Probe,
-    ProbeVersion, ReasonClass, Ref, Retain, Rule, State, Transitions, Version, Versions, fold,
+    Anchor, AnchorKey, Binding, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome,
+    ProbeRef, ProbeVersion, ReasonClass, Ref, Retain, Rule, State, Transitions, Version, Versions,
+    fold,
 };
 use gmr_store::{BindingStore, ErrorKind, Fence, Journal};
 
@@ -8,8 +9,12 @@ fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()
 }
 
-fn probe(run: &str) -> Probe {
-    Probe::new(Kind::new("shell"), serde_json::json!({ "run": run }))
+fn probe() -> ProbeRef {
+    ProbeRef::new(
+        Kind::new("shell"),
+        ProbeVersion::new("1".repeat(64)),
+        serde_json::json!({}),
+    )
 }
 
 fn transitions(names: &[&str]) -> Transitions {
@@ -27,7 +32,7 @@ fn transitions(names: &[&str]) -> Transitions {
 fn anchor(key: &str, names: &[&str]) -> Anchor {
     Anchor {
         key: AnchorKey::new(key),
-        probe: probe("echo '{}'"),
+        probe: probe(),
         transitions: transitions(names),
         terminal: Default::default(),
         retain: Retain::Tick,
@@ -47,9 +52,13 @@ fn observation(pairs: &[(&str, serde_json::Value)]) -> Observation {
                     .into(),
             ),
         },
-        fact_address: Some(FactAddress::new("b".repeat(64))),
+        fact_address: FactAddress::new("b".repeat(64)),
         versions: Versions {
-            probe: ProbeVersion::new("a".repeat(64)),
+            declaration: gmr_core::ContentHash::new("d".repeat(64)),
+            derivation: gmr_core::Derivation {
+                version: ProbeVersion::new("a".repeat(64)),
+                verifiability: gmr_core::Verifiability::ContentAddressed,
+            },
             evaluator: "eval-1".to_owned(),
         },
     }

@@ -1,5 +1,5 @@
 use gmr_core::{
-    Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, Probe,
+    Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, ProbeRef,
     ProbeVersion, Retain, Rule, State, Transitions, Versions, fold,
 };
 use gmr_store::{ErrorKind, Fence, Journal};
@@ -8,7 +8,11 @@ fn entry(value: &str) -> Entry {
     Entry::Open {
         anchor: Box::new(Anchor {
             key: AnchorKey::new("core::pure"),
-            probe: Probe::new(Kind::new("shell"), serde_json::json!({ "run": "echo" })),
+            probe: ProbeRef::new(
+                Kind::new("shell"),
+                ProbeVersion::new("1".repeat(64)),
+                serde_json::json!({}),
+            ),
             transitions: Transitions(vec![Rule {
                 when: Expr::text("changed(\"shape\")"),
                 to: Expr::text("{ shape: obs.shape }"),
@@ -22,9 +26,13 @@ fn entry(value: &str) -> Entry {
             outcome: Outcome::Found {
                 facts: Facts::new(serde_json::json!({ "shape": value })),
             },
-            fact_address: Some(FactAddress::new("b".repeat(64))),
+            fact_address: FactAddress::new("b".repeat(64)),
             versions: Versions {
-                probe: ProbeVersion::new("a".repeat(64)),
+                declaration: gmr_core::ContentHash::new("d".repeat(64)),
+                derivation: gmr_core::Derivation {
+                    version: ProbeVersion::new("a".repeat(64)),
+                    verifiability: gmr_core::Verifiability::ContentAddressed,
+                },
                 evaluator: "eval-1".to_owned(),
             },
         },

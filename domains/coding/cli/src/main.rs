@@ -16,6 +16,11 @@ use gmr_transport_shell::Shell;
 use cli::{Cli, Command};
 use error::CliError;
 
+/// 探针 artifact 仓库：按内容地址存放，跟日志同级。
+pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
+    root.join(".anchor").join("probes")
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -33,12 +38,23 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .canonicalize()
         .map_err(|e| CliError(format!("找不到仓库 `{}`：{e}", cli.repo)))?;
 
+    // 发布探针不碰日志：它是任何日志存在之前的一步。
+    if let Command::Publish {
+        from,
+        entrypoint,
+        args,
+        env,
+    } = cli.command
+    {
+        return verbs::publish::run(&root, from, entrypoint, args, env, cli.json);
+    }
+
     let dir = root.join(".anchor");
     std::fs::create_dir_all(&dir).map_err(|e| CliError(format!("建不了 .anchor：{e}")))?;
     let store = gmr::sqlite::open(dir.join("memory.db")).await?;
 
     let rt = Runtime::builder()
-        .transport(Arc::new(Shell::new(&root)))
+        .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .provider(Arc::new(Git::new(&root)))
         .queue(Arc::new(store.queue()))
         .journal(Arc::new(store.journal()))
@@ -48,12 +64,16 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     let json = cli.json;
     match cli.command {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
+        Command::Publish { .. } => unreachable!("上面已经处理过了"),
         Command::Open(args) => verbs::open::run(&rt, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key, moved } => verbs::read::run(&rt, key, moved, json).await,
-        Command::Reprobe { key, probe, why } => {
-            verbs::reprobe::run(&rt, key, probe, why, json).await
-        }
+        Command::Reprobe {
+            key,
+            artifact,
+            params,
+            why,
+        } => verbs::reprobe::run(&rt, key, artifact, params, why, json).await,
         Command::Retransition { key, rules, why } => {
             verbs::retransition::run(&rt, key, rules, why, json).await
         }

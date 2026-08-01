@@ -1,20 +1,28 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Change, Entry, Expr, Kind, Probe, Retain, Rule, State, Transitions};
+use gmr_core::{AnchorKey, Change, Entry, Expr, Retain, Rule, State, Transitions};
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_store::{BindingStore, Journal};
 use gmr_transport_shell::Shell;
 
+/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
+/// 生产路径上成立，测试反而绕过了它。
+fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
+    let version =
+        gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
+    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+}
+
 #[tokio::test]
 async fn every_sealed_address_a_revise_cites_is_retrievable() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("w.json"), r#"{"x":1}"#).unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":1}"#).unwrap();
 
     let journal = Arc::new(MemoryJournal::default());
     let bindings = Arc::new(MemoryBindings::default());
     let rt = Runtime::builder()
-        .transport(Arc::new(Shell::new(dir.path())))
+        .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .journal(journal.clone())
         .bindings(bindings.clone())
         .build();
@@ -22,10 +30,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
     let key = AnchorKey::new("a");
     rt.open(OpenRequest {
         key: key.clone(),
-        probe: Probe::new(
-            Kind::new("shell"),
-            serde_json::json!({ "run": "cat w.json" }),
-        ),
+        probe: cat_probe(dir.path()),
         transitions: Transitions(vec![Rule {
             when: Expr::text("changed(\"x\")"),
             to: Expr::text("{ x: obs.x }"),
@@ -39,7 +44,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
     .await
     .unwrap();
 
-    std::fs::write(dir.path().join("w.json"), r#"{"x":2}"#).unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":2}"#).unwrap();
     rt.observe(&key).await.unwrap();
     rt.revise(
         &key,

@@ -14,4 +14,7 @@ pub use journal::{
     should_still,
 };
 pub use memory::{Binding, ExternalId, Link, LinkKind, ProviderId, Ref, Version};
-pub use probe::{Declaration, FactAddress, Facts, Kind, Outcome, Probe, ProbeVersion};
+pub use probe::{
+    Derivation, FactAddress, Facts, FileEntry, Kind, MANIFEST_SCHEMA, Manifest, OUTCOME_CONTRACT,
+    Outcome, Platform, ProbeRef, ProbeVersion, Verifiability,
+};

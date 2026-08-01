@@ -5,21 +5,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::addr::ContentHash;
 use crate::anchor::{Anchor, Retain, State, StatusId, Transitions};
-use crate::probe::{FactAddress, Facts, Outcome, Probe, ProbeVersion};
+use crate::probe::{Derivation, FactAddress, Facts, Outcome, ProbeRef};
 
 pub type Seq = u64;
 
+/// 一条观测背后的三重身份，**不许合并**：它们独立演进，出错方式不同，
+/// 合并任何两个都会在其中一边撒谎。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Versions {
-    pub probe: ProbeVersion,
+    /// 锚上写的那一句。
+    pub declaration: ContentHash,
+    /// 实际算出这些事实的东西，以及这个身份能不能被证明。
+    pub derivation: Derivation,
+    /// 当时的求值器。
     pub evaluator: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observation {
     pub outcome: Outcome,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fact_address: Option<FactAddress>,
+    pub fact_address: FactAddress,
     pub versions: Versions,
 }
 
@@ -35,7 +40,7 @@ impl Observation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "revise", rename_all = "snake_case")]
 pub enum Change {
-    Reprobe { probe: Probe },
+    Reprobe { probe: ProbeRef },
     Retransition { transitions: Transitions },
     Reterminal { terminal: BTreeSet<StatusId> },
     Restate { state: State },
@@ -130,9 +135,9 @@ impl Entry {
 
 pub fn should_still(
     last_state: &State,
-    last_address: Option<&FactAddress>,
+    last_address: &FactAddress,
     now_state: &State,
-    now_address: Option<&FactAddress>,
+    now_address: &FactAddress,
 ) -> bool {
     last_state == now_state && last_address == now_address
 }
@@ -256,12 +261,16 @@ pub fn always_full(anchor: &Anchor) -> bool {
 mod tests {
     use super::*;
     use crate::anchor::{AnchorKey, Expr, POSITION, Rule, STATUS};
-    use crate::probe::{Kind, Probe};
+    use crate::probe::{Kind, ProbeRef, ProbeVersion, Verifiability};
     use serde_json::json;
 
     fn versions() -> Versions {
         Versions {
-            probe: ProbeVersion::new("a".repeat(64)),
+            declaration: ContentHash::new("d".repeat(64)),
+            derivation: Derivation {
+                version: ProbeVersion::new("a".repeat(64)),
+                verifiability: Verifiability::ContentAddressed,
+            },
             evaluator: "eval-1".to_owned(),
         }
     }
@@ -269,7 +278,11 @@ mod tests {
     fn anchor(terminal: &[&str]) -> Anchor {
         Anchor {
             key: AnchorKey::new("a"),
-            probe: Probe::new(Kind::new("shell"), json!({ "run": "x" })),
+            probe: ProbeRef::new(
+                Kind::new("shell"),
+                ProbeVersion::new("1".repeat(64)),
+                json!({}),
+            ),
             transitions: Transitions(vec![Rule {
                 when: Expr::text("changed(\"shape\")"),
                 to: Expr::text("{ status: \"drifted\" }"),
@@ -286,7 +299,7 @@ mod tests {
             outcome: Outcome::Found {
                 facts: Facts::new(json!({ "shape": "(a)->c" })),
             },
-            fact_address: Some(FactAddress::new("b".repeat(64))),
+            fact_address: FactAddress::new("b".repeat(64)),
             versions: versions(),
         }
     }
@@ -535,10 +548,10 @@ mod tests {
         let a = FactAddress::new("c".repeat(64));
         let b = FactAddress::new("d".repeat(64));
 
-        assert!(should_still(&s1, Some(&a), &s1, Some(&a)));
-        assert!(!should_still(&s1, Some(&a), &s2, Some(&a)), "状态动了");
+        assert!(should_still(&s1, &a, &s1, &a));
+        assert!(!should_still(&s1, &a, &s2, &a), "状态动了");
         assert!(
-            !should_still(&s1, Some(&a), &s1, Some(&b)),
+            !should_still(&s1, &a, &s1, &b),
             "世界沿没在看的方向动了 —— 留完整记录"
         );
     }

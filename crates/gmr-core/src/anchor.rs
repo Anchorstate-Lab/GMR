@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::addr::{ContentHash, content_hash_of};
-use crate::probe::Probe;
+use crate::probe::ProbeRef;
 use crate::string_newtype;
 
 pub const POSITION: &str = "position";
@@ -138,7 +138,7 @@ pub struct Superseded {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Anchor {
     pub key: AnchorKey,
-    pub probe: Probe,
+    pub probe: ProbeRef,
     pub transitions: Transitions,
     #[serde(default)]
     pub terminal: BTreeSet<StatusId>,
@@ -164,7 +164,11 @@ mod tests {
     fn anchor(terminal: &[&str]) -> Anchor {
         Anchor {
             key: AnchorKey::new("a"),
-            probe: Probe::new(crate::probe::Kind::new("shell"), json!({ "run": "x" })),
+            probe: crate::probe::ProbeRef::new(
+                crate::probe::Kind::new("shell"),
+                crate::probe::ProbeVersion::new("1".repeat(64)),
+                json!({}),
+            ),
             transitions: Transitions::default(),
             terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
             retain: Retain::Tick,

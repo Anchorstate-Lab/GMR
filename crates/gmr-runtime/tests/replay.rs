@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Change, Entry, Expr, Kind, Probe, Retain, Rule, Transitions, fold};
+use gmr_core::{AnchorKey, Change, Entry, Expr, Kind, ProbeRef, Retain, Rule, Transitions, fold};
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::Journal;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
 
+/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
+/// 生产路径上成立，测试反而绕过了它。
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
@@ -17,7 +19,7 @@ impl World {
         let dir = tempfile::tempdir().unwrap();
         let journal = Arc::new(MemoryJournal::default());
         let runtime = Runtime::builder()
-            .transport(Arc::new(Shell::new(dir.path())))
+            .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(journal.clone())
             .bindings(Arc::new(MemoryBindings::default()))
             .build();
@@ -37,8 +39,9 @@ fn key() -> AnchorKey {
     AnchorKey::new("a")
 }
 
-fn probe(script: &str) -> Probe {
-    Probe::new(Kind::new("shell"), serde_json::json!({ "run": script }))
+fn probe(root: &std::path::Path, script: &str) -> ProbeRef {
+    let version = gmr_transport_shell::testkit::publish_script(root.join(".probes"), script);
+    ProbeRef::new(Kind::new("shell"), version, serde_json::json!({}))
 }
 
 fn rules(pairs: &[(&str, &str)]) -> Transitions {
@@ -60,7 +63,7 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe("cat world.json"),
+            probe: probe(w.dir.path(), "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
@@ -77,7 +80,7 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
         .iter()
         .filter_map(|(_, e)| match e {
             Entry::Open { observation, .. } | Entry::Transition { observation, .. } => {
-                observation.fact_address.clone()
+                Some(observation.fact_address.clone())
             }
             _ => None,
         })
@@ -95,7 +98,7 @@ async fn the_two_hops_version_independently() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe("cat world.json"),
+            probe: probe(w.dir.path(), "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
@@ -110,7 +113,7 @@ async fn the_two_hops_version_independently() {
         .revise(
             &key(),
             Change::Reprobe {
-                probe: probe("cat other.json"),
+                probe: probe(w.dir.path(), "cat other.json"),
             },
             b"same content, different rule",
         )
@@ -129,7 +132,10 @@ async fn the_two_hops_version_independently() {
         })
         .collect();
 
-    assert_ne!(versions[0].probe, versions[1].probe, "换探针 = 换派生规则");
+    assert_ne!(
+        versions[0].derivation.version, versions[1].derivation.version,
+        "换探针 = 换派生规则"
+    );
     assert_eq!(
         versions[0].evaluator, versions[1].evaluator,
         "求值器是基底自己的，探针作者改不动它"
@@ -150,7 +156,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe("cat world.json"),
+            probe: probe(w.dir.path(), "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
@@ -164,7 +170,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
         .revise(
             &key(),
             Change::Reprobe {
-                probe: probe("cat other.json"),
+                probe: probe(w.dir.path(), "cat other.json"),
             },
             b"rule change",
         )
@@ -177,7 +183,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
         .iter()
         .filter_map(|(_, e)| match e {
             Entry::Open { observation, .. } | Entry::Transition { observation, .. } => {
-                observation.fact_address.clone()
+                Some(observation.fact_address.clone())
             }
             _ => None,
         })
@@ -192,7 +198,7 @@ async fn folding_the_same_log_twice_yields_the_same_state() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe("cat world.json"),
+            probe: probe(w.dir.path(), "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,

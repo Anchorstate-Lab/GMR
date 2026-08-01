@@ -2,12 +2,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use gmr_core::{
-    AnchorKey, Expr, ExternalId, Kind, Probe, ProviderId, Ref, Retain, Rule, Transitions, Version,
-};
+use gmr_core::{AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, Transitions, Version};
 use gmr_runtime::{ContentError, ContentProvider, Fetched, OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
+
+/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
+/// 生产路径上成立，测试反而绕过了它。
+fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
+    let version =
+        gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
+    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+}
 
 struct Files {
     root: PathBuf,
@@ -59,7 +65,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
     .unwrap();
 
     let rt = Runtime::builder()
-        .transport(Arc::new(Shell::new(dir.path())))
+        .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .provider(Arc::new(Files {
             root: dir.path().to_path_buf(),
             id: ProviderId::new("git"),
@@ -72,10 +78,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
 
     rt.open(OpenRequest {
         key: key.clone(),
-        probe: Probe::new(
-            Kind::new("shell"),
-            serde_json::json!({ "run": "cat world.json" }),
-        ),
+        probe: cat_probe(dir.path()),
         transitions: Transitions(vec![Rule {
             when: Expr::text("changed(\"modules\")"),
             to: Expr::text("{ modules: obs.modules }"),

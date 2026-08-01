@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{Anchor, AnchorKey, Kind, OpenRequest, Probe, Retain, Runtime, State, Transitions};
+use gmr::{Anchor, AnchorKey, OpenRequest, ProbeRef, Retain, Runtime, State, Transitions};
 use serde::Deserialize;
 
 use crate::error::CliError;
@@ -15,7 +15,10 @@ pub struct Declared {
 #[derive(Debug, Deserialize)]
 pub struct AnchorDecl {
     pub key: String,
-    pub probe: String,
+    /// 探针 artifact 的版本号。它是挣来的，所以重建探针 = 换号 = 一次判据修订。
+    pub artifact: String,
+    #[serde(default)]
+    pub params: serde_json::Value,
     #[serde(default)]
     pub position: Option<serde_json::Value>,
     #[serde(default)]
@@ -25,8 +28,8 @@ pub struct AnchorDecl {
 }
 
 impl AnchorDecl {
-    fn to_probe(&self) -> Probe {
-        Probe::new(Kind::new("shell"), serde_json::json!({ "run": self.probe }))
+    fn to_probe(&self) -> Result<ProbeRef, CliError> {
+        rules::probe(&self.artifact, &self.params.to_string())
     }
 
     fn to_transitions(&self) -> Result<Transitions, CliError> {
@@ -76,7 +79,7 @@ pub async fn run(
         let result = rt
             .open(OpenRequest {
                 key: key.clone(),
-                probe: decl.to_probe(),
+                probe: decl.to_probe()?,
                 transitions: decl.to_transitions()?,
                 terminal: rules::terminal(&decl.terminal),
                 initial: decl.initial(),
@@ -131,7 +134,7 @@ pub async fn run(
 }
 
 fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
-    Ok(anchor.probe != decl.to_probe()
+    Ok(anchor.probe != decl.to_probe()?
         || anchor.transitions != decl.to_transitions()?
         || anchor.terminal != rules::terminal(&decl.terminal))
 }

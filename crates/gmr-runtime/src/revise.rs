@@ -34,7 +34,7 @@ impl Runtime {
             "entered_at": s.entered_at,
             "closed": s.closed,
             "latest": s.latest,
-            "probe_version": s.anchor.probe.version(),
+            "probe_declaration": s.anchor.probe.declaration_hash(),
             "evaluator_version": gmr_expr::EVALUATOR_VERSION,
         });
         let context = self

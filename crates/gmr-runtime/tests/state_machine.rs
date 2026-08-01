@@ -1,12 +1,23 @@
 use std::sync::Arc;
 
 use gmr_core::{
-    AnchorKey, Change, Expr, Kind, Probe, ReasonClass, Retain, Rule, State, StatusId, Transitions,
-    fold,
+    AnchorKey, Change, Expr, Kind, ProbeRef, ReasonClass, Retain, Rule, State, StatusId,
+    Transitions, fold,
 };
 use gmr_runtime::{Observed, OpenRequest, Runtime, Sighting};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
+
+/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
+/// 生产路径上成立，测试反而绕过了它。
+fn script_probe(root: &std::path::Path, body: &str) -> gmr_core::ProbeRef {
+    let version = gmr_transport_shell::testkit::publish_script(root.join(".probes"), body);
+    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+}
+
+fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
+    script_probe(root, "cat world.json")
+}
 
 struct World {
     dir: tempfile::TempDir,
@@ -17,7 +28,7 @@ impl World {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let rt = Runtime::builder()
-            .transport(Arc::new(Shell::new(dir.path())))
+            .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(Arc::new(MemoryJournal::default()))
             .bindings(Arc::new(MemoryBindings::default()))
             .build();
@@ -36,10 +47,7 @@ impl World {
         self.rt
             .open(OpenRequest {
                 key: key(),
-                probe: Probe::new(
-                    Kind::new("shell"),
-                    serde_json::json!({ "run": "cat world.json" }),
-                ),
+                probe: cat_probe(self.dir.path()),
                 transitions: transitions(rules),
                 terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
                 initial: None,
@@ -203,7 +211,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
     std::fs::write(dir.path().join("b.json"), r#"{"v":2}"#).unwrap();
 
     let rt = Runtime::builder()
-        .transport(Arc::new(Shell::new(dir.path())))
+        .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .journal(Arc::new(MemoryJournal::default()))
         .bindings(Arc::new(MemoryBindings::default()))
         .build();
@@ -211,10 +219,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
     let opened = rt
         .open(OpenRequest {
             key: key(),
-            probe: Probe::new(
-                Kind::new("shell"),
-                serde_json::json!({ "run": r#"cat "$(echo $GMR_POSITION | tr -d '"')""# }),
-            ),
+            probe: script_probe(dir.path(), r#"cat "$(echo "$GMR_POSITION" | tr -d '"')""#),
             transitions: transitions(&[("true", "{ position: state.position, v: obs.v }")]),
             terminal: Default::default(),
             initial: Some(State::new(serde_json::json!({ "position": "a.json" }))),
@@ -274,17 +279,14 @@ async fn a_transition_that_cannot_be_evaluated_must_be_loud() {
 async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
     let dir = tempfile::tempdir().unwrap();
     let rt = Runtime::builder()
-        .transport(Arc::new(Shell::new(dir.path())))
+        .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .journal(Arc::new(MemoryJournal::default()))
         .bindings(Arc::new(MemoryBindings::default()))
         .build();
 
     rt.open(OpenRequest {
         key: key(),
-        probe: Probe::new(
-            Kind::new("shell"),
-            serde_json::json!({ "run": "echo null" }),
-        ),
+        probe: script_probe(dir.path(), "echo null"),
         transitions: transitions(&[("true", r#"{ status: "empty" }"#)]),
         terminal: Default::default(),
         initial: None,
@@ -563,11 +565,15 @@ async fn an_author_sealed_close_is_equally_final() {
 #[tokio::test]
 async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
     // 直接喂日志：确认粘性住在 fold 里，不是住在 revise 的守卫里。
-    use gmr_core::{Entry, Observation, Outcome, ProbeVersion, Versions, fold};
+    use gmr_core::{Entry, Observation, Outcome, Versions, fold};
 
     let anchor = gmr_core::Anchor {
         key: key(),
-        probe: Probe::new(Kind::new("shell"), serde_json::json!({ "run": "x" })),
+        probe: ProbeRef::new(
+            Kind::new("shell"),
+            gmr_core::ProbeVersion::new("1".repeat(64)),
+            serde_json::json!({}),
+        ),
         transitions: Transitions::default(),
         terminal: [StatusId::new("settled")].into_iter().collect(),
         retain: Retain::Tick,
@@ -576,9 +582,13 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
     };
     let observation = Observation {
         outcome: Outcome::NotFound,
-        fact_address: None,
+        fact_address: gmr_core::FactAddress::new("b".repeat(64)),
         versions: Versions {
-            probe: ProbeVersion::new("a".repeat(64)),
+            declaration: gmr_core::ContentHash::new("d".repeat(64)),
+            derivation: gmr_core::Derivation {
+                version: gmr_core::ProbeVersion::new("a".repeat(64)),
+                verifiability: gmr_core::Verifiability::ContentAddressed,
+            },
             evaluator: "e".to_owned(),
         },
     };
@@ -637,10 +647,7 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
     let opened =
         w.rt.open(OpenRequest {
             key: heir.clone(),
-            probe: Probe::new(
-                Kind::new("shell"),
-                serde_json::json!({ "run": "cat world.json" }),
-            ),
+            probe: cat_probe(w.dir.path()),
             transitions: transitions(&[("obs.n > 100", r#"{ status: "settled" }"#)]),
             terminal: [StatusId::new("settled")].into_iter().collect(),
             initial: None,
@@ -679,10 +686,7 @@ async fn an_anchor_still_running_cannot_be_superseded() {
     let e =
         w.rt.open(OpenRequest {
             key: AnchorKey::new("a@2"),
-            probe: Probe::new(
-                Kind::new("shell"),
-                serde_json::json!({ "run": "cat world.json" }),
-            ),
+            probe: cat_probe(w.dir.path()),
             transitions: Transitions::default(),
             terminal: Default::default(),
             initial: None,
@@ -707,10 +711,7 @@ async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
     let opened =
         w.rt.open(OpenRequest {
             key: key(),
-            probe: Probe::new(
-                Kind::new("shell"),
-                serde_json::json!({ "run": "cat world.json" }),
-            ),
+            probe: cat_probe(w.dir.path()),
             transitions: transitions(&[(r#"changed("shape")"#, r#"{ shape: obs.shape }"#)]),
             terminal: Default::default(),
             initial: None,

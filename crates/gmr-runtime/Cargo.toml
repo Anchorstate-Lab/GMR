@@ -23,7 +23,7 @@ thiserror = { workspace = true }
 # **测试要一个真传输,而传输是电池。** dev 依赖不进 production 的依赖
 # 清单,所以「基底不 ship 后端」那条机械检查仍然成立 —— 但这个方向是
 # 真的存在的,写在这里而不是藏起来。
-gmr-transport-shell = { path = "../../batteries/transport-shell" }
+gmr-transport-shell = { path = "../../batteries/transport-shell", features = ["testkit"] }
 async-trait = { workspace = true }
 gmr-store = { path = "../gmr-store", features = ["testkit"] }
 gmr-probe = { path = "../gmr-probe" }

@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, Probe, Retain, State, StatusId, Superseded, Transitions, fold,
+    Anchor, AnchorKey, Entry, ProbeRef, Retain, State, StatusId, Superseded, Transitions, fold,
 };
 use gmr_store::Fence;
 
@@ -26,7 +26,7 @@ pub struct Supersede {
 
 pub struct OpenRequest {
     pub key: AnchorKey,
-    pub probe: Probe,
+    pub probe: ProbeRef,
     pub transitions: Transitions,
     pub terminal: BTreeSet<StatusId>,
     pub initial: Option<State>,
