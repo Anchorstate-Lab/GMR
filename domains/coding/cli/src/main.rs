@@ -48,12 +48,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     let json = cli.json;
     match cli.command {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
-        Command::Open {
-            key,
-            probe,
-            rules,
-            terminal,
-        } => verbs::open::run(&rt, key, probe, rules, terminal, json).await,
+        Command::Open(args) => verbs::open::run(&rt, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key, moved } => verbs::read::run(&rt, key, moved, json).await,
         Command::Reprobe { key, probe, why } => {

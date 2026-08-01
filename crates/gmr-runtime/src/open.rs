@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 
 use chrono::Utc;
-use gmr_core::{Anchor, AnchorKey, Entry, Probe, Retain, State, StatusId, Transitions};
+use gmr_core::{
+    Anchor, AnchorKey, Entry, Probe, Retain, State, StatusId, Superseded, Transitions, fold,
+};
 use gmr_store::Fence;
 
 use crate::assembly::Runtime;
@@ -13,6 +15,13 @@ pub struct Opened {
     pub key: AnchorKey,
     pub state: State,
     pub warnings: Vec<String>,
+    pub supersedes: Option<AnchorKey>,
+}
+
+/// 理由必填：接替是判据层面的反悔。
+pub struct Supersede {
+    pub key: AnchorKey,
+    pub rationale: Vec<u8>,
 }
 
 pub struct OpenRequest {
@@ -23,6 +32,7 @@ pub struct OpenRequest {
     pub initial: Option<State>,
     pub retain: Retain,
     pub cadence_secs: Option<u64>,
+    pub supersedes: Option<Supersede>,
 }
 
 impl Runtime {
@@ -31,6 +41,12 @@ impl Runtime {
         if !self.journal.entries(&key, 0).await?.is_empty() {
             return Err(RuntimeError::AlreadyOpen { key });
         }
+
+        let sealed = match request.supersedes {
+            None => None,
+            Some(s) => Some(self.seal_supersede(s).await?),
+        };
+        let supersedes = sealed.as_ref().map(|s| s.key.clone());
 
         let anchor = Anchor {
             key: key.clone(),
@@ -43,6 +59,7 @@ impl Runtime {
             terminal: request.terminal,
             retain: request.retain,
             cadence_secs: request.cadence_secs,
+            supersedes: sealed,
         };
 
         let initial = request.initial.unwrap_or_default();
@@ -86,6 +103,20 @@ impl Runtime {
             key,
             state,
             warnings,
+            supersedes,
+        })
+    }
+
+    /// 旧的必须真的终结了 —— 否则两代同时活着，就是绕过终结的旁路。
+    async fn seal_supersede(&self, s: Supersede) -> Result<Superseded, RuntimeError> {
+        let old = fold(&self.journal.entries(&s.key, 0).await?)
+            .ok_or_else(|| RuntimeError::NoSuchAnchor { key: s.key.clone() })?;
+        if !old.closed {
+            return Err(RuntimeError::NotClosedYet { key: s.key });
+        }
+        Ok(Superseded {
+            key: s.key,
+            rationale: self.bindings.seal(&s.rationale).await?,
         })
     }
 

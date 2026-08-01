@@ -32,6 +32,7 @@ fn anchor(key: &str, names: &[&str]) -> Anchor {
         terminal: Default::default(),
         retain: Retain::Tick,
         cadence_secs: None,
+        supersedes: None,
     }
 }
 

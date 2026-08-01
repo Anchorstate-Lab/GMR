@@ -128,6 +128,13 @@ pub enum Retain {
     Full,
 }
 
+/// 接替哪一个已经终结的锚。终结不可撤销，纠错只能开新的一代。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Superseded {
+    pub key: AnchorKey,
+    pub rationale: ContentHash,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Anchor {
     pub key: AnchorKey,
@@ -139,6 +146,8 @@ pub struct Anchor {
     pub retain: Retain,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cadence_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<Superseded>,
 }
 
 impl Anchor {
@@ -160,6 +169,7 @@ mod tests {
             terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
             retain: Retain::Tick,
             cadence_secs: None,
+            supersedes: None,
         }
     }
 

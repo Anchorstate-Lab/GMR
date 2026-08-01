@@ -24,6 +24,10 @@ impl Runtime {
         let entries = self.journal.entries(key, 0).await?;
         let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
+        if s.closed {
+            return Err(RuntimeError::AnchorClosed { key: key.clone() });
+        }
+
         let context = serde_json::json!({
             "at_entry": s.head,
             "state": s.state,

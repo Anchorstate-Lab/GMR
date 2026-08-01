@@ -10,14 +10,14 @@ pub use gmr_store::sqlite;
 pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, Change, ContentHash, Entry, Expr, ExternalId, Facts,
     Kind, Link, LinkKind, Observation, Outcome, Probe, ProbeVersion, ProviderId, ReasonClass, Ref,
-    Retain, Rule, State, StatusId, Transitions, Version, fold,
+    Retain, Rule, State, StatusId, Superseded, Transitions, Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;
 pub use gmr_probe::{ProbeError, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorView, ContentError, ContentProvider, CorpusHealth, Edge, Edges, Fetched,
     MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised, Runtime, RuntimeError,
-    Sighting, Stall,
+    Sighting, Stall, Supersede,
 };
 pub use gmr_store::{
     BindingStore, Disposition, ErrorKind, Fence, Journal, Queue, StoreError, Ticket,

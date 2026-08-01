@@ -28,15 +28,7 @@ pub enum Command {
         dry_run: bool,
     },
 
-    Open {
-        key: String,
-        #[arg(long)]
-        probe: String,
-        #[arg(long = "rule", value_name = "守卫 => 新状态")]
-        rules: Vec<String>,
-        #[arg(long = "terminal", value_delimiter = ',')]
-        terminal: Vec<String>,
-    },
+    Open(OpenArgs),
 
     Observe {
         key: Option<String>,
@@ -108,4 +100,20 @@ pub enum Command {
     Pass,
 
     Doctor,
+}
+
+#[derive(clap::Args)]
+pub struct OpenArgs {
+    pub key: String,
+    #[arg(long)]
+    pub probe: String,
+    #[arg(long = "rule", value_name = "守卫 => 新状态")]
+    pub rules: Vec<String>,
+    #[arg(long = "terminal", value_delimiter = ',')]
+    pub terminal: Vec<String>,
+    /// 接替哪个已经终结的锚。终结不可撤销，纠错只能开新的一代。
+    #[arg(long, requires = "why")]
+    pub supersedes: Option<String>,
+    #[arg(long, requires = "supersedes")]
+    pub why: Option<String>,
 }

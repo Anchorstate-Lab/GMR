@@ -157,6 +157,8 @@ impl AnchorState {
     }
 }
 
+/// `closed` 逐条累积且只增不减：终结是日志里发生过的事，不是对最后一个
+/// 状态的重新解释。
 pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
     let mut acc: Option<AnchorState> = None;
 
@@ -219,11 +221,12 @@ pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
                 s.head = *seq;
             }
         }
+
+        if let Some(s) = acc.as_mut() {
+            s.closed = s.closed || s.anchor.is_terminal(&s.state);
+        }
     }
 
-    if let Some(s) = acc.as_mut() {
-        s.closed = s.closed || s.anchor.is_terminal(&s.state);
-    }
     acc
 }
 
@@ -274,6 +277,7 @@ mod tests {
             terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
             retain: Retain::Tick,
             cadence_secs: None,
+            supersedes: None,
         }
     }
 

@@ -84,6 +84,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         initial: None,
         retain: Retain::Tick,
         cadence_secs: None,
+        supersedes: None,
     })
     .await
     .unwrap();

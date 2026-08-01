@@ -82,6 +82,7 @@ fn request(transitions: Transitions) -> OpenRequest {
         initial: None,
         retain: Retain::Tick,
         cadence_secs: None,
+        supersedes: None,
     }
 }
 

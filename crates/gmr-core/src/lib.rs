@@ -6,7 +6,8 @@ pub mod probe;
 
 pub use addr::{ContentHash, canonicalize, content_hash_of, content_hash_of_bytes};
 pub use anchor::{
-    Anchor, AnchorKey, Expr, POSITION, Retain, Rule, STATUS, State, StatusId, Transitions,
+    Anchor, AnchorKey, Expr, POSITION, Retain, Rule, STATUS, State, StatusId, Superseded,
+    Transitions,
 };
 pub use journal::{
     AnchorState, Change, Entry, Observation, ReasonClass, Seq, Versions, always_full, fold,

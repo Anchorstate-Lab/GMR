@@ -11,6 +11,10 @@ impl Runtime {
         let state =
             fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
+        if state.closed {
+            return Err(RuntimeError::AnchorClosed { key: key.clone() });
+        }
+
         let context = serde_json::json!({
             "closed_by": "author",
             "at_entry": state.head,

@@ -139,7 +139,7 @@ fn walk(
             } => {
                 terminal = anchor.terminal.clone();
                 state = next.clone();
-                closed = is_terminal(&state, &terminal);
+                closed = closed || is_terminal(&state, &terminal);
                 attempts = 0;
                 last_sighting = Some(*at);
             }
@@ -165,7 +165,7 @@ fn walk(
                     }
                 }
                 state = next.clone();
-                closed = is_terminal(&state, &terminal);
+                closed = closed || is_terminal(&state, &terminal);
                 attempts = 0;
                 last_sighting = Some(*at);
             }
@@ -193,7 +193,7 @@ fn walk(
                     Change::Restate { state: s } => state = s.clone(),
                     _ => {}
                 }
-                closed = is_terminal(&state, &terminal);
+                closed = closed || is_terminal(&state, &terminal);
             }
             Entry::Close { at, .. } => {
                 closed = true;

@@ -16,6 +16,7 @@ fn entry(value: &str) -> Entry {
             terminal: Default::default(),
             retain: Retain::Tick,
             cadence_secs: None,
+            supersedes: None,
         }),
         observation: Observation {
             outcome: Outcome::Found {

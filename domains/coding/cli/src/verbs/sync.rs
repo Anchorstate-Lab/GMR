@@ -82,6 +82,7 @@ pub async fn run(
                 initial: decl.initial(),
                 retain: Retain::Tick,
                 cadence_secs: None,
+                supersedes: None,
             })
             .await?;
         for w in result.warnings {

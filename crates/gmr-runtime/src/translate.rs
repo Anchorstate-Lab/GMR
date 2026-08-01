@@ -117,6 +117,7 @@ mod tests {
             terminal: [StatusId::new("settled")].into_iter().collect(),
             retain: Retain::Tick,
             cadence_secs: None,
+            supersedes: None,
         }
     }
 

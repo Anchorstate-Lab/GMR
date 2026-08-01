@@ -105,6 +105,7 @@ impl World {
                 initial: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
+                supersedes: None,
             })
             .await
             .unwrap();

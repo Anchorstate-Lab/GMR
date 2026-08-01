@@ -34,6 +34,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         initial: None,
         retain: Retain::Tick,
         cadence_secs: None,
+        supersedes: None,
     })
     .await
     .unwrap();

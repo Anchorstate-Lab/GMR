@@ -19,7 +19,7 @@ pub use edges::{Edge, Edges, Stall};
 pub use error::RuntimeError;
 pub use health::{AnchorHealth, CorpusHealth};
 pub use observe::Observed;
-pub use open::{OpenRequest, Opened};
+pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;
 pub use read::{AnchorView, MemoryView, Sighting};

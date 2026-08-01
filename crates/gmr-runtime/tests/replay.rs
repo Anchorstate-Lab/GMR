@@ -66,6 +66,7 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
             initial: None,
             retain: Retain::Full,
             cadence_secs: None,
+            supersedes: None,
         })
         .await
         .unwrap();
@@ -100,6 +101,7 @@ async fn the_two_hops_version_independently() {
             initial: None,
             retain: Retain::Full,
             cadence_secs: None,
+            supersedes: None,
         })
         .await
         .unwrap();
@@ -154,6 +156,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
             initial: None,
             retain: Retain::Full,
             cadence_secs: None,
+            supersedes: None,
         })
         .await
         .unwrap();
@@ -195,6 +198,7 @@ async fn folding_the_same_log_twice_yields_the_same_state() {
             initial: None,
             retain: Retain::Tick,
             cadence_secs: None,
+            supersedes: None,
         })
         .await
         .unwrap();

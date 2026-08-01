@@ -45,6 +45,7 @@ impl World {
                 initial: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
+                supersedes: None,
             })
             .await
             .unwrap()
@@ -219,6 +220,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
             initial: Some(State::new(serde_json::json!({ "position": "a.json" }))),
             retain: Retain::Tick,
             cadence_secs: None,
+            supersedes: None,
         })
         .await
         .unwrap();
@@ -288,6 +290,7 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
         initial: None,
         retain: Retain::Tick,
         cadence_secs: None,
+        supersedes: None,
     })
     .await
     .unwrap();
@@ -484,4 +487,213 @@ async fn every_still_in_a_run_points_at_the_record_it_was_compared_against() {
         vec![1, 1, 1],
         "每条 still 都指回那条完整记录，而不是串成一条链"
     );
+}
+
+// ── 终结是结构，不是当下这一次解释 ──────────────────────────────
+//
+// 「不可逆」如果只在 fold 的最后一行按最后一个状态算一次，那它就是
+// 一个视图，不是事实：任何把状态挪出终结集合的动作都能静默复活它。
+
+#[tokio::test]
+async fn restate_cannot_resurrect_a_finished_anchor() {
+    let w = World::new();
+    w.write(r#"{"n":50}"#);
+    w.open(&[("obs.n > 10", r#"{ status: "settled" }"#)], &["settled"])
+        .await;
+    assert_eq!(w.observe().await, Observed::Closed);
+
+    let e =
+        w.rt.revise(
+            &key(),
+            Change::Restate {
+                state: State::new(serde_json::json!({ "status": "pending" })),
+            },
+            "想反悔".as_bytes(),
+        )
+        .await
+        .expect_err("终结之后不许再改状态");
+    assert!(e.to_string().contains("终结"), "{e}");
+
+    assert_eq!(w.status().await.as_deref(), Some("settled"));
+    assert_eq!(w.observe().await, Observed::Closed);
+}
+
+#[tokio::test]
+async fn emptying_the_terminal_set_cannot_resurrect_a_finished_anchor() {
+    let w = World::new();
+    w.write(r#"{"n":50}"#);
+    w.open(&[("obs.n > 10", r#"{ status: "settled" }"#)], &["settled"])
+        .await;
+    assert_eq!(w.observe().await, Observed::Closed);
+
+    w.rt.revise(
+        &key(),
+        Change::Reterminal {
+            terminal: Default::default(),
+        },
+        "算了".as_bytes(),
+    )
+    .await
+    .expect_err("判据写错了要开新一代，不是把这个锚拽回来");
+
+    assert!(w.rt.read(&key()).await.unwrap().closed);
+}
+
+#[tokio::test]
+async fn an_author_sealed_close_is_equally_final() {
+    let w = World::new();
+    w.write(r#"{"n":1}"#);
+    w.open(&[], &[]).await;
+    w.rt.close(&key(), "收工".as_bytes()).await.unwrap();
+
+    w.rt.close(&key(), "再来一次".as_bytes())
+        .await
+        .expect_err("关过的锚不能再关");
+    w.rt.revise(
+        &key(),
+        Change::Restate {
+            state: State::new(serde_json::json!({ "status": "back" })),
+        },
+        "回来".as_bytes(),
+    )
+    .await
+    .expect_err("关过的锚不能再改");
+}
+
+#[tokio::test]
+async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
+    // 直接喂日志：确认粘性住在 fold 里，不是住在 revise 的守卫里。
+    use gmr_core::{Entry, Observation, Outcome, ProbeVersion, Versions, fold};
+
+    let anchor = gmr_core::Anchor {
+        key: key(),
+        probe: Probe::new(Kind::new("shell"), serde_json::json!({ "run": "x" })),
+        transitions: Transitions::default(),
+        terminal: [StatusId::new("settled")].into_iter().collect(),
+        retain: Retain::Tick,
+        cadence_secs: None,
+        supersedes: None,
+    };
+    let observation = Observation {
+        outcome: Outcome::NotFound,
+        fact_address: None,
+        versions: Versions {
+            probe: ProbeVersion::new("a".repeat(64)),
+            evaluator: "e".to_owned(),
+        },
+    };
+    let at = |n: i64| chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap();
+
+    let log = vec![
+        (
+            1,
+            Entry::Open {
+                anchor: Box::new(anchor),
+                observation: observation.clone(),
+                state: State::new(serde_json::json!({ "status": "pending" })),
+                at: at(0),
+            },
+        ),
+        (
+            2,
+            Entry::Transition {
+                observation,
+                state: State::new(serde_json::json!({ "status": "settled" })),
+                at: at(10),
+            },
+        ),
+        (
+            3,
+            Entry::Revise {
+                change: Change::Restate {
+                    state: State::new(serde_json::json!({ "status": "pending" })),
+                },
+                context: gmr_core::ContentHash::new("e".repeat(64)),
+                rationale: gmr_core::ContentHash::new("f".repeat(64)),
+                at: at(20),
+            },
+        ),
+    ];
+
+    assert!(
+        fold(&log).unwrap().closed,
+        "日志里有过一次进入终结集合 —— 后面写什么都改不了这件事"
+    );
+}
+
+// ── 纠错的唯一出路：开新的一代 ─────────────────────────────────
+
+#[tokio::test]
+async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
+    use gmr_runtime::Supersede;
+
+    let w = World::new();
+    w.write(r#"{"n":50}"#);
+    w.open(&[("obs.n > 10", r#"{ status: "settled" }"#)], &["settled"])
+        .await;
+    assert!(w.rt.read(&key()).await.unwrap().closed);
+
+    let heir = AnchorKey::new("a@2");
+    let opened =
+        w.rt.open(OpenRequest {
+            key: heir.clone(),
+            probe: Probe::new(
+                Kind::new("shell"),
+                serde_json::json!({ "run": "cat world.json" }),
+            ),
+            transitions: transitions(&[("obs.n > 100", r#"{ status: "settled" }"#)]),
+            terminal: [StatusId::new("settled")].into_iter().collect(),
+            initial: None,
+            retain: Retain::Tick,
+            cadence_secs: None,
+            supersedes: Some(Supersede {
+                key: key(),
+                rationale: "阈值定错了，10 太低".as_bytes().to_vec(),
+            }),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(opened.supersedes.as_ref(), Some(&key()));
+
+    // 理由取得回来，跟 revise / close 的理由走同一条密封链。
+    let cited = w.rt.read(&heir).await.unwrap().anchor.supersedes.unwrap();
+    assert_eq!(cited.key, key());
+    assert_eq!(
+        w.rt.bindings().sealed(&cited.rationale).await.unwrap(),
+        Some("阈值定错了，10 太低".as_bytes().to_vec()),
+    );
+
+    // 旧的那一代仍然是关的 —— 接替不是复活。
+    assert!(w.rt.read(&key()).await.unwrap().closed);
+}
+
+#[tokio::test]
+async fn an_anchor_still_running_cannot_be_superseded() {
+    use gmr_runtime::Supersede;
+
+    let w = World::new();
+    w.write(r#"{"n":1}"#);
+    w.open(&[], &[]).await;
+
+    let e =
+        w.rt.open(OpenRequest {
+            key: AnchorKey::new("a@2"),
+            probe: Probe::new(
+                Kind::new("shell"),
+                serde_json::json!({ "run": "cat world.json" }),
+            ),
+            transitions: Transitions::default(),
+            terminal: Default::default(),
+            initial: None,
+            retain: Retain::Tick,
+            cadence_secs: None,
+            supersedes: Some(Supersede {
+                key: key(),
+                rationale: b"why".to_vec(),
+            }),
+        })
+        .await
+        .expect_err("两代同时活着说同一件事，就是绕过终结的旁路");
+    assert!(e.to_string().contains("还开着"), "{e}");
 }
