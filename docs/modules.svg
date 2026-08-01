@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1510 1400" width="1510" height="1400" font-family="'PingFang SC','Hiragino Sans GB','Noto Sans CJK SC','Microsoft YaHei',-apple-system,sans-serif">
+<defs>
+  <marker id="dep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker>
+  <marker id="impl" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L11 6 L0 12 z" fill="#fbf2e6" stroke="#b07f2a" stroke-width="1.4"/></marker>
+  <marker id="exec" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#9c3a2c"/></marker>
+</defs>
+<style>
+  .t   { font-size:13.5px; font-weight:600; fill:#14181d; font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace }
+  .sub { font-size:11px;   fill:#5c635f }
+  .m   { font-size:11px;   font-weight:600; font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace }
+  .d   { font-size:10.5px; fill:#5c635f }
+  .api { font-size:11px;   font-weight:600; fill:#9c3a2c; font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace }
+  .sig { font-size:10px;   fill:#7a4a40; font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace }
+  .hd  { font-size:10.5px; font-weight:600; fill:#3f4a58 }
+  .bd  { font-size:10.5px; font-weight:600; fill:#8a5a4a }
+  .lb  { font-size:9.5px;  fill:#64748b; font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace }
+</style>
+
+<rect width="1510" height="1400" fill="#fbfcfa"/>
+
+<text x="30" y="40" font-size="23" font-weight="600" fill="#14181d">GMR 模块图 —— 每个模块的职责 · 对外接口 · 职责边界 · 相互关系</text>
+<text x="30" y="64" font-size="13" fill="#5c635f">读法：盒子里第一段是<tspan font-weight="600">干什么</tspan>，红色的是<tspan font-weight="600">对外接口（跨包耦合就只有这些）</tspan>，最后一行是<tspan font-weight="600">明确不干什么</tspan>。</text>
+<text x="30" y="84" font-size="13" fill="#5c635f">灰箭头 = 依赖，一律<tspan font-weight="600">向下指向词汇</tspan>；黄箭头 = 实现，一律<tspan font-weight="600">向上指回基底的 trait</tspan>。这个方向差就是「换后端不改基底」的全部机制。</text>
+
+<!-- ══ 用法：数据，不是代码 ══ -->
+<text x="30" y="140" font-size="12.5" font-weight="600" fill="#4a7a60">用法 —— 仓库根的数据。不编译，域读它</text>
+<rect x="30"  y="150" width="310" height="62" rx="3" fill="#f4faf5" stroke="#4a7a60" stroke-dasharray="4 3"/>
+<text x="44"  y="174" class="t" fill="#3f6b52">anchors.toml</text>
+<text x="44"  y="193" class="d">锚的声明：probe · position · rules · terminal · cadence</text>
+<rect x="365" y="150" width="310" height="62" rx="3" fill="#f4faf5" stroke="#4a7a60" stroke-dasharray="4 3"/>
+<text x="379" y="174" class="t" fill="#3f6b52">memories/</text>
+<text x="379" y="193" class="d">手册。front-matter 声明它挂在哪几个锚上</text>
+<rect x="700" y="150" width="310" height="62" rx="3" fill="#f4faf5" stroke="#4a7a60" stroke-dasharray="4 3"/>
+<text x="714" y="174" class="t" fill="#3f6b52">architecture.toml</text>
+<text x="714" y="193" class="d">目标架构。gate.sh 读它查依赖禁区</text>
+
+<!-- 图例 -->
+<rect x="1040" y="150" width="438" height="96" rx="3" fill="#f4f6f4" stroke="#c3cbc4"/>
+<text x="1054" y="172" class="hd">图例</text>
+<line x1="1054" y1="190" x2="1104" y2="190" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<text x="1114" y="194" class="d">依赖：A 编译期 use B（cargo 能查）</text>
+<line x1="1054" y1="212" x2="1104" y2="212" stroke="#b07f2a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#impl)"/>
+<text x="1114" y="216" class="d">实现：A 实现 B 声明的 trait（倒置）</text>
+<line x1="1054" y1="234" x2="1104" y2="234" stroke="#9c3a2c" stroke-width="1.5" stroke-dasharray="2 3" marker-end="url(#exec)"/>
+<text x="1114" y="238" class="d">exec：跨进程，完全不链接</text>
+
+<path d="M185 212 L185 240" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<path d="M520 212 L520 240" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<path d="M855 212 L855 240" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+
+<!-- ══ 域 ══ -->
+<rect x="30" y="240" width="980" height="174" rx="3" fill="#f8fbf8" stroke="#4a7a60" stroke-width="1.5"/>
+<text x="44" y="266" class="t">domains/coding/cli  —— 域：装配 + 分发</text>
+<text x="44" y="285" class="sub">里面没有一个 coding 相关的判断。判断住在 anchors.toml 与探针里 —— 换个领域，这一层原样复用</text>
+<text x="44"  y="311" class="m" fill="#4a7a60">main</text>      <text x="140" y="311" class="d"><tspan font-weight="600" fill="#3f6b52">装配点</tspan> —— 三个决定都在这一个函数里：Shell 传输 · Git 提供方 · sqlite 后端</text>
+<text x="44"  y="330" class="m" fill="#4a7a60">cli</text>       <text x="140" y="330" class="d">命令面（clap），14 个子命令</text>
+<text x="44"  y="349" class="m" fill="#4a7a60">rules</text>     <text x="140" y="349" class="d">把 TOML 里的「守卫 =&gt; 新状态」解析成 Transitions（数据 → 类型）</text>
+<text x="44"  y="368" class="m" fill="#4a7a60">render</text>    <text x="140" y="368" class="d">输出（人读 / --json）</text>
+<text x="44"  y="387" class="m" fill="#4a7a60">verbs/*</text>   <text x="140" y="387" class="d">一个动词一个文件，只做三步：解析参数 → 调 Runtime 上的一个方法 → 渲染</text>
+<text x="44" y="407" class="bd">职责边界　不定义状态词表 · 不实现探针 · 不碰存储细节 · 不 use 基底的任何子包，只 use 门面</text>
+
+<path d="M520 414 L520 442" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+
+<!-- ══ 门面 ══ -->
+<rect x="30" y="442" width="980" height="52" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="44" y="466" class="t">gmr  —— 门面</text>
+<text x="240" y="466" class="d">只重导出下面五个包，<tspan font-weight="600" fill="#3f4a58">不定义任何东西</tspan>。gate 机械保证：文件里出现一个 pub fn/struct/enum/trait 即失败</text>
+<text x="240" y="484" class="d">它的存在只是给域一个稳定的 use 路径 —— 基底内部拆包、改名，域不跟着改</text>
+
+<path d="M520 494 L520 522" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+
+<!-- ══ 运行时 ══ -->
+<rect x="30" y="522" width="980" height="226" rx="3" fill="#fff" stroke="#5b6b80" stroke-width="1.5"/>
+<text x="44" y="548" class="t">gmr-runtime  —— 编排</text>
+<text x="44" y="567" class="sub">唯一同时握着「传输 · 求值 · 存储」三样的地方。整个系统只有这一个模块知道它们要怎么串起来</text>
+
+<text x="44"  y="595" class="api">◆ trait ContentProvider</text><text x="230" y="595" class="d">—— 它自己拥有的第 5 个接口</text>
+<text x="58"  y="612" class="sig">provider() → &amp;ProviderId</text>
+<text x="58"  y="627" class="sig">fetch(id) → Option&lt;Fetched{version, bytes}&gt;</text>
+<text x="58"  y="642" class="sig">fetch_at(id, version) → Option&lt;bytes&gt;</text>
+<text x="44"  y="668" class="hd">装配 —— Runtime 结构体里没有一个具体类型</text>
+<text x="58"  y="685" class="d">transports: Vec&lt;Arc&lt;dyn Transport&gt;&gt;　　按 probe.kind 选一个</text>
+<text x="58"  y="702" class="d">journal / bindings: Arc&lt;dyn ...&gt;　　queue: Option&lt;Arc&lt;dyn Queue&gt;&gt;（没队列 = 只能手动观测）</text>
+<text x="58"  y="719" class="d">providers: Vec&lt;Arc&lt;dyn ContentProvider&gt;&gt;　　policy: 节奏与退避的数值</text>
+
+<text x="540" y="595" class="hd">动词 —— 全部是 Runtime 的方法，是这个包的第二组对外接口</text>
+<text x="554" y="612" class="m" fill="#5b6b80">open</text>          <text x="672" y="612" class="d">开锚：写锚定义 + 首次观测 + 起点状态</text>
+<text x="554" y="629" class="m" fill="#5b6b80">observe</text>       <text x="672" y="629" class="d">一次观测（流程见 flow.svg 左）</text>
+<text x="554" y="646" class="m" fill="#5b6b80">pass / schedule</text><text x="672" y="646" class="d">跑一批到期的锚（flow.svg 右）</text>
+<text x="554" y="663" class="m" fill="#5b6b80">revise</text>        <text x="672" y="663" class="d">四种判据修订，每次密封两份</text>
+<text x="554" y="680" class="m" fill="#5b6b80">read / cobound</text> <text x="672" y="680" class="d">锚 + 状态 + 挂着的记忆一起交回</text>
+<text x="554" y="697" class="m" fill="#5b6b80">changed_since</text>  <text x="672" y="697" class="d">重放日志，交出边沿 + 游标</text>
+<text x="554" y="714" class="m" fill="#5b6b80">health · bind · close</text>
+<text x="554" y="731" class="d">私有：<tspan class="m" fill="#5b6b80">translate</tspan>（转换表求值，crate-private）· <tspan class="m" fill="#5b6b80">policy</tspan>（退避）</text>
+<text x="44" y="741" class="bd">职责边界　不解释 status 的含义 · 不读 position 里面 · 不认识任何领域 · 不选后端（选谁是域的决定）</text>
+
+<path d="M185 748 L185 776" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<path d="M520 748 L520 776" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<path d="M855 748 L855 776" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<path d="M352 748 L352 1104" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#dep)"/>
+<text x="357" y="1090" class="lb">runtime → core</text>
+
+<!-- ══ 契约层 ══ -->
+<text x="30" y="768" font-size="12.5" font-weight="600" fill="#5b6b80">基底 crates/ —— 领域无关，不产二进制。下面三个包<tspan fill="#9c3a2c">全部的对外面就是红字部分</tspan></text>
+
+<!-- gmr-expr -->
+<rect x="30" y="776" width="310" height="300" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="44" y="802" class="t">gmr-expr  —— 求值</text>
+<text x="44" y="820" class="sub">纯根：零 workspace 依赖 · 门禁禁 io</text>
+<rect x="44" y="826" width="282" height="17" rx="8" fill="#eef4ef" stroke="#6f9e7d"/>
+<text x="185" y="838" font-size="9.5" font-weight="600" fill="#3f6b52" text-anchor="middle">它连 gmr-core 都不依赖 —— 只认 JSON</text>
+<text x="44" y="861" class="api">◆ 接口（三个自由函数）</text>
+<text x="56" y="878" class="sig">parse(&amp;str) → Node | SyntaxError</text>
+<text x="56" y="893" class="sig">eval(&amp;Node, Ctx) → Evaluated</text>
+<text x="56" y="908" class="sig">bind(&amp;Node, Ctx) → Warning?</text>
+<text x="56" y="923" class="sig">EVALUATOR_VERSION</text>
+<text x="44" y="947" class="hd">Ctx —— 只有四个根</text>
+<text x="56" y="964" class="d">obs · state · taken_at · entered_at</text>
+<text x="56" y="980" class="d">基底不提供别的派生量，一个都没有</text>
+<text x="44" y="1004" class="hd">Evaluated —— 三态，缺一不可</text>
+<text x="56" y="1021" class="d"><tspan class="m" fill="#5b6b80">Value</tspan>　算出来了</text>
+<text x="56" y="1037" class="d"><tspan class="m" fill="#5b6b80">Absent</tspan>　这条弃权，换下一条规则</text>
+<text x="56" y="1053" class="d"><tspan class="m" fill="#5b6b80">Fault</tspan>　我们的失败，必须出声</text>
+<text x="44" y="1068" class="bd">边界　不认识锚 · 不认识条目 · 只认 JSON</text>
+
+<!-- gmr-store -->
+<rect x="365" y="776" width="310" height="300" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="379" y="802" class="t">gmr-store  —— 存储契约</text>
+<text x="379" y="820" class="sub">按<tspan font-weight="600">可变性</tspan>切，不按用途切</text>
+<text x="379" y="848" class="api">◆ trait Journal　只增不改</text>
+<text x="391" y="866" class="sig">append(key, &amp;Entry, Fence) → Seq</text>
+<text x="391" y="881" class="sig">entries(key, from) → [(Seq, Entry)]</text>
+<text x="391" y="896" class="sig">anchors() → [AnchorKey]</text>
+<text x="379" y="922" class="api">◆ trait Queue　唯一可变的那个</text>
+<text x="391" y="940" class="sig">enqueue(key, due)</text>
+<text x="391" y="955" class="sig">due(now, lease, n) → [Ticket]</text>
+<text x="391" y="970" class="sig">settle(&amp;Ticket, Disposition, now)</text>
+<text x="379" y="996" class="api">◆ trait BindingStore　只增不改</text>
+<text x="391" y="1014" class="sig">bind · bindings_on · binding_of · all</text>
+<text x="391" y="1029" class="sig">seal(bytes) → ContentHash · sealed(h)</text>
+<text x="379" y="1049" class="d">同包内还有 <tspan class="m" fill="#5b6b80">sqlite</tspan> / <tspan class="m" fill="#5b6b80">testkit</tspan> 两个实现，用 feature 关着</text>
+<text x="379" y="1068" class="bd">边界　不知道条目是什么意思，也不比较它们</text>
+
+<!-- gmr-probe -->
+<rect x="700" y="776" width="310" height="300" rx="3" fill="#fff" stroke="#5b6b80"/>
+<text x="714" y="802" class="t">gmr-probe  —— 探针契约</text>
+<text x="714" y="820" class="sub">只有契约，没有一行实现。整包 36 行</text>
+<text x="714" y="848" class="api">◆ trait Transport</text>
+<text x="726" y="866" class="sig">kind() → &amp;Kind</text>
+<text x="726" y="881" class="sig">invoke(&amp;Declaration, position: &amp;Value)</text>
+<text x="726" y="896" class="sig">　　→ Outcome | ProbeError</text>
+<text x="714" y="922" class="hd">Outcome —— 关于<tspan font-weight="600">世界</tspan>的答案</text>
+<text x="726" y="940" class="d"><tspan class="m" fill="#5b6b80">Found{facts}</tspan>　看见了</text>
+<text x="726" y="956" class="d"><tspan class="m" fill="#5b6b80">NotFound</tspan>　我看了，那儿什么都没有</text>
+<text x="726" y="972" class="d">两个都照样成为条目</text>
+<text x="714" y="998" class="hd" fill="#9c3a2c">ProbeError —— 关于<tspan font-weight="600">我们</tspan>的失败</text>
+<text x="726" y="1016" class="d"><tspan class="m" fill="#9c3a2c">unreachable</tspan>　跑不起来</text>
+<text x="726" y="1032" class="d"><tspan class="m" fill="#9c3a2c">unusable</tspan>　　形状不对</text>
+<text x="726" y="1048" class="d">不成条目，但一定发边沿</text>
+<text x="714" y="1068" class="bd">边界　不知道谁去看 · 看什么 · 怎么看</text>
+
+<path d="M520 1076 L520 1104" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+<path d="M855 1076 L855 1104" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#dep)"/>
+
+<!-- ══ 词汇 ══ -->
+<rect x="30" y="1104" width="980" height="170" rx="3" fill="#fff" stroke="#5b6b80" stroke-width="1.5"/>
+<text x="44" y="1130" class="t">gmr-core  —— 词汇</text>
+<text x="44" y="1148" class="sub">纯根：零 workspace 依赖。不知道怎么拿事实、怎么求值、怎么存 —— 它只是一套名字和一个 fold</text>
+<text x="44"  y="1174" class="m" fill="#5b6b80">addr</text>    <text x="132" y="1174" class="d">canonical JSON → ContentHash。所有「版本」都是内容哈希 —— 挣来的，不是声明的</text>
+<text x="44"  y="1192" class="m" fill="#5b6b80">probe</text>   <text x="132" y="1192" class="d">Probe{kind, declaration} · version() = H(kind‖decl) · Facts · Outcome · FactAddress = H(probe_version‖facts)</text>
+<text x="44"  y="1210" class="m" fill="#5b6b80">anchor</text>  <text x="132" y="1210" class="d">Anchor{key, probe, transitions, terminal, retain, cadence} · State 是一整块 JSON —— position/status 只是两个约定的槽名</text>
+<text x="44"  y="1228" class="m" fill="#5b6b80">journal</text> <text x="132" y="1228" class="d">Entry 六种 · Change 四种 · ReasonClass 三种 · Versions{probe, evaluator} · <tspan font-weight="600" fill="#3f4a58">fold(&amp;[(Seq, Entry)]) → AnchorState</tspan></text>
+<text x="44"  y="1246" class="m" fill="#5b6b80">memory</text>  <text x="132" y="1246" class="d">Ref{provider, external_id} · Binding{reference, anchors, bound_version, links} —— 只存引用与版本，不存内容</text>
+<text x="44" y="1266" class="bd">边界　不产生任何副作用。除了 fold 与几个哈希，它没有行为</text>
+
+<!-- ══ 电池 ══ -->
+<rect x="1040" y="260" width="438" height="1014" rx="4" fill="#fbf2e6" stroke="#b07f2a" stroke-width="1.5"/>
+<text x="1259" y="288" font-size="14.5" font-weight="600" fill="#8a6520" text-anchor="middle">电池 batteries/</text>
+<text x="1259" y="307" font-size="11" fill="#a07c3a" text-anchor="middle">可复用实现，不属于任何单一域。基底不知道它们存在</text>
+<text x="1054" y="336" class="d">这一栏里的每个盒子都可以整个换掉，</text>
+<text x="1054" y="353" class="d">基底与域一行不改 —— 因为它们只经由</text>
+<text x="1054" y="370" class="d">左边红字那几个 trait 与系统相连。</text>
+<text x="1054" y="400" class="hd">谁装配它们？　域的 main，那一个函数。</text>
+
+<rect x="1056" y="524" width="406" height="120" rx="3" fill="#fffaf3" stroke="#b07f2a"/>
+<text x="1070" y="548" class="t">gmr-provider-git</text>
+<text x="1070" y="566" class="d" fill="#8a6520">实现 gmr-runtime::ContentProvider</text>
+<text x="1070" y="586" class="d">按路径取回当前版本（git 的 blob 哈希就是版本号）</text>
+<text x="1070" y="604" class="d">按版本取回当时那一份：git cat-file blob &lt;ver&gt;</text>
+<text x="1070" y="624" class="d"><tspan font-weight="600" fill="#8a6520">记忆内容住在这儿</tspan> —— 基底只存 Ref + bound_version，从不复制内容</text>
+<path d="M1056 570 L1010 570" fill="none" stroke="#b07f2a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#impl)"/>
+
+<rect x="1056" y="776" width="406" height="138" rx="3" fill="#fffaf3" stroke="#b07f2a"/>
+<text x="1070" y="800" class="t">gmr-transport-shell</text>
+<text x="1070" y="818" class="d" fill="#8a6520">实现 gmr-probe::Transport（kind = "shell"）</text>
+<text x="1070" y="838" class="d">从 declaration 取 run，sh -c 跑它；position 经 GMR_POSITION 进去</text>
+<text x="1070" y="856" class="d">stdout 解析成 Facts → Outcome::Found；空 → NotFound</text>
+<text x="1070" y="876" class="d"><tspan fill="#9c3a2c" font-weight="600">超时 / 非零退出 → unreachable</tspan>　沉默不是证据</text>
+<text x="1070" y="894" class="d"><tspan fill="#9c3a2c" font-weight="600">输出超上限 → unusable</tspan>　拒绝而不截断：截过的读数存成事实就是撒谎</text>
+<path d="M1056 830 L1010 830" fill="none" stroke="#b07f2a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#impl)"/>
+
+<line x1="1056" y1="936" x2="1462" y2="936" stroke="#9c3a2c" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="1259" y="930" font-size="10.5" font-weight="600" fill="#9c3a2c" text-anchor="middle">进程边界　—— 下面的东西被 exec，不被链接，Cargo 里查不到</text>
+<path d="M1259 894 L1259 950" fill="none" stroke="#9c3a2c" stroke-width="1.4" stroke-dasharray="2 3" marker-end="url(#exec)"/>
+
+<rect x="1056" y="956" width="406" height="76" rx="3" fill="#fffaf3" stroke="#b07f2a"/>
+<text x="1070" y="978" class="t">gmr-probe-coord</text>
+<text x="1070" y="996" class="d" fill="#8a6520">探针作者之间的共同约定 —— 不是基底的一部分</text>
+<text x="1070" y="1014" class="d">读 GMR_POSITION · 逐坐标打分取最优 · 统一报告形状</text>
+<text x="1070" y="1028" class="sig" fill="#8a6520">matched · missed · at · candidates · exact · matches</text>
+
+<rect x="1056" y="1046" width="198" height="72" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1068" y="1068" class="t" font-size="12">probe-ast</text>
+<text x="1068" y="1086" class="d">文件·种类·可见性·名字·签名</text>
+<text x="1068" y="1104" class="d">换一门语言 = 给它加一张表</text>
+<rect x="1264" y="1046" width="198" height="72" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1276" y="1068" class="t" font-size="12">probe-prose</text>
+<text x="1276" y="1086" class="d">文件·标题路径·内容指纹</text>
+<rect x="1056" y="1128" width="198" height="72" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1068" y="1150" class="t" font-size="12">probe-name</text>
+<text x="1068" y="1168" class="d">名字·作用范围</text>
+<rect x="1264" y="1128" width="198" height="72" rx="3" fill="#fffaf3" stroke="#b07f2a" stroke-dasharray="4 3"/>
+<text x="1276" y="1150" class="t" font-size="12">probe-addr</text>
+<text x="1276" y="1168" class="d">路径·基名·内容指纹</text>
+
+<text x="1056" y="1226" class="hd" fill="#8a6520">虚线框 = 内容寻址的可执行物</text>
+<text x="1056" y="1244" class="d">各自独立 workspace。版本 = 哈希，挣来的。</text>
+<text x="1056" y="1261" class="d">改一个字节，锚上的 probe_version 就变，历史读数立刻可辨。</text>
+
+<!-- ══ 页脚：这张图的论点 ══ -->
+<line x1="30" y1="1304" x2="1478" y2="1304" stroke="#d3d7cf"/>
+<text x="30" y="1328" font-size="13" font-weight="600" fill="#14181d">这张图想说的三件事</text>
+<text x="30" y="1350" font-size="12" fill="#5c635f"><tspan font-weight="600" fill="#9c3a2c">一 · 耦合面是可数的。</tspan>跨包耦合总共只有 5 个 trait：Transport · Journal · Queue · BindingStore · ContentProvider。其余流动的全是值类型 —— 没有回调、没有共享可变状态、没有事件总线。</text>
+<text x="30" y="1370" font-size="12" fill="#5c635f"><tspan font-weight="600" fill="#9c3a2c">二 · 方向是倒置的。</tspan>基底声明 trait，电池实现 trait，域在 main 里把两头接上。所以「换 sqlite 为别的」「换 shell 为 http」只改域的一行装配，基底和电池都不知道发生了什么。</text>
+<text x="30" y="1390" font-size="12" fill="#5c635f"><tspan font-weight="600" fill="#9c3a2c">三 · 基底里有两个纯根，不是一个。</tspan>gmr-core 是词汇，gmr-expr 是求值 —— 后者连前者都不依赖，只认 JSON。这道缝保证了：换掉整套词汇，求值器一行不动。</text>
+</svg>
