@@ -74,6 +74,14 @@ pub fn nth(pos: &Value) -> usize {
 
 pub const MAX_BYTES: usize = 900_000;
 
+/// 挑出最像的候选，并报告哪几项对上、哪几项没对上。
+///
+/// **候选的排序是字典序，也就是「坐标项的先后就是它们的优先级」。** 这不
+/// 是实现细节：`[name, file]` 下，只对上名字的候选会赢过只对上路径的那个。
+/// 探针作者交 `items` 的顺序 = 他在声明哪一项更能认出「还是同一个东西」。
+///
+/// `nth` 越界会**报错而不是夹到边界上**：默默换一个候选，等于让锚在盯着
+/// 另一个东西而没人知道。
 pub fn report(
     extractor: &str,
     want: &Want,
@@ -97,7 +105,14 @@ pub fn report(
         }));
     };
     let tied: Vec<&Candidate> = candidates.iter().filter(|c| vector(c) == best).collect();
-    let pick = tied[nth.min(tied.len() - 1)];
+    let Some(pick) = tied.get(nth) else {
+        return Err(format!(
+            "位置里写着 nth={nth}，但同样像的候选只有 {} 个。\n\
+             **不夹到边界上** —— 默默换一个，锚就在盯着另一个东西而没人知道。\n\
+             要么把坐标写细一点，要么把 nth 改对。",
+            tied.len()
+        ));
+    };
     let pairs = || want.iter().zip(&best);
     let out = json!({
         "extractor": extractor, "found": true,
@@ -107,6 +122,8 @@ pub fn report(
         "facts": pick.facts,
         "candidates": tied.len(),
         "exact": best.iter().all(|hit| *hit),
+        // 坐标项的先后就是它们的优先级；写进报告，别只藏在参数顺序里。
+        "priority": names(),
         "matches": tied.iter()
             .map(|c| json!({ "at": c.coord, "facts": c.facts }))
             .collect::<Vec<_>>(),
@@ -219,14 +236,55 @@ mod tests {
     }
 
     #[test]
-    fn nth_picks_among_ties_and_never_runs_off_the_end() {
+    fn nth_picks_among_ties() {
         let w = want(&[("a", "1")]);
         let tied = [
             cand(&[("a", "1"), ("id", "p")]),
             cand(&[("a", "1"), ("id", "q")]),
         ];
+        assert_eq!(report("x", &w, 0, &tied).unwrap()["at"]["id"], "p");
         assert_eq!(report("x", &w, 1, &tied).unwrap()["at"]["id"], "q");
-        assert_eq!(report("x", &w, 99, &tied).unwrap()["at"]["id"], "q");
+    }
+
+    #[test]
+    fn an_out_of_range_nth_is_refused_not_clamped() {
+        let w = want(&[("a", "1")]);
+        let tied = [
+            cand(&[("a", "1"), ("id", "p")]),
+            cand(&[("a", "1"), ("id", "q")]),
+        ];
+        let e = report("x", &w, 99, &tied).unwrap_err();
+        assert!(e.contains("只有 2 个"), "{e}");
+        assert!(
+            e.contains("不夹到边界上"),
+            "默默换一个候选 = 锚在盯着另一个东西而没人知道"
+        );
+    }
+
+    #[test]
+    fn the_order_of_the_items_is_the_priority_and_it_is_reported() {
+        // 只对上 name 的候选赢过只对上 file 的 —— 因为 name 排在前面。
+        let w = want(&[("name", "assess"), ("file", "a.rs")]);
+        let out = report(
+            "x",
+            &w,
+            0,
+            &[
+                cand(&[("name", "assess"), ("file", "moved.rs")]),
+                cand(&[("name", "renamed"), ("file", "a.rs")]),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            out["at"]["file"], "moved.rs",
+            "名字比路径更能认出同一个东西"
+        );
+        assert_eq!(out["matched"], serde_json::json!(["name"]));
+        assert_eq!(
+            out["priority"],
+            serde_json::json!(["name", "file"]),
+            "优先级不该只藏在参数顺序里"
+        );
     }
 
     #[test]

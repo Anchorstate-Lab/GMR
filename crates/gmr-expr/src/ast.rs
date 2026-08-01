@@ -109,6 +109,21 @@ pub enum Node {
 }
 
 impl Node {
+    /// 这个表达式读不读上一个状态。
+    ///
+    /// 走 AST 而不是匹配 render 出来的文本：`{ note: "state.x" }` 是一个
+    /// 字面量，不是一次读取，而文本分不出这两者。
+    pub fn reads_state(&self) -> bool {
+        match self {
+            Self::Path(p) => p.root == Root::State,
+            Self::Lit(_) | Self::Changed(_) => false,
+            Self::Exists(x) | Self::Not(x) | Self::Neg(x) => x.reads_state(),
+            Self::Binary { lhs, rhs, .. } => lhs.reads_state() || rhs.reads_state(),
+            Self::Object(fields) => fields.iter().any(|(_, v)| v.reads_state()),
+            Self::Array(items) => items.iter().any(Node::reads_state),
+        }
+    }
+
     pub fn render(&self) -> String {
         match self {
             Self::Path(p) => p.render(),
@@ -132,5 +147,34 @@ impl Node {
                 format!("[{}]", body.join(", "))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parse::parse;
+
+    fn reads(src: &str) -> bool {
+        parse(src).unwrap().reads_state()
+    }
+
+    #[test]
+    fn reading_the_previous_state_is_visible_at_any_depth() {
+        assert!(reads("state.n"));
+        assert!(reads("{ n: state.n + 1 }"));
+        assert!(reads("{ xs: [1, state.n] }"));
+        assert!(reads("not exists(state.n)"));
+    }
+
+    #[test]
+    fn a_literal_that_merely_looks_like_a_path_is_not_a_read() {
+        assert!(!reads(r#"{ note: "state.n" }"#));
+        assert!(!reads("{ n: obs.n }"));
+        assert!(!reads(r#"changed("state")"#));
+    }
+
+    #[test]
+    fn the_bare_state_root_counts_too() {
+        assert!(reads("state"), "文本匹配 `state.` 会漏掉这一个");
     }
 }

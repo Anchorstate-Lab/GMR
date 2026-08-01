@@ -99,8 +99,16 @@ impl Runtime {
             )
             .await?;
 
-        if let Some(queue) = self.queue.as_ref() {
-            queue.enqueue(&key, at).await?;
+        // 日志和队列是两个存储，跨不了一个事务。所以定清楚谁说了算：
+        // **锚就是那条日志条目**，它落了地锚就存在了。排队是可恢复的旁枝，
+        // 排不上不该把「已经开了」谎报成「没开成」—— 那会让调用方重试，
+        // 然后撞上「已经开过了」，而真正没做成的那件事仍然没人去补。
+        if let Some(queue) = self.queue.as_ref()
+            && let Err(e) = queue.enqueue(&key, at).await
+        {
+            warnings.push(format!(
+                "锚开了，但没能排进队列（{e}）；它不会被自动观测，直到下一次 sync 把它补上"
+            ));
         }
 
         Ok(Opened {
@@ -131,7 +139,7 @@ impl Runtime {
         let reads_state = anchor
             .transitions
             .iter()
-            .any(|r| crate::translate::compile(&r.to).is_ok_and(|n| n.render().contains("state.")));
+            .any(|r| crate::translate::compile(&r.to).is_ok_and(|n| n.reads_state()));
         reads_state.then(|| {
             "转换表把上一个状态读进了新状态，而这个部署没有租约：\
              重复观测会让累积量多算。幂等的写法（原样保留某个字段）不受影响，\
