@@ -10,7 +10,7 @@ pub use anchor::{
     Transitions,
 };
 pub use journal::{
-    AnchorState, Change, Entry, Observation, ReasonClass, Seq, Versions, always_full, fold,
+    AnchorState, Change, Entry, Observation, ReasonClass, Seq, Versions, always_full, fold, scan,
     should_still,
 };
 pub use memory::{Binding, ExternalId, Link, LinkKind, ProviderId, Ref, Version};

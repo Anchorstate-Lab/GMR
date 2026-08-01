@@ -399,3 +399,72 @@ async fn corpus_health_sees_barren_anchors() {
     assert!(c.barren_anchors.is_empty());
     assert_eq!(c.memories_per_anchor.get("a"), Some(&1));
 }
+
+#[tokio::test]
+async fn a_terminal_transition_reports_itself_as_self_sealed_exactly_once() {
+    let w = World::new();
+    w.write(r#"{"done":false}"#);
+    w.runtime
+        .open(OpenRequest {
+            terminal: [gmr_core::StatusId::new("done")].into_iter().collect(),
+            ..request(
+                w.dir.path(),
+                rules(&[("obs.done == true", r#"{ status: "done" }"#)]),
+            )
+        })
+        .await
+        .unwrap();
+
+    w.write(r#"{"done":true}"#);
+    w.runtime.observe(&key()).await.unwrap();
+
+    let closed: Vec<bool> = w
+        .runtime
+        .changed_since(0, None)
+        .await
+        .unwrap()
+        .edges
+        .iter()
+        .filter_map(|e| match e {
+            gmr_runtime::Edge::Closed { self_sealed, .. } => Some(*self_sealed),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(closed, vec![true], "自己走进终结集合 —— 一次，且是自封的");
+
+    // 再问一次：已经交出去的边沿不重发。
+    let again = w.runtime.changed_since(u64::MAX - 1, None).await.unwrap();
+    assert!(
+        !again
+            .edges
+            .iter()
+            .any(|e| matches!(e, gmr_runtime::Edge::Closed { .. })),
+        "游标之后没有新的关闭"
+    );
+}
+
+#[tokio::test]
+async fn an_author_close_is_not_reported_as_self_sealed() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime.close(&key(), b"collected").await.unwrap();
+
+    let closed: Vec<bool> = w
+        .runtime
+        .changed_since(0, None)
+        .await
+        .unwrap()
+        .edges
+        .iter()
+        .filter_map(|e| match e {
+            gmr_runtime::Edge::Closed { self_sealed, .. } => Some(*self_sealed),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(closed, vec![false], "作者伸手关的，处置跟自封不同");
+}

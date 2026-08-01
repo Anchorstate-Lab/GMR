@@ -1,7 +1,5 @@
-use std::collections::BTreeSet;
-
 use chrono::{DateTime, Utc};
-use gmr_core::{AnchorKey, Change, Entry, ReasonClass, Seq, State, StatusId, Version};
+use gmr_core::{AnchorKey, AnchorState, Entry, ReasonClass, Seq, State, StatusId, Version, scan};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -70,9 +68,24 @@ impl Runtime {
 
         for key in self.journal.anchors().await? {
             let entries = self.journal.entries(&key, 0).await?;
-            walk(&key, &entries, cursor, now, &self.policy, &mut edges);
+            let last = walk(&key, &entries, cursor, &self.policy, &mut edges);
             if let Some((seq, _)) = entries.last() {
                 head = head.max(*seq);
+                if let Some(s) = last
+                    && !s.closed
+                    && s.last_sighting.is_none_or(|t| {
+                        (now - t).num_seconds() > self.policy.stalled_staleness_secs
+                    })
+                {
+                    edges.push(Edge::Stalled {
+                        anchor: key.clone(),
+                        reason: Stall::Stale {
+                            last_sighting: s.last_sighting,
+                        },
+                        seq: *seq,
+                        at: now,
+                    });
+                }
             }
 
             for binding in self.bindings.bindings_on(&key).await? {
@@ -111,113 +124,60 @@ impl Runtime {
     }
 }
 
+/// 边沿从**同一份折叠**里派生出来，不另写一份投影。
+///
+/// 手写第二份的代价不是重复，是漂：两份对「什么算关了」的算法一旦分家，
+/// 没有任何东西会发现，而边沿正是消费方唯一看得见的东西。
 fn walk(
     key: &AnchorKey,
     entries: &[(Seq, Entry)],
     cursor: Seq,
-    now: DateTime<Utc>,
     policy: &crate::policy::Policy,
     out: &mut Vec<Edge>,
-) {
-    let mut state = State::default();
-    let mut terminal: BTreeSet<StatusId> = BTreeSet::new();
-    let mut attempts: u32 = 0;
-    let mut last_sighting: Option<DateTime<Utc>> = None;
-    let mut closed = false;
+) -> Option<AnchorState> {
+    let mut was = State::default();
+    let mut was_closed = false;
 
-    let is_terminal =
-        |s: &State, t: &BTreeSet<StatusId>| s.status().is_some_and(|x| t.contains(&x));
+    scan(entries, |seq, entry, now| {
+        let fresh = seq > cursor;
 
-    for (seq, entry) in entries {
-        let fresh = *seq > cursor;
-        match entry {
-            Entry::Open {
-                anchor,
-                state: next,
-                at,
-                ..
-            } => {
-                terminal = anchor.terminal.clone();
-                state = next.clone();
-                closed = closed || is_terminal(&state, &terminal);
-                attempts = 0;
-                last_sighting = Some(*at);
-            }
-            Entry::Transition {
-                state: next, at, ..
-            } => {
-                if fresh && state != *next {
-                    out.push(Edge::Transitioned {
-                        anchor: key.clone(),
-                        from: state.clone(),
-                        to: next.clone(),
-                        status: next.status(),
-                        seq: *seq,
-                        at: *at,
-                    });
-                    if is_terminal(next, &terminal) {
-                        out.push(Edge::Closed {
-                            anchor: key.clone(),
-                            self_sealed: true,
-                            seq: *seq,
-                            at: *at,
-                        });
-                    }
-                }
-                state = next.clone();
-                closed = closed || is_terminal(&state, &terminal);
-                attempts = 0;
-                last_sighting = Some(*at);
-            }
-            Entry::Still { at, .. } => {
-                attempts = 0;
-                last_sighting = Some(*at);
-            }
-            Entry::Attempt { at, reason, .. } => {
-                attempts += 1;
-                if fresh && attempts == policy.stalled_attempts {
-                    out.push(Edge::Stalled {
-                        anchor: key.clone(),
-                        reason: Stall::Attempts {
-                            count: attempts,
-                            last: *reason,
-                        },
-                        seq: *seq,
-                        at: *at,
-                    });
-                }
-            }
-            Entry::Revise { change, .. } => {
-                match change {
-                    Change::Reterminal { terminal: t } => terminal = t.clone(),
-                    Change::Restate { state: s } => state = s.clone(),
-                    _ => {}
-                }
-                closed = closed || is_terminal(&state, &terminal);
-            }
-            Entry::Close { at, .. } => {
-                closed = true;
-                if fresh {
-                    out.push(Edge::Closed {
-                        anchor: key.clone(),
-                        self_sealed: false,
-                        seq: *seq,
-                        at: *at,
-                    });
-                }
-            }
+        if fresh && matches!(entry, Entry::Transition { .. }) && now.state != was {
+            out.push(Edge::Transitioned {
+                anchor: key.clone(),
+                from: was.clone(),
+                to: now.state.clone(),
+                status: now.state.status(),
+                seq,
+                at: entry.at(),
+            });
         }
-    }
 
-    if !closed
-        && let Some((seq, _)) = entries.last()
-        && last_sighting.is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
-    {
-        out.push(Edge::Stalled {
-            anchor: key.clone(),
-            reason: Stall::Stale { last_sighting },
-            seq: *seq,
-            at: now,
-        });
-    }
+        if fresh && now.closed && !was_closed {
+            out.push(Edge::Closed {
+                anchor: key.clone(),
+                // 自己走进终结集合，还是作者伸手关的 —— 这两件事的处置不同。
+                self_sealed: !matches!(entry, Entry::Close { .. }),
+                seq,
+                at: entry.at(),
+            });
+        }
+
+        if fresh
+            && let Entry::Attempt { reason, .. } = entry
+            && now.attempts == policy.stalled_attempts
+        {
+            out.push(Edge::Stalled {
+                anchor: key.clone(),
+                reason: Stall::Attempts {
+                    count: now.attempts,
+                    last: *reason,
+                },
+                seq,
+                at: entry.at(),
+            });
+        }
+
+        was = now.state.clone();
+        was_closed = now.closed;
+    })
 }

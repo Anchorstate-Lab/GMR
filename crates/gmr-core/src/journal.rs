@@ -165,6 +165,17 @@ impl AnchorState {
 /// `closed` 逐条累积且只增不减：终结是日志里发生过的事，不是对最后一个
 /// 状态的重新解释。
 pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
+    scan(entries, |_, _, _| {})
+}
+
+/// 沿日志走一遍，每吃掉一条就把当时的折叠结果交出来。
+///
+/// `fold` 只是它的最后一格。想知道「中途发生了什么」的消费方走这里，
+/// **不要另写一份投影** —— 两份投影迟早对不上，而没有任何东西会发现。
+pub fn scan(
+    entries: &[(Seq, Entry)],
+    mut each: impl FnMut(Seq, &Entry, &AnchorState),
+) -> Option<AnchorState> {
     let mut acc: Option<AnchorState> = None;
 
     for (seq, entry) in entries {
@@ -229,6 +240,7 @@ pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
 
         if let Some(s) = acc.as_mut() {
             s.closed = s.closed || s.anchor.is_terminal(&s.state);
+            each(*seq, entry, s);
         }
     }
 
