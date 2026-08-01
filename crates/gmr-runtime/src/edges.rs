@@ -24,9 +24,26 @@ pub enum Edge {
     },
     Stalled {
         anchor: AnchorKey,
-        reason: Stall,
+        count: u32,
+        last: ReasonClass,
         seq: Seq,
         at: DateTime<Utc>,
+    },
+}
+
+/// 此刻仍然成立的**状况**，不是发生过的事。
+///
+/// 它们不来自日志：陈旧是拿当下的钟去比对最后一次看见，改写要向提供方问
+/// 「现在是哪一版」。日志游标因此表达不了「这条我看过了」—— 硬塞进边沿里
+/// 只会让每一次轮询都重新报一遍同样的东西，而消费方无从分辨。
+///
+/// 所以把它们摆在另一格：**按内容去重，不按游标。**
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "standing", rename_all = "snake_case")]
+pub enum Standing {
+    Stale {
+        anchor: AnchorKey,
+        last_sighting: Option<DateTime<Utc>>,
     },
     Rewritten {
         anchor: AnchorKey,
@@ -34,25 +51,15 @@ pub enum Edge {
         bound_version: Version,
         current_version: Option<Version>,
         retrievable: Option<bool>,
-        at: DateTime<Utc>,
-    },
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "reason", rename_all = "snake_case")]
-pub enum Stall {
-    Attempts {
-        count: u32,
-        last: ReasonClass,
-    },
-    Stale {
-        last_sighting: Option<DateTime<Utc>>,
     },
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Edges {
+    /// 游标之后日志里真的发生过的事。问过就不再交第二次。
     pub edges: Vec<Edge>,
+    /// 此刻的状况。每次问都重新算 —— 见 [`Standing`]。
+    pub standing: Vec<Standing>,
     pub cursor: Seq,
 }
 
@@ -64,6 +71,7 @@ impl Runtime {
     ) -> Result<Edges, RuntimeError> {
         let now = Utc::now();
         let mut edges = Vec::new();
+        let mut standing = Vec::new();
         let mut head = cursor;
 
         for key in self.journal.anchors().await? {
@@ -71,54 +79,50 @@ impl Runtime {
             let last = walk(&key, &entries, cursor, &self.policy, &mut edges);
             if let Some((seq, _)) = entries.last() {
                 head = head.max(*seq);
-                if let Some(s) = last
-                    && !s.closed
-                    && s.last_sighting.is_none_or(|t| {
-                        (now - t).num_seconds() > self.policy.stalled_staleness_secs
-                    })
-                {
-                    edges.push(Edge::Stalled {
-                        anchor: key.clone(),
-                        reason: Stall::Stale {
-                            last_sighting: s.last_sighting,
-                        },
-                        seq: *seq,
-                        at: now,
-                    });
-                }
+            }
+            if let Some(s) = last
+                && !s.closed
+                && s.last_sighting
+                    .is_none_or(|t| (now - t).num_seconds() > self.policy.stalled_staleness_secs)
+            {
+                standing.push(Standing::Stale {
+                    anchor: key.clone(),
+                    last_sighting: s.last_sighting,
+                });
             }
 
             for binding in self.bindings.bindings_on(&key).await? {
                 let view = self.fetch_memory(binding).await;
                 if view.rewritten {
-                    edges.push(Edge::Rewritten {
+                    standing.push(Standing::Rewritten {
                         anchor: key.clone(),
                         reference: view.reference,
                         bound_version: view.bound_version,
                         current_version: view.current_version,
                         retrievable: view.retrievable,
-                        at: now,
                     });
                 }
             }
         }
 
+        // 问了具体状态就是问了一个具体问题：别拿状况去搅它。
         if let Some(want) = status {
             edges.retain(|e| match e {
                 Edge::Transitioned { status, .. } => status.as_ref() == Some(want),
                 _ => false,
             });
+            standing.clear();
         }
 
         edges.sort_by_key(|e| match e {
             Edge::Transitioned { seq, .. }
             | Edge::Closed { seq, .. }
             | Edge::Stalled { seq, .. } => *seq,
-            Edge::Rewritten { .. } => Seq::MAX,
         });
 
         Ok(Edges {
             edges,
+            standing,
             cursor: head,
         })
     }
@@ -168,10 +172,8 @@ fn walk(
         {
             out.push(Edge::Stalled {
                 anchor: key.clone(),
-                reason: Stall::Attempts {
-                    count: now.attempts,
-                    last: *reason,
-                },
+                count: now.attempts,
+                last: *reason,
                 seq,
                 at: entry.at(),
             });

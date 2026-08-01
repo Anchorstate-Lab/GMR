@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use gmr_core::{AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, Transitions, Version};
-use gmr_runtime::{ContentError, ContentProvider, Edge, Fetched, OpenRequest, Runtime};
+use gmr_runtime::{ContentError, ContentProvider, Fetched, OpenRequest, Runtime, Standing};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
 
@@ -141,9 +141,9 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
     let before = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
         !before
-            .edges
+            .standing
             .iter()
-            .any(|e| matches!(e, Edge::Rewritten { .. })),
+            .any(|e| matches!(e, Standing::Rewritten { .. })),
         "还没改写"
     );
 
@@ -162,15 +162,15 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
-        after.edges.iter().any(|e| matches!(
+        after.standing.iter().any(|e| matches!(
             e,
-            Edge::Rewritten {
+            Standing::Rewritten {
                 retrievable: Some(true),
                 ..
             }
         )),
-        "记录改写必须发边沿：{:?}",
-        after.edges
+        "记录改写必须报出来：{:?}",
+        after.standing
     );
 }
 
@@ -194,11 +194,11 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
             .changed_since(0, None)
             .await
             .unwrap()
-            .edges
+            .standing
             .iter()
             .any(|e| matches!(
                 e,
-                Edge::Rewritten {
+                Standing::Rewritten {
                     retrievable: Some(false),
                     ..
                 }

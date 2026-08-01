@@ -19,7 +19,7 @@ pub use gmr_probe::{ProbeError, Sighted, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorView, ContentError, ContentProvider, CorpusHealth, Edge, Edges, Fetched,
     MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised, Runtime, RuntimeError,
-    Sighting, Stall, Supersede,
+    Sighting, Standing, Supersede,
 };
 pub use gmr_store::{
     BindingStore, Disposition, ErrorKind, Fence, Journal, Queue, StoreError, Ticket,

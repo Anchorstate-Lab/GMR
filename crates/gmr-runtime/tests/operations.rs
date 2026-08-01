@@ -4,7 +4,7 @@ use gmr_core::{
     AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, State, StatusId, Transitions,
     Version,
 };
-use gmr_runtime::{Edge, OpenRequest, Policy, Runtime, Stall};
+use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
 
@@ -120,13 +120,9 @@ async fn every_failure_path_emits_an_edge() {
     }
     let e = w.runtime.changed_since(mid, None).await.unwrap();
     assert!(
-        e.edges.iter().any(|x| matches!(
-            x,
-            Edge::Stalled {
-                reason: Stall::Attempts { .. },
-                ..
-            }
-        )),
+        e.edges
+            .iter()
+            .any(|x| matches!(x, Edge::Stalled { count: _, .. })),
         "连续算不出来也是停摆：{:?}",
         e.edges
     );
@@ -163,13 +159,9 @@ async fn every_failure_path_emits_an_edge() {
     w.runtime.observe(&key()).await.unwrap();
     let e = w.runtime.changed_since(mid, None).await.unwrap();
     assert!(
-        e.edges.iter().any(|x| matches!(
-            x,
-            Edge::Stalled {
-                reason: Stall::Attempts { count: 2, .. },
-                ..
-            }
-        )),
+        e.edges
+            .iter()
+            .any(|x| matches!(x, Edge::Stalled { count: 2, .. })),
         "连续失败超阈值 → stalled：{:?}",
         e.edges
     );
@@ -467,4 +459,44 @@ async fn an_author_close_is_not_reported_as_self_sealed() {
         })
         .collect();
     assert_eq!(closed, vec![false], "作者伸手关的，处置跟自封不同");
+}
+
+#[tokio::test]
+async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+
+    let first = w.runtime.changed_since(0, None).await.unwrap();
+    assert!(!first.edges.is_empty(), "日志里确实发生过事");
+
+    let second = w.runtime.changed_since(first.cursor, None).await.unwrap();
+    assert!(second.edges.is_empty(), "问过的事不再交第二次");
+
+    // 陈旧是状况：它不来自日志，游标对它没有意义，每次都该重报。
+    let stale = World::polled(Policy {
+        stalled_staleness_secs: -1,
+        ..Default::default()
+    });
+    stale.write(r#"{"x":1}"#);
+    stale
+        .runtime
+        .open(request(stale.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let a = stale.runtime.changed_since(0, None).await.unwrap();
+    let b = stale.runtime.changed_since(a.cursor, None).await.unwrap();
+    assert_eq!(a.standing.len(), 1);
+    assert_eq!(
+        b.standing.len(),
+        1,
+        "游标之后没有新条目，但这个锚此刻仍然是陈旧的 —— 状况该重报"
+    );
+    assert!(b.edges.is_empty(), "而它不该冒充成一件新发生的事");
 }

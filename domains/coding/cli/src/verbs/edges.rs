@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Edge, Runtime, Stall, StatusId};
+use gmr::{AnchorKey, Edge, Runtime, Standing, StatusId};
 
 use crate::error::CliError;
 
@@ -36,26 +36,39 @@ pub async fn run(
                 };
                 println!("终结      {anchor}  {by}");
             }
-            Edge::Stalled { anchor, reason, .. } => match reason {
-                Stall::Attempts { count, last } => {
-                    println!("看不见    {anchor}  连续 {count} 次没看成（{last:?}）")
-                }
-                Stall::Stale { last_sighting } => match last_sighting {
+            Edge::Stalled {
+                anchor,
+                count,
+                last,
+                ..
+            } => println!("看不见    {anchor}  连续 {count} 次没看成（{last:?}）"),
+        }
+    }
+
+    // 状况不来自日志，所以「游标之后」对它们没有意义 —— 分开印，也分开说。
+    if !out.standing.is_empty() {
+        println!("\n此刻的状况（不受游标影响，每次都会重报）");
+        for s in &out.standing {
+            match s {
+                Standing::Stale {
+                    anchor,
+                    last_sighting,
+                } => match last_sighting {
                     Some(t) => println!("陈旧      {anchor}  上次看到是 {t}"),
                     None => println!("陈旧      {anchor}  从没看到过"),
                 },
-            },
-            Edge::Rewritten {
-                anchor,
-                reference,
-                retrievable,
-                ..
-            } => {
-                let tail = match retrievable {
-                    Some(false) => "  当初那一版已取不回",
-                    _ => "",
-                };
-                println!("记录改写  {anchor}  {}{tail}", reference.external_id);
+                Standing::Rewritten {
+                    anchor,
+                    reference,
+                    retrievable,
+                    ..
+                } => {
+                    let tail = match retrievable {
+                        Some(false) => "  当初那一版已取不回",
+                        _ => "",
+                    };
+                    println!("记录改写  {anchor}  {}{tail}", reference.external_id);
+                }
             }
         }
     }
