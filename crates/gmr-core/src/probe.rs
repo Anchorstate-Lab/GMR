@@ -55,8 +55,9 @@ impl Platform {
     }
 }
 
-/// 探针 artifact 的清单：描述并锁死一次派生规则的闭包。
-/// `ProbeVersion` 就是它的内容哈希 —— 版本是挣来的，不是声明的。
+/// Manifest of a probe artifact: it describes and pins down the closure of one
+/// derivation rule.
+/// `ProbeVersion` is its content hash — the version is earned, not declared.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     pub schema: String,
@@ -73,7 +74,7 @@ pub struct Manifest {
 
 impl Manifest {
     pub fn version(&self) -> ProbeVersion {
-        let value = serde_json::to_value(self).expect("清单一定可序列化");
+        let value = serde_json::to_value(self).expect("a manifest always serialises");
         ProbeVersion::new(content_hash_of(&value).into_inner())
     }
 
@@ -82,26 +83,29 @@ impl Manifest {
     }
 }
 
-/// 派生规则的身份能不能被证明。证不出来不是失败，是必须说出来的那句话。
+/// Whether the derivation rule's identity can be proven. Being unable to prove
+/// it is not a failure — it is the sentence that has to be said out loud.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
-    /// 清单与每一份文件的内容都当场校验过。
+    /// Manifest and every file it names were verified byte for byte.
     ContentAddressed,
-    /// 只有一段声明可依；执行的东西证不出来。
+    /// Only a declaration to go on; what actually ran cannot be proven.
     Declared,
-    /// 连声明都锁不住结果。
+    /// Not even the declaration pins the result down.
     Unverifiable,
 }
 
-/// 这一次观测实际被什么算出来。由传输在执行时给出，不是锚自己算的。
+/// What actually derived this observation. Handed over by the transport at call
+/// time — not computed by the anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Derivation {
     pub version: ProbeVersion,
     pub verifiability: Verifiability,
 }
 
-/// 锚上写的东西：指向哪个 artifact，带什么参数。它不是派生规则的身份。
+/// What the anchor wrote down: which artifact, with which params. This is *not*
+/// the identity of the derivation rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeRef {
     pub kind: Kind,
@@ -150,8 +154,8 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    /// 「世界说没有」也是答案，也要有地址：否则两次 NotFound 之间换了派生
-    /// 规则，比对会把它们当成同一件事。
+    /// "The world says there is nothing" is an answer too, so it gets an address:
+    /// otherwise swapping the derivation rule between two NotFounds compares equal.
     pub fn address(&self, derivation: &ProbeVersion) -> FactAddress {
         let facts = match self {
             Self::Found { facts } => facts.as_value(),
@@ -204,7 +208,7 @@ mod tests {
         assert_ne!(
             manifest("bin/p", "a").version(),
             manifest("bin/p", "b").version(),
-            "同一个入口、不同的内容 —— 那是两条派生规则"
+            "same entrypoint, different bytes — those are two derivation rules"
         );
     }
 
@@ -237,7 +241,7 @@ mod tests {
         assert_ne!(
             a.declaration_hash(),
             b.declaration_hash(),
-            "换 artifact 就是换声明"
+            "swapping the artifact is swapping the declaration"
         );
     }
 
@@ -261,8 +265,8 @@ mod tests {
         };
 
         assert_eq!(f.address(&v1), f.address(&v1));
-        assert_ne!(f.address(&v1), f.address(&v2), "换探针 = 换派生规则");
-        assert_ne!(f.address(&v1), g.address(&v1), "换内容 = 换事实");
+        assert_ne!(f.address(&v1), f.address(&v2), "new probe = new derivation rule");
+        assert_ne!(f.address(&v1), g.address(&v1), "new content = new fact");
     }
 
     #[test]
@@ -272,7 +276,7 @@ mod tests {
         assert_ne!(
             Outcome::NotFound.address(&v1),
             Outcome::NotFound.address(&v2),
-            "换了探针还是没找到 —— 那是另一条规则说的没有"
+            "still not found, but by a different rule — that is another rule's absence"
         );
     }
 

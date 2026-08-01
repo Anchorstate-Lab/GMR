@@ -24,7 +24,7 @@ impl Journal for SqliteJournal {
         fence: Fence,
     ) -> Result<Seq, StoreError> {
         let body = serde_json::to_string(entry)
-            .map_err(|e| StoreError::other(format!("条目序列化失败：{e}")))?;
+            .map_err(|e| StoreError::other(format!("could not serialise the entry: {e}")))?;
 
         let mut tx = self.pool.begin().await.map_err(db_err)?;
 

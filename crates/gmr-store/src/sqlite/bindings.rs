@@ -17,16 +17,16 @@ impl SqliteBindings {
 
 fn ref_key(r: &Ref) -> String {
     String::from_utf8(canonicalize(
-        &serde_json::to_value(r).expect("Ref 一定可序列化"),
+        &serde_json::to_value(r).expect("a Ref always serialises"),
     ))
-    .expect("canonical JSON 一定是 UTF-8")
+    .expect("canonical JSON is always UTF-8")
 }
 
 #[async_trait]
 impl BindingStore for SqliteBindings {
     async fn bind(&self, binding: &Binding) -> Result<(), StoreError> {
         let body = serde_json::to_string(binding)
-            .map_err(|e| StoreError::other(format!("挂靠序列化失败：{e}")))?;
+            .map_err(|e| StoreError::other(format!("could not serialise the binding: {e}")))?;
 
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let seq: i64 = sqlx::query_scalar(

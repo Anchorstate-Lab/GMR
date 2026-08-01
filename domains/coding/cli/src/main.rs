@@ -16,7 +16,7 @@ use gmr_transport_shell::Shell;
 use cli::{Cli, Command};
 use error::CliError;
 
-/// 探针 artifact 仓库：按内容地址存放，跟日志同级。
+/// Probe artifact store: content-addressed and colocated with the journal.
 pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
     root.join(".anchor").join("probes")
 }
@@ -36,9 +36,9 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<i32, CliError> {
     let root = PathBuf::from(&cli.repo)
         .canonicalize()
-        .map_err(|e| CliError(format!("找不到仓库 `{}`：{e}", cli.repo)))?;
+        .map_err(|e| CliError(format!("cannot find repository `{}`: {e}", cli.repo)))?;
 
-    // 发布探针不碰日志：它是任何日志存在之前的一步。
+    // Publishing a probe does not touch the journal; it happens before any log exists.
     if let Command::Publish {
         from,
         entrypoint,
@@ -50,7 +50,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     }
 
     let dir = root.join(".anchor");
-    std::fs::create_dir_all(&dir).map_err(|e| CliError(format!("建不了 .anchor：{e}")))?;
+    std::fs::create_dir_all(&dir).map_err(|e| CliError(format!("cannot create .anchor: {e}")))?;
     let store = gmr::sqlite::open(dir.join("memory.db")).await?;
 
     let rt = Runtime::builder()
@@ -64,7 +64,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     let json = cli.json;
     match cli.command {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
-        Command::Publish { .. } => unreachable!("上面已经处理过了"),
+        Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Open(args) => verbs::open::run(&rt, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key, moved } => verbs::read::run(&rt, key, moved, json).await,

@@ -77,7 +77,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     walk(root, root, &mut seen);
     if seen.is_empty() {
         return Err(format!(
-            "{} 底下一个能读的文件都没有 —— 更可能是我站错了目录",
+            "{} contains no readable files; the probe is likely pointed at the wrong directory",
             root.display()
         ));
     }

@@ -9,15 +9,15 @@ use crate::probe::{Derivation, FactAddress, Facts, Outcome, ProbeRef};
 
 pub type Seq = u64;
 
-/// 一条观测背后的三重身份，**不许合并**：它们独立演进，出错方式不同，
-/// 合并任何两个都会在其中一边撒谎。
+/// The three identities behind one observation. **Never merge them:** they
+/// evolve independently and fail differently, so merging any two lies about one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Versions {
-    /// 锚上写的那一句。
+    /// The sentence written on the anchor.
     pub declaration: ContentHash,
-    /// 实际算出这些事实的东西，以及这个身份能不能被证明。
+    /// What actually derived these facts, and whether that identity is provable.
     pub derivation: Derivation,
-    /// 当时的求值器。
+    /// The evaluator in force at the time.
     pub evaluator: String,
 }
 
@@ -162,16 +162,17 @@ impl AnchorState {
     }
 }
 
-/// `closed` 逐条累积且只增不减：终结是日志里发生过的事，不是对最后一个
-/// 状态的重新解释。
+/// `closed` accumulates entry by entry and never clears: finishing is something
+/// that happened in the log, not a re-reading of the final state.
 pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
     scan(entries, |_, _, _| {})
 }
 
-/// 沿日志走一遍，每吃掉一条就把当时的折叠结果交出来。
+/// Walk the log once, handing over the fold as it stood after each entry.
 ///
-/// `fold` 只是它的最后一格。想知道「中途发生了什么」的消费方走这里，
-/// **不要另写一份投影** —— 两份投影迟早对不上，而没有任何东西会发现。
+/// `fold` is just its last cell. Consumers that need to know what happened along
+/// the way come here and **do not write a second projection** — two projections
+/// drift apart sooner or later, and nothing will notice.
 pub fn scan(
     entries: &[(Seq, Entry)],
     mut each: impl FnMut(Seq, &Entry, &AnchorState),
@@ -377,8 +378,16 @@ mod tests {
         ];
         let s = fold(&log).unwrap();
         assert_eq!(s.attempts, 2);
-        assert_eq!(s.state.status(), Some(StatusId::new("ok")), "状态没被动过");
-        assert_eq!(s.entered_at, Some(at(0)), "我们的失败不重置世界的计时");
+        assert_eq!(
+            s.state.status(),
+            Some(StatusId::new("ok")),
+            "the state was never touched"
+        );
+        assert_eq!(
+            s.entered_at,
+            Some(at(0)),
+            "our failures do not reset the world's clock"
+        );
         assert_eq!(s.last_sighting, Some(at(0)));
     }
 
@@ -421,7 +430,10 @@ mod tests {
                 },
             ),
         ];
-        assert!(fold(&log).unwrap().closed, "进了终结集合就是关了");
+        assert!(
+            fold(&log).unwrap().closed,
+            "landing in the terminal set is being closed"
+        );
     }
 
     #[test]
@@ -512,8 +524,12 @@ mod tests {
             ),
         ];
         let s = fold(&log).unwrap();
-        assert_eq!(s.latest_seq, Some(1), "still 不带来新观测，出处还是 open");
-        assert_eq!(s.last_sighting, Some(at(20)), "但我们确实又看了一次");
+        assert_eq!(
+            s.latest_seq,
+            Some(1),
+            "a still brings no new observation — the origin is still the open"
+        );
+        assert_eq!(s.last_sighting, Some(at(20)), "but we did look again");
     }
 
     #[test]
@@ -549,8 +565,12 @@ mod tests {
             ),
         ];
         let s = fold(&log).unwrap();
-        assert_eq!(s.state.position(), &json!("b.rs"), "作者动了状态");
-        assert_eq!(s.latest_seq, Some(1), "但没人重新观测过世界");
+        assert_eq!(
+            s.state.position(),
+            &json!("b.rs"),
+            "the author moved the state"
+        );
+        assert_eq!(s.latest_seq, Some(1), "but nobody re-observed the world");
     }
 
     #[test]
@@ -561,10 +581,10 @@ mod tests {
         let b = FactAddress::new("d".repeat(64));
 
         assert!(should_still(&s1, &a, &s1, &a));
-        assert!(!should_still(&s1, &a, &s2, &a), "状态动了");
+        assert!(!should_still(&s1, &a, &s2, &a), "the state moved");
         assert!(
             !should_still(&s1, &a, &s1, &b),
-            "世界沿没在看的方向动了 —— 留完整记录"
+            "the world moved along a direction nobody watches — keep the full record"
         );
     }
 

@@ -12,7 +12,7 @@ impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "`{}` 在这次观测里取不到（{}）",
+            "`{}` cannot be resolved against this observation ({})",
             self.path,
             self.fault.class()
         )

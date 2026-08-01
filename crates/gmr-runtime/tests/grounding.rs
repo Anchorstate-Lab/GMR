@@ -8,8 +8,8 @@ use gmr_runtime::{ContentError, ContentProvider, Fetched, OpenRequest, Runtime, 
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
 
-/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
-/// 生产路径上成立，测试反而绕过了它。
+/// Every test publishes a real artifact. Otherwise "earned versions" would
+/// hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     let version =
         gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
@@ -133,7 +133,7 @@ impl World {
 #[tokio::test]
 async fn a_rewritten_record_emits_an_edge_with_both_versions() {
     let w = World::new(true);
-    w.memory("a.md", "锚的模块名单就是契约本体。");
+    w.memory("a.md", "The anchor module roster is the contract itself.");
     w.open("a").await;
     w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     w.bind("a.md", &["a"]).await;
@@ -144,21 +144,21 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
             .standing
             .iter()
             .any(|e| matches!(e, Standing::Rewritten { .. })),
-        "还没改写"
+        "not rewritten yet"
     );
 
-    w.memory("a.md", "改口了：名单只是影子。");
+    w.memory("a.md", "Changed claim: the roster is only a shadow.");
 
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
-    assert!(m.rewritten, "绑定以来被改写过");
+    assert!(m.rewritten, "rewritten since binding");
     assert_eq!(m.retrievable, Some(true));
     assert_eq!(
         m.content_at_bind.as_deref(),
-        Some("锚的模块名单就是契约本体。"),
-        "判断「它还在说同一件事吗」要的是从什么改成了什么"
+        Some("The anchor module roster is the contract itself."),
+        "judging whether it still says the same thing requires both before and after"
     );
-    assert_eq!(m.content.as_deref(), Some("改口了：名单只是影子。"));
+    assert_eq!(m.content.as_deref(), Some("Changed claim: the roster is only a shadow."));
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
@@ -169,7 +169,7 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
                 ..
             }
         )),
-        "记录改写必须报出来：{:?}",
+        "record rewrites must be reported: {:?}",
         after.standing
     );
 }
@@ -177,16 +177,16 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 #[tokio::test]
 async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
     let w = World::new(false);
-    w.memory("a.md", "原话。");
+    w.memory("a.md", "Original wording.");
     w.open("a").await;
     w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     w.bind("a.md", &["a"]).await;
-    w.memory("a.md", "改过的话。");
+    w.memory("a.md", "Edited wording.");
 
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
     assert!(m.rewritten);
-    assert_eq!(m.retrievable, Some(false), "history rewrite 之后不可达");
+    assert_eq!(m.retrievable, Some(false), "unreachable after history rewrite");
     assert_eq!(m.content_at_bind, None);
 
     assert!(
@@ -203,16 +203,16 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
                     ..
                 }
             )),
-        "取不回也要出声 —— 那是「从什么改成什么」永远问不出来了"
+        "unretrievable bound versions must still be reported; the before/after question can no longer be answered"
     );
 }
 
 #[tokio::test]
 async fn cobound_is_derived_from_binds_not_stored() {
     let w = World::new(true);
-    w.memory("a.md", "一。");
-    w.memory("b.md", "二。");
-    w.memory("c.md", "三。");
+    w.memory("a.md", "One.");
+    w.memory("b.md", "Two.");
+    w.memory("c.md", "Three.");
     w.open("a").await;
     w.open("b").await;
 
@@ -258,8 +258,8 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
     use gmr_core::{Link, LinkKind};
 
     let w = World::new(true);
-    w.memory("bound.md", "挂在锚上的那条。");
-    w.memory("loose.md", "谁也没挂，但被上面那条引用了。");
+    w.memory("bound.md", "This one is anchored.");
+    w.memory("loose.md", "This one is not anchored, but the one above links to it.");
     w.open("a").await;
 
     w.runtime
@@ -274,7 +274,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         )
         .await
         .unwrap();
-    // 无锚的绑定：它存在，但没挂在任何锚上。
+    // Unanchored binding: it exists, but is attached to no anchor.
     w.runtime
         .bind(
             Ref::new("git", "memories/loose.md"),
@@ -290,24 +290,24 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         view.memories
             .iter()
             .find(|m| m.reference.external_id.as_str() == id)
-            .unwrap_or_else(|| panic!("{id} 该在这里：{:?}", view.memories))
+            .unwrap_or_else(|| panic!("{id} should be present here: {:?}", view.memories))
     };
 
     assert!(by_id("memories/bound.md").grounded);
     assert!(
         !by_id("memories/loose.md").grounded,
-        "被捎带出来了，但它拿不到任何保证 —— 必须看得出来"
+        "it was carried along but gets no guarantee, so that must be visible"
     );
     assert_eq!(
         by_id("memories/loose.md").content.as_deref(),
-        Some("谁也没挂，但被上面那条引用了。")
+        Some("This one is not anchored, but the one above links to it.")
     );
 }
 
 #[tokio::test]
 async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
     let w = World::new(true);
-    w.memory("a.md", "一。");
+    w.memory("a.md", "One.");
     w.open("a").await;
     w.bind("a.md", &["a"]).await;
 
@@ -333,7 +333,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
         .await
         .unwrap()
         .unwrap();
-    assert!(detached.anchors.is_empty(), "摘走了，但历史留在表里");
+    assert!(detached.anchors.is_empty(), "detached, while history remains in the table");
     assert!(
         w.runtime
             .read(&AnchorKey::new("a"))
@@ -341,6 +341,6 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
             .unwrap()
             .memories
             .is_empty(),
-        "不再挂在这个锚上"
+        "no longer attached to this anchor"
     );
 }

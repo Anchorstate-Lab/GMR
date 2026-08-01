@@ -39,7 +39,7 @@ impl Runtime {
         });
         let context = self
             .bindings
-            .seal(&serde_json::to_vec(&context).expect("context 一定可序列化"))
+            .seal(&serde_json::to_vec(&context).expect("the context always serialises"))
             .await?;
         let rationale = self.bindings.seal(rationale).await?;
 

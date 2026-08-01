@@ -31,7 +31,7 @@ impl ContentProvider for Git {
             return Ok(None);
         }
         let bytes = std::fs::read(&path)
-            .map_err(|e| ContentError::new(format!("读不到 `{}`：{e}", id.as_str())))?;
+            .map_err(|e| ContentError::new(format!("cannot read `{}`: {e}", id.as_str())))?;
         let version =
             blob_version(&self.root, id.as_str()).map_err(|e| ContentError::new(e.to_string()))?;
         Ok(Some(Fetched {
@@ -49,7 +49,7 @@ impl ContentProvider for Git {
             .args(["cat-file", "blob", version.as_str()])
             .current_dir(&self.root)
             .output()
-            .map_err(|e| ContentError::new(format!("git 跑不起来：{e}")))?;
+            .map_err(|e| ContentError::new(format!("cannot run git: {e}")))?;
         if !out.status.success() {
             return Ok(None);
         }
@@ -62,11 +62,11 @@ pub fn blob_version(root: &Path, relative: &str) -> Result<String, ContentError>
         .args(["hash-object", "--", relative])
         .current_dir(root)
         .output()
-        .map_err(|e| ContentError::new(format!("git 跑不起来：{e}")))?;
+        .map_err(|e| ContentError::new(format!("cannot run git: {e}")))?;
 
     if !out.status.success() {
         return Err(ContentError::new(format!(
-            "算不出 `{relative}` 的版本：{}",
+            "cannot compute the version for `{relative}`: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }

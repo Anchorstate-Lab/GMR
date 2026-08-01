@@ -37,28 +37,28 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
         return Ok(0);
     }
 
-    println!("锚        {}（活着的 {}）", views.len(), live.len());
+    println!("anchors   {} (live {})", views.len(), live.len());
     if !states.is_empty() {
         let mut counts: std::collections::BTreeMap<&str, usize> = Default::default();
         for s in &states {
             *counts.entry(s.as_str()).or_default() += 1;
         }
-        let line: Vec<String> = counts.iter().map(|(s, n)| format!("{s}×{n}")).collect();
-        println!("状态      {}", line.join("  "));
+        let line: Vec<String> = counts.iter().map(|(s, n)| format!("{s}x{n}")).collect();
+        println!("status    {}", line.join("  "));
     }
     if !absent.is_empty() {
         println!(
-            "还没锚上  {}\n          ← 探针至今什么都没看到。先写判据后做实现时这是正常的",
-            absent.join(" · ")
+            "absent    {}\n          <- the probe has not seen anything yet; this is normal when criteria are written before implementation",
+            absent.join(", ")
         );
     }
     if !unseen.is_empty() {
-        println!("没看成    {}  ← 修探针或凭证", unseen.join(" · "));
+        println!("unseen    {}  <- fix the probe or credentials", unseen.join(", "));
     }
     if !barren.is_empty() {
         println!(
-            "没有记忆  {}\n          ← 在守一个没人写过东西的位置，纯观测开销",
-            barren.join(" · ")
+            "barren    {}\n          <- observing a position where nobody has written a memory",
+            barren.join(", ")
         );
     }
     Ok(0)

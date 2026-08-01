@@ -8,7 +8,7 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
         println!("{}", serde_json::to_string(&p)?);
     } else {
         println!(
-            "观测 {} · 动了 {} · 没看成 {} · 退场 {}",
+            "observed {} | moved {} | unseen {} | retired {}",
             p.observed, p.moved, p.unseen, p.retired
         );
     }

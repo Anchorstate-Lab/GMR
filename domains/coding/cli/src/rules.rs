@@ -4,29 +4,29 @@ use gmr::{Expr, Kind, ProbeRef, ProbeVersion, Rule, StatusId, Transitions};
 
 use crate::error::CliError;
 
-/// 锚上写的探针：指向哪个 artifact，带什么参数。
+/// Probe written on the anchor: which artifact it points at and which params it carries.
 pub fn probe(artifact: &str, params: &str) -> Result<ProbeRef, CliError> {
     let artifact = ProbeVersion::try_new(artifact).map_err(|e| {
         CliError(format!(
-            "`{artifact}` 不是一个 artifact 版本号（{e}）——\n\
-             用 `anchor publish <目录>` 发布一个，它会打印这个号"
+            "`{artifact}` is not an artifact version ({e}).\n\
+             Publish one with `anchor publish <dir>`; it will print this value."
         ))
     })?;
     let params: serde_json::Value =
-        serde_json::from_str(params).map_err(|e| CliError(format!("params 不是合法 JSON：{e}")))?;
+        serde_json::from_str(params).map_err(|e| CliError(format!("params is not valid JSON: {e}")))?;
     Ok(ProbeRef::new(Kind::new("shell"), artifact, params))
 }
 
 pub fn rule(text: &str) -> Result<Rule, CliError> {
     let (when, to) = text.split_once("=>").ok_or_else(|| {
         CliError(format!(
-            "转换规则要写成 `守卫 => 新状态`，收到 `{text}`\n\
-             例：changed(\"shape\") => {{ shape: obs.shape, status: \"drifted\" }}"
+            "transition rules must be written as `GUARD => NEW_STATE`; got `{text}`\n\
+             example: changed(\"shape\") => {{ shape: obs.shape, status: \"drifted\" }}"
         ))
     })?;
     let (when, to) = (when.trim(), to.trim());
     if when.is_empty() || to.is_empty() {
-        return Err(CliError(format!("`{text}` 的守卫或新状态是空的")));
+        return Err(CliError(format!("`{text}` has an empty guard or new state")));
     }
     Ok(Rule {
         when: Expr::text(when),
@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn a_rule_without_an_arrow_says_what_it_wanted() {
         let e = rule("changed(\"shape\")").unwrap_err();
-        assert!(e.0.contains("守卫 => 新状态"));
+        assert!(e.0.contains("GUARD => NEW_STATE"));
     }
 
     #[test]

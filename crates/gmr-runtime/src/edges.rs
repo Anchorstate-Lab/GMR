@@ -31,13 +31,15 @@ pub enum Edge {
     },
 }
 
-/// 此刻仍然成立的**状况**，不是发生过的事。
+/// A **condition** that holds right now, not something that happened.
 ///
-/// 它们不来自日志：陈旧是拿当下的钟去比对最后一次看见，改写要向提供方问
-/// 「现在是哪一版」。日志游标因此表达不了「这条我看过了」—— 硬塞进边沿里
-/// 只会让每一次轮询都重新报一遍同样的东西，而消费方无从分辨。
+/// These do not come from the log: staleness compares the current clock against
+/// the last sighting, and a rewrite asks the provider which version it holds now.
+/// A log cursor therefore cannot express "I have seen this one" — forcing them
+/// into edges just re-reports the same thing on every poll, and the consumer has
+/// no way to tell.
 ///
-/// 所以把它们摆在另一格：**按内容去重，不按游标。**
+/// So they sit in their own slot: **deduplicate by content, not by cursor.**
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "standing", rename_all = "snake_case")]
 pub enum Standing {
@@ -56,9 +58,9 @@ pub enum Standing {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Edges {
-    /// 游标之后日志里真的发生过的事。问过就不再交第二次。
+    /// What actually happened in the log after the cursor. Handed over once.
     pub edges: Vec<Edge>,
-    /// 此刻的状况。每次问都重新算 —— 见 [`Standing`]。
+    /// Conditions as of now. Recomputed on every call — see [`Standing`].
     pub standing: Vec<Standing>,
     pub cursor: Seq,
 }
@@ -105,7 +107,7 @@ impl Runtime {
             }
         }
 
-        // 问了具体状态就是问了一个具体问题：别拿状况去搅它。
+        // Asking for a status is asking a specific question: do not muddy it.
         if let Some(want) = status {
             edges.retain(|e| match e {
                 Edge::Transitioned { status, .. } => status.as_ref() == Some(want),
@@ -128,10 +130,11 @@ impl Runtime {
     }
 }
 
-/// 边沿从**同一份折叠**里派生出来，不另写一份投影。
+/// Edges are derived from **the same fold**, never a second projection.
 ///
-/// 手写第二份的代价不是重复，是漂：两份对「什么算关了」的算法一旦分家，
-/// 没有任何东西会发现，而边沿正是消费方唯一看得见的东西。
+/// The cost of a hand-written second copy is not duplication but drift: once the
+/// two disagree on what counts as closed, nothing notices — and edges are the
+/// only thing the consumer ever sees.
 fn walk(
     key: &AnchorKey,
     entries: &[(Seq, Entry)],
@@ -159,15 +162,17 @@ fn walk(
         if fresh && now.closed && !was_closed {
             out.push(Edge::Closed {
                 anchor: key.clone(),
-                // 自己走进终结集合，还是作者伸手关的 —— 这两件事的处置不同。
+                // Walked into the terminal set, or closed by the author — these
+                // two are handled differently downstream.
                 self_sealed: !matches!(entry, Entry::Close { .. }),
                 seq,
                 at: entry.at(),
             });
         }
 
-        // 规则写错了重试一万次也不会好 —— 第一次就得响，而且别跟
-        // 「世界这会儿够不着」共用一个计数器。
+        // A broken rule will not get better after ten thousand retries: it has to
+        // be loud the first time, and must not share a counter with "the world is
+        // out of reach right now".
         if fresh
             && let Entry::Attempt { reason, .. } = entry
             && (*reason == ReasonClass::Unevaluable || now.attempts == policy.stalled_attempts)

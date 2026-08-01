@@ -21,7 +21,7 @@ pub async fn run(
     if json {
         println!("{}", serde_json::to_string_pretty(&shown)?);
     } else if shown.is_empty() {
-        println!("没有锚在动。");
+        println!("no anchors are moving.");
     } else {
         for v in &shown {
             print!("{}", render::anchor(v));

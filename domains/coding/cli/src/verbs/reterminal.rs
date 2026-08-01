@@ -34,9 +34,9 @@ pub async fn run(
         );
     } else {
         let view = rt.read(&key).await?;
-        println!("{key} 的终结集合现在是：{}", names.join(" · "));
+        println!("{key} terminal set is now: {}", names.join(", "));
         if view.closed {
-            println!("  → 它当前的状态就在这个集合里，这个锚现在是关的");
+            println!("  its current state is in that set, so the anchor is now closed");
         }
         sealed(&revised.context, &revised.rationale);
     }

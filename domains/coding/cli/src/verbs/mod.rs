@@ -17,11 +17,11 @@ use gmr::ContentHash;
 
 pub(crate) fn sealed(context: &ContentHash, rationale: &ContentHash) {
     println!(
-        "  context   {} （基底捕获，不可能被伪造）",
+        "  context   {} (captured by substrate, cannot be forged)",
         &context.as_str()[..12]
     );
     println!(
-        "  rationale {} （你写的，基底不读、只担保不可篡改）",
+        "  rationale {} (written by you; substrate only preserves tamper evidence)",
         &rationale.as_str()[..12]
     );
 }

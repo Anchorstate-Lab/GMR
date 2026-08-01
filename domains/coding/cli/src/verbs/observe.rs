@@ -40,7 +40,7 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("观测了 {} 个锚，{moved} 个动了", keys.len());
+        println!("observed {} anchors, {moved} moved", keys.len());
     }
     Ok(if moved > 0 { 1 } else { 0 })
 }

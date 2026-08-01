@@ -19,8 +19,9 @@ pub const POSITION_ENV: &str = "GMR_POSITION";
 
 pub const PARAMS_ENV: &str = "GMR_PARAMS";
 
-/// 只执行 artifact。锚上写的是「哪一个 artifact」，这里把它解析出来、
-/// 逐字节校验、再跑它的入口 —— 于是日志里那个版本号是挣来的。
+/// Executes only artifacts. The anchor names an artifact; this transport
+/// resolves it, verifies every byte, then runs its entrypoint. The version in
+/// the log is therefore earned.
 pub struct Shell {
     kind: Kind,
     cwd: PathBuf,
@@ -62,7 +63,8 @@ impl Transport for Shell {
     }
 
     async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Sighted, ProbeError> {
-        // 解析失败是 unusable：我们说不出这次会用哪条派生规则，就不该去跑。
+        // Resolution failure is unusable: if we cannot name the derivation rule,
+        // we should not run it.
         let resolved = self
             .artifacts
             .resolve(&probe.artifact)
@@ -72,7 +74,8 @@ impl Transport for Shell {
         command
             .args(&resolved.manifest.args)
             .current_dir(&self.cwd)
-            // 先铺默认，再让清单覆盖：清单声明什么就是什么，而它进版本号。
+            // Start with defaults, then let the manifest override them. What the
+            // manifest declares is what runs, and it enters the version.
             .env_clear()
             .env("LC_ALL", "C")
             .env("LANG", "C")
@@ -87,17 +90,17 @@ impl Transport for Shell {
             .await
             .map_err(|_| {
                 ProbeError::unreachable(format!(
-                    "探针在 {:?} 后仍未返回；它的沉默不是证据",
+                    "probe did not return within {:?}; silence is not evidence",
                     self.timeout
                 ))
             })?
-            .map_err(|e| ProbeError::unreachable(format!("探针跑不起来：{e}")))?;
+            .map_err(|e| ProbeError::unreachable(format!("cannot run probe: {e}")))?;
 
         let size = out.stdout.len() + out.stderr.len();
         if size > self.output_cap {
             return Err(ProbeError::unusable(format!(
-                "探针输出 {size} 字节，超过 {} 上限；**拒绝而不是截断** —— \
-                 截断过的读数存成事实就是撒谎。让它打印结构，不要打印转储",
+                "probe output is {size} bytes, above the {} byte limit; refusing to truncate. \
+                 Storing a truncated reading as fact would be a lie. Print structure, not dumps",
                 self.output_cap
             )));
         }
@@ -114,8 +117,8 @@ impl Transport for Shell {
                 .rev()
                 .collect();
             return Err(ProbeError::unreachable(match out.status.code() {
-                Some(code) => format!("探针以退出码 {code} 结束：{tail}"),
-                None => format!("探针被信号打断：{tail}"),
+                Some(code) => format!("probe exited with status {code}: {tail}"),
+                None => format!("probe was interrupted by a signal: {tail}"),
             }));
         }
 
@@ -124,8 +127,8 @@ impl Transport for Shell {
 
         let facts: Value = serde_json::from_str(stdout).map_err(|e| {
             ProbeError::unusable(format!(
-                "探针吐的不是 JSON（{e}）；约定是「一个对象，或 null」。\
-                 收到的开头是：{}",
+                "probe output is not JSON ({e}); the contract is an object or null. \
+                 Received prefix: {}",
                 stdout.chars().take(120).collect::<String>()
             ))
         })?;
@@ -178,7 +181,7 @@ mod tests {
             Shell::new(&self.cwd, &self.store)
         }
 
-        /// 发布一个 sh 脚本当探针。
+        /// Publish an sh script as a probe.
         fn publish(&self, body: &str, args: &[&str]) -> ProbeVersion {
             let src = self._dir.path().join("src");
             let _ = std::fs::remove_dir_all(&src);
@@ -219,7 +222,7 @@ mod tests {
         let v = w.publish(r#"echo '{"count":2,"names":["a","b"]}'"#, &[]);
         let got = w.invoke(&v, json!({}), Value::Null).await.unwrap();
         let Outcome::Found { facts } = got.outcome else {
-            panic!("该找到")
+            panic!("expected a found outcome")
         };
         assert_eq!(facts.as_value()["count"], json!(2));
     }
@@ -242,7 +245,7 @@ mod tests {
         assert_ne!(
             w.publish("echo '{\"x\":1}'", &[]),
             w.publish("echo '{\"x\":2}'", &[]),
-            "改了实现就是换了派生规则 —— 版本必须跟着动"
+            "changing the implementation changes the derivation rule, so the version must change"
         );
     }
 
@@ -264,7 +267,7 @@ mod tests {
 
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
-        assert!(e.message.contains("拒绝执行"), "{}", e.message);
+        assert!(e.message.contains("refusing to execute"), "{}", e.message);
     }
 
     #[tokio::test]
@@ -291,7 +294,7 @@ mod tests {
         let v = w.publish("exit 1", &[]);
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
-        assert!(e.message.contains("退出码 1"));
+        assert!(e.message.contains("status 1"));
     }
 
     #[tokio::test]
@@ -308,7 +311,7 @@ mod tests {
         let v = w.publish("echo hello", &[]);
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
-        assert!(e.message.contains("不是 JSON"));
+        assert!(e.message.contains("not JSON"));
     }
 
     #[tokio::test]
@@ -323,7 +326,7 @@ mod tests {
             .await
             .unwrap();
         let Outcome::Found { facts } = got.outcome else {
-            panic!("该找到")
+            panic!("expected a found outcome")
         };
         assert_eq!(facts.as_value()["at"], json!({ "file": "a.rs" }));
         assert_eq!(facts.as_value()["with"], json!({ "kind": "function" }));
@@ -336,7 +339,7 @@ mod tests {
         for p in [json!("a.rs"), json!({ "x": 1 }), json!([1, 2])] {
             let got = w.invoke(&v, json!({}), p.clone()).await.unwrap();
             let Outcome::Found { facts } = got.outcome else {
-                panic!("该找到")
+                panic!("expected a found outcome")
             };
             assert_eq!(facts.as_value()["p"], p);
         }
@@ -356,7 +359,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
-        assert!(e.message.contains("沉默不是证据"));
+        assert!(e.message.contains("silence is not evidence"));
     }
 
     #[tokio::test]
@@ -373,7 +376,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
-        assert!(e.message.contains("拒绝而不是截断"));
+        assert!(e.message.contains("refusing to truncate"));
     }
 
     #[tokio::test]

@@ -109,10 +109,10 @@ pub enum Node {
 }
 
 impl Node {
-    /// 这个表达式读不读上一个状态。
+    /// Whether this expression reads the previous state.
     ///
-    /// 走 AST 而不是匹配 render 出来的文本：`{ note: "state.x" }` 是一个
-    /// 字面量，不是一次读取，而文本分不出这两者。
+    /// Walks the AST rather than matching rendered text: `{ note: "state.x" }`
+    /// is a literal, not a read, and text cannot tell the two apart.
     pub fn reads_state(&self) -> bool {
         match self {
             Self::Path(p) => p.root == Root::State,
@@ -175,6 +175,6 @@ mod tests {
 
     #[test]
     fn the_bare_state_root_counts_too() {
-        assert!(reads("state"), "文本匹配 `state.` 会漏掉这一个");
+        assert!(reads("state"), "matching the text `state.` would miss this one");
     }
 }

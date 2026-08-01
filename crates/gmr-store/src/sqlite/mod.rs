@@ -24,7 +24,7 @@ pub(crate) fn db_err(e: sqlx::Error) -> StoreError {
 }
 
 pub(crate) fn decode_err(e: serde_json::Error) -> StoreError {
-    StoreError::corrupt(format!("存着的字节不是它该是的样子：{e}"))
+    StoreError::corrupt(format!("the stored bytes are not what they should be: {e}"))
 }
 
 pub async fn open(path: impl AsRef<Path>) -> Result<SqliteStore, StoreError> {
@@ -65,8 +65,9 @@ async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
 
     if stamped != 0 && stamped != schema::SCHEMA_VERSION {
         return Err(StoreError::constraint(format!(
-            "这个库盖的是 schema v{stamped}，本代是 v{}。\
-             拒绝打开 —— 误读一个另一代的库，比打不开坏得多",
+            "this database is stamped schema v{stamped}, this generation is v{}. \
+             Refusing to open — misreading a database from another generation is \
+             far worse than not opening it",
             schema::SCHEMA_VERSION
         )));
     }

@@ -4,8 +4,8 @@ use gmr_core::{ContentHash, Manifest, ProbeVersion, content_hash_of_bytes};
 
 pub const MANIFEST_FILE: &str = "manifest.json";
 
-/// 按内容地址存放的探针仓库：`<root>/<version>/manifest.json` 加清单点名的
-/// 那些文件。
+/// Content-addressed probe store: `<root>/<version>/manifest.json` plus the
+/// files named by the manifest.
 pub struct Artifacts {
     root: PathBuf,
 }
@@ -18,7 +18,8 @@ fn bad(m: impl Into<String>) -> ArtifactError {
     ArtifactError(m.into())
 }
 
-/// 校验过的 artifact：拿到它就意味着清单和每一份文件的字节都对上了。
+/// A verified artifact. Holding one means the manifest and every listed file
+/// matched byte-for-byte.
 pub struct Resolved {
     pub manifest: Manifest,
     pub root: PathBuf,
@@ -39,21 +40,21 @@ impl Artifacts {
         self.root.join(version.as_str())
     }
 
-    /// 读清单、校验清单自己的哈希、再逐个校验它点名的文件。
+    /// Read the manifest, verify its own hash, then verify every file it names.
     ///
-    /// 任何一步对不上都是拒绝：一个内容对不上的 artifact 不是「旧版本」，
-    /// 是一条我们无法命名的派生规则。
+    /// Any mismatch is refused. An artifact with mismatched content is not an
+    /// old version; it is a derivation rule we cannot name.
     pub fn resolve(&self, version: &ProbeVersion) -> Result<Resolved, ArtifactError> {
         let dir = self.dir(version);
         let path = dir.join(MANIFEST_FILE);
         let bytes = std::fs::read(&path)
-            .map_err(|e| bad(format!("读不到 {} 的清单（{path:?}）：{e}", version)))?;
+            .map_err(|e| bad(format!("cannot read manifest for {} ({path:?}): {e}", version)))?;
         let manifest: Manifest = serde_json::from_slice(&bytes)
-            .map_err(|e| bad(format!("{version} 的清单不是合法清单：{e}")))?;
+            .map_err(|e| bad(format!("{version}'s manifest is not valid: {e}")))?;
 
         if manifest.schema != gmr_core::MANIFEST_SCHEMA {
             return Err(bad(format!(
-                "{version} 的清单写着 schema `{}`，本代只认 `{}`",
+                "{version}'s manifest declares schema `{}`, but this build only accepts `{}`",
                 manifest.schema,
                 gmr_core::MANIFEST_SCHEMA
             )));
@@ -62,13 +63,13 @@ impl Artifacts {
         let earned = manifest.version();
         if &earned != version {
             return Err(bad(format!(
-                "清单算出来是 {earned}，但它躺在 {version} 底下 —— 名字和内容对不上"
+                "manifest hashes to {earned}, but it is stored under {version}; name and content disagree"
             )));
         }
 
         if manifest.entry().is_none() {
             return Err(bad(format!(
-                "{version} 的入口 `{}` 不在文件清单里",
+                "{version}'s entrypoint `{}` is not listed in the file manifest",
                 manifest.entrypoint
             )));
         }
@@ -86,20 +87,21 @@ impl Artifacts {
 
 fn verify(dir: &Path, rel: &str, want: &ContentHash) -> Result<(), ArtifactError> {
     if rel.split('/').any(|p| p == ".." || p.is_empty()) || rel.starts_with('/') {
-        return Err(bad(format!("清单里的路径越界了：`{rel}`")));
+        return Err(bad(format!("manifest path escapes the artifact root: `{rel}`")));
     }
     let path = dir.join(rel);
-    let bytes = std::fs::read(&path).map_err(|e| bad(format!("读不到 {path:?}：{e}")))?;
+    let bytes = std::fs::read(&path).map_err(|e| bad(format!("cannot read {path:?}: {e}")))?;
     let got = content_hash_of_bytes(&bytes);
     if &got != want {
         return Err(bad(format!(
-            "`{rel}` 的内容是 {got}，清单说的是 {want} —— 拒绝执行"
+            "`{rel}` has content hash {got}, but the manifest says {want}; refusing to execute"
         )));
     }
     Ok(())
 }
 
-/// 把一棵目录发布成一个 artifact：逐文件哈希、写清单、以清单哈希命名。
+/// Publish a directory as an artifact: hash each file, write the manifest, and
+/// name the artifact by the manifest hash.
 pub fn publish(
     artifacts: &Artifacts,
     from: &Path,
@@ -113,7 +115,7 @@ pub fn publish(
     files.sort_by(|a: &gmr_core::FileEntry, b| a.path.cmp(&b.path));
 
     if !files.iter().any(|f| f.path == entrypoint) {
-        return Err(bad(format!("`{entrypoint}` 不在 {from:?} 里")));
+        return Err(bad(format!("`{entrypoint}` is not in {from:?}")));
     }
 
     let manifest = Manifest {
@@ -132,14 +134,14 @@ pub fn publish(
     for file in &manifest.files {
         let dst = dir.join(&file.path);
         if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| bad(format!("建不了 {parent:?}：{e}")))?;
+            std::fs::create_dir_all(parent).map_err(|e| bad(format!("cannot create {parent:?}: {e}")))?;
         }
         std::fs::copy(from.join(&file.path), &dst)
-            .map_err(|e| bad(format!("拷不动 {dst:?}：{e}")))?;
+            .map_err(|e| bad(format!("cannot copy to {dst:?}: {e}")))?;
     }
-    let body = serde_json::to_vec_pretty(&manifest).expect("清单一定可序列化");
+    let body = serde_json::to_vec_pretty(&manifest).expect("manifest must serialize");
     std::fs::write(dir.join(MANIFEST_FILE), body)
-        .map_err(|e| bad(format!("写不了 {version} 的清单：{e}")))?;
+        .map_err(|e| bad(format!("cannot write manifest for {version}: {e}")))?;
 
     Ok(version)
 }
@@ -149,9 +151,9 @@ fn collect(
     dir: &Path,
     out: &mut Vec<gmr_core::FileEntry>,
 ) -> Result<(), ArtifactError> {
-    let entries = std::fs::read_dir(dir).map_err(|e| bad(format!("读不动 {dir:?}：{e}")))?;
+    let entries = std::fs::read_dir(dir).map_err(|e| bad(format!("cannot read directory {dir:?}: {e}")))?;
     for entry in entries {
-        let entry = entry.map_err(|e| bad(format!("读不动 {dir:?} 里的一项：{e}")))?;
+        let entry = entry.map_err(|e| bad(format!("cannot read an entry in {dir:?}: {e}")))?;
         let path = entry.path();
         if path.is_dir() {
             collect(base, &path, out)?;
@@ -159,10 +161,10 @@ fn collect(
         }
         let rel = path
             .strip_prefix(base)
-            .map_err(|_| bad("路径跑出了发布根"))?
+            .map_err(|_| bad("path escaped the publish root"))?
             .to_string_lossy()
             .replace('\\', "/");
-        let bytes = std::fs::read(&path).map_err(|e| bad(format!("读不到 {path:?}：{e}")))?;
+        let bytes = std::fs::read(&path).map_err(|e| bad(format!("cannot read {path:?}: {e}")))?;
         out.push(gmr_core::FileEntry {
             path: rel,
             sha256: content_hash_of_bytes(&bytes),

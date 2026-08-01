@@ -38,9 +38,9 @@ pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliErr
             })
         );
     } else {
-        println!("{key} 已开，起始状态 {}", opened.state.as_value());
+        println!("{key} opened, initial state {}", opened.state.as_value());
         if let Some(old) = &opened.supersedes {
-            println!("  接替 {old} —— 那一代终结了，理由已密封");
+            println!("  supersedes {old}; that generation is closed and the rationale is sealed");
         }
         for w in &opened.warnings {
             println!("  ! {w}");

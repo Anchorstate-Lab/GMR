@@ -7,8 +7,8 @@ use gmr_runtime::{ContentError, ContentProvider, Fetched, OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
 
-/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
-/// 生产路径上成立，测试反而绕过了它。
+/// Every test publishes a real artifact. Otherwise "earned versions" would
+/// hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     let version =
         gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
@@ -48,9 +48,9 @@ impl ContentProvider for Files {
 }
 
 const MEMORY: &str = "\
-# core 的模块
+# Core Modules
 
-没有 `fact` 模块 —— 事实没有独立于产出它的探针的存在。
+There is no `fact` module; facts do not exist independently of the probe that produced them.
 ";
 
 #[tokio::test]
@@ -114,20 +114,19 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
     assert_eq!(
         view.state.as_value()["modules"],
         serde_json::json!(["addr", "probe", "fact"]),
-        "锚该交出它现在看到的东西，不只是『变了』"
+        "the anchor should hand back what it sees now, not just that it changed"
     );
-    assert!(handed_back.contains("fact"), "交回去的那份里要读得出新值");
+    assert!(handed_back.contains("fact"), "the handed-back view should contain the new value");
 
     assert_eq!(view.memories.len(), 1);
 
     assert!(
-        handed_back.contains("事实没有独立于产出它的探针的存在"),
-        "read 只交回了记忆的地址，没交回内容 —— \
-         『自动识别记忆和事实的差别』这一步因此发生在工具外面"
+        handed_back.contains("facts do not exist independently of the probe that produced them"),
+        "read handed back memory content, not just its address; otherwise distinguishing memory from fact would happen outside the tool"
     );
 
     assert!(
         handed_back.contains("blob-at-bind-time"),
-        "绑定时那一版必须交回来，否则无从判断读到的是不是当初那份"
+        "the bound version must come back, otherwise callers cannot tell whether they are reading the bound content"
     );
 }

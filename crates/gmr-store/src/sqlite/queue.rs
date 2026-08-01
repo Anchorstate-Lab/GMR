@@ -99,7 +99,8 @@ impl Queue for SqliteQueue {
     ) -> Result<(), StoreError> {
         match disposition {
             Disposition::Retire => {
-                // 停放而不是删行：epoch 是这个锚的令牌高水位，删了就从头数。
+                // Park instead of deleting: epoch is this anchor's token high-water
+                // mark, and deleting the row restarts the count from zero.
                 sqlx::query("UPDATE queue SET parked = 1, lease_until = 0 WHERE anchor = ?1")
                     .bind(ticket.anchor.as_str())
                     .execute(&self.pool)

@@ -101,11 +101,12 @@ impl Runtime {
 }
 
 impl Runtime {
-    /// 顺着链接把无锚的记录捎带出来，标成未接地。
+    /// Carry unanchored records along the links, marked ungrounded.
     ///
-    /// **接地不沿链接传播**：被捎带的东西拿不到任何保证，所以它必须看得出
-    /// 来是被捎带的。只走一跳 —— 再深就得处理环，而"深处那条还算不算跟这
-    /// 个锚有关"是域的判断，不是基底能替它答的。
+    /// **Grounding does not propagate along links**: what is carried along gets no
+    /// guarantee, so it has to be visible as carried. One hop only — deeper needs
+    /// cycle handling, and "is that distant one still about this anchor" is the
+    /// domain's judgement, not something the substrate can answer for it.
     async fn carry_linked(&self, memories: &mut Vec<MemoryView>) -> Result<(), RuntimeError> {
         let linked: Vec<Ref> = memories
             .iter()
@@ -144,7 +145,7 @@ impl Runtime {
             .find(|p| p.provider() == &binding.reference.provider)
         else {
             view.unavailable = Some(format!(
-                "没有提供方认得 `{}` 这种引用",
+                "no provider recognises a `{}` reference",
                 binding.reference.provider
             ));
             return view;
@@ -152,13 +153,13 @@ impl Runtime {
 
         match provider.fetch(&binding.reference.external_id).await {
             Err(e) => view.unavailable = Some(e.message),
-            Ok(None) => view.unavailable = Some("提供方说这条记录不存在了".to_owned()),
+            Ok(None) => view.unavailable = Some("the provider says this record is gone".to_owned()),
             Ok(Some(fetched)) => {
                 view.rewritten = fetched.version != binding.bound_version;
                 view.current_version = Some(fetched.version);
                 match String::from_utf8(fetched.bytes) {
                     Ok(text) => view.content = Some(text),
-                    Err(_) => view.unavailable = Some("记录不是 UTF-8 文本".to_owned()),
+                    Err(_) => view.unavailable = Some("the record is not UTF-8 text".to_owned()),
                 }
 
                 if view.rewritten {

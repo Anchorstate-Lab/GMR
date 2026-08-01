@@ -28,11 +28,11 @@ pub async fn run(
             })
         );
     } else {
-        println!("{key} 换了探针");
+        println!("{key} changed probe");
         if revised.incomparable_state {
             println!(
-                "  ! 状态里的值是用**另一条派生规则**算出来的，跟新观测不可比。\n    \
-                 要么 restate 重新捕获，要么明确接受它跨规则仍然可比 —— 这是你的断言，基底只记录"
+                "  ! The state was derived by another rule and is not comparable to the new observation.\n    \
+                 Either restate to recapture it, or explicitly accept cross-rule comparability; that is your assertion, the substrate only records it."
             );
         }
         sealed(&revised.context, &revised.rationale);

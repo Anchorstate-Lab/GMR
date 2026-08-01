@@ -15,7 +15,8 @@ pub struct Declared {
 #[derive(Debug, Deserialize)]
 pub struct AnchorDecl {
     pub key: String,
-    /// 探针 artifact 的版本号。它是挣来的，所以重建探针 = 换号 = 一次判据修订。
+    /// Probe artifact version. It is earned, so rebuilding the probe changes
+    /// the version and becomes a criteria revision.
     pub artifact: String,
     #[serde(default)]
     pub params: serde_json::Value,
@@ -25,10 +26,10 @@ pub struct AnchorDecl {
     pub rules: Vec<String>,
     #[serde(default)]
     pub terminal: Vec<String>,
-    /// 世界没动时也留完整记录，而不是只记一笔「又看了一次」。
+    /// Keep a full record when the world did not move, instead of only noting another sighting.
     #[serde(default)]
     pub retain_full: bool,
-    /// 这个锚自己的观测节奏；不写就用部署的默认。
+    /// This anchor's observation cadence; omit it to use the deployment default.
     #[serde(default)]
     pub cadence_secs: Option<u64>,
 }
@@ -65,7 +66,7 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let text = std::fs::read_to_string(root.join(&file))
-        .map_err(|e| CliError(format!("读不到 `{file}`：{e}")))?;
+        .map_err(|e| CliError(format!("cannot read `{file}`: {e}")))?;
     let declared: Declared = toml::from_str(&text)?;
 
     let existing = rt.anchors().await?;
@@ -103,7 +104,7 @@ pub async fn run(
             })
             .await?;
         for w in result.warnings {
-            warnings.push(format!("{key}：{w}"));
+            warnings.push(format!("{key}: {w}"));
         }
         opened.push(decl.key.clone());
     }
@@ -120,12 +121,12 @@ pub async fn run(
     }
 
     println!(
-        "{} 个锚{}",
+        "{} anchors{}",
         opened.len(),
         if dry_run {
-            " 会被开（--dry-run）"
+            " would be opened (--dry-run)"
         } else {
-            " 已开"
+            " opened"
         }
     );
     for w in &warnings {
@@ -133,15 +134,15 @@ pub async fn run(
     }
     if !drifted_declaration.is_empty() {
         println!(
-            "\n{} 个锚的声明跟它当前的判据不一致：",
+            "\n{} anchors have declarations that differ from their current criteria:",
             drifted_declaration.len()
         );
         for k in &drifted_declaration {
-            println!("  ≠ {k}");
+            println!("  != {k}");
         }
         println!(
-            "\n改探针或改转换表是一次**判据修订**，不是重构 —— sync 不替你做。\n\
-             想清楚要不要接受，然后走 revise，它会留下一条密封的记录。"
+            "\nChanging a probe or transition table is a criteria revision, not a refactor; sync will not do it for you.\n\
+             Decide whether to accept it, then use revise so it leaves a sealed record."
         );
     }
     Ok(0)

@@ -1,11 +1,12 @@
 use std::io::Write;
 
-/// 求值器的版本必须挣来，跟探针一样：手写的版本串可以撒谎，改了比较语义
-/// 忘了改常量，日志就会声称是同一个求值器。
+/// The evaluator version has to be earned, same as a probe: a hand-written
+/// version string can lie — change the comparison semantics, forget the constant,
+/// and the log claims it was the same evaluator.
 fn main() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(root.join("src"))
-        .expect("求值器读不到自己的源码")
+        .expect("the evaluator cannot read its own source")
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "rs"))
         .filter(|p| p.file_name().is_some_and(|n| n != "version.rs"))
@@ -16,7 +17,7 @@ fn main() {
     let mut hasher = <sha2::Sha256 as sha2::Digest>::new();
     for path in &files {
         println!("cargo::rerun-if-changed={}", path.display());
-        let bytes = std::fs::read(path).expect("求值器读不到自己的源码");
+        let bytes = std::fs::read(path).expect("the evaluator cannot read its own source");
         sha2::Digest::update(&mut hasher, path.file_name().unwrap().as_encoded_bytes());
         sha2::Digest::update(&mut hasher, b"\0");
         sha2::Digest::update(&mut hasher, &bytes);

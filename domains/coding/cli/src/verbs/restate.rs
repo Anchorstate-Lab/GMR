@@ -12,9 +12,9 @@ pub async fn run(
 ) -> Result<i32, CliError> {
     let key = AnchorKey::new(key);
     let value: serde_json::Value =
-        serde_json::from_str(&state).map_err(|e| CliError(format!("新状态不是合法 JSON：{e}")))?;
+        serde_json::from_str(&state).map_err(|e| CliError(format!("new state is not valid JSON: {e}")))?;
     if !value.is_object() {
-        return Err(CliError("新状态得是一个对象".into()));
+        return Err(CliError("new state must be an object".into()));
     }
 
     let before = rt.read(&key).await?;
@@ -37,9 +37,9 @@ pub async fn run(
             })
         );
     } else {
-        println!("{key} 的状态改了");
-        println!("  从  {}", before.state.as_value());
-        println!("  到  {value}");
+        println!("{key} state changed");
+        println!("  from  {}", before.state.as_value());
+        println!("  to    {value}");
         sealed(&revised.context, &revised.rationale);
     }
     Ok(0)

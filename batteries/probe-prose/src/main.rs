@@ -102,7 +102,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     walk(root, root, &mut cands);
     if cands.is_empty() {
         return Err(format!(
-            "{} 底下一个 Markdown 章节都没有 —— 更可能是我站错了目录",
+            "{} contains no Markdown sections; the probe is likely pointed at the wrong directory",
             root.display()
         ));
     }
@@ -132,7 +132,7 @@ mod tests {
         dir
     }
 
-    const DOC: &str = "# 顶\n开场白\n\n## 红牌\n不许这样\n\n## 死概念\n不要复活\n";
+    const DOC: &str = "# Top\nOpening\n\n## Red Flag\nDo not do this\n\n## Dead Concept\nDo not revive\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
         probe(dir, &pos).unwrap()
@@ -148,22 +148,22 @@ mod tests {
     #[test]
     fn a_heading_path_carries_its_ancestors() {
         let d = fixture("path", &[("a.md", DOC)]);
-        let v = at(&d, json!({"file": "a.md", "heading": "顶 > 红牌"}));
+        let v = at(&d, json!({"file": "a.md", "heading": "Top > Red Flag"}));
         assert_eq!(v["missed"], json!([]));
-        assert_eq!(v["at"]["heading"], "顶 > 红牌");
+        assert_eq!(v["at"]["heading"], "Top > Red Flag");
     }
 
     #[test]
     fn a_renamed_heading_is_found_by_its_unchanged_body() {
         let d = fixture("renamed", &[("a.md", DOC)]);
-        let f = fp(&d, "a.md", "顶 > 红牌");
+        let f = fp(&d, "a.md", "Top > Red Flag");
         let v = at(
             &d,
-            json!({"file": "a.md", "heading": "顶 > 老名字", "fingerprint": f}),
+            json!({"file": "a.md", "heading": "Top > Old Name", "fingerprint": f}),
         );
         assert_eq!(v["missed"], json!(["heading"]));
         assert_eq!(v["candidates"], 1);
-        assert_eq!(v["at"]["heading"], "顶 > 红牌");
+        assert_eq!(v["at"]["heading"], "Top > Red Flag");
     }
 
     #[test]
@@ -171,8 +171,8 @@ mod tests {
         let d = fixture("drift", &[("a.md", DOC)]);
         let v = at(
             &d,
-            json!({"file": "a.md", "heading": "顶 > 红牌",
-                   "fingerprint": coord::hash("以前写的别的话")}),
+            json!({"file": "a.md", "heading": "Top > Red Flag",
+                   "fingerprint": coord::hash("older text from before")}),
         );
         assert_eq!(v["missed"], json!(["fingerprint"]));
         assert_eq!(v["candidates"], 1);
@@ -181,17 +181,17 @@ mod tests {
     #[test]
     fn a_moved_document_reports_only_file_missed() {
         let d = fixture("moved", &[("docs/b.md", DOC)]);
-        let v = at(&d, json!({"file": "a.md", "heading": "顶 > 红牌"}));
+        let v = at(&d, json!({"file": "a.md", "heading": "Top > Red Flag"}));
         assert_eq!(v["missed"], json!(["file"]));
         assert_eq!(v["at"]["file"], "docs/b.md");
     }
 
     #[test]
     fn a_hash_inside_a_fence_is_not_a_heading() {
-        let d = fixture("fence", &[("a.md", "# 真标题\n\n```sh\n# 这是注释\n```\n")]);
-        let v = at(&d, json!({"heading": "# 这是注释"}));
+        let d = fixture("fence", &[("a.md", "# Real Heading\n\n```sh\n# This is a comment\n```\n")]);
+        let v = at(&d, json!({"heading": "# This is a comment"}));
         assert_eq!(v["found"], false);
-        assert_eq!(at(&d, json!({"heading": "真标题"}))["missed"], json!([]));
+        assert_eq!(at(&d, json!({"heading": "Real Heading"}))["missed"], json!([]));
     }
 
     #[test]
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn the_extractor_hashes_its_own_source() {
         let d = fixture("version", &[("a.md", DOC)]);
-        let v = at(&d, json!({"heading": "顶"}));
+        let v = at(&d, json!({"heading": "Top"}));
         assert_eq!(v["extractor"], extractor());
         assert_eq!(v["extractor"].as_str().unwrap().len(), 64);
     }

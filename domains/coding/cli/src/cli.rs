@@ -3,10 +3,10 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "anchor",
-    about = "把判断挂靠在可重算的观测上",
-    long_about = "记忆是你写的；锚是机械观测的。\n\
-                  探针说去看什么，转换表说什么算变了 —— 两样都由你交，\n\
-                  这个工具不带任何出厂判据。"
+    about = "Attach judgment to recomputable observations",
+    long_about = "You write the memories; anchors are mechanical observations.\n\
+                  Probes say what to inspect, transition tables say what counts as change,\n\
+                  and this tool ships no built-in criteria."
 )]
 pub struct Cli {
     #[arg(long, default_value = ".", global = true)]
@@ -40,14 +40,14 @@ pub enum Command {
         moved: bool,
     },
 
-    /// 把一棵目录发布成探针 artifact，打印它挣来的版本号。
+    /// Publish a directory as a probe artifact and print its earned version.
     Publish {
         from: String,
         #[arg(long, default_value = "probe")]
         entrypoint: String,
         #[arg(long = "arg")]
         args: Vec<String>,
-        /// 声明探针需要的环境（K=V）。它进版本号 —— 也进你要负的责任。
+        /// Environment required by the probe (K=V). It enters the version and your responsibility.
         #[arg(long = "env")]
         env: Vec<String>,
     },
@@ -64,7 +64,7 @@ pub enum Command {
 
     Retransition {
         key: String,
-        #[arg(long = "rule", value_name = "守卫 => 新状态", required = true)]
+        #[arg(long = "rule", value_name = "GUARD => NEW_STATE", required = true)]
         rules: Vec<String>,
         #[arg(long)]
         why: String,
@@ -119,22 +119,22 @@ pub enum Command {
 #[derive(clap::Args)]
 pub struct OpenArgs {
     pub key: String,
-    /// 探针 artifact 的版本号（anchor publish 打印的那个）。
+    /// Probe artifact version printed by `anchor publish`.
     #[arg(long)]
     pub artifact: String,
     #[arg(long, default_value = "{}")]
     pub params: String,
-    #[arg(long = "rule", value_name = "守卫 => 新状态")]
+    #[arg(long = "rule", value_name = "GUARD => NEW_STATE")]
     pub rules: Vec<String>,
     #[arg(long = "terminal", value_delimiter = ',')]
     pub terminal: Vec<String>,
-    /// 世界没动时也留完整记录。
+    /// Keep a full record even when the world did not move.
     #[arg(long)]
     pub retain_full: bool,
-    /// 这个锚自己的观测节奏，秒。
+    /// This anchor's observation cadence, in seconds.
     #[arg(long)]
     pub cadence_secs: Option<u64>,
-    /// 接替哪个已经终结的锚。终结不可撤销，纠错只能开新的一代。
+    /// Supersede an already-closed anchor. Closure is irreversible; correction opens a new generation.
     #[arg(long, requires = "why")]
     pub supersedes: Option<String>,
     #[arg(long, requires = "supersedes")]

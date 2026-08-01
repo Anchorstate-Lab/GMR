@@ -4,18 +4,19 @@ use gmr_core::{Kind, ProbeVersion};
 
 use crate::artifact::{Artifacts, publish};
 
-/// 把一段 shell 脚本发布成探针 artifact，给测试用。
+/// Publish a shell script as a probe artifact for tests.
 ///
-/// 测试也得走真的发布 —— 否则「版本是挣来的」这条只在生产路径上成立。
+/// Tests must go through real publishing too; otherwise "earned versions" only
+/// hold on the production path.
 pub fn publish_script(store: impl AsRef<Path>, body: &str) -> ProbeVersion {
-    let staging = tempfile::tempdir().expect("建不了暂存目录");
+    let staging = tempfile::tempdir().expect("cannot create staging directory");
     let entry = staging.path().join("probe");
-    std::fs::write(&entry, format!("#!/bin/sh\n{body}\n")).expect("写不了脚本");
+    std::fs::write(&entry, format!("#!/bin/sh\n{body}\n")).expect("cannot write script");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755))
-            .expect("设不了可执行位");
+            .expect("cannot set executable bit");
     }
     publish(
         &Artifacts::new(store.as_ref()),
@@ -25,5 +26,5 @@ pub fn publish_script(store: impl AsRef<Path>, body: &str) -> ProbeVersion {
         Vec::new(),
         Default::default(),
     )
-    .expect("发布不了")
+    .expect("cannot publish")
 }

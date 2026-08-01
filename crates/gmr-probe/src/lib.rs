@@ -24,8 +24,9 @@ impl ProbeError {
     }
 }
 
-/// 一次调用的全部产出：世界的答案，以及**实际算出它的那条规则的身份**。
-/// 身份由传输给出而不是由锚算 —— 只有执行的那一方知道它真的跑了什么。
+/// Everything one call produces: the world's answer, and **the identity of the
+/// rule that actually derived it**. The transport hands that over rather than the
+/// anchor computing it — only whoever executed knows what really ran.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sighted {
     pub outcome: Outcome,

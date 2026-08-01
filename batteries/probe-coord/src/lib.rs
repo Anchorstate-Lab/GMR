@@ -27,7 +27,7 @@ pub fn position() -> Result<Value, String> {
     if raw.trim().is_empty() {
         return Ok(json!({}));
     }
-    serde_json::from_str(&raw).map_err(|e| format!("{POSITION_ENV} 不是 JSON：{e}"))
+    serde_json::from_str(&raw).map_err(|e| format!("{POSITION_ENV} is not JSON: {e}"))
 }
 
 pub fn params() -> Result<Value, String> {
@@ -35,11 +35,12 @@ pub fn params() -> Result<Value, String> {
     if raw.trim().is_empty() {
         return Ok(json!({}));
     }
-    serde_json::from_str(&raw).map_err(|e| format!("{PARAMS_ENV} 不是 JSON：{e}"))
+    serde_json::from_str(&raw).map_err(|e| format!("{PARAMS_ENV} is not JSON: {e}"))
 }
 
-/// 探针要看的那一块。**从参数来，不从 argv 来** —— 参数进声明哈希，
-/// argv 由清单锁死，两者都不是探针自己捡的。
+/// The portion the probe should inspect. This comes from params, not argv:
+/// params enter the declaration hash, argv is locked by the manifest, and
+/// neither is chosen by the probe at runtime.
 pub fn root(params: &Value) -> String {
     params
         .get("root")
@@ -61,7 +62,7 @@ pub fn wanted(pos: &Value, items: &[&str]) -> Result<Want, String> {
         .collect();
     if want.is_empty() {
         return Err(format!(
-            "{POSITION_ENV} 里一项坐标都没有 —— 这个探针要一个点位，{} 至少给一项",
+            "{POSITION_ENV} has no coordinate fields; this probe needs a position, so provide at least one of {}",
             items.join("/")
         ));
     }
@@ -74,14 +75,16 @@ pub fn nth(pos: &Value) -> usize {
 
 pub const MAX_BYTES: usize = 900_000;
 
-/// 挑出最像的候选，并报告哪几项对上、哪几项没对上。
+/// Picks the closest candidate and reports which coordinate fields matched.
 ///
-/// **候选的排序是字典序，也就是「坐标项的先后就是它们的优先级」。** 这不
-/// 是实现细节：`[name, file]` 下，只对上名字的候选会赢过只对上路径的那个。
-/// 探针作者交 `items` 的顺序 = 他在声明哪一项更能认出「还是同一个东西」。
+/// Candidate ordering is lexicographic: the order of coordinate items is their
+/// priority. This is not an implementation detail. With `[name, file]`, a
+/// candidate that only matches `name` outranks one that only matches `file`.
+/// The probe author's `items` order declares which field best preserves
+/// identity.
 ///
-/// `nth` 越界会**报错而不是夹到边界上**：默默换一个候选，等于让锚在盯着
-/// 另一个东西而没人知道。
+/// An out-of-range `nth` is an error, not a clamp. Silently choosing another
+/// candidate would make the anchor watch something else without anyone knowing.
 pub fn report(
     extractor: &str,
     want: &Want,
@@ -107,9 +110,9 @@ pub fn report(
     let tied: Vec<&Candidate> = candidates.iter().filter(|c| vector(c) == best).collect();
     let Some(pick) = tied.get(nth) else {
         return Err(format!(
-            "位置里写着 nth={nth}，但同样像的候选只有 {} 个。\n\
-             **不夹到边界上** —— 默默换一个，锚就在盯着另一个东西而没人知道。\n\
-             要么把坐标写细一点，要么把 nth 改对。",
+            "the position has nth={nth}, but only {} equally good candidates exist.\n\
+             Refusing to clamp: silently choosing another candidate would make the anchor watch a different object.\n\
+             Tighten the coordinate or fix nth.",
             tied.len()
         ));
     };
@@ -122,7 +125,7 @@ pub fn report(
         "facts": pick.facts,
         "candidates": tied.len(),
         "exact": best.iter().all(|hit| *hit),
-        // 坐标项的先后就是它们的优先级；写进报告，别只藏在参数顺序里。
+        // Coordinate item order is priority; report it instead of hiding it in arguments.
         "priority": names(),
         "matches": tied.iter()
             .map(|c| json!({ "at": c.coord, "facts": c.facts }))
@@ -132,8 +135,8 @@ pub fn report(
     let size = out.to_string().len();
     if size > MAX_BYTES {
         return Err(format!(
-            "坐标太宽：命中 {} 个，报告有 {size} 字节，超过上限 {MAX_BYTES}。\n\
-             **不截断** —— 一份被截掉的名册正好藏起「少了哪一条」。把坐标写细一点。",
+            "coordinate is too broad: {} matches produce a {size}-byte report, above the {MAX_BYTES} limit.\n\
+             Refusing to truncate: a truncated roster can hide which item disappeared. Tighten the coordinate.",
             tied.len()
         ));
     }
@@ -254,16 +257,16 @@ mod tests {
             cand(&[("a", "1"), ("id", "q")]),
         ];
         let e = report("x", &w, 99, &tied).unwrap_err();
-        assert!(e.contains("只有 2 个"), "{e}");
+        assert!(e.contains("only 2 equally good candidates"), "{e}");
         assert!(
-            e.contains("不夹到边界上"),
-            "默默换一个候选 = 锚在盯着另一个东西而没人知道"
+            e.contains("Refusing to clamp"),
+            "silently choosing another candidate makes the anchor watch another object"
         );
     }
 
     #[test]
     fn the_order_of_the_items_is_the_priority_and_it_is_reported() {
-        // 只对上 name 的候选赢过只对上 file 的 —— 因为 name 排在前面。
+        // The candidate matching only name beats the one matching only file because name comes first.
         let w = want(&[("name", "assess"), ("file", "a.rs")]);
         let out = report(
             "x",
@@ -277,13 +280,13 @@ mod tests {
         .unwrap();
         assert_eq!(
             out["at"]["file"], "moved.rs",
-            "名字比路径更能认出同一个东西"
+            "the name is a stronger identity signal than the path"
         );
         assert_eq!(out["matched"], serde_json::json!(["name"]));
         assert_eq!(
             out["priority"],
             serde_json::json!(["name", "file"]),
-            "优先级不该只藏在参数顺序里"
+            "priority should not only be hidden in argument order"
         );
     }
 
@@ -340,8 +343,8 @@ mod tests {
             })
             .collect();
         let e = report("x", &w, 0, &many).unwrap_err();
-        assert!(e.contains("坐标太宽"), "{e}");
-        assert!(e.contains("不截断"), "{e}");
+        assert!(e.contains("coordinate is too broad"), "{e}");
+        assert!(e.contains("Refusing to truncate"), "{e}");
     }
 
     #[test]

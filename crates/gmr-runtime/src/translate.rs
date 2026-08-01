@@ -13,7 +13,7 @@ pub(crate) fn compile(expr: &gmr_core::Expr) -> Result<Node, String> {
     let source = expr
         .source
         .as_str()
-        .ok_or_else(|| "表达式不是一段文本".to_owned())?;
+        .ok_or_else(|| "the expression is not text".to_owned())?;
     gmr_expr::parse(source).map_err(|e| e.to_string())
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn transition(
         let n = i + 1;
         let guard = match compile(&rule.when) {
             Ok(node) => node,
-            Err(e) => return Transitioned::Unevaluable(format!("第 {n} 条规则的守卫：{e}")),
+            Err(e) => return Transitioned::Unevaluable(format!("guard of rule {n}: {e}")),
         };
 
         match gmr_expr::eval(&guard, ctx) {
@@ -40,25 +40,27 @@ pub(crate) fn transition(
             Evaluated::Absent => continue,
             Evaluated::Value(Value::Bool(true)) => {}
             Evaluated::Value(_) => {
-                return Transitioned::Unevaluable(format!("第 {n} 条规则的守卫算出来不是真假值"));
+                return Transitioned::Unevaluable(format!("guard of rule {n} is not a boolean"));
             }
             Evaluated::Fault(f) => {
-                return Transitioned::Unevaluable(format!("第 {n} 条规则的守卫：{}", f.class()));
+                return Transitioned::Unevaluable(format!("guard of rule {n}: {}", f.class()));
             }
         }
 
         let body = match compile(&rule.to) {
             Ok(node) => node,
-            Err(e) => return Transitioned::Unevaluable(format!("第 {n} 条规则的新状态：{e}")),
+            Err(e) => return Transitioned::Unevaluable(format!("new state of rule {n}: {e}")),
         };
         return match gmr_expr::eval(&body, ctx) {
             Evaluated::Value(v @ Value::Object(_)) => Transitioned::To(State::new(v)),
             Evaluated::Value(_) => {
-                Transitioned::Unevaluable(format!("第 {n} 条规则的新状态不是一个对象"))
+                Transitioned::Unevaluable(format!("new state of rule {n} is not an object"))
             }
-            Evaluated::Absent => Transitioned::Unevaluable(format!("第 {n} 条规则算不出新状态")),
+            Evaluated::Absent => {
+                Transitioned::Unevaluable(format!("rule {n} cannot compute a new state"))
+            }
             Evaluated::Fault(f) => {
-                Transitioned::Unevaluable(format!("第 {n} 条规则的新状态：{}", f.class()))
+                Transitioned::Unevaluable(format!("new state of rule {n}: {}", f.class()))
             }
         };
     }
@@ -74,12 +76,12 @@ pub(crate) fn bind_warnings(anchor: &Anchor, observation: &Observation) -> Vec<S
 
     let mut out = Vec::new();
     for (i, rule) in anchor.transitions.iter().enumerate() {
-        for (what, expr) in [("守卫", &rule.when), ("新状态", &rule.to)] {
+        for (what, expr) in [("guard", &rule.when), ("new state", &rule.to)] {
             match compile(expr) {
-                Err(e) => out.push(format!("第 {} 条规则的{what}不合法：{e}", i + 1)),
+                Err(e) => out.push(format!("{what} of rule {} is invalid: {e}", i + 1)),
                 Ok(node) => {
                     if let Some(w) = gmr_expr::bind(&node, ctx) {
-                        out.push(format!("第 {} 条规则的{what}：{w}", i + 1));
+                        out.push(format!("{what} of rule {}: {w}", i + 1));
                     }
                 }
             }
@@ -153,8 +155,8 @@ mod tests {
     fn to(r: Transitioned) -> Value {
         match r {
             Transitioned::To(s) => s.as_value().clone(),
-            Transitioned::Unchanged => panic!("以为会转换"),
-            Transitioned::Unevaluable(e) => panic!("算不出来：{e}"),
+            Transitioned::Unchanged => panic!("expected a transition"),
+            Transitioned::Unevaluable(e) => panic!("could not evaluate: {e}"),
         }
     }
 
@@ -207,7 +209,7 @@ mod tests {
     fn a_faulting_guard_is_our_failure_and_must_be_loud() {
         let t = rules(&[("obs.gone > 1", "{ status: \"x\" }")]);
         let Transitioned::Unevaluable(e) = run(t, json!({ "here": 1 }), json!({})) else {
-            panic!("该出声")
+            panic!("this must be loud")
         };
         assert!(e.contains("no_such_field"), "{e}");
     }

@@ -128,7 +128,8 @@ pub enum Retain {
     Full,
 }
 
-/// 接替哪一个已经终结的锚。终结不可撤销，纠错只能开新的一代。
+/// Which finished anchor this one supersedes. Finishing is irreversible;
+/// correcting a bad criterion means opening a new generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Superseded {
     pub key: AnchorKey,
@@ -210,8 +211,9 @@ mod tests {
 
     #[test]
     fn the_substrate_does_not_read_into_the_status() {
-        let a = anchor(&["已结算"]);
-        assert!(a.is_terminal(&State::new(json!({ STATUS: "已结算" }))));
+        let a = anchor(&["расчёт"]);
+        // Deliberately non-Latin: the substrate compares, it does not read.
+        assert!(a.is_terminal(&State::new(json!({ STATUS: "расчёт" }))));
     }
 
     #[test]

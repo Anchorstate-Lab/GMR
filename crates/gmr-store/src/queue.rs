@@ -19,8 +19,10 @@ pub enum Disposition {
     Retire,
 }
 
-/// 实现方必须保证：**同一个锚签发的 fence 严格单调递增，且退场不清零。**
-/// 日志拿它当高水位来挡过期租约的写入，倒退一次就等于把那个锚永久锁死。
+/// Implementations must guarantee: **fences issued for one anchor increase
+/// strictly monotonically, and retiring does not reset the counter.** The journal
+/// uses it as a high-water mark to block stale-lease writes; going backwards once
+/// wedges that anchor forever.
 #[async_trait]
 pub trait Queue: Send + Sync {
     async fn enqueue(&self, anchor: &AnchorKey, due: DateTime<Utc>) -> Result<(), StoreError>;
@@ -32,10 +34,11 @@ pub trait Queue: Send + Sync {
         limit: usize,
     ) -> Result<Vec<Ticket>, StoreError>;
 
-    /// 单独为一个锚取租约，不管它到没到点。
+    /// Take the lease on one specific anchor, due or not.
     ///
-    /// 手工触发的观测走这里 —— 否则它只能绕过令牌去写，而那正是租约要防
-    /// 的第二个写者。取不到说明别人正持着，那就该让别人写。
+    /// Hand-triggered observations come through here — otherwise they can only
+    /// write past the token, which is the very second writer the lease prevents.
+    /// Not getting it means someone else holds it, so let them write.
     async fn lease(
         &self,
         anchor: &AnchorKey,

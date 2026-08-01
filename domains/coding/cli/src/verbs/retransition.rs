@@ -33,7 +33,7 @@ pub async fn run(
             })
         );
     } else {
-        println!("{key} 改了转换表");
+        println!("{key} changed transition table");
         for w in &revised.warnings {
             println!("  ! {w}");
         }

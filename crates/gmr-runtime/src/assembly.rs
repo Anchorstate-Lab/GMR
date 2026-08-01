@@ -85,8 +85,8 @@ impl RuntimeBuilder {
     pub fn build(self) -> Runtime {
         Runtime {
             transports: self.transports,
-            journal: self.journal.expect("Journal 非有不可"),
-            bindings: self.bindings.expect("BindingStore 非有不可"),
+            journal: self.journal.expect("a Journal is not optional"),
+            bindings: self.bindings.expect("a BindingStore is not optional"),
             providers: self.providers,
             queue: self.queue,
             policy: self.policy.unwrap_or_default(),

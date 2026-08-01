@@ -24,10 +24,11 @@ pub enum Observed {
 }
 
 impl Runtime {
-    /// 手工观测一个锚。
+    /// Observe one anchor by hand.
     ///
-    /// 有队列的部署里先取这个锚的租约再写 —— 绕过令牌去写，正是租约要防的
-    /// 第二个写者。别人正持着就让别人写。
+    /// In a queued deployment this takes the anchor's lease before writing —
+    /// writing past the token is precisely the second writer the lease prevents.
+    /// If someone else holds it, let them write.
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
         let Some(queue) = self.queue.as_ref() else {
             return self.observe_with(key, Fence::Unleased).await;
@@ -154,7 +155,7 @@ impl Runtime {
             .find(|t| t.kind() == &anchor.probe.kind)
             .ok_or_else(|| {
                 gmr_probe::ProbeError::unreachable(format!(
-                    "没有传输认得 `{}` 这种探针",
+                    "no transport recognises a `{}` probe",
                     anchor.probe.kind
                 ))
             })?;
@@ -167,8 +168,8 @@ pub(crate) fn observe_into(anchor: &Anchor, sighted: gmr_probe::Sighted) -> Obse
         outcome,
         derivation,
     } = sighted;
-    // 地址由**实际算出它的规则**决定，不是由锚上写的那句声明决定；
-    // NotFound 也有地址 —— 「世界说没有」也是一个答案。
+    // The address is fixed by **the rule that actually derived it**, not by the
+    // declaration on the anchor. NotFound is addressed too — absence is an answer.
     let fact_address = outcome.address(&derivation.version);
     Observation {
         outcome,

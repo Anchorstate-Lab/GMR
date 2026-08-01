@@ -3,14 +3,16 @@ use gmr_core::{AnchorKey, Entry, Seq};
 
 use crate::error::StoreError;
 
-/// 写入令牌。
+/// Write token.
 ///
-/// 租约到期不等于持有者停工，所以日志必须能拒绝过期令牌的写入。`Held` 是
-/// 一次租约签发的 epoch；`Unleased` 是没有租约的部署——那里本来就没有第二
-/// 个写者可言。
+/// A lease expiring does not mean the holder stopped working, so the journal has
+/// to be able to refuse writes carrying a stale token. `Held` is the epoch one
+/// lease issued; `Unleased` is a deployment without leases, where there is no
+/// second writer to speak of.
 ///
-/// 用枚举而不是「0 表示没有」：带内哨兵值会让调用方把「我没令牌」和「我
-/// 的令牌是 0」混成一件事，而这两者该不该被拒是相反的。
+/// An enum rather than "0 means none": an in-band sentinel lets callers conflate
+/// "I hold no token" with "my token is 0", and those two should be refused in
+/// opposite ways.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fence {
     Unleased,
@@ -41,16 +43,21 @@ pub trait Journal: Send + Sync {
     async fn anchors(&self) -> Result<Vec<AnchorKey>, StoreError>;
 }
 
-/// 令牌校验。两个后端共用这一份 —— 分头写迟早分头错。
+/// Token check. Both backends share this one — written separately they would
+/// sooner or later be wrong separately.
 pub fn guard(fence: Fence, seen: i64, entry: &Entry) -> Result<(), StoreError> {
     match fence {
         Fence::Held(epoch) if (epoch as i64) < seen => Err(StoreError::constraint(format!(
-            "fencing 令牌 {epoch} 已过期（已见 {seen}）—— 租约到期不等于持有者停工"
+            "fencing token {epoch} is stale (already saw {seen}) — a lease expiring \
+             does not mean the holder stopped working"
         ))),
-        // 观测是租约在管的活。这个锚一旦交给了租约，就不许再从旁边塞一条
-        // 观测进来 —— 那正是租约要防的第二个写者。作者的修订不受此限。
+        // Observing is the lease's job. Once an anchor is under lease management,
+        // no observation may be slipped in beside it — that is exactly the second
+        // writer the lease exists to prevent. Author revisions are exempt.
         Fence::Unleased if seen > 0 && entry.is_sighting() => Err(StoreError::constraint(
-            "这个锚的观测由租约在管，不接受没有令牌的观测；走队列，或者停掉轮询".to_owned(),
+            "observations on this anchor are lease-managed and will not be accepted \
+             without a token; go through the queue, or stop polling"
+                .to_owned(),
         )),
         _ => Ok(()),
     }

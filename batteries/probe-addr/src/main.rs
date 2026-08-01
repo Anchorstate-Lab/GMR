@@ -50,7 +50,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     walk(root, root, &mut cands);
     if cands.is_empty() {
         return Err(format!(
-            "{} 底下一个文件都没有 —— 更可能是我站错了目录",
+            "{} contains no files; the probe is likely pointed at the wrong directory",
             root.display()
         ));
     }
@@ -84,7 +84,7 @@ mod tests {
         probe(dir, &pos).unwrap()
     }
 
-    const BODY: &str = "锚定是设计工作的产出\n";
+    const BODY: &str = "Anchoring is an output of design work\n";
 
     #[test]
     fn an_address_that_is_still_there_misses_nothing() {
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn a_changed_body_reports_only_fingerprint_missed() {
-        let d = fixture("changed", &[("doc/a.md", "改过了\n")]);
+        let d = fixture("changed", &[("doc/a.md", "changed\n")]);
         let v = at(
             &d,
             json!({"path": "doc/a.md", "fingerprint": coord::hash(BODY)}),
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn the_same_address_outranks_a_coincidental_twin_elsewhere() {
-        let d = fixture("twin", &[("doc/a.md", "改过了\n"), ("attic/copy.md", BODY)]);
+        let d = fixture("twin", &[("doc/a.md", "changed\n"), ("attic/copy.md", BODY)]);
         let v = at(
             &d,
             json!({"path": "doc/a.md", "fingerprint": coord::hash(BODY)}),
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn an_address_that_is_gone_leaves_both_items_missed() {
-        let d = fixture("gone", &[("other.md", "别的东西\n")]);
+        let d = fixture("gone", &[("other.md", "something else\n")]);
         let v = at(
             &d,
             json!({"path": "doc/a.md", "fingerprint": coord::hash(BODY)}),

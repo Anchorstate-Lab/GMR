@@ -34,12 +34,12 @@ pub fn parse(source: &str) -> Result<Node, SyntaxError> {
     };
     p.skip_space();
     if p.done() {
-        return err("表达式为空");
+        return err("the expression is empty");
     }
     let node = p.expr(0)?;
     p.skip_space();
     if !p.done() {
-        return err(format!("多余的 `{}`", p.rest()));
+        return err(format!("trailing `{}`", p.rest()));
     }
     Ok(node)
 }
@@ -47,7 +47,7 @@ pub fn parse(source: &str) -> Result<Node, SyntaxError> {
 pub fn parse_path(source: &str) -> Result<Path, SyntaxError> {
     match parse(source)? {
         Node::Path(p) => Ok(p),
-        _ => err("这里只能是一条字段路径"),
+        _ => err("only a field path is allowed here"),
     }
 }
 
@@ -150,13 +150,13 @@ impl Parser {
     fn atom(&mut self) -> Result<Node, SyntaxError> {
         self.skip_space();
         match self.peek() {
-            None => err("表达式在这里断了"),
+            None => err("the expression stops short here"),
             Some('(') => {
                 self.at += 1;
                 let inner = self.expr(0)?;
                 self.skip_space();
                 if !self.eat(")") {
-                    return err("括号没闭合");
+                    return err("unclosed parenthesis");
                 }
                 Ok(inner)
             }
@@ -165,7 +165,7 @@ impl Parser {
             Some('"') => Ok(Node::Lit(Value::String(self.string()?))),
             Some(c) if c.is_ascii_digit() => self.number(),
             Some(c) if is_ident(c) => self.word(),
-            Some(c) => err(format!("这里不该出现 `{c}`")),
+            Some(c) => err(format!("`{c}` cannot appear here")),
         }
     }
 
@@ -179,7 +179,7 @@ impl Parser {
             }
             if !fields.is_empty() {
                 if !self.eat(",") {
-                    return err("对象的字段之间要用 `,` 隔开");
+                    return err("object fields must be separated by `,`");
                 }
                 self.skip_space();
                 if self.eat("}") {
@@ -196,15 +196,15 @@ impl Parser {
                     }
                     self.chars[start..self.at].iter().collect()
                 }
-                _ => return err("对象的字段名要么是标识符，要么是带引号的字符串"),
+                _ => return err("an object field name is an identifier or a quoted string"),
             };
             if fields.iter().any(|(k, _)| *k == name) {
-                return err(format!("字段 `{name}` 写了两遍"));
+                return err(format!("field `{name}` is written twice"));
             }
 
             self.skip_space();
             if !self.eat(":") {
-                return err(format!("字段 `{name}` 后面要跟 `:`"));
+                return err(format!("field `{name}` must be followed by `:`"));
             }
             fields.push((name, self.expr(0)?));
         }
@@ -220,7 +220,7 @@ impl Parser {
             }
             if !items.is_empty() {
                 if !self.eat(",") {
-                    return err("数组的元素之间要用 `,` 隔开");
+                    return err("array elements must be separated by `,`");
                 }
                 self.skip_space();
                 if self.eat("]") {
@@ -228,7 +228,7 @@ impl Parser {
                 }
             }
             if self.peek().is_none() {
-                return err("数组没有闭合的 `]`");
+                return err("array has no closing `]`");
             }
             items.push(self.expr(0)?);
         }
@@ -239,7 +239,7 @@ impl Parser {
         let mut out = String::new();
         loop {
             match self.peek() {
-                None => return err("字符串没有闭合的引号"),
+                None => return err("string has no closing quote"),
                 Some('"') => {
                     self.at += 1;
                     return Ok(out);
@@ -269,7 +269,7 @@ impl Parser {
         };
 
         let n: f64 = text.parse().map_err(|_| SyntaxError {
-            message: format!("`{text}` 不是一个数"),
+            message: format!("`{text}` is not a number"),
         })?;
 
         let value = match unit {
@@ -300,12 +300,12 @@ impl Parser {
             "exists" => {
                 self.skip_space();
                 if !self.eat("(") {
-                    return err("exists 后面要跟 `(`");
+                    return err("exists must be followed by `(`");
                 }
                 let inner = self.expr(0)?;
                 self.skip_space();
                 if !self.eat(")") {
-                    return err("exists 的括号没闭合");
+                    return err("unclosed parenthesis after exists");
                 }
                 return Ok(Node::Exists(Box::new(inner)));
             }
@@ -319,7 +319,7 @@ impl Parser {
             "entered_at" => Root::EnteredAt,
             other => {
                 return err(format!(
-                    "未知的命名槽 `{other}`；只有 obs · state · taken_at · entered_at"
+                    "unknown named slot `{other}`; only obs · state · taken_at · entered_at"
                 ));
             }
         };
@@ -332,16 +332,16 @@ impl Parser {
     fn call_arg_string(&mut self, name: &str) -> Result<String, SyntaxError> {
         self.skip_space();
         if !self.eat("(") {
-            return err(format!("{name} 后面要跟 `(`"));
+            return err(format!("{name} must be followed by `(`"));
         }
         self.skip_space();
         if self.peek() != Some('"') {
-            return err(format!("{name} 的参数是一个带引号的切面名"));
+            return err(format!("{name} takes one quoted direction name"));
         }
         let arg = self.string()?;
         self.skip_space();
         if !self.eat(")") {
-            return err(format!("{name} 的括号没闭合"));
+            return err(format!("unclosed parenthesis after {name}"));
         }
         Ok(arg)
     }
@@ -357,7 +357,7 @@ impl Parser {
                         self.at += 1;
                     }
                     if start == self.at {
-                        return err("`.` 后面缺字段名");
+                        return err("missing field name after `.`");
                     }
                     steps.push(Step::Field(self.chars[start..self.at].iter().collect()));
                 }
@@ -369,10 +369,10 @@ impl Parser {
                     }
                     let digits: String = self.chars[start..self.at].iter().collect();
                     if !self.eat("]") {
-                        return err("下标没有闭合的 `]`");
+                        return err("index has no closing `]`");
                     }
                     let i = digits.parse::<usize>().map_err(|_| SyntaxError {
-                        message: "下标不是一个非负整数".into(),
+                        message: "an index must be a non-negative integer".into(),
                     })?;
                     steps.push(Step::Index(i));
                 }
@@ -434,7 +434,7 @@ mod tests {
             assert!(parse(s).is_ok(), "{s}");
         }
         for s in ["located_at", "prev.close", "streak", "delta"] {
-            assert!(parse(s).is_err(), "{s} 不该还是一个槽");
+            assert!(parse(s).is_err(), "{s} should no longer be a slot");
         }
     }
 
@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn a_malformed_array_is_rejected() {
         for s in ["[", "[1", "[1 2]", "[1,,2]"] {
-            assert!(parse(s).is_err(), "`{s}` 该被拒绝");
+            assert!(parse(s).is_err(), "`{s}` should be rejected");
         }
     }
 
@@ -473,7 +473,7 @@ mod tests {
             "{ position: obs.at, status: \"ok\" }"
         );
         assert_eq!(render("{}"), "{  }");
-        assert_eq!(render("{ a: 1, }"), "{ a: 1 }", "允许尾逗号");
+        assert_eq!(render("{ a: 1, }"), "{ a: 1 }", "a trailing comma is allowed");
     }
 
     #[test]
@@ -481,7 +481,7 @@ mod tests {
         assert!(parse("{ \"my-field\": 1 }").is_ok());
         assert!(
             parse("{ a: 1, a: 2 }").is_err(),
-            "同一个字段写两遍是笔误，不是覆盖"
+            "writing the same field twice is a slip, not an override"
         );
     }
 
@@ -549,7 +549,7 @@ mod tests {
             "(1",
             "changed(x)",
         ] {
-            assert!(parse(s).is_err(), "{s:?} 该被拒绝");
+            assert!(parse(s).is_err(), "{s:?} should be rejected");
         }
     }
 

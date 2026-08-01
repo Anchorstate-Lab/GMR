@@ -13,10 +13,10 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     if anchors.is_empty() && !detach {
-        return Err(CliError("要么给 --anchors，要么 --detach".into()));
+        return Err(CliError("provide either --anchors or --detach".into()));
     }
     if !root.join(&path).exists() {
-        return Err(CliError(format!("`{path}` 不在这个仓库里")));
+        return Err(CliError(format!("`{path}` is not in this repository")));
     }
     let version = gmr_provider_git::blob_version(root, &path).map_err(|e| CliError(e.message))?;
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
@@ -35,7 +35,7 @@ pub async fn run(
             serde_json::json!({ "bound": path, "version": version, "anchors": anchors, "detached": detach })
         );
     } else if detach {
-        println!("{path} 已摘走（历史留在表里）");
+        println!("{path} detached; history remains in the table");
     } else {
         println!(
             "{path} → {}",
@@ -43,9 +43,9 @@ pub async fn run(
                 .iter()
                 .map(|a| a.to_string())
                 .collect::<Vec<_>>()
-                .join(" · ")
+                .join(", ")
         );
-        println!("  绑定时那一版 {}", &version[..12.min(version.len())]);
+        println!("  bound version {}", &version[..12.min(version.len())]);
     }
     Ok(0)
 }

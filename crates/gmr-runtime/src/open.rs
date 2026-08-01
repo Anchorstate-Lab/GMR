@@ -18,7 +18,7 @@ pub struct Opened {
     pub supersedes: Option<AnchorKey>,
 }
 
-/// 理由必填：接替是判据层面的反悔。
+/// The rationale is mandatory: superseding is a change of heart about criteria.
 pub struct Supersede {
     pub key: AnchorKey,
     pub rationale: Vec<u8>,
@@ -74,14 +74,15 @@ impl Runtime {
         let mut warnings = bind_warnings(&anchor, &observation);
         warnings.extend(self.accumulator_warning(&anchor));
 
-        // 算不出第一个状态不是拒绝的理由：锚可以先于它的目标存在，那时
-        // 规则本来就取不到东西。拼错和「还没长出来」在这一刻长得一样，
-        // 两者都留到第一次真观测再现形 —— 那时它响。
+        // Failing to compute the first state is no reason to refuse: an anchor may
+        // precede its target, and then the rules naturally resolve to nothing. A
+        // typo and "not grown yet" look identical at this moment; both surface at
+        // the first real observation — and there it is loud.
         let state = match transition(&anchor, &observation, &initial, at, at) {
             Transitioned::To(next) => next,
             Transitioned::Unchanged => initial,
             Transitioned::Unevaluable(message) => {
-                warnings.push(format!("{message}；起始状态原样留着"));
+                warnings.push(format!("{message}; the initial state is kept as is"));
                 initial
             }
         };
@@ -99,15 +100,17 @@ impl Runtime {
             )
             .await?;
 
-        // 日志和队列是两个存储，跨不了一个事务。所以定清楚谁说了算：
-        // **锚就是那条日志条目**，它落了地锚就存在了。排队是可恢复的旁枝，
-        // 排不上不该把「已经开了」谎报成「没开成」—— 那会让调用方重试，
-        // 然后撞上「已经开过了」，而真正没做成的那件事仍然没人去补。
+        // Journal and queue are two stores with no shared transaction, so be clear
+        // about who decides: **the anchor is that log entry**, and once it lands the
+        // anchor exists. Enqueueing is a recoverable side branch; failing it must
+        // not misreport "already open" as "failed to open" — that makes the caller
+        // retry, hit AlreadyOpen, and still leave the real gap unrepaired.
         if let Some(queue) = self.queue.as_ref()
             && let Err(e) = queue.enqueue(&key, at).await
         {
             warnings.push(format!(
-                "锚开了，但没能排进队列（{e}）；它不会被自动观测，直到下一次 sync 把它补上"
+                "the anchor opened but could not be enqueued ({e}); it will not be \
+                 observed automatically until the next sync repairs it"
             ));
         }
 
@@ -119,7 +122,8 @@ impl Runtime {
         })
     }
 
-    /// 旧的必须真的终结了 —— 否则两代同时活着，就是绕过终结的旁路。
+    /// The old one must really have finished — two generations alive at once is a
+    /// bypass around finishing.
     async fn seal_supersede(&self, s: Supersede) -> Result<Superseded, RuntimeError> {
         let old = fold(&self.journal.entries(&s.key, 0).await?)
             .ok_or_else(|| RuntimeError::NoSuchAnchor { key: s.key.clone() })?;
@@ -141,9 +145,10 @@ impl Runtime {
             .iter()
             .any(|r| crate::translate::compile(&r.to).is_ok_and(|n| n.reads_state()));
         reads_state.then(|| {
-            "转换表把上一个状态读进了新状态，而这个部署没有租约：\
-             重复观测会让累积量多算。幂等的写法（原样保留某个字段）不受影响，\
-             递增之类的会。基底分辨不了两者，所以只提醒"
+            "the transition table reads the previous state into the new one, and \
+             this deployment has no lease: a repeated observation would over-count. \
+             Idempotent forms (carrying a field through unchanged) are unaffected; \
+             increments are not. The substrate cannot tell them apart, so it only warns"
                 .to_owned()
         })
     }

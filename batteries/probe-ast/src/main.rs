@@ -29,10 +29,10 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&(table.language)())
-        .map_err(|e| format!("装不上 {rel} 的语法：{e} —— 这是我的失败，不是世界的答案"))?;
+        .map_err(|e| format!("cannot install the parser for {rel}: {e}; this is my failure, not the world's answer"))?;
     let tree = parser
         .parse(&src, None)
-        .ok_or_else(|| format!("{rel} 解析不出树 —— 这是我的失败，不是世界的答案"))?;
+        .ok_or_else(|| format!("{rel} did not parse into a tree; this is my failure, not the world's answer"))?;
 
     let mut cursor = tree.walk();
     let mut stack = vec![tree.root_node()];
@@ -109,7 +109,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     walk(root, root, &mut cands)?;
     if cands.is_empty() {
         return Err(format!(
-            "{} 底下一个能解析的节点都没有 —— 更可能是我站错了目录",
+            "{} contains no parseable nodes; the probe is likely pointed at the wrong directory",
             root.display()
         ));
     }

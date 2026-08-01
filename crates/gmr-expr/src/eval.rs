@@ -75,8 +75,9 @@ pub fn eval(node: &Node, ctx: Ctx<'_>) -> Evaluated {
     }
 }
 
-/// `changed(x)` 的 obs 侧跟 `obs.x` 同款待遇：探针报了对象却没有这一项，
-/// 是拼写错误，要出声。state 侧仍然宽容 —— 第一次见到这个方向时它当然没有。
+/// The obs side of `changed(x)` gets the same treatment as `obs.x`: if the probe
+/// reported an object without that item, it is a typo and must be loud. The state
+/// side stays lenient — the first time a direction is seen it is of course absent.
 fn changed(name: &str, ctx: Ctx<'_>) -> Evaluated {
     let now = match ctx.obs {
         Value::Null => None,
@@ -402,7 +403,7 @@ mod tests {
         assert_eq!(
             eval(&node, ctx).as_bool(),
             Some(true),
-            "世界静止，滞回照样翻转"
+            "the world held still, yet the hysteresis flipped"
         );
     }
 
@@ -447,8 +448,8 @@ mod tests {
         );
     }
 
-    // changed(x) 的 obs 侧必须跟 obs.x 同款待遇：拼错要出声。
-    // 否则同一个拼写错误，写成路径会被 bind 抓住，写成 changed 就永远恒假。
+    // The obs side of changed(x) must match obs.x: a typo has to be loud.
+    // Otherwise the same typo is caught by bind as a path but silently false here.
 
     #[test]
     fn a_direction_the_probe_does_not_report_is_a_typo_not_a_verdict() {
@@ -468,12 +469,12 @@ mod tests {
         let path = eval(&parse("obs.gone").unwrap(), Ctx::new(&obs, &state));
         let sugar = eval(&parse("changed(\"gone\")").unwrap(), Ctx::new(&obs, &state));
         assert_eq!(path, Evaluated::Fault(Fault::NoSuchField));
-        assert_eq!(sugar, path, "路径抓得住的拼写错误，糖也得抓得住");
+        assert_eq!(sugar, path, "the sugar must catch what the path catches");
     }
 
     #[test]
     fn a_world_that_is_not_there_is_still_an_answer_not_a_typo() {
-        // NotFound 时 obs 是 null：世界说没有，不是我们写错了。
+        // On NotFound obs is null: the world says nothing is there, not our mistake.
         let (obs, state) = (Value::Null, json!({ "shape": "(a)->c" }));
         assert_eq!(
             eval(
@@ -482,7 +483,7 @@ mod tests {
             )
             .as_bool(),
             Some(true),
-            "东西没了 —— 这是一次真的转换"
+            "it is gone — that is a real transition"
         );
 
         let (obs, state) = (Value::Null, json!({}));
@@ -510,7 +511,7 @@ mod tests {
 
     #[test]
     fn the_state_side_stays_lenient() {
-        // 域第一次见到这个方向时 state 里当然没有 —— 那不是错误。
+        // The first time the domain sees a direction the state has nothing — fine.
         let (obs, state) = (json!({ "shape": "(a)->c" }), json!({}));
         assert_eq!(
             eval(

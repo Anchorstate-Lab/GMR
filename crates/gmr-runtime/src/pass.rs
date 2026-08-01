@@ -53,8 +53,9 @@ impl Runtime {
                     out.retired += 1;
                     Disposition::Retire
                 }
-                // 我们的失败和世界的失败不共用退避：表达式炸了，早一点晚
-                // 一点重试都一样炸，急着重试只是在刷日志。
+                // Our failures and the world's do not share a backoff: a blown
+                // expression blows up just the same sooner or later, and rushing to
+                // retry only spams the log.
                 Observed::Attempt { reason, .. } => {
                     out.unseen += 1;
                     let attempts = fold(&self.journal.entries(&ticket.anchor, 0).await?)
