@@ -362,6 +362,20 @@ async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
         "退场后不再出队"
     );
 
+    // 退场再回来，epoch 不许倒退。日志只认单调的令牌，它记的是这个锚见过
+    // 的最高水位；队列这边一旦从头数，新租约签发的令牌会被日志一直拒掉。
+    q.enqueue(&a, t0 + Duration::seconds(1_000)).await.unwrap();
+    let reborn = q
+        .due(t0 + Duration::seconds(1_000), Duration::seconds(60), 10)
+        .await
+        .unwrap();
+    assert_eq!(reborn.len(), 1);
+    assert!(
+        reborn[0].fence.0 > 2,
+        "退场删掉了计数器就等于把令牌清零：拿到 {} ，而日志已经见过 2",
+        reborn[0].fence.0
+    );
+
     let ghost = Ticket {
         anchor: AnchorKey::new("ghost"),
         fence: gmr_store::Fence(1),

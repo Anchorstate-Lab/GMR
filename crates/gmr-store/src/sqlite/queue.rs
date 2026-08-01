@@ -21,8 +21,8 @@ impl SqliteQueue {
 impl Queue for SqliteQueue {
     async fn enqueue(&self, anchor: &AnchorKey, due: DateTime<Utc>) -> Result<(), StoreError> {
         sqlx::query(
-            "INSERT INTO queue (anchor, due, lease_until) VALUES (?1, ?2, 0)
-             ON CONFLICT(anchor) DO UPDATE SET due = ?2, lease_until = 0",
+            "INSERT INTO queue (anchor, due, lease_until, parked) VALUES (?1, ?2, 0, 0)
+             ON CONFLICT(anchor) DO UPDATE SET due = ?2, lease_until = 0, parked = 0",
         )
         .bind(anchor.as_str())
         .bind(due.timestamp())
@@ -42,7 +42,8 @@ impl Queue for SqliteQueue {
         let rows = sqlx::query(
             "UPDATE queue SET lease_until = ?1, epoch = epoch + 1
              WHERE anchor IN (
-                 SELECT anchor FROM queue WHERE due <= ?2 AND lease_until <= ?2
+                 SELECT anchor FROM queue
+                 WHERE parked = 0 AND due <= ?2 AND lease_until <= ?2
                  ORDER BY due LIMIT ?3
              )
              RETURNING anchor, epoch",
@@ -72,7 +73,8 @@ impl Queue for SqliteQueue {
     ) -> Result<(), StoreError> {
         match disposition {
             Disposition::Retire => {
-                sqlx::query("DELETE FROM queue WHERE anchor = ?1")
+                // 停放而不是删行：epoch 是这个锚的令牌高水位，删了就从头数。
+                sqlx::query("UPDATE queue SET parked = 1, lease_until = 0 WHERE anchor = ?1")
                     .bind(ticket.anchor.as_str())
                     .execute(&self.pool)
                     .await

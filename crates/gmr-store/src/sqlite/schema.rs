@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS queue (
     anchor       TEXT    PRIMARY KEY,
     due          INTEGER NOT NULL,
     lease_until  INTEGER NOT NULL DEFAULT 0,
-    epoch        INTEGER NOT NULL DEFAULT 0
+    epoch        INTEGER NOT NULL DEFAULT 0,   -- 令牌高水位：只增，退场也不清零
+    parked       INTEGER NOT NULL DEFAULT 0    -- 退场了，但计数器留着
 );
 
 -- ── 只增不改 —— by trigger, not by good intentions ──────────

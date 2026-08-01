@@ -19,6 +19,8 @@ pub enum Disposition {
     Retire,
 }
 
+/// 实现方必须保证：**同一个锚签发的 fence 严格单调递增，且退场不清零。**
+/// 日志拿它当高水位来挡过期租约的写入，倒退一次就等于把那个锚永久锁死。
 #[async_trait]
 pub trait Queue: Send + Sync {
     async fn enqueue(&self, anchor: &AnchorKey, due: DateTime<Utc>) -> Result<(), StoreError>;

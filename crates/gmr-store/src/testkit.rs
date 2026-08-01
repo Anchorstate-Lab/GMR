@@ -145,6 +145,7 @@ struct Slot {
     due: DateTime<Utc>,
     lease_until: Option<DateTime<Utc>>,
     epoch: u64,
+    parked: bool,
 }
 
 #[derive(Default)]
@@ -159,6 +160,7 @@ impl Queue for MemoryQueue {
         let slot = inner.entry(anchor.clone()).or_default();
         slot.due = due;
         slot.lease_until = None;
+        slot.parked = false;
         Ok(())
     }
 
@@ -178,7 +180,7 @@ impl Queue for MemoryQueue {
             }
             let slot = inner.get_mut(&key).unwrap();
             let leased = slot.lease_until.is_some_and(|u| u > now);
-            if slot.due <= now && !leased {
+            if !slot.parked && slot.due <= now && !leased {
                 slot.epoch += 1;
                 slot.lease_until = Some(now + lease);
                 out.push(Ticket {
@@ -200,7 +202,10 @@ impl Queue for MemoryQueue {
         let mut inner = self.inner.lock().unwrap();
         match disposition {
             Disposition::Retire => {
-                inner.remove(&ticket.anchor);
+                if let Some(slot) = inner.get_mut(&ticket.anchor) {
+                    slot.parked = true;
+                    slot.lease_until = None;
+                }
             }
             Disposition::Reschedule { after_secs } | Disposition::Backoff { after_secs } => {
                 if let Some(slot) = inner.get_mut(&ticket.anchor) {
