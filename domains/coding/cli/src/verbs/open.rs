@@ -17,8 +17,12 @@ pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliErr
             transitions: rules::transitions(&args.rules)?,
             terminal: rules::terminal(&args.terminal),
             initial: None,
-            retain: Retain::Tick,
-            cadence_secs: None,
+            retain: if args.retain_full {
+                Retain::Full
+            } else {
+                Retain::Tick
+            },
+            cadence_secs: args.cadence_secs,
             supersedes,
         })
         .await?;

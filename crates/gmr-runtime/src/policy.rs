@@ -7,7 +7,6 @@ pub struct Policy {
     pub batch: usize,
     pub stalled_attempts: u32,
     pub stalled_staleness_secs: i64,
-    pub stalled_blind_steps: u32,
 }
 
 impl Default for Policy {
@@ -20,7 +19,6 @@ impl Default for Policy {
             batch: 64,
             stalled_attempts: 3,
             stalled_staleness_secs: 24 * 3600,
-            stalled_blind_steps: 3,
         }
     }
 }

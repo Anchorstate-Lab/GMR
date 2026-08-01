@@ -96,7 +96,6 @@ fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
 async fn every_failure_path_emits_an_edge() {
     let w = World::polled(Policy {
         stalled_attempts: 2,
-        stalled_blind_steps: 1,
         ..Default::default()
     });
     w.write(r#"{"shape":"old"}"#);

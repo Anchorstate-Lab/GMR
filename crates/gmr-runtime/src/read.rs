@@ -53,6 +53,7 @@ impl Runtime {
         for binding in self.bindings.bindings_on(key).await? {
             memories.push(self.fetch_memory(binding).await);
         }
+        self.carry_linked(&mut memories).await?;
 
         let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
             Some(Outcome::Found { .. }) => Sighting::Found,
@@ -100,6 +101,29 @@ impl Runtime {
 }
 
 impl Runtime {
+    /// 顺着链接把无锚的记录捎带出来，标成未接地。
+    ///
+    /// **接地不沿链接传播**：被捎带的东西拿不到任何保证，所以它必须看得出
+    /// 来是被捎带的。只走一跳 —— 再深就得处理环，而"深处那条还算不算跟这
+    /// 个锚有关"是域的判断，不是基底能替它答的。
+    async fn carry_linked(&self, memories: &mut Vec<MemoryView>) -> Result<(), RuntimeError> {
+        let linked: Vec<Ref> = memories
+            .iter()
+            .flat_map(|m| m.links.iter().map(|l| l.to.clone()))
+            .collect();
+
+        for reference in linked {
+            if memories.iter().any(|m| m.reference == reference) {
+                continue;
+            }
+            let Some(binding) = self.bindings.binding_of(&reference).await? else {
+                continue;
+            };
+            memories.push(self.fetch_memory(binding).await);
+        }
+        Ok(())
+    }
+
     pub(crate) async fn fetch_memory(&self, binding: Binding) -> MemoryView {
         let mut view = MemoryView {
             reference: binding.reference.clone(),

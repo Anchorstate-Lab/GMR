@@ -128,6 +128,12 @@ pub struct OpenArgs {
     pub rules: Vec<String>,
     #[arg(long = "terminal", value_delimiter = ',')]
     pub terminal: Vec<String>,
+    /// 世界没动时也留完整记录。
+    #[arg(long)]
+    pub retain_full: bool,
+    /// 这个锚自己的观测节奏，秒。
+    #[arg(long)]
+    pub cadence_secs: Option<u64>,
     /// 接替哪个已经终结的锚。终结不可撤销，纠错只能开新的一代。
     #[arg(long, requires = "why")]
     pub supersedes: Option<String>,

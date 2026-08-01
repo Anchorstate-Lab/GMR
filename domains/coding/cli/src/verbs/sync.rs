@@ -25,6 +25,12 @@ pub struct AnchorDecl {
     pub rules: Vec<String>,
     #[serde(default)]
     pub terminal: Vec<String>,
+    /// 世界没动时也留完整记录，而不是只记一笔「又看了一次」。
+    #[serde(default)]
+    pub retain_full: bool,
+    /// 这个锚自己的观测节奏；不写就用部署的默认。
+    #[serde(default)]
+    pub cadence_secs: Option<u64>,
 }
 
 impl AnchorDecl {
@@ -34,6 +40,14 @@ impl AnchorDecl {
 
     fn to_transitions(&self) -> Result<Transitions, CliError> {
         rules::transitions(&self.rules)
+    }
+
+    fn retain(&self) -> Retain {
+        if self.retain_full {
+            Retain::Full
+        } else {
+            Retain::Tick
+        }
     }
 
     fn initial(&self) -> Option<State> {
@@ -83,8 +97,8 @@ pub async fn run(
                 transitions: decl.to_transitions()?,
                 terminal: rules::terminal(&decl.terminal),
                 initial: decl.initial(),
-                retain: Retain::Tick,
-                cadence_secs: None,
+                retain: decl.retain(),
+                cadence_secs: decl.cadence_secs,
                 supersedes: None,
             })
             .await?;
@@ -136,5 +150,7 @@ pub async fn run(
 fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
     Ok(anchor.probe != decl.to_probe()?
         || anchor.transitions != decl.to_transitions()?
-        || anchor.terminal != rules::terminal(&decl.terminal))
+        || anchor.terminal != rules::terminal(&decl.terminal)
+        || anchor.retain != decl.retain()
+        || anchor.cadence_secs != decl.cadence_secs)
 }

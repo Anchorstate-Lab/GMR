@@ -254,7 +254,58 @@ async fn cobound_is_derived_from_binds_not_stored() {
 }
 
 #[tokio::test]
-async fn a_detached_record_is_marked_ungrounded() {
+async fn an_unanchored_record_is_carried_along_but_marked() {
+    use gmr_core::{Link, LinkKind};
+
+    let w = World::new(true);
+    w.memory("bound.md", "挂在锚上的那条。");
+    w.memory("loose.md", "谁也没挂，但被上面那条引用了。");
+    w.open("a").await;
+
+    w.runtime
+        .bind(
+            Ref::new("git", "memories/bound.md"),
+            vec![AnchorKey::new("a")],
+            Version::new("v1"),
+            vec![Link {
+                to: Ref::new("git", "memories/loose.md"),
+                kind: LinkKind("elaborates".into()),
+            }],
+        )
+        .await
+        .unwrap();
+    // 无锚的绑定：它存在，但没挂在任何锚上。
+    w.runtime
+        .bind(
+            Ref::new("git", "memories/loose.md"),
+            vec![],
+            Version::new("v1"),
+            vec![],
+        )
+        .await
+        .unwrap();
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let by_id = |id: &str| {
+        view.memories
+            .iter()
+            .find(|m| m.reference.external_id.as_str() == id)
+            .unwrap_or_else(|| panic!("{id} 该在这里：{:?}", view.memories))
+    };
+
+    assert!(by_id("memories/bound.md").grounded);
+    assert!(
+        !by_id("memories/loose.md").grounded,
+        "被捎带出来了，但它拿不到任何保证 —— 必须看得出来"
+    );
+    assert_eq!(
+        by_id("memories/loose.md").content.as_deref(),
+        Some("谁也没挂，但被上面那条引用了。")
+    );
+}
+
+#[tokio::test]
+async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
     let w = World::new(true);
     w.memory("a.md", "一。");
     w.open("a").await;
