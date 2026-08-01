@@ -118,7 +118,7 @@ path   = "CLAUDE.md"
 name   = "architecture"
 layer  = "spec"
 kind   = "document"
-path   = "GMR.md"
+path   = "docs/GMR.md"
 [[member]]
 name   = "declaration"
 layer  = "data"
