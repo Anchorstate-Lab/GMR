@@ -50,7 +50,7 @@ impl Evaluated {
 pub fn eval(node: &Node, ctx: Ctx<'_>) -> Evaluated {
     match node {
         Node::Lit(v) => Evaluated::Value(v.clone()),
-        Node::Changed(name) => Evaluated::bool(ctx.changed(name)),
+        Node::Changed(name) => changed(name, ctx),
         Node::Path(p) => walk(
             root_value(p.root, &ctx),
             &p.steps,
@@ -73,6 +73,20 @@ pub fn eval(node: &Node, ctx: Ctx<'_>) -> Evaluated {
         Node::Object(fields) => object(fields, ctx),
         Node::Array(items) => array(items, ctx),
     }
+}
+
+/// `changed(x)` 的 obs 侧跟 `obs.x` 同款待遇：探针报了对象却没有这一项，
+/// 是拼写错误，要出声。state 侧仍然宽容 —— 第一次见到这个方向时它当然没有。
+fn changed(name: &str, ctx: Ctx<'_>) -> Evaluated {
+    let now = match ctx.obs {
+        Value::Null => None,
+        Value::Object(map) => match map.get(name) {
+            Some(v) => Some(v),
+            None => return Evaluated::Fault(Fault::NoSuchField),
+        },
+        _ => return Evaluated::Fault(Fault::NotAnObject),
+    };
+    Evaluated::bool(now != ctx.state.get(name))
 }
 
 fn array(items: &[Node], ctx: Ctx<'_>) -> Evaluated {
@@ -422,6 +436,81 @@ mod tests {
 
     #[test]
     fn a_direction_the_domain_never_stored_reads_as_changed() {
+        let (obs, state) = (json!({ "shape": "(a)->c" }), json!({}));
+        assert_eq!(
+            eval(
+                &parse("changed(\"shape\")").unwrap(),
+                Ctx::new(&obs, &state)
+            )
+            .as_bool(),
+            Some(true)
+        );
+    }
+
+    // changed(x) 的 obs 侧必须跟 obs.x 同款待遇：拼错要出声。
+    // 否则同一个拼写错误，写成路径会被 bind 抓住，写成 changed 就永远恒假。
+
+    #[test]
+    fn a_direction_the_probe_does_not_report_is_a_typo_not_a_verdict() {
+        let (obs, state) = (json!({ "signature": "x" }), json!({}));
+        assert_eq!(
+            eval(
+                &parse("changed(\"signatur\")").unwrap(),
+                Ctx::new(&obs, &state)
+            ),
+            Evaluated::Fault(Fault::NoSuchField)
+        );
+    }
+
+    #[test]
+    fn changed_faults_exactly_where_the_same_path_would() {
+        let (obs, state) = (json!({ "here": 1 }), json!({}));
+        let path = eval(&parse("obs.gone").unwrap(), Ctx::new(&obs, &state));
+        let sugar = eval(&parse("changed(\"gone\")").unwrap(), Ctx::new(&obs, &state));
+        assert_eq!(path, Evaluated::Fault(Fault::NoSuchField));
+        assert_eq!(sugar, path, "路径抓得住的拼写错误，糖也得抓得住");
+    }
+
+    #[test]
+    fn a_world_that_is_not_there_is_still_an_answer_not_a_typo() {
+        // NotFound 时 obs 是 null：世界说没有，不是我们写错了。
+        let (obs, state) = (Value::Null, json!({ "shape": "(a)->c" }));
+        assert_eq!(
+            eval(
+                &parse("changed(\"shape\")").unwrap(),
+                Ctx::new(&obs, &state)
+            )
+            .as_bool(),
+            Some(true),
+            "东西没了 —— 这是一次真的转换"
+        );
+
+        let (obs, state) = (Value::Null, json!({}));
+        assert_eq!(
+            eval(
+                &parse("changed(\"shape\")").unwrap(),
+                Ctx::new(&obs, &state)
+            )
+            .as_bool(),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn a_probe_that_reports_something_other_than_an_object_faults() {
+        let (obs, state) = (json!([1, 2]), json!({}));
+        assert_eq!(
+            eval(
+                &parse("changed(\"shape\")").unwrap(),
+                Ctx::new(&obs, &state)
+            ),
+            Evaluated::Fault(Fault::NotAnObject)
+        );
+    }
+
+    #[test]
+    fn the_state_side_stays_lenient() {
+        // 域第一次见到这个方向时 state 里当然没有 —— 那不是错误。
         let (obs, state) = (json!({ "shape": "(a)->c" }), json!({}));
         assert_eq!(
             eval(

@@ -23,9 +23,6 @@ pub enum RuntimeError {
     )]
     CannotOpen { message: String },
 
-    #[error("开锚时转换表算不出第一个状态：{message}")]
-    CannotTransition { message: String },
-
     #[error("这个部署没有配置 Queue —— pass 是仅轮询部署的动词")]
     NoQueue,
 

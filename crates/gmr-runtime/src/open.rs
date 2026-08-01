@@ -74,11 +74,15 @@ impl Runtime {
         let mut warnings = bind_warnings(&anchor, &observation);
         warnings.extend(self.accumulator_warning(&anchor));
 
+        // 算不出第一个状态不是拒绝的理由：锚可以先于它的目标存在，那时
+        // 规则本来就取不到东西。拼错和「还没长出来」在这一刻长得一样，
+        // 两者都留到第一次真观测再现形 —— 那时它响。
         let state = match transition(&anchor, &observation, &initial, at, at) {
             Transitioned::To(next) => next,
             Transitioned::Unchanged => initial,
             Transitioned::Unevaluable(message) => {
-                return Err(RuntimeError::CannotTransition { message });
+                warnings.push(format!("{message}；起始状态原样留着"));
+                initial
             }
         };
 

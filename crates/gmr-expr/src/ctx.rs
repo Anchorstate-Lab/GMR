@@ -23,10 +23,4 @@ impl<'a> Ctx<'a> {
         self.entered_at = entered_at;
         self
     }
-
-    pub(crate) fn changed(&self, direction: &str) -> bool {
-        let now = self.obs.get(direction);
-        let was = self.state.get(direction);
-        now != was
-    }
 }

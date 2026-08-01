@@ -697,3 +697,53 @@ async fn an_anchor_still_running_cannot_be_superseded() {
         .expect_err("两代同时活着说同一件事，就是绕过终结的旁路");
     assert!(e.to_string().contains("还开着"), "{e}");
 }
+
+// ── 锚可以先于它的目标存在 ─────────────────────────────────────
+
+#[tokio::test]
+async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
+    let w = World::new();
+    w.write("{}");
+    let opened =
+        w.rt.open(OpenRequest {
+            key: key(),
+            probe: Probe::new(
+                Kind::new("shell"),
+                serde_json::json!({ "run": "cat world.json" }),
+            ),
+            transitions: transitions(&[(r#"changed("shape")"#, r#"{ shape: obs.shape }"#)]),
+            terminal: Default::default(),
+            initial: None,
+            retain: Retain::Tick,
+            cadence_secs: None,
+            supersedes: None,
+        })
+        .await
+        .expect("拼错和「还没长出来」在这一刻长得一样，都不该拦在开锚这里");
+
+    assert!(
+        opened.warnings.iter().any(|w| w.contains("no_such_field")),
+        "但必须出声：{:?}",
+        opened.warnings
+    );
+
+    // 长出来之后，它照常转换。
+    w.write(r#"{"shape":"(a)->c"}"#);
+    assert!(moved(&w.observe().await));
+    assert_eq!(w.state().await.as_value()["shape"], "(a)->c");
+}
+
+#[tokio::test]
+async fn a_misspelt_direction_is_loud_at_the_first_real_observation() {
+    let w = World::new();
+    w.write(r#"{"signature":"(a)->c"}"#);
+    w.open(&[(r#"changed("signatur")"#, r#"{ x: 1 }"#)], &[])
+        .await;
+
+    let seen = w.observe().await;
+    let Observed::Attempt { reason, message } = &seen else {
+        panic!("拼错的方向必须响，而不是恒假地静默下去：{seen:?}")
+    };
+    assert_eq!(*reason, gmr_core::ReasonClass::Unevaluable);
+    assert!(message.contains("no_such_field"), "{message}");
+}
