@@ -166,9 +166,11 @@ fn walk(
             });
         }
 
+        // 规则写错了重试一万次也不会好 —— 第一次就得响，而且别跟
+        // 「世界这会儿够不着」共用一个计数器。
         if fresh
             && let Entry::Attempt { reason, .. } = entry
-            && now.attempts == policy.stalled_attempts
+            && (*reason == ReasonClass::Unevaluable || now.attempts == policy.stalled_attempts)
         {
             out.push(Edge::Stalled {
                 anchor: key.clone(),

@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use gmr_core::fold;
+use gmr_core::{ReasonClass, fold};
 use gmr_store::Disposition;
 use serde::Serialize;
 
@@ -53,13 +53,18 @@ impl Runtime {
                     out.retired += 1;
                     Disposition::Retire
                 }
-                Observed::Attempt { .. } => {
+                // 我们的失败和世界的失败不共用退避：表达式炸了，早一点晚
+                // 一点重试都一样炸，急着重试只是在刷日志。
+                Observed::Attempt { reason, .. } => {
                     out.unseen += 1;
                     let attempts = fold(&self.journal.entries(&ticket.anchor, 0).await?)
                         .map(|s| s.attempts)
                         .unwrap_or(1);
                     Disposition::Backoff {
-                        after_secs: self.policy.backoff_secs(attempts),
+                        after_secs: match reason {
+                            ReasonClass::Unevaluable => self.policy.backoff_cap_secs as i64,
+                            _ => self.policy.backoff_secs(attempts),
+                        },
                     }
                 }
                 other => {

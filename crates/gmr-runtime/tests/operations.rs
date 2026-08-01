@@ -500,3 +500,83 @@ async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
     );
     assert!(b.edges.is_empty(), "而它不该冒充成一件新发生的事");
 }
+
+#[tokio::test]
+async fn a_broken_rule_is_loud_on_the_first_failure_not_the_third() {
+    let w = World::new();
+    w.write(r#"{"here":1}"#);
+    w.runtime
+        .open(request(
+            w.dir.path(),
+            rules(&[("obs.gone > 1", r#"{ status: "x" }"#)]),
+        ))
+        .await
+        .unwrap();
+
+    let seen = w.runtime.observe(&key()).await.unwrap();
+    assert!(
+        matches!(
+            seen,
+            gmr_runtime::Observed::Attempt {
+                reason: gmr_core::ReasonClass::Unevaluable,
+                ..
+            }
+        ),
+        "{seen:?}"
+    );
+
+    let stalled: Vec<_> = w
+        .runtime
+        .changed_since(0, None)
+        .await
+        .unwrap()
+        .edges
+        .into_iter()
+        .filter(|e| matches!(e, Edge::Stalled { .. }))
+        .collect();
+    assert_eq!(
+        stalled.len(),
+        1,
+        "转换表写错了重试一万次也不会好 —— 第一次就该出声，而不是攒够三次"
+    );
+    assert!(matches!(
+        stalled[0],
+        Edge::Stalled {
+            last: gmr_core::ReasonClass::Unevaluable,
+            count: 1,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn the_world_being_out_of_reach_still_waits_for_the_streak() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    // 够不着是世界的事，不是我们写错了：它值得重试，所以攒够了才响。
+    std::fs::remove_file(w.dir.path().join("world.json")).unwrap();
+    let seen = w.runtime.observe(&key()).await.unwrap();
+    assert!(matches!(
+        seen,
+        gmr_runtime::Observed::Attempt {
+            reason: gmr_core::ReasonClass::Unreachable,
+            ..
+        }
+    ));
+
+    assert!(
+        !w.runtime
+            .changed_since(0, None)
+            .await
+            .unwrap()
+            .edges
+            .iter()
+            .any(|e| matches!(e, Edge::Stalled { .. })),
+        "一次够不着还不算停摆"
+    );
+}
