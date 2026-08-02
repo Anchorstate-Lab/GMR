@@ -8,6 +8,9 @@
 set -e
 cd "$(dirname "$0")"
 
+echo "── clean"
+cargo clean
+
 echo "── fmt"
 cargo fmt --all --check
 

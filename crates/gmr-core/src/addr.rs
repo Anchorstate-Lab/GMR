@@ -163,7 +163,8 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
                 if i > 0 {
                     self.out.write_all(b",")?;
                 }
-                let key_bytes = serde_json::to_vec(k).expect("string key serialisation cannot fail");
+                let key_bytes =
+                    serde_json::to_vec(k).expect("string key serialisation cannot fail");
                 self.out.write_all(&key_bytes)?;
                 self.out.write_all(b":")?;
                 self.write_value(v)?;
