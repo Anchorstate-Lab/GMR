@@ -129,13 +129,3 @@ name   = "tests"
 layer  = "substrate"
 kind   = "corpus"
 path   = "crates"
-
-# ── 这里曾经有一张覆盖矩阵，删了 ────────────────────────────────
-# 它按 kind 要求每个成员被 inventory / shape / rule 三个维度盯住，锚的键要写成
-# `<dimension>::<member>`。**这三个词没有一条锚在用** —— 真实的键用的是
-# modules / surface / packages / tests / dead / doctrine。矩阵从来没兑现过，
-# 也没有任何机制会发现它没兑现：gate.sh 不读它。
-#
-# 一份没人兑现的覆盖承诺比没有承诺更坏 —— 它让「这块有没有人看」这个问题
-# 得到一个假的肯定答案。所以删掉，而不是把词表调成对得上的样子：
-# 该锚什么、按什么维度切，是作者每次单独的判断，不是一张表能替他答的。

@@ -1,5 +1,6 @@
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
+use std::io::{self, Write};
 
 pub fn check_sha256_hex(s: &str) -> Result<(), String> {
     if s.len() != 64 {
@@ -67,18 +68,27 @@ macro_rules! string_newtype {
     };
 }
 
+const MAX_CANONICAL_DEPTH: usize = 1024;
+
 string_newtype! {
     ContentHash, check_sha256_hex
 }
 
 pub fn canonicalize(value: &Value) -> Vec<u8> {
     let mut out = Vec::new();
-    write_canonical(&mut out, value);
+    canonical_write(&mut out, value).expect("canonical_write on Vec cannot fail");
     out
 }
 
+pub fn canonical_write<W: Write>(out: &mut W, value: &Value) -> io::Result<()> {
+    let mut canonicalizer = Canonicalizer::new(out);
+    canonicalizer.write(value)
+}
+
 pub fn content_hash_of(value: &Value) -> ContentHash {
-    let digest = Sha256::digest(canonicalize(value));
+    let mut hasher = Sha256::new();
+    canonical_write(&mut hasher, value).expect("canonical_write into hasher cannot fail");
+    let digest = hasher.finalize();
     ContentHash::new(format!("{digest:x}"))
 }
 
@@ -87,40 +97,127 @@ pub fn content_hash_of_bytes(bytes: &[u8]) -> ContentHash {
     ContentHash::new(format!("{digest:x}"))
 }
 
-fn write_canonical(out: &mut Vec<u8>, value: &Value) {
-    match value {
-        Value::Object(map) => write_object(out, map),
-        Value::Array(items) => {
-            out.push(b'[');
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push(b',');
-                }
-                write_canonical(out, item);
-            }
-            out.push(b']');
-        }
-        scalar => {
-            let bytes = serde_json::to_vec(scalar).expect("scalar serialisation cannot fail");
-            out.extend_from_slice(&bytes);
-        }
-    }
+struct Canonicalizer<'a, W: Write> {
+    out: &'a mut W,
+    depth: usize,
 }
 
-fn write_object(out: &mut Vec<u8>, map: &Map<String, Value>) {
-    let mut entries: Vec<(&String, &Value)> = map.iter().collect();
-    entries.sort_by(|a, b| a.0.cmp(b.0));
-    out.push(b'{');
-    for (i, (k, v)) in entries.iter().enumerate() {
-        if i > 0 {
-            out.push(b',');
-        }
-        let key_bytes = serde_json::to_vec(k).expect("string key serialisation cannot fail");
-        out.extend_from_slice(&key_bytes);
-        out.push(b':');
-        write_canonical(out, v);
+impl<'a, W: Write> Canonicalizer<'a, W> {
+    fn new(out: &'a mut W) -> Self {
+        Self { out, depth: 0 }
     }
-    out.push(b'}');
+
+    fn write(&mut self, value: &Value) -> io::Result<()> {
+        self.write_value(value)
+    }
+
+    fn write_value(&mut self, value: &Value) -> io::Result<()> {
+        if self.depth > MAX_CANONICAL_DEPTH {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "JSON structure exceeds maximum canonicalization depth",
+            ));
+        }
+
+        match value {
+            Value::Object(map) => self.write_object(map),
+            Value::Array(items) => self.write_array(items),
+            Value::Number(number) => self.write_number(number),
+            Value::String(_) | Value::Bool(_) | Value::Null => self.write_json_scalar(value),
+        }
+    }
+
+    fn write_json_scalar(&mut self, value: &Value) -> io::Result<()> {
+        let bytes = serde_json::to_vec(value).expect("scalar serialisation cannot fail");
+        self.out.write_all(&bytes)
+    }
+
+    fn write_number(&mut self, number: &Number) -> io::Result<()> {
+        let text = Self::canonical_number_string(number)?;
+        self.out.write_all(text.as_bytes())
+    }
+
+    fn write_array(&mut self, items: &[Value]) -> io::Result<()> {
+        self.depth += 1;
+        let result = (|| {
+            self.out.write_all(b"[")?;
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    self.out.write_all(b",")?;
+                }
+                self.write_value(item)?;
+            }
+            self.out.write_all(b"]")
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    fn write_object(&mut self, map: &Map<String, Value>) -> io::Result<()> {
+        self.depth += 1;
+        let result = (|| {
+            let mut entries: Vec<(&String, &Value)> = map.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            self.out.write_all(b"{")?;
+            for (i, (k, v)) in entries.iter().enumerate() {
+                if i > 0 {
+                    self.out.write_all(b",")?;
+                }
+                let key_bytes = serde_json::to_vec(k).expect("string key serialisation cannot fail");
+                self.out.write_all(&key_bytes)?;
+                self.out.write_all(b":")?;
+                self.write_value(v)?;
+            }
+            self.out.write_all(b"}")
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    fn canonical_number_string(number: &Number) -> io::Result<String> {
+        if number.is_i64() {
+            return Ok(number.as_i64().unwrap().to_string());
+        }
+
+        if number.is_u64() {
+            return Ok(number.as_u64().unwrap().to_string());
+        }
+
+        if let Some(f) = number.as_f64() {
+            if !f.is_finite() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "JSON numbers must be finite",
+                ));
+            }
+
+            let mut s = ryu::Buffer::new().format(f).to_owned();
+            if s == "-0" || s == "-0.0" {
+                return Ok("0".to_owned());
+            }
+
+            if s.contains('.') || s.contains('e') || s.contains('E') {
+                if s.contains('.') {
+                    while s.ends_with('0') {
+                        s.pop();
+                    }
+                    if s.ends_with('.') {
+                        s.pop();
+                    }
+                }
+                if let Some(pos) = s.find('E') {
+                    s.replace_range(pos..=pos, "e");
+                }
+            }
+
+            return Ok(s);
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsupported JSON number type",
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -181,6 +278,27 @@ mod tests {
     fn content_hash_validates_as_sha256_hex() {
         let h = content_hash_of(&json!({"k": "v"}));
         assert!(ContentHash::try_new(h.as_str()).is_ok());
+    }
+
+    #[test]
+    fn canonical_write_supports_write_into_hasher() {
+        let value = json!({"x": [1, 2, 3], "y": {"b": 2, "a": 1}});
+        let mut hasher = Sha256::new();
+        canonical_write(&mut hasher, &value).expect("canonical_write works");
+        let digest = hasher.finalize();
+        assert_eq!(digest.len(), 32);
+    }
+
+    #[test]
+    fn number_formatting_is_normalized_for_jcs() {
+        let b = json!({"n": 1.2300});
+        let mut out = Vec::new();
+        canonical_write(&mut out, &b).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), r#"{"n":1.23}"#);
+
+        let mut out = Vec::new();
+        canonical_write(&mut out, &json!(-0.0)).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "0");
     }
 
     #[test]
