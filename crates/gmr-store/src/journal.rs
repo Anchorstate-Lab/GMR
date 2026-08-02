@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use gmr_core::{AnchorKey, Entry, Seq};
 
-use crate::error::StoreError;
+use crate::error::{ErrorCode, ErrorKind, StoreError};
 
 /// Write token.
 ///
@@ -47,14 +47,20 @@ pub trait Journal: Send + Sync {
 /// sooner or later be wrong separately.
 pub fn guard(fence: Fence, seen: i64, entry: &Entry) -> Result<(), StoreError> {
     match fence {
-        Fence::Held(epoch) if (epoch as i64) < seen => Err(StoreError::constraint(format!(
-            "fencing token {epoch} is stale (already saw {seen}) — a lease expiring \
+        Fence::Held(epoch) if (epoch as i64) < seen => Err(StoreError::with_code(
+            ErrorKind::Constraint,
+            ErrorCode::StaleFence,
+            format!(
+                "fencing token {epoch} is stale (already saw {seen}) — a lease expiring \
              does not mean the holder stopped working"
-        ))),
+            ),
+        )),
         // Observing is the lease's job. Once an anchor is under lease management,
         // no observation may be slipped in beside it — that is exactly the second
         // writer the lease exists to prevent. Author revisions are exempt.
-        Fence::Unleased if seen > 0 && entry.is_sighting() => Err(StoreError::constraint(
+        Fence::Unleased if seen > 0 && entry.is_sighting() => Err(StoreError::with_code(
+            ErrorKind::Constraint,
+            ErrorCode::LeaseManagedObservation,
             "observations on this anchor are lease-managed and will not be accepted \
              without a token; go through the queue, or stop polling"
                 .to_owned(),

@@ -8,8 +8,8 @@ use gmr_runtime::{Observed, OpenRequest, Runtime, Sighting};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
 
-/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
-/// 生产路径上成立，测试反而绕过了它。
+/// Every test publishes a real artifact. Otherwise "earned versions" would
+/// hold on the production path while tests bypass it.
 fn script_probe(root: &std::path::Path, body: &str) -> gmr_core::ProbeRef {
     let version = gmr_transport_shell::testkit::publish_script(root.join(".probes"), body);
     gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
@@ -125,7 +125,10 @@ async fn an_undeclared_direction_moves_nothing() {
         .await;
 
     w.write(r#"{"shape":"(a)->c","body":"two"}"#);
-    assert!(!moved(&w.observe().await), "实现变了，但没人声明在看它");
+    assert!(
+        !moved(&w.observe().await),
+        "implementation changed, but nobody declared that direction"
+    );
 }
 
 #[tokio::test]
@@ -165,7 +168,11 @@ async fn changing_back_can_be_expressed_as_going_back() {
 
     w.write(r#"{"shape":"(a)->c"}"#);
     w.observe().await;
-    assert_eq!(w.status().await.as_deref(), Some("ok"), "改回去就自愈");
+    assert_eq!(
+        w.status().await.as_deref(),
+        Some("ok"),
+        "changing back self-heals"
+    );
 }
 
 #[tokio::test]
@@ -181,7 +188,11 @@ async fn a_terminal_state_stops_the_machine_for_good() {
 
     w.write(r#"{"n":1}"#);
     assert_eq!(w.observe().await, Observed::Closed);
-    assert_eq!(w.status().await.as_deref(), Some("settled"), "回不去了");
+    assert_eq!(
+        w.status().await.as_deref(),
+        Some("settled"),
+        "it cannot go back"
+    );
 }
 
 #[tokio::test]
@@ -199,8 +210,11 @@ async fn the_terminal_set_belongs_to_the_anchor_not_to_the_word() {
 async fn the_substrate_never_reads_into_a_status() {
     let w = World::new();
     w.write(r#"{"n":50}"#);
-    w.open(&[("obs.n > 10", r#"{ status: "已结算" }"#)], &["已结算"])
-        .await;
+    w.open(
+        &[("obs.n > 10", r#"{ status: "settled-local" }"#)],
+        &["settled-local"],
+    )
+    .await;
     assert_eq!(w.observe().await, Observed::Closed);
 }
 
@@ -236,7 +250,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
         Change::Restate {
             state: State::new(serde_json::json!({ "position": "b.json" })),
         },
-        "盯的东西搬家了".as_bytes(),
+        "the watched object moved".as_bytes(),
     )
     .await
     .unwrap();
@@ -300,7 +314,10 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
     let view = rt.read(&key()).await.unwrap();
     assert_eq!(view.sighting, Sighting::Absent);
     assert_eq!(view.status.map(|s| s.to_string()).as_deref(), Some("empty"));
-    assert_eq!(view.attempts, 0, "这是关于世界的事实，不是我们的失败");
+    assert_eq!(
+        view.attempts, 0,
+        "this is a fact about the world, not our failure"
+    );
 }
 
 #[tokio::test]
@@ -383,12 +400,16 @@ async fn partial_acceptance_is_written_out_in_the_open() {
     w.observe().await;
 
     let s = w.state().await;
-    assert_eq!(s.as_value()["at"], "b.rs", "接受了搬家");
-    assert_eq!(s.as_value()["shape"], "(a)->c", "没接受签名变化");
+    assert_eq!(s.as_value()["at"], "b.rs", "accepted the move");
+    assert_eq!(
+        s.as_value()["shape"],
+        "(a)->c",
+        "did not accept the signature change"
+    );
     assert_eq!(
         w.status().await.as_deref(),
         Some("drifted"),
-        "而且它知道自己现在是拼接出来的"
+        "and it knows the current state is assembled"
     );
 }
 
@@ -414,7 +435,7 @@ async fn accepting_a_change_by_hand_is_sealed() {
             Change::Restate {
                 state: State::new(serde_json::json!({ "shape": "(a,b)->c", "status": "ok" })),
             },
-            "合理演进，签名该变".as_bytes(),
+            "reasonable evolution, signature should change".as_bytes(),
         )
         .await
         .unwrap();
@@ -448,7 +469,7 @@ async fn a_world_that_did_not_move_stays_still_even_right_after_a_restate() {
         Change::Restate {
             state: State::new(serde_json::json!({ "shape": "(a)->c", "status": "ok" })),
         },
-        "接受当下".as_bytes(),
+        "accept current state".as_bytes(),
     )
     .await
     .unwrap();
@@ -456,7 +477,7 @@ async fn a_world_that_did_not_move_stays_still_even_right_after_a_restate() {
     assert_eq!(
         w.observe().await,
         Observed::Still,
-        "世界一动没动 —— 作者改了状态不是世界的一次转换"
+        "the world did not move; an author restate is not a world transition"
     );
     assert_eq!(w.status().await.as_deref(), Some("ok"));
 }
@@ -487,14 +508,15 @@ async fn every_still_in_a_run_points_at_the_record_it_was_compared_against() {
     assert_eq!(
         refs,
         vec![1, 1, 1],
-        "每条 still 都指回那条完整记录，而不是串成一条链"
+        "each still points back to the full record, not to a chain of still entries"
     );
 }
 
-// ── 终结是结构，不是当下这一次解释 ──────────────────────────────
+// -- Closure is structure, not the current interpretation --------------------
 //
-// 「不可逆」如果只在 fold 的最后一行按最后一个状态算一次，那它就是
-// 一个视图，不是事实：任何把状态挪出终结集合的动作都能静默复活它。
+// If irreversibility is only computed at the end of fold from the final state,
+// it is a view, not a fact. Any action that moves state out of the terminal set
+// would silently resurrect it.
 
 #[tokio::test]
 async fn restate_cannot_resurrect_a_finished_anchor() {
@@ -510,11 +532,11 @@ async fn restate_cannot_resurrect_a_finished_anchor() {
             Change::Restate {
                 state: State::new(serde_json::json!({ "status": "pending" })),
             },
-            "想反悔".as_bytes(),
+            "want to take it back".as_bytes(),
         )
         .await
-        .expect_err("终结之后不许再改状态");
-    assert!(e.to_string().contains("终结"), "{e}");
+        .expect_err("state cannot be changed after closure");
+    assert_eq!(e.code(), "anchor_closed");
 
     assert_eq!(w.status().await.as_deref(), Some("settled"));
     assert_eq!(w.observe().await, Observed::Closed);
@@ -533,10 +555,10 @@ async fn emptying_the_terminal_set_cannot_resurrect_a_finished_anchor() {
         Change::Reterminal {
             terminal: Default::default(),
         },
-        "算了".as_bytes(),
+        "never mind".as_bytes(),
     )
     .await
-    .expect_err("判据写错了要开新一代，不是把这个锚拽回来");
+    .expect_err("a wrong criterion needs a new generation, not resurrection");
 
     assert!(w.rt.read(&key()).await.unwrap().closed);
 }
@@ -546,25 +568,26 @@ async fn an_author_sealed_close_is_equally_final() {
     let w = World::new();
     w.write(r#"{"n":1}"#);
     w.open(&[], &[]).await;
-    w.rt.close(&key(), "收工".as_bytes()).await.unwrap();
+    w.rt.close(&key(), "done".as_bytes()).await.unwrap();
 
-    w.rt.close(&key(), "再来一次".as_bytes())
+    w.rt.close(&key(), "again".as_bytes())
         .await
-        .expect_err("关过的锚不能再关");
+        .expect_err("a closed anchor cannot be closed again");
     w.rt.revise(
         &key(),
         Change::Restate {
             state: State::new(serde_json::json!({ "status": "back" })),
         },
-        "回来".as_bytes(),
+        "come back".as_bytes(),
     )
     .await
-    .expect_err("关过的锚不能再改");
+    .expect_err("a closed anchor cannot be changed");
 }
 
 #[tokio::test]
 async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
-    // 直接喂日志：确认粘性住在 fold 里，不是住在 revise 的守卫里。
+    // Feed the journal directly to verify stickiness lives in fold, not in the
+    // revise guard.
     use gmr_core::{Entry, Observation, Outcome, Versions, fold};
 
     let anchor = gmr_core::Anchor {
@@ -627,11 +650,11 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
 
     assert!(
         fold(&log).unwrap().closed,
-        "日志里有过一次进入终结集合 —— 后面写什么都改不了这件事"
+        "the log once entered the terminal set; later entries cannot change that fact"
     );
 }
 
-// ── 纠错的唯一出路：开新的一代 ─────────────────────────────────
+// -- The only correction path is a new generation ----------------------------
 
 #[tokio::test]
 async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
@@ -655,7 +678,7 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
             cadence_secs: None,
             supersedes: Some(Supersede {
                 key: key(),
-                rationale: "阈值定错了，10 太低".as_bytes().to_vec(),
+                rationale: "threshold was wrong; 10 was too low".as_bytes().to_vec(),
             }),
         })
         .await
@@ -663,15 +686,15 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
 
     assert_eq!(opened.supersedes.as_ref(), Some(&key()));
 
-    // 理由取得回来，跟 revise / close 的理由走同一条密封链。
+    // The rationale is retrievable through the same sealed chain as revise/close.
     let cited = w.rt.read(&heir).await.unwrap().anchor.supersedes.unwrap();
     assert_eq!(cited.key, key());
     assert_eq!(
         w.rt.bindings().sealed(&cited.rationale).await.unwrap(),
-        Some("阈值定错了，10 太低".as_bytes().to_vec()),
+        Some("threshold was wrong; 10 was too low".as_bytes().to_vec()),
     );
 
-    // 旧的那一代仍然是关的 —— 接替不是复活。
+    // The old generation remains closed; superseding is not resurrection.
     assert!(w.rt.read(&key()).await.unwrap().closed);
 }
 
@@ -698,11 +721,11 @@ async fn an_anchor_still_running_cannot_be_superseded() {
             }),
         })
         .await
-        .expect_err("两代同时活着说同一件事，就是绕过终结的旁路");
-    assert!(e.to_string().contains("还开着"), "{e}");
+        .expect_err("running anchor cannot be superseded");
+    assert_eq!(e.code(), "not_closed_yet");
 }
 
-// ── 锚可以先于它的目标存在 ─────────────────────────────────────
+// -- Anchors may precede their target ----------------------------------------
 
 #[tokio::test]
 async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
@@ -720,15 +743,15 @@ async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
             supersedes: None,
         })
         .await
-        .expect("拼错和「还没长出来」在这一刻长得一样，都不该拦在开锚这里");
+        .expect("a misspelling and a not-yet-grown target look the same at opening time, so neither should block opening");
 
     assert!(
         opened.warnings.iter().any(|w| w.contains("no_such_field")),
-        "但必须出声：{:?}",
+        "but it must be reported: {:?}",
         opened.warnings
     );
 
-    // 长出来之后，它照常转换。
+    // Once it appears, it transitions normally.
     w.write(r#"{"shape":"(a)->c"}"#);
     assert!(moved(&w.observe().await));
     assert_eq!(w.state().await.as_value()["shape"], "(a)->c");
@@ -743,7 +766,7 @@ async fn a_misspelt_direction_is_loud_at_the_first_real_observation() {
 
     let seen = w.observe().await;
     let Observed::Attempt { reason, message } = &seen else {
-        panic!("拼错的方向必须响，而不是恒假地静默下去：{seen:?}")
+        panic!("a misspelled direction must be loud, not silently false forever: {seen:?}")
     };
     assert_eq!(*reason, gmr_core::ReasonClass::Unevaluable);
     assert!(message.contains("no_such_field"), "{message}");

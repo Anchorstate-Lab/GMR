@@ -8,8 +8,8 @@ use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
 
-/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
-/// 生产路径上成立，测试反而绕过了它。
+/// Every test publishes a real artifact. Otherwise "earned versions" would
+/// hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     let version =
         gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
@@ -110,7 +110,7 @@ async fn every_failure_path_emits_an_edge() {
     assert!(
         matches!(&o, gmr_runtime::Observed::Attempt { reason, .. }
                  if *reason == gmr_core::ReasonClass::Unevaluable),
-        "字段改名不能悄悄变成『没动静』：{o:?}"
+        "a renamed field must not silently become no movement: {o:?}"
     );
 
     let mid = w.runtime.changed_since(start, None).await.unwrap().cursor;
@@ -122,7 +122,7 @@ async fn every_failure_path_emits_an_edge() {
         e.edges
             .iter()
             .any(|x| matches!(x, Edge::Stalled { count: _, .. })),
-        "连续算不出来也是停摆：{:?}",
+        "consecutive unevaluable observations are stalled too: {:?}",
         e.edges
     );
 
@@ -131,7 +131,7 @@ async fn every_failure_path_emits_an_edge() {
     assert_eq!(
         w.runtime.read(&key()).await.unwrap().attempts,
         0,
-        "看成一次就该清零"
+        "one successful observation should reset attempts"
     );
 
     let mid = w
@@ -161,7 +161,7 @@ async fn every_failure_path_emits_an_edge() {
         e.edges
             .iter()
             .any(|x| matches!(x, Edge::Stalled { count: 2, .. })),
-        "连续失败超阈值 → stalled：{:?}",
+        "consecutive failures above the threshold should become stalled: {:?}",
         e.edges
     );
 }
@@ -184,7 +184,10 @@ async fn a_cursor_makes_the_answer_incremental() {
     assert!(matches!(second.edges[0], Edge::Transitioned { .. }));
 
     let third = w.runtime.changed_since(second.cursor, None).await.unwrap();
-    assert!(third.edges.is_empty(), "问过就不再重复");
+    assert!(
+        third.edges.is_empty(),
+        "already-read edges should not repeat"
+    );
 }
 
 #[tokio::test]
@@ -219,7 +222,7 @@ async fn edges_can_be_filtered_by_status() {
             .unwrap()
             .edges
             .is_empty(),
-        "签名没动，别烦我"
+        "shape did not move, so do not report it"
     );
     assert_eq!(
         w.runtime
@@ -257,7 +260,7 @@ async fn entering_a_terminal_state_emits_both_edges() {
             x,
             Edge::Transitioned { status: Some(s), .. } if s.as_str() == "done"
         )),
-        "说好的事有结果了"
+        "the promised condition has resolved"
     );
     assert!(
         e.edges.iter().any(|x| matches!(
@@ -267,7 +270,7 @@ async fn entering_a_terminal_state_emits_both_edges() {
                 ..
             }
         )),
-        "自封 —— 没有人写过理由"
+        "self-sealed: no author rationale was written"
     );
 }
 
@@ -284,7 +287,7 @@ async fn reading_the_previous_state_without_a_lease_only_warns() {
         .await
         .unwrap();
     assert!(
-        opened.warnings.iter().any(|s| s.contains("租约")),
+        opened.warnings.iter().any(|s| s.contains("no lease")),
         "{:?}",
         opened.warnings
     );
@@ -357,7 +360,7 @@ async fn health_exposes_the_drift_quantities() {
     assert_eq!(h.restate_count, 1);
     assert!(
         h.state_drifted,
-        "状态已经不是开锚那个了 —— 布尔，不是距离：基底不认识值的类型"
+        "state differs from the opening state; this is boolean, not a distance"
     );
     assert_eq!(h.rationale_sizes, vec![b"accepted".len()]);
     assert_eq!(h.stall_ratio, 0.0);
@@ -422,16 +425,20 @@ async fn a_terminal_transition_reports_itself_as_self_sealed_exactly_once() {
         })
         .collect();
 
-    assert_eq!(closed, vec![true], "自己走进终结集合 —— 一次，且是自封的");
+    assert_eq!(
+        closed,
+        vec![true],
+        "entered the terminal set once and was self-sealed"
+    );
 
-    // 再问一次：已经交出去的边沿不重发。
+    // Ask again: an already delivered edge is not emitted again.
     let again = w.runtime.changed_since(u64::MAX - 1, None).await.unwrap();
     assert!(
         !again
             .edges
             .iter()
             .any(|e| matches!(e, gmr_runtime::Edge::Closed { .. })),
-        "游标之后没有新的关闭"
+        "there is no new close after the cursor"
     );
 }
 
@@ -457,7 +464,11 @@ async fn an_author_close_is_not_reported_as_self_sealed() {
             _ => None,
         })
         .collect();
-    assert_eq!(closed, vec![false], "作者伸手关的，处置跟自封不同");
+    assert_eq!(
+        closed,
+        vec![false],
+        "author close is distinct from self-sealing"
+    );
 }
 
 #[tokio::test]
@@ -472,12 +483,19 @@ async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
     w.runtime.observe(&key()).await.unwrap();
 
     let first = w.runtime.changed_since(0, None).await.unwrap();
-    assert!(!first.edges.is_empty(), "日志里确实发生过事");
+    assert!(
+        !first.edges.is_empty(),
+        "something did happen in the journal"
+    );
 
     let second = w.runtime.changed_since(first.cursor, None).await.unwrap();
-    assert!(second.edges.is_empty(), "问过的事不再交第二次");
+    assert!(
+        second.edges.is_empty(),
+        "already-read events are not delivered twice"
+    );
 
-    // 陈旧是状况：它不来自日志，游标对它没有意义，每次都该重报。
+    // Staleness is a standing condition, not a journal event. The cursor does
+    // not apply, so it should be reported every time.
     let stale = World::polled(Policy {
         stalled_staleness_secs: -1,
         ..Default::default()
@@ -495,9 +513,12 @@ async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
     assert_eq!(
         b.standing.len(),
         1,
-        "游标之后没有新条目，但这个锚此刻仍然是陈旧的 —— 状况该重报"
+        "there are no new entries after the cursor, but the anchor is still stale now"
     );
-    assert!(b.edges.is_empty(), "而它不该冒充成一件新发生的事");
+    assert!(
+        b.edges.is_empty(),
+        "and it must not pretend to be a new event"
+    );
 }
 
 #[tokio::test]
@@ -536,7 +557,7 @@ async fn a_broken_rule_is_loud_on_the_first_failure_not_the_third() {
     assert_eq!(
         stalled.len(),
         1,
-        "转换表写错了重试一万次也不会好 —— 第一次就该出声，而不是攒够三次"
+        "a broken transition table will not improve by retrying; it should be loud on the first failure"
     );
     assert!(matches!(
         stalled[0],
@@ -557,7 +578,8 @@ async fn the_world_being_out_of_reach_still_waits_for_the_streak() {
         .await
         .unwrap();
 
-    // 够不着是世界的事，不是我们写错了：它值得重试，所以攒够了才响。
+    // Unreachable is about the world, not a rule bug. It is worth retrying, so
+    // it only becomes loud after the configured streak.
     std::fs::remove_file(w.dir.path().join("world.json")).unwrap();
     let seen = w.runtime.observe(&key()).await.unwrap();
     assert!(matches!(
@@ -576,7 +598,7 @@ async fn the_world_being_out_of_reach_still_waits_for_the_streak() {
             .edges
             .iter()
             .any(|e| matches!(e, Edge::Stalled { .. })),
-        "一次够不着还不算停摆"
+        "one unreachable observation is not stalled yet"
     );
 }
 
@@ -589,10 +611,11 @@ async fn a_hand_run_observation_takes_the_lease_instead_of_slipping_past_it() {
         .await
         .unwrap();
 
-    // 先让轮询写一次：这个锚从此归租约管。
+    // Let polling write once; this anchor is now lease-managed.
     w.runtime.pass().await.unwrap();
 
-    // 手工观测仍然可用 —— 它取租约，不是绕过令牌。
+    // Manual observation still works because it takes the lease instead of
+    // bypassing the token.
     w.write(r#"{"x":2}"#);
     w.runtime.observe(&key()).await.unwrap();
     assert_eq!(
@@ -613,7 +636,8 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
         .unwrap();
     w.runtime.pass().await.unwrap();
 
-    // 直接照着存储层塞一条观测进去 —— 这正是租约要防的那个写者。
+    // Push an observation directly through the storage layer; this is the
+    // second writer the lease exists to prevent.
     let entries = w.runtime.journal().entries(&key(), 0).await.unwrap();
     let (_, sighting) = entries
         .iter()
@@ -626,5 +650,5 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
         .append(&key(), &sighting, Fence::Unleased)
         .await
         .unwrap_err();
-    assert!(err.message.contains("租约在管"), "{}", err.message);
+    assert_eq!(err.code(), "lease_managed_observation");
 }

@@ -27,12 +27,14 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
         return Ok(());
     };
     let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&(table.language)())
-        .map_err(|e| format!("cannot install the parser for {rel}: {e}; this is my failure, not the world's answer"))?;
-    let tree = parser
-        .parse(&src, None)
-        .ok_or_else(|| format!("{rel} did not parse into a tree; this is my failure, not the world's answer"))?;
+    parser.set_language(&(table.language)()).map_err(|e| {
+        format!(
+            "cannot install the parser for {rel}: {e}; this is my failure, not the world's answer"
+        )
+    })?;
+    let tree = parser.parse(&src, None).ok_or_else(|| {
+        format!("{rel} did not parse into a tree; this is my failure, not the world's answer")
+    })?;
 
     let mut cursor = tree.walk();
     let mut stack = vec![tree.root_node()];

@@ -1,6 +1,6 @@
 GMR 是领域无关的 grounded memory runtime。
 架构 SSOT 是 GMR.md。
-CLAUDE.md 只给 agent 写操作纪律。
+
 
 ---
 

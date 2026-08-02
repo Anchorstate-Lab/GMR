@@ -15,12 +15,12 @@ pub use gmr_core::{
     Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;
-pub use gmr_probe::{ProbeError, Sighted, Transport};
+pub use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorView, ContentError, ContentProvider, CorpusHealth, Edge, Edges, Fetched,
     MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised, Runtime, RuntimeError,
     Sighting, Standing, Supersede,
 };
 pub use gmr_store::{
-    BindingStore, Disposition, ErrorKind, Fence, Journal, Queue, StoreError, Ticket,
+    BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, Queue, StoreError, Ticket,
 };

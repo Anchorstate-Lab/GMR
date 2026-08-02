@@ -12,8 +12,8 @@ pub fn probe(artifact: &str, params: &str) -> Result<ProbeRef, CliError> {
              Publish one with `anchor publish <dir>`; it will print this value."
         ))
     })?;
-    let params: serde_json::Value =
-        serde_json::from_str(params).map_err(|e| CliError(format!("params is not valid JSON: {e}")))?;
+    let params: serde_json::Value = serde_json::from_str(params)
+        .map_err(|e| CliError(format!("params is not valid JSON: {e}")))?;
     Ok(ProbeRef::new(Kind::new("shell"), artifact, params))
 }
 
@@ -26,7 +26,9 @@ pub fn rule(text: &str) -> Result<Rule, CliError> {
     })?;
     let (when, to) = (when.trim(), to.trim());
     if when.is_empty() || to.is_empty() {
-        return Err(CliError(format!("`{text}` has an empty guard or new state")));
+        return Err(CliError(format!(
+            "`{text}` has an empty guard or new state"
+        )));
     }
     Ok(Rule {
         when: Expr::text(when),

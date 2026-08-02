@@ -6,8 +6,8 @@ use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_store::{BindingStore, Journal};
 use gmr_transport_shell::Shell;
 
-/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
-/// 生产路径上成立，测试反而绕过了它。
+/// Every test publishes a real artifact. Otherwise "earned versions" would
+/// hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     let version =
         gmr_transport_shell::testkit::publish_script(root.join(".probes"), "cat world.json");
@@ -51,11 +51,11 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         Change::Restate {
             state: State::new(serde_json::json!({ "x": 2 })),
         },
-        "接受".as_bytes(),
+        "accepted".as_bytes(),
     )
     .await
     .unwrap();
-    rt.close(&key, "收尾".as_bytes()).await.unwrap();
+    rt.close(&key, "closed out".as_bytes()).await.unwrap();
 
     let mut cited = 0;
     for (_, entry) in journal.entries(&key, 0).await.unwrap() {
@@ -71,7 +71,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         for a in addrs {
             assert!(
                 bindings.sealed(&a).await.unwrap().is_some(),
-                "{} 引用了 {a}，但那个地址在密封存储里不存在 —— 链断了",
+                "{} cites {a}, but that address does not exist in sealed storage; the chain is broken",
                 entry.name()
             );
             cited += 1;
@@ -79,7 +79,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
     }
     assert_eq!(
         cited, 4,
-        "Revise 与作者关锚各引两个：context 基底捕获，rationale 作者写"
+        "Revise and author close each cite two records: substrate context and author rationale"
     );
 }
 
@@ -88,7 +88,7 @@ async fn an_orphan_seal_is_harmless_garbage() {
     let bindings = MemoryBindings::default();
 
     let orphan = bindings
-        .seal("一条没能落地的理由".as_bytes())
+        .seal("a rationale that did not land".as_bytes())
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn an_orphan_seal_is_harmless_garbage() {
     assert_eq!(
         orphan,
         bindings
-            .seal("一条没能落地的理由".as_bytes())
+            .seal("a rationale that did not land".as_bytes())
             .await
             .unwrap()
     );

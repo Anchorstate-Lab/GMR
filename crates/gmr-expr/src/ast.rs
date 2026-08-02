@@ -175,6 +175,9 @@ mod tests {
 
     #[test]
     fn the_bare_state_root_counts_too() {
-        assert!(reads("state"), "matching the text `state.` would miss this one");
+        assert!(
+            reads("state"),
+            "matching the text `state.` would miss this one"
+        );
     }
 }

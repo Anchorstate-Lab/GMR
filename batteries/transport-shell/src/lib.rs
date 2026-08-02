@@ -11,7 +11,7 @@ use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeRef, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{ProbeError, Sighted, Transport};
+use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
 
 pub use artifact::{ArtifactError, Artifacts, publish};
 
@@ -65,10 +65,13 @@ impl Transport for Shell {
     async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Sighted, ProbeError> {
         // Resolution failure is unusable: if we cannot name the derivation rule,
         // we should not run it.
-        let resolved = self
-            .artifacts
-            .resolve(&probe.artifact)
-            .map_err(|e| ProbeError::unusable(e.0))?;
+        let resolved = self.artifacts.resolve(&probe.artifact).map_err(|e| {
+            ProbeError::with_code(
+                gmr_core::ReasonClass::Unusable,
+                ProbeErrorCode::ArtifactInvalid,
+                e.0,
+            )
+        })?;
 
         let mut command = Command::new(resolved.entrypoint());
         command
@@ -89,20 +92,28 @@ impl Transport for Shell {
         let out = tokio::time::timeout(self.timeout, command.output())
             .await
             .map_err(|_| {
-                ProbeError::unreachable(format!(
-                    "probe did not return within {:?}; silence is not evidence",
-                    self.timeout
-                ))
+                ProbeError::with_code(
+                    gmr_core::ReasonClass::Unreachable,
+                    ProbeErrorCode::TimedOut,
+                    format!(
+                        "probe did not return within {:?}; silence is not evidence",
+                        self.timeout
+                    ),
+                )
             })?
             .map_err(|e| ProbeError::unreachable(format!("cannot run probe: {e}")))?;
 
         let size = out.stdout.len() + out.stderr.len();
         if size > self.output_cap {
-            return Err(ProbeError::unusable(format!(
-                "probe output is {size} bytes, above the {} byte limit; refusing to truncate. \
-                 Storing a truncated reading as fact would be a lie. Print structure, not dumps",
-                self.output_cap
-            )));
+            return Err(ProbeError::with_code(
+                gmr_core::ReasonClass::Unusable,
+                ProbeErrorCode::OutputTooLarge,
+                format!(
+                    "probe output is {size} bytes, above the {} byte limit; refusing to truncate. \
+                     Storing a truncated reading as fact would be a lie. Print structure, not dumps",
+                    self.output_cap
+                ),
+            ));
         }
 
         if !out.status.success() {
@@ -116,21 +127,29 @@ impl Transport for Shell {
                 .into_iter()
                 .rev()
                 .collect();
-            return Err(ProbeError::unreachable(match out.status.code() {
-                Some(code) => format!("probe exited with status {code}: {tail}"),
-                None => format!("probe was interrupted by a signal: {tail}"),
-            }));
+            return Err(ProbeError::with_code(
+                gmr_core::ReasonClass::Unreachable,
+                ProbeErrorCode::ProcessFailed,
+                match out.status.code() {
+                    Some(code) => format!("probe exited with status {code}: {tail}"),
+                    None => format!("probe was interrupted by a signal: {tail}"),
+                },
+            ));
         }
 
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stdout = stdout.trim();
 
         let facts: Value = serde_json::from_str(stdout).map_err(|e| {
-            ProbeError::unusable(format!(
-                "probe output is not JSON ({e}); the contract is an object or null. \
-                 Received prefix: {}",
-                stdout.chars().take(120).collect::<String>()
-            ))
+            ProbeError::with_code(
+                gmr_core::ReasonClass::Unusable,
+                ProbeErrorCode::InvalidJson,
+                format!(
+                    "probe output is not JSON ({e}); the contract is an object or null. \
+                     Received prefix: {}",
+                    stdout.chars().take(120).collect::<String>()
+                ),
+            )
         })?;
 
         let outcome = if facts.is_null() {
@@ -155,6 +174,7 @@ impl Transport for Shell {
 mod tests {
     use super::*;
     use gmr_core::{ProbeVersion, ReasonClass};
+    use gmr_probe::ProbeErrorCode;
     use serde_json::json;
 
     struct World {
@@ -267,7 +287,7 @@ mod tests {
 
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
-        assert!(e.message.contains("refusing to execute"), "{}", e.message);
+        assert_eq!(e.code, ProbeErrorCode::ArtifactInvalid);
     }
 
     #[tokio::test]
@@ -278,6 +298,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
+        assert_eq!(e.code, ProbeErrorCode::ArtifactInvalid);
     }
 
     #[tokio::test]
@@ -294,7 +315,7 @@ mod tests {
         let v = w.publish("exit 1", &[]);
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
-        assert!(e.message.contains("status 1"));
+        assert_eq!(e.code, ProbeErrorCode::ProcessFailed);
     }
 
     #[tokio::test]
@@ -302,6 +323,7 @@ mod tests {
         let w = World::new();
         let v = w.publish("echo 'boom: no such credential' >&2; exit 3", &[]);
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
+        assert_eq!(e.code, ProbeErrorCode::ProcessFailed);
         assert!(e.message.contains("no such credential"), "{}", e.message);
     }
 
@@ -311,7 +333,7 @@ mod tests {
         let v = w.publish("echo hello", &[]);
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
-        assert!(e.message.contains("not JSON"));
+        assert_eq!(e.code, ProbeErrorCode::InvalidJson);
     }
 
     #[tokio::test]
@@ -359,7 +381,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
-        assert!(e.message.contains("silence is not evidence"));
+        assert_eq!(e.code, ProbeErrorCode::TimedOut);
     }
 
     #[tokio::test]
@@ -376,7 +398,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
-        assert!(e.message.contains("refusing to truncate"));
+        assert_eq!(e.code, ProbeErrorCode::OutputTooLarge);
     }
 
     #[tokio::test]

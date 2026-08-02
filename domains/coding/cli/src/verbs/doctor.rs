@@ -53,7 +53,10 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
         );
     }
     if !unseen.is_empty() {
-        println!("unseen    {}  <- fix the probe or credentials", unseen.join(", "));
+        println!(
+            "unseen    {}  <- fix the probe or credentials",
+            unseen.join(", ")
+        );
     }
     if !barren.is_empty() {
         println!(

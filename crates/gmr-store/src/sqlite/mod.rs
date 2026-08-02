@@ -5,7 +5,7 @@ pub mod schema;
 
 use std::path::Path;
 
-use crate::{ErrorKind, StoreError};
+use crate::{ErrorCode, ErrorKind, StoreError};
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
@@ -14,13 +14,23 @@ pub use journal::SqliteJournal;
 pub use queue::SqliteQueue;
 
 pub(crate) fn db_err(e: sqlx::Error) -> StoreError {
-    let kind = match &e {
-        sqlx::Error::Database(_) => ErrorKind::Constraint,
-        sqlx::Error::Io(_) => ErrorKind::Io,
-        sqlx::Error::PoolTimedOut => ErrorKind::Busy,
-        _ => ErrorKind::Other,
+    let (kind, code) = match &e {
+        sqlx::Error::Database(db) => {
+            let message = db.message();
+            let code = if message.contains("append_only") {
+                ErrorCode::AppendOnly
+            } else if message.contains("sealed_immutable") {
+                ErrorCode::SealedImmutable
+            } else {
+                ErrorCode::Constraint
+            };
+            (ErrorKind::Constraint, code)
+        }
+        sqlx::Error::Io(_) => (ErrorKind::Io, ErrorCode::Io),
+        sqlx::Error::PoolTimedOut => (ErrorKind::Busy, ErrorCode::Busy),
+        _ => (ErrorKind::Other, ErrorCode::Other),
     };
-    StoreError::new(kind, e.to_string())
+    StoreError::with_code(kind, code, e.to_string())
 }
 
 pub(crate) fn decode_err(e: serde_json::Error) -> StoreError {
@@ -64,12 +74,16 @@ async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
         .map_err(db_err)?;
 
     if stamped != 0 && stamped != schema::SCHEMA_VERSION {
-        return Err(StoreError::constraint(format!(
-            "this database is stamped schema v{stamped}, this generation is v{}. \
+        return Err(StoreError::with_code(
+            ErrorKind::Constraint,
+            ErrorCode::SchemaVersionMismatch,
+            format!(
+                "this database is stamped schema v{stamped}, this generation is v{}. \
              Refusing to open — misreading a database from another generation is \
              far worse than not opening it",
-            schema::SCHEMA_VERSION
-        )));
+                schema::SCHEMA_VERSION
+            ),
+        ));
     }
 
     sqlx::raw_sql(schema::SCHEMA)

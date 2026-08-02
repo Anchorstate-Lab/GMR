@@ -10,6 +10,6 @@ pub mod sqlite;
 pub mod testkit;
 
 pub use bindings::BindingStore;
-pub use error::{ErrorKind, StoreError};
+pub use error::{ErrorCode, ErrorKind, StoreError};
 pub use journal::{Fence, Journal};
 pub use queue::{Disposition, Queue, Ticket};

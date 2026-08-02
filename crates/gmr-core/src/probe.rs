@@ -265,7 +265,11 @@ mod tests {
         };
 
         assert_eq!(f.address(&v1), f.address(&v1));
-        assert_ne!(f.address(&v1), f.address(&v2), "new probe = new derivation rule");
+        assert_ne!(
+            f.address(&v1),
+            f.address(&v2),
+            "new probe = new derivation rule"
+        );
         assert_ne!(f.address(&v1), g.address(&v1), "new content = new fact");
     }
 

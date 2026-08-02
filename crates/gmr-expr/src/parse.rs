@@ -473,7 +473,11 @@ mod tests {
             "{ position: obs.at, status: \"ok\" }"
         );
         assert_eq!(render("{}"), "{  }");
-        assert_eq!(render("{ a: 1, }"), "{ a: 1 }", "a trailing comma is allowed");
+        assert_eq!(
+            render("{ a: 1, }"),
+            "{ a: 1 }",
+            "a trailing comma is allowed"
+        );
     }
 
     #[test]

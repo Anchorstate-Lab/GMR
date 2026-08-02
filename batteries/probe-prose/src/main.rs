@@ -132,7 +132,8 @@ mod tests {
         dir
     }
 
-    const DOC: &str = "# Top\nOpening\n\n## Red Flag\nDo not do this\n\n## Dead Concept\nDo not revive\n";
+    const DOC: &str =
+        "# Top\nOpening\n\n## Red Flag\nDo not do this\n\n## Dead Concept\nDo not revive\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
         probe(dir, &pos).unwrap()
@@ -188,10 +189,19 @@ mod tests {
 
     #[test]
     fn a_hash_inside_a_fence_is_not_a_heading() {
-        let d = fixture("fence", &[("a.md", "# Real Heading\n\n```sh\n# This is a comment\n```\n")]);
+        let d = fixture(
+            "fence",
+            &[(
+                "a.md",
+                "# Real Heading\n\n```sh\n# This is a comment\n```\n",
+            )],
+        );
         let v = at(&d, json!({"heading": "# This is a comment"}));
         assert_eq!(v["found"], false);
-        assert_eq!(at(&d, json!({"heading": "Real Heading"}))["missed"], json!([]));
+        assert_eq!(
+            at(&d, json!({"heading": "Real Heading"}))["missed"],
+            json!([])
+        );
     }
 
     #[test]

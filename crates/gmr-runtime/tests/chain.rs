@@ -116,7 +116,10 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         serde_json::json!(["addr", "probe", "fact"]),
         "the anchor should hand back what it sees now, not just that it changed"
     );
-    assert!(handed_back.contains("fact"), "the handed-back view should contain the new value");
+    assert!(
+        handed_back.contains("fact"),
+        "the handed-back view should contain the new value"
+    );
 
     assert_eq!(view.memories.len(), 1);
 

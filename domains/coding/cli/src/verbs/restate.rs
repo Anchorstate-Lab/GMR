@@ -11,8 +11,8 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let key = AnchorKey::new(key);
-    let value: serde_json::Value =
-        serde_json::from_str(&state).map_err(|e| CliError(format!("new state is not valid JSON: {e}")))?;
+    let value: serde_json::Value = serde_json::from_str(&state)
+        .map_err(|e| CliError(format!("new state is not valid JSON: {e}")))?;
     if !value.is_object() {
         return Err(CliError("new state must be an object".into()));
     }

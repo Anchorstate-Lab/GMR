@@ -47,8 +47,12 @@ impl Artifacts {
     pub fn resolve(&self, version: &ProbeVersion) -> Result<Resolved, ArtifactError> {
         let dir = self.dir(version);
         let path = dir.join(MANIFEST_FILE);
-        let bytes = std::fs::read(&path)
-            .map_err(|e| bad(format!("cannot read manifest for {} ({path:?}): {e}", version)))?;
+        let bytes = std::fs::read(&path).map_err(|e| {
+            bad(format!(
+                "cannot read manifest for {} ({path:?}): {e}",
+                version
+            ))
+        })?;
         let manifest: Manifest = serde_json::from_slice(&bytes)
             .map_err(|e| bad(format!("{version}'s manifest is not valid: {e}")))?;
 
@@ -87,7 +91,9 @@ impl Artifacts {
 
 fn verify(dir: &Path, rel: &str, want: &ContentHash) -> Result<(), ArtifactError> {
     if rel.split('/').any(|p| p == ".." || p.is_empty()) || rel.starts_with('/') {
-        return Err(bad(format!("manifest path escapes the artifact root: `{rel}`")));
+        return Err(bad(format!(
+            "manifest path escapes the artifact root: `{rel}`"
+        )));
     }
     let path = dir.join(rel);
     let bytes = std::fs::read(&path).map_err(|e| bad(format!("cannot read {path:?}: {e}")))?;
@@ -134,7 +140,8 @@ pub fn publish(
     for file in &manifest.files {
         let dst = dir.join(&file.path);
         if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| bad(format!("cannot create {parent:?}: {e}")))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| bad(format!("cannot create {parent:?}: {e}")))?;
         }
         std::fs::copy(from.join(&file.path), &dst)
             .map_err(|e| bad(format!("cannot copy to {dst:?}: {e}")))?;
@@ -151,7 +158,8 @@ fn collect(
     dir: &Path,
     out: &mut Vec<gmr_core::FileEntry>,
 ) -> Result<(), ArtifactError> {
-    let entries = std::fs::read_dir(dir).map_err(|e| bad(format!("cannot read directory {dir:?}: {e}")))?;
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| bad(format!("cannot read directory {dir:?}: {e}")))?;
     for entry in entries {
         let entry = entry.map_err(|e| bad(format!("cannot read an entry in {dir:?}: {e}")))?;
         let path = entry.path();

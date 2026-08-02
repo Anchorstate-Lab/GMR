@@ -122,7 +122,10 @@ mod tests {
 
     #[test]
     fn the_same_address_outranks_a_coincidental_twin_elsewhere() {
-        let d = fixture("twin", &[("doc/a.md", "changed\n"), ("attic/copy.md", BODY)]);
+        let d = fixture(
+            "twin",
+            &[("doc/a.md", "changed\n"), ("attic/copy.md", BODY)],
+        );
         let v = at(
             &d,
             json!({"path": "doc/a.md", "fingerprint": coord::hash(BODY)}),

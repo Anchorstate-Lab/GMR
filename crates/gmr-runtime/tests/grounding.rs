@@ -158,7 +158,10 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
         Some("The anchor module roster is the contract itself."),
         "judging whether it still says the same thing requires both before and after"
     );
-    assert_eq!(m.content.as_deref(), Some("Changed claim: the roster is only a shadow."));
+    assert_eq!(
+        m.content.as_deref(),
+        Some("Changed claim: the roster is only a shadow.")
+    );
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
@@ -186,7 +189,11 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
     assert!(m.rewritten);
-    assert_eq!(m.retrievable, Some(false), "unreachable after history rewrite");
+    assert_eq!(
+        m.retrievable,
+        Some(false),
+        "unreachable after history rewrite"
+    );
     assert_eq!(m.content_at_bind, None);
 
     assert!(
@@ -259,7 +266,10 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
 
     let w = World::new(true);
     w.memory("bound.md", "This one is anchored.");
-    w.memory("loose.md", "This one is not anchored, but the one above links to it.");
+    w.memory(
+        "loose.md",
+        "This one is not anchored, but the one above links to it.",
+    );
     w.open("a").await;
 
     w.runtime
@@ -333,7 +343,10 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
         .await
         .unwrap()
         .unwrap();
-    assert!(detached.anchors.is_empty(), "detached, while history remains in the table");
+    assert!(
+        detached.anchors.is_empty(),
+        "detached, while history remains in the table"
+    );
     assert!(
         w.runtime
             .read(&AnchorKey::new("a"))

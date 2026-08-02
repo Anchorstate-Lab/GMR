@@ -2,7 +2,7 @@ use gmr_core::{
     Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, ProbeRef,
     ProbeVersion, Retain, Rule, State, Transitions, Versions, fold,
 };
-use gmr_store::{ErrorKind, Fence, Journal};
+use gmr_store::{ErrorCode, ErrorKind, Fence, Journal};
 
 fn entry(value: &str) -> Entry {
     Entry::Open {
@@ -62,10 +62,10 @@ async fn the_log_refuses_rewriting_itself() {
             .execute(store.pool())
             .await
             .err()
-            .unwrap_or_else(|| panic!("{sql} 该被触发器挡下，却成功了"));
+            .unwrap_or_else(|| panic!("{sql} should have been blocked by a trigger"));
         assert!(
-            err.to_string().contains("只增不改"),
-            "{sql} 该被触发器挡下，实际：{err}"
+            err.to_string().contains(ErrorCode::AppendOnly.as_str()),
+            "{err}"
         );
     }
 }
@@ -80,8 +80,11 @@ async fn sealed_records_refuse_to_be_rewritten() {
         .bind(address.as_str())
         .execute(store.pool())
         .await
-        .expect_err("密封记录该被触发器保护，却被改写了");
-    assert!(err.to_string().contains("不可篡改"));
+        .expect_err("sealed records should be protected by a trigger");
+    assert!(
+        err.to_string()
+            .contains(ErrorCode::SealedImmutable.as_str())
+    );
 }
 
 #[tokio::test]
@@ -106,7 +109,7 @@ async fn a_state_outlives_the_process_that_captured_it() {
     assert_eq!(
         state.state.as_value()["shape"],
         serde_json::json!("captured-first"),
-        "第二个进程必须站在第一个进程冻下来的那个状态上"
+        "the second process must stand on the state frozen by the first process"
     );
 }
 
@@ -128,10 +131,7 @@ async fn a_database_from_another_generation_is_refused() {
 
     let err = gmr_store::sqlite::open(&path).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Constraint);
-    assert!(
-        err.message.contains("拒绝打开"),
-        "误读一个另一代的库，比打不开坏得多"
-    );
+    assert_eq!(err.code, ErrorCode::SchemaVersionMismatch);
 }
 
 #[tokio::test]

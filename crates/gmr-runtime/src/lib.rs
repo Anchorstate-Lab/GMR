@@ -14,7 +14,7 @@ pub mod revise;
 mod translate;
 
 pub use assembly::{Runtime, RuntimeBuilder};
-pub use content::{ContentError, ContentProvider, Fetched};
+pub use content::{ContentError, ContentErrorCode, ContentProvider, Fetched};
 pub use edges::{Edge, Edges, Standing};
 pub use error::RuntimeError;
 pub use health::{AnchorHealth, CorpusHealth};

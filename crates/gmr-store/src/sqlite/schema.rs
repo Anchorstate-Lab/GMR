@@ -51,19 +51,19 @@ CREATE TABLE IF NOT EXISTS queue (
 -- ── Append-only — by trigger, not by good intentions ────────
 
 CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal
-    BEGIN SELECT RAISE(ABORT, 'the journal is append-only'); END;
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
-    BEGIN SELECT RAISE(ABORT, 'the journal is append-only'); END;
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS bindings_no_update BEFORE UPDATE ON bindings
-    BEGIN SELECT RAISE(ABORT, 'bindings are append-only: rebinding appends'); END;
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS bindings_no_delete BEFORE DELETE ON bindings
-    BEGIN SELECT RAISE(ABORT, 'bindings are append-only: rebinding appends'); END;
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS binding_anchors_no_update BEFORE UPDATE ON binding_anchors
-    BEGIN SELECT RAISE(ABORT, 'bindings are append-only'); END;
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS binding_anchors_no_delete BEFORE DELETE ON binding_anchors
-    BEGIN SELECT RAISE(ABORT, 'bindings are append-only'); END;
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS sealed_no_update BEFORE UPDATE ON sealed
-    BEGIN SELECT RAISE(ABORT, 'sealed records are immutable — the one thing the substrate guarantees'); END;
+    BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
 CREATE TRIGGER IF NOT EXISTS sealed_no_delete BEFORE DELETE ON sealed
-    BEGIN SELECT RAISE(ABORT, 'sealed records are immutable — the one thing the substrate guarantees'); END;
+    BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
 "#;

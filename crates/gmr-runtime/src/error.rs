@@ -28,9 +28,26 @@ pub enum RuntimeError {
     #[error("this deployment has no Queue — pass is a polling-only verb")]
     NoQueue,
 
-    #[error("the lease on `{key}` is held by someone else — let the holder write, do not slip in beside it")]
+    #[error(
+        "the lease on `{key}` is held by someone else — let the holder write, do not slip in beside it"
+    )]
     Leased { key: AnchorKey },
 
     #[error(transparent)]
     Store(#[from] gmr_store::StoreError),
+}
+
+impl RuntimeError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::NoSuchAnchor { .. } => "no_such_anchor",
+            Self::AlreadyOpen { .. } => "already_open",
+            Self::AnchorClosed { .. } => "anchor_closed",
+            Self::NotClosedYet { .. } => "not_closed_yet",
+            Self::CannotOpen { .. } => "cannot_open",
+            Self::NoQueue => "no_queue",
+            Self::Leased { .. } => "leased",
+            Self::Store(e) => e.code(),
+        }
+    }
 }

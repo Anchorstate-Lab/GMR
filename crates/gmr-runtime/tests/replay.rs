@@ -6,8 +6,8 @@ use gmr_store::Journal;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
 use gmr_transport_shell::Shell;
 
-/// 每个测试都发布一个真的 artifact —— 否则「版本是挣来的」这条只在
-/// 生产路径上成立，测试反而绕过了它。
+/// Every test publishes a real artifact. Otherwise "earned versions" would
+/// hold on the production path while tests bypass it.
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
@@ -86,7 +86,10 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
         })
         .collect();
     assert_eq!(addrs.len(), 2);
-    assert_eq!(addrs[0], addrs[1], "世界没动，重跑必得同一个事实地址");
+    assert_eq!(
+        addrs[0], addrs[1],
+        "a still world should rerun to the same fact address"
+    );
 }
 
 #[tokio::test]
@@ -134,17 +137,17 @@ async fn the_two_hops_version_independently() {
 
     assert_ne!(
         versions[0].derivation.version, versions[1].derivation.version,
-        "换探针 = 换派生规则"
+        "changing the probe changes the derivation rule"
     );
     assert_eq!(
         versions[0].evaluator, versions[1].evaluator,
-        "求值器是基底自己的，探针作者改不动它"
+        "the evaluator belongs to the substrate; probe authors cannot change it"
     );
 
     let gmr_runtime::Observed::Transitioned { from, to } = observed else {
-        panic!("Reprobe 之后的第一次观测要留完整一条")
+        panic!("the first observation after Reprobe must retain a full entry")
     };
-    assert_eq!(from, to, "内容没变，状态就不该动");
+    assert_eq!(from, to, "unchanged content should not move state");
 }
 
 #[tokio::test]
@@ -188,7 +191,10 @@ async fn the_fact_address_moves_when_the_rule_moves() {
             _ => None,
         })
         .collect();
-    assert_ne!(addrs[0], addrs[1], "地址定身份：派生规则是事实身份的一部分");
+    assert_ne!(
+        addrs[0], addrs[1],
+        "the address defines identity; the derivation rule is part of fact identity"
+    );
 }
 
 #[tokio::test]
