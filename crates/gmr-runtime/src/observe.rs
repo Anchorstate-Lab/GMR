@@ -52,7 +52,7 @@ async fn observe(
     key: &AnchorKey,
 ) -> Result<Observed, RuntimeError> {
     if !scheduler.leases_configured() {
-        return observe_with(log, observer, key, Fence::Unleased).await;
+        return observe_with(log, observer, scheduler, key, Fence::Unleased).await;
     }
 
     let now = chrono::Utc::now();
@@ -61,11 +61,11 @@ async fn observe(
         return Err(RuntimeError::Leased { key: key.clone() });
     };
 
-    let seen = observe_with(log, observer, key, ticket.fence).await;
+    let seen = observe_with(log, observer, scheduler, key, ticket.fence).await;
     let after = match &seen {
         Ok(Observed::Closed) => Disposition::Retire,
         _ => Disposition::Reschedule {
-            after_secs: crate::pass::cadence_of(log, scheduler, key).await?,
+            after_secs: scheduler.cadence_for(key).await?,
         },
     };
     scheduler.settle(&ticket, after, Utc::now()).await?;
@@ -75,6 +75,7 @@ async fn observe(
 pub(crate) async fn observe_with(
     log: &AnchorLog,
     observer: &Observer,
+    scheduler: &Scheduler,
     key: &AnchorKey,
     fence: Fence,
 ) -> Result<Observed, RuntimeError> {
@@ -105,7 +106,7 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let still_ref = if s.anchor.retains_full() {
+    let still_ref = if scheduler.settings_for(key).await?.retains_full() {
         None
     } else {
         s.latest

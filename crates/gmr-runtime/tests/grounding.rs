@@ -4,9 +4,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use gmr_content::{ContentError, ContentProvider, Fetched};
-use gmr_core::{AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, Transitions, Version};
+use gmr_core::{
+    AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
+};
 use gmr_runtime::{OpenRequest, Runtime, Standing};
-use gmr_store::testkit::{MemoryBindings, MemoryJournal};
+use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
 
 /// Every test publishes a real artifact. Otherwise "earned versions" would
@@ -91,6 +93,7 @@ impl World {
             .bindings(bindings.clone())
             .sealer(bindings.clone())
             .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, runtime }
     }
@@ -110,8 +113,10 @@ impl World {
                 }]),
                 terminal: Default::default(),
                 initial: None,
-                retain: Retain::Tick,
-                cadence_secs: None,
+                settings: RunSettings {
+                    retain: Retain::Tick,
+                    cadence_secs: None,
+                },
                 supersedes: None,
             })
             .await

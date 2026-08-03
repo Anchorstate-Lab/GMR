@@ -3,9 +3,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use gmr_content::{ContentError, ContentProvider, Fetched};
-use gmr_core::{AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, Transitions, Version};
+use gmr_core::{
+    AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
+};
 use gmr_runtime::{OpenRequest, Runtime};
-use gmr_store::testkit::{MemoryBindings, MemoryJournal};
+use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
 
 /// Every test publishes a real artifact. Otherwise "earned versions" would
@@ -76,6 +78,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         .bindings(bindings.clone())
         .sealer(bindings.clone())
         .links(bindings)
+        .settings(Arc::new(MemoryQueue::default()))
         .build();
 
     let key = AnchorKey::new("core::modules");
@@ -89,8 +92,10 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         }]),
         terminal: Default::default(),
         initial: None,
-        retain: Retain::Tick,
-        cadence_secs: None,
+        settings: RunSettings {
+            retain: Retain::Tick,
+            cadence_secs: None,
+        },
         supersedes: None,
     })
     .await

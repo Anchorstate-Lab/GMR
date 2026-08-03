@@ -1,7 +1,6 @@
 use gmr_core::{
     Anchor, AnchorKey, Binding, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome,
-    ProbeRef, ProbeVersion, ReasonClass, Ref, Retain, Rule, State, Transitions, Version, Versions,
-    fold,
+    ProbeRef, ProbeVersion, ReasonClass, Ref, Rule, State, Transitions, Version, Versions, fold,
 };
 use gmr_store::{BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
 
@@ -35,8 +34,6 @@ fn anchor(key: &str, names: &[&str]) -> Anchor {
         probe: probe(),
         transitions: transitions(names),
         terminal: Default::default(),
-        retain: Retain::Tick,
-        cadence_secs: None,
         supersedes: None,
     }
 }

@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use gmr_core::{AnchorKey, ReasonClass, fold};
+use gmr_core::{AnchorKey, ReasonClass, RunSettings, fold};
 use gmr_store::Disposition;
 use serde::Serialize;
 
@@ -25,6 +25,19 @@ impl Runtime {
 
     pub async fn requeue(&self, key: &AnchorKey) -> Result<bool, RuntimeError> {
         self.scheduler.requeue_now(key, Utc::now()).await
+    }
+
+    pub async fn settings_for(&self, key: &AnchorKey) -> Result<RunSettings, RuntimeError> {
+        self.scheduler.settings_for(key).await
+    }
+
+    /// No sealed rationale: these are not criteria.
+    pub async fn set_settings(
+        &self,
+        key: &AnchorKey,
+        settings: &RunSettings,
+    ) -> Result<(), RuntimeError> {
+        self.scheduler.set_settings(key, settings).await
     }
 
     pub async fn pass(&self) -> Result<Passed, RuntimeError> {
@@ -60,7 +73,7 @@ async fn pass(
 
     let mut out = Passed::default();
     for ticket in tickets {
-        let observed = observe_with(log, observer, &ticket.anchor, ticket.fence).await?;
+        let observed = observe_with(log, observer, scheduler, &ticket.anchor, ticket.fence).await?;
         out.observed += 1;
 
         let disposition = match &observed {
@@ -86,35 +99,20 @@ async fn pass(
                 if matches!(other, Observed::Transitioned { .. }) {
                     out.moved += 1;
                 }
-                // One fold serves both the terminal check and the cadence.
-                let anchor = fold(&log.entries(&ticket.anchor, 0).await?).map(|s| s.anchor);
                 let sealed = matches!(other, Observed::Transitioned { to, .. }
-                    if anchor.as_ref().is_some_and(|a| a.is_terminal(to)));
+                    if fold(&log.entries(&ticket.anchor, 0).await?)
+                        .is_some_and(|s| s.anchor.is_terminal(to)));
                 if sealed {
                     out.retired += 1;
                     Disposition::Retire
                 } else {
-                    let after_secs = anchor
-                        .as_ref()
-                        .and_then(|a| a.cadence_secs)
-                        .unwrap_or(scheduler.policy().cadence_secs)
-                        as i64;
-                    Disposition::Reschedule { after_secs }
+                    Disposition::Reschedule {
+                        after_secs: scheduler.cadence_for(&ticket.anchor).await?,
+                    }
                 }
             }
         };
         scheduler.settle(&ticket, disposition, Utc::now()).await?;
     }
     Ok(out)
-}
-
-pub(crate) async fn cadence_of(
-    log: &AnchorLog,
-    scheduler: &Scheduler,
-    key: &AnchorKey,
-) -> Result<i64, RuntimeError> {
-    let entries = log.entries(key, 0).await?;
-    Ok(fold(&entries)
-        .and_then(|s| s.anchor.cadence_secs)
-        .unwrap_or(scheduler.policy().cadence_secs) as i64)
 }

@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, Seq, Version,
+    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq, Version,
     content_hash_of_bytes,
 };
 
@@ -192,6 +192,22 @@ struct Slot {
 #[derive(Default)]
 pub struct MemoryQueue {
     inner: Mutex<HashMap<AnchorKey, Slot>>,
+    settings: Mutex<HashMap<AnchorKey, RunSettings>>,
+}
+
+#[async_trait]
+impl crate::Settings for MemoryQueue {
+    async fn put(&self, anchor: &AnchorKey, settings: &RunSettings) -> Result<(), StoreError> {
+        self.settings
+            .lock()
+            .unwrap()
+            .insert(anchor.clone(), *settings);
+        Ok(())
+    }
+
+    async fn get(&self, anchor: &AnchorKey) -> Result<Option<RunSettings>, StoreError> {
+        Ok(self.settings.lock().unwrap().get(anchor).copied())
+    }
 }
 
 #[async_trait]

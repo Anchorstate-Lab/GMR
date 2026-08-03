@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer};
+use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer, Settings};
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
@@ -55,6 +55,7 @@ pub struct RuntimeBuilder {
     links: Option<Arc<dyn LinkStore>>,
     providers: Vec<Arc<dyn ContentProvider>>,
     queue: Option<Arc<dyn Queue>>,
+    settings: Option<Arc<dyn Settings>>,
     policy: Option<Policy>,
 }
 
@@ -94,6 +95,11 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn settings(mut self, s: Arc<dyn Settings>) -> Self {
+        self.settings = Some(s);
+        self
+    }
+
     pub fn policy(mut self, p: Policy) -> Self {
         self.policy = Some(p);
         self
@@ -109,7 +115,11 @@ impl RuntimeBuilder {
                 self.links.expect("a LinkStore is not optional"),
                 self.providers,
             ),
-            scheduler: Scheduler::new(self.queue, self.policy.unwrap_or_default()),
+            scheduler: Scheduler::new(
+                self.queue,
+                self.settings.expect("a Settings store is not optional"),
+                self.policy.unwrap_or_default(),
+            ),
         }
     }
 }

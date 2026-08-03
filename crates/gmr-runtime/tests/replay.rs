@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Change, Entry, Expr, Kind, ProbeRef, Retain, Rule, Transitions, fold};
+use gmr_core::{
+    AnchorKey, Change, Entry, Expr, Kind, ProbeRef, Retain, Rule, RunSettings, Transitions, fold,
+};
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::Journal;
-use gmr_store::testkit::{MemoryBindings, MemoryJournal};
+use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
 
 /// Every test publishes a real artifact. Otherwise "earned versions" would
@@ -25,6 +27,7 @@ impl World {
             .bindings(bindings.clone())
             .sealer(bindings.clone())
             .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
             .build();
         Self {
             dir,
@@ -70,8 +73,10 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
-            retain: Retain::Full,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Full,
+                cadence_secs: None,
+            },
             supersedes: None,
         })
         .await
@@ -108,8 +113,10 @@ async fn the_two_hops_version_independently() {
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
-            retain: Retain::Full,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Full,
+                cadence_secs: None,
+            },
             supersedes: None,
         })
         .await
@@ -168,8 +175,10 @@ async fn the_fact_address_moves_when_the_rule_moves() {
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
-            retain: Retain::Full,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Full,
+                cadence_secs: None,
+            },
             supersedes: None,
         })
         .await
@@ -213,8 +222,10 @@ async fn folding_the_same_log_twice_yields_the_same_state() {
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
-            retain: Retain::Tick,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
             supersedes: None,
         })
         .await

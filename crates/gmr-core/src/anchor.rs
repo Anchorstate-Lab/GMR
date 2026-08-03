@@ -113,6 +113,29 @@ pub enum Retain {
     Full,
 }
 
+/// How an anchor is *run*, as opposed to what it judges.
+///
+/// Deliberately not part of [`Anchor`]: neither field is an input to the
+/// transition function, and neither changes any conclusion drawn from the log
+/// — `retain` only decides how densely the same states are written down, and
+/// `cadence_secs` only decides how often they are looked for. Sealing them
+/// alongside the criteria would demand a rationale for changing something no
+/// judgement depends on, so they live in mutable storage instead.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunSettings {
+    #[serde(default)]
+    pub retain: Retain,
+    /// `None` defers to the deployment default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cadence_secs: Option<u64>,
+}
+
+impl RunSettings {
+    pub fn retains_full(&self) -> bool {
+        matches!(self.retain, Retain::Full)
+    }
+}
+
 /// Which finished anchor this one supersedes. Finishing is irreversible;
 /// correcting a bad criterion means opening a new generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,10 +151,6 @@ pub struct Anchor {
     pub transitions: Transitions,
     #[serde(default)]
     pub terminal: BTreeSet<StatusId>,
-    #[serde(default)]
-    pub retain: Retain,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cadence_secs: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supersedes: Option<Superseded>,
 }
@@ -139,10 +158,6 @@ pub struct Anchor {
 impl Anchor {
     pub fn is_terminal(&self, state: &State) -> bool {
         state.status().is_some_and(|s| self.terminal.contains(&s))
-    }
-
-    pub fn retains_full(&self) -> bool {
-        matches!(self.retain, Retain::Full)
     }
 }
 
@@ -161,8 +176,6 @@ mod tests {
             ),
             transitions: Transitions::default(),
             terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
-            retain: Retain::Tick,
-            cadence_secs: None,
             supersedes: None,
         }
     }

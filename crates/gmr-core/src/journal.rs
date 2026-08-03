@@ -322,7 +322,6 @@ fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::anchor::Retain;
     use crate::anchor::{AnchorKey, Expr, POSITION, Rule, STATUS};
     use crate::probe::{Kind, ProbeRef, ProbeVersion, Verifiability};
     use serde_json::json;
@@ -351,8 +350,6 @@ mod tests {
                 to: Expr::text("{ status: \"drifted\" }"),
             }]),
             terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
-            retain: Retain::Tick,
-            cadence_secs: None,
             supersedes: None,
         }
     }

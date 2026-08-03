@@ -1,22 +1,54 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
-use gmr_core::AnchorKey;
-use gmr_store::{Disposition, Queue, Ticket};
+use gmr_core::{AnchorKey, RunSettings};
+use gmr_store::{Disposition, Queue, Settings, Ticket};
 
 use crate::error::RuntimeError;
 use crate::policy::Policy;
 
-/// The queue and the policy numbers governing it. A deployment without a queue
-/// is legal; the lease path is then unavailable.
+/// How anchors get run: the queue, the deployment's policy numbers, and the
+/// per-anchor settings that override them. A deployment without a queue is
+/// legal; the lease path is then unavailable.
 pub struct Scheduler {
     queue: Option<Arc<dyn Queue>>,
+    settings: Arc<dyn Settings>,
     policy: Policy,
 }
 
 impl Scheduler {
-    pub(crate) fn new(queue: Option<Arc<dyn Queue>>, policy: Policy) -> Self {
-        Self { queue, policy }
+    pub(crate) fn new(
+        queue: Option<Arc<dyn Queue>>,
+        settings: Arc<dyn Settings>,
+        policy: Policy,
+    ) -> Self {
+        Self {
+            queue,
+            settings,
+            policy,
+        }
+    }
+
+    /// What was set for this anchor, or the deployment default. Mutable by
+    /// design — no sealed rationale, because nothing judged depends on it.
+    pub async fn settings_for(&self, anchor: &AnchorKey) -> Result<RunSettings, RuntimeError> {
+        Ok(self.settings.get(anchor).await?.unwrap_or_default())
+    }
+
+    pub async fn set_settings(
+        &self,
+        anchor: &AnchorKey,
+        settings: &RunSettings,
+    ) -> Result<(), RuntimeError> {
+        Ok(self.settings.put(anchor, settings).await?)
+    }
+
+    pub async fn cadence_for(&self, anchor: &AnchorKey) -> Result<i64, RuntimeError> {
+        Ok(self
+            .settings_for(anchor)
+            .await?
+            .cadence_secs
+            .unwrap_or(self.policy.cadence_secs) as i64)
     }
 
     pub fn leases_configured(&self) -> bool {

@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, ProbeRef, Retain, State, StatusId, Superseded, Transitions, fold,
+    Anchor, AnchorKey, Entry, ProbeRef, RunSettings, State, StatusId, Superseded, Transitions, fold,
 };
 use gmr_store::Fence;
 
@@ -34,8 +34,9 @@ pub struct OpenRequest {
     pub transitions: Transitions,
     pub terminal: BTreeSet<StatusId>,
     pub initial: Option<State>,
-    pub retain: Retain,
-    pub cadence_secs: Option<u64>,
+    /// How it is run. Not sealed into the anchor, and changeable afterwards
+    /// without a rationale — see [`gmr_core::RunSettings`].
+    pub settings: RunSettings,
     pub supersedes: Option<Supersede>,
 }
 
@@ -75,8 +76,6 @@ async fn open(
         probe: request.probe,
         transitions: request.transitions,
         terminal: request.terminal,
-        retain: request.retain,
-        cadence_secs: request.cadence_secs,
         supersedes: sealed,
     };
 
@@ -116,6 +115,16 @@ async fn open(
         Fence::Unleased,
     )
     .await?;
+
+    // Same recoverable side branch as enqueueing below: the settings are
+    // mutable, so a failure here costs the deployment default until someone
+    // sets them again, not the anchor.
+    if let Err(e) = scheduler.set_settings(&key, &request.settings).await {
+        warnings.push(format!(
+            "the anchor opened but its retain/cadence could not be stored ({e}); \
+             it runs on the deployment defaults until sync sets them"
+        ));
+    }
 
     // Journal and queue are two stores with no shared transaction, so be clear
     // about who decides: **the anchor is that log entry**, and once it lands the

@@ -1,6 +1,6 @@
 use gmr_core::{
     Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, ProbeRef,
-    ProbeVersion, Retain, Rule, State, Transitions, Versions, fold,
+    ProbeVersion, Rule, State, Transitions, Versions, fold,
 };
 use gmr_store::{ErrorCode, ErrorKind, Fence, Journal};
 
@@ -18,8 +18,6 @@ fn entry(value: &str) -> Entry {
                 to: Expr::text("{ shape: obs.shape }"),
             }]),
             terminal: Default::default(),
-            retain: Retain::Tick,
-            cadence_secs: None,
             supersedes: None,
         }),
         observation: Observation {
@@ -68,6 +66,57 @@ async fn the_log_refuses_rewriting_itself() {
             "{err}"
         );
     }
+}
+
+/// The mirror of the two tests around it: retain and cadence say how an anchor
+/// is run, not what it judged, so overwriting one is the supported operation
+/// rather than the blocked one.
+#[tokio::test]
+async fn run_settings_are_meant_to_be_overwritten() {
+    use gmr_core::{Retain, RunSettings};
+    use gmr_store::Settings;
+
+    let store = gmr_store::sqlite::open_in_memory().await.unwrap();
+    let q = store.queue();
+    let key = AnchorKey::new("core::pure");
+
+    assert_eq!(q.get(&key).await.unwrap(), None, "nothing was ever set");
+
+    let full = RunSettings {
+        retain: Retain::Full,
+        cadence_secs: Some(900),
+    };
+    q.put(&key, &full).await.unwrap();
+    assert_eq!(q.get(&key).await.unwrap(), Some(full));
+
+    let tick = RunSettings {
+        retain: Retain::Tick,
+        cadence_secs: None,
+    };
+    q.put(&key, &tick).await.unwrap();
+    assert_eq!(
+        q.get(&key).await.unwrap(),
+        Some(tick),
+        "a second put replaces the first; no trigger stands in the way"
+    );
+}
+
+#[tokio::test]
+async fn a_retention_the_store_cannot_read_is_corruption() {
+    use gmr_store::Settings;
+
+    let store = gmr_store::sqlite::open_in_memory().await.unwrap();
+    sqlx::query("INSERT INTO settings (anchor, retain, cadence_secs) VALUES ('a', 'sideways', 60)")
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let err = store
+        .queue()
+        .get(&AnchorKey::new("a"))
+        .await
+        .expect_err("an unreadable retention must not quietly become the default");
+    assert_eq!(err.kind, ErrorKind::Corrupt);
 }
 
 #[tokio::test]

@@ -122,8 +122,8 @@ pub(crate) fn bind_warnings(anchor: &Anchor, observation: &Observation) -> Vec<S
 mod tests {
     use super::*;
     use gmr_core::{
-        AnchorKey, Expr, Facts, Kind, Outcome, ProbeRef, ProbeVersion, Retain, Rule, StatusId,
-        Transitions, Versions,
+        AnchorKey, Expr, Facts, Kind, Outcome, ProbeRef, ProbeVersion, Rule, StatusId, Transitions,
+        Versions,
     };
     use serde_json::json;
 
@@ -149,8 +149,6 @@ mod tests {
             ),
             transitions: t,
             terminal: [StatusId::new("settled")].into_iter().collect(),
-            retain: Retain::Tick,
-            cadence_secs: None,
             supersedes: None,
         }
     }

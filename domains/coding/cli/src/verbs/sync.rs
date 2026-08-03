@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use gmr::{Anchor, AnchorKey, OpenRequest, ProbeRef, Retain, Runtime, State, Transitions};
+use gmr::{
+    Anchor, AnchorKey, OpenRequest, ProbeRef, Retain, RunSettings, Runtime, State, Transitions,
+};
 use serde::Deserialize;
 
 use crate::error::CliError;
@@ -43,11 +45,14 @@ impl AnchorDecl {
         rules::transitions(&self.rules)
     }
 
-    fn retain(&self) -> Retain {
-        if self.retain_full {
-            Retain::Full
-        } else {
-            Retain::Tick
+    fn settings(&self) -> RunSettings {
+        RunSettings {
+            retain: if self.retain_full {
+                Retain::Full
+            } else {
+                Retain::Tick
+            },
+            cadence_secs: self.cadence_secs,
         }
     }
 
@@ -72,7 +77,7 @@ pub async fn run(
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
     let mut drifted_criteria = Vec::new();
-    let mut drifted_schedule = Vec::new();
+    let mut resettled = Vec::new();
     let mut warnings = Vec::new();
 
     let mut scheduled = 0;
@@ -83,12 +88,15 @@ pub async fn run(
         }
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
-            let drift = differs(&view.anchor, decl)?;
-            if drift.criteria {
+            if differs(&view.anchor, decl)? {
                 drifted_criteria.push(decl.key.clone());
             }
-            if drift.schedule {
-                drifted_schedule.push(decl.key.clone());
+            // Retain and cadence are not criteria, so sync just applies them.
+            if rt.settings_for(&key).await? != decl.settings() {
+                if !dry_run {
+                    rt.set_settings(&key, &decl.settings()).await?;
+                }
+                resettled.push(decl.key.clone());
             }
             continue;
         }
@@ -103,8 +111,7 @@ pub async fn run(
                 transitions: decl.to_transitions()?,
                 terminal: rules::terminal(&decl.terminal),
                 initial: decl.initial(),
-                retain: decl.retain(),
-                cadence_secs: decl.cadence_secs,
+                settings: decl.settings(),
                 supersedes: None,
             })
             .await?;
@@ -120,7 +127,7 @@ pub async fn run(
             serde_json::json!({
                 "opened": opened,
                 "criteria_drifted": drifted_criteria,
-                "schedule_drifted": drifted_schedule,
+                "resettled": resettled,
                 "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
             })
         );
@@ -152,36 +159,21 @@ pub async fn run(
              Decide whether to accept it, then use revise so it leaves a sealed record."
         );
     }
-    if !drifted_schedule.is_empty() {
+    if !resettled.is_empty() {
         println!(
-            "\n{} anchors declare a retain/cadence that is not the one they are running:",
-            drifted_schedule.len()
+            "\n{} anchors {} a new retain/cadence from the declaration:",
+            resettled.len(),
+            if dry_run { "would take" } else { "took" }
         );
-        for k in &drifted_schedule {
+        for k in &resettled {
             println!("  ~= {k}");
         }
-        println!(
-            "\nThese two say how an anchor is run, not what it judges. They are fixed when the\n\
-             anchor is opened and there is no revision channel for them yet — revise cannot move\n\
-             them either. The declaration on file is not in force; the anchor keeps what it was\n\
-             opened with. To actually change one today, the anchor has to be superseded."
-        );
     }
     Ok(0)
 }
 
-struct Drift {
-    /// probe / transitions / terminal — revisable.
-    criteria: bool,
-    /// retain / cadence_secs — no revision channel exists.
-    schedule: bool,
-}
-
-fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<Drift, CliError> {
-    Ok(Drift {
-        criteria: anchor.probe != decl.to_probe()?
-            || anchor.transitions != decl.to_transitions()?
-            || anchor.terminal != rules::terminal(&decl.terminal),
-        schedule: anchor.retain != decl.retain() || anchor.cadence_secs != decl.cadence_secs,
-    })
+fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
+    Ok(anchor.probe != decl.to_probe()?
+        || anchor.transitions != decl.to_transitions()?
+        || anchor.terminal != rules::terminal(&decl.terminal))
 }

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use gmr_core::{
-    AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, State, StatusId, Transitions,
-    Version,
+    AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, RunSettings, State, StatusId,
+    Transitions, Version,
 };
 use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
@@ -39,6 +39,7 @@ impl World {
             .bindings(bindings.clone())
             .sealer(bindings.clone())
             .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
             .policy(policy);
         if queue {
             b = b.queue(Arc::new(MemoryQueue::default()));
@@ -89,8 +90,10 @@ fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
         transitions,
         terminal: Default::default(),
         initial: None,
-        retain: Retain::Tick,
-        cadence_secs: None,
+        settings: RunSettings {
+            retain: Retain::Tick,
+            cadence_secs: None,
+        },
         supersedes: None,
     }
 }

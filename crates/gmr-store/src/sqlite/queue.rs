@@ -8,7 +8,7 @@ use crate::queue::{Disposition, Queue, Ticket};
 use crate::{Fence, StoreError};
 
 pub struct SqliteQueue {
-    pool: SqlitePool,
+    pub(super) pool: SqlitePool,
 }
 
 impl SqliteQueue {

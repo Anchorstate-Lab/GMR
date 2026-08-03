@@ -57,6 +57,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .provider(Arc::new(Git::new(&root)))
         .queue(Arc::new(store.queue()))
+        .settings(Arc::new(store.queue()))
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))

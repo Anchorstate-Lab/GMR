@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -50,6 +50,16 @@ CREATE INDEX IF NOT EXISTS links_by_from ON links(from_ref);
 CREATE TABLE IF NOT EXISTS sealed (
     address  TEXT PRIMARY KEY,
     body     BLOB NOT NULL
+);
+
+-- ── Run settings: how an anchor is run, not what it judges. **Mutable**:
+-- no append-only trigger below, because changing one settles nothing and
+-- so owes no sealed rationale.
+
+CREATE TABLE IF NOT EXISTS settings (
+    anchor        TEXT    PRIMARY KEY,
+    retain        TEXT    NOT NULL,   -- Retain, snake_case
+    cadence_secs  INTEGER             -- NULL defers to the deployment default
 );
 
 -- ── Queue: polling deployments only. **Mutable**, no pretence ──

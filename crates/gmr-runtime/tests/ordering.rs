@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Change, Entry, Expr, Retain, Rule, State, Transitions};
+use gmr_core::{AnchorKey, Change, Entry, Expr, Retain, Rule, RunSettings, State, Transitions};
 use gmr_runtime::{OpenRequest, Runtime};
-use gmr_store::testkit::{MemoryBindings, MemoryJournal};
+use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_store::{Journal, Sealer};
 use gmr_transport_shell::Shell;
 
@@ -27,6 +27,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         .bindings(bindings.clone())
         .sealer(bindings.clone())
         .links(bindings.clone())
+        .settings(Arc::new(MemoryQueue::default()))
         .build();
 
     let key = AnchorKey::new("a");
@@ -39,8 +40,10 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         }]),
         terminal: Default::default(),
         initial: None,
-        retain: Retain::Tick,
-        cadence_secs: None,
+        settings: RunSettings {
+            retain: Retain::Tick,
+            cadence_secs: None,
+        },
         supersedes: None,
     })
     .await

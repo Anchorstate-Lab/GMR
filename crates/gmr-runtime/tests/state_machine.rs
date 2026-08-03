@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use gmr_core::{
-    AnchorKey, Change, Expr, Kind, ProbeRef, ReasonClass, Retain, Rule, State, StatusId,
-    Transitions, fold,
+    AnchorKey, Change, Expr, Kind, ProbeRef, ReasonClass, Retain, Rule, RunSettings, State,
+    StatusId, Transitions, fold,
 };
 use gmr_runtime::{Observed, OpenRequest, Runtime, Sighting};
-use gmr_store::testkit::{MemoryBindings, MemoryJournal};
+use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport_shell::Shell;
 
 /// Every test publishes a real artifact. Otherwise "earned versions" would
@@ -34,6 +34,7 @@ impl World {
             .bindings(bindings.clone())
             .sealer(bindings.clone())
             .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, rt }
     }
@@ -54,8 +55,10 @@ impl World {
                 transitions: transitions(rules),
                 terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
                 initial: None,
-                retain: Retain::Tick,
-                cadence_secs: None,
+                settings: RunSettings {
+                    retain: Retain::Tick,
+                    cadence_secs: None,
+                },
                 supersedes: None,
             })
             .await
@@ -254,6 +257,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
         .bindings(bindings.clone())
         .sealer(bindings.clone())
         .links(bindings)
+        .settings(Arc::new(MemoryQueue::default()))
         .build();
 
     let opened = rt
@@ -263,8 +267,10 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
             transitions: transitions(&[("true", "{ position: state.position, v: obs.v }")]),
             terminal: Default::default(),
             initial: Some(State::new(serde_json::json!({ "position": "a.json" }))),
-            retain: Retain::Tick,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
             supersedes: None,
         })
         .await
@@ -325,6 +331,7 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
         .bindings(bindings.clone())
         .sealer(bindings.clone())
         .links(bindings)
+        .settings(Arc::new(MemoryQueue::default()))
         .build();
 
     rt.open(OpenRequest {
@@ -333,8 +340,10 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
         transitions: transitions(&[("true", r#"{ status: "empty" }"#)]),
         terminal: Default::default(),
         initial: None,
-        retain: Retain::Tick,
-        cadence_secs: None,
+        settings: RunSettings {
+            retain: Retain::Tick,
+            cadence_secs: None,
+        },
         supersedes: None,
     })
     .await
@@ -628,8 +637,6 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
         ),
         transitions: Transitions::default(),
         terminal: [StatusId::new("settled")].into_iter().collect(),
-        retain: Retain::Tick,
-        cadence_secs: None,
         supersedes: None,
     };
     let observation = Observation {
@@ -703,8 +710,10 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
             transitions: transitions(&[("obs.n > 100", r#"{ status: "settled" }"#)]),
             terminal: [StatusId::new("settled")].into_iter().collect(),
             initial: None,
-            retain: Retain::Tick,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
             supersedes: Some(Supersede {
                 key: key(),
                 rationale: "threshold was wrong; 10 was too low".as_bytes().to_vec(),
@@ -742,8 +751,10 @@ async fn an_anchor_still_running_cannot_be_superseded() {
             transitions: Transitions::default(),
             terminal: Default::default(),
             initial: None,
-            retain: Retain::Tick,
-            cadence_secs: None,
+            settings: RunSettings {
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
             supersedes: Some(Supersede {
                 key: key(),
                 rationale: b"why".to_vec(),
@@ -767,8 +778,7 @@ async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
             transitions: transitions(&[(r#"changed("shape")"#, r#"{ shape: obs.shape }"#)]),
             terminal: Default::default(),
             initial: None,
-            retain: Retain::Tick,
-            cadence_secs: None,
+            settings: RunSettings { retain: Retain::Tick, cadence_secs: None },
             supersedes: None,
         })
         .await

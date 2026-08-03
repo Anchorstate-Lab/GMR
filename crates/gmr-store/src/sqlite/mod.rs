@@ -3,6 +3,7 @@ pub mod journal;
 pub mod links;
 pub mod queue;
 pub mod schema;
+pub mod settings;
 
 use std::path::Path;
 

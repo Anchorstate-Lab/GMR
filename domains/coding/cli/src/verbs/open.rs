@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, OpenRequest, Retain, Runtime, Supersede};
+use gmr::{AnchorKey, OpenRequest, Retain, RunSettings, Runtime, Supersede};
 
 use crate::cli::OpenArgs;
 use crate::error::CliError;
@@ -17,12 +17,14 @@ pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliErr
             transitions: rules::transitions(&args.rules)?,
             terminal: rules::terminal(&args.terminal),
             initial: None,
-            retain: if args.retain_full {
-                Retain::Full
-            } else {
-                Retain::Tick
+            settings: RunSettings {
+                retain: if args.retain_full {
+                    Retain::Full
+                } else {
+                    Retain::Tick
+                },
+                cadence_secs: args.cadence_secs,
             },
-            cadence_secs: args.cadence_secs,
             supersedes,
         })
         .await?;
