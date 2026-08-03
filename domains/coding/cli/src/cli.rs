@@ -36,12 +36,6 @@ pub enum Command {
 
     Read {
         key: Option<String>,
-        /// Only anchors sitting in one of these statuses.
-        #[arg(long, value_delimiter = ',', conflicts_with = "not_status")]
-        status: Vec<String>,
-        /// Every anchor except those sitting in one of these statuses.
-        #[arg(long, value_delimiter = ',')]
-        not_status: Vec<String>,
     },
 
     /// Publish a directory as a probe artifact and print its earned version.

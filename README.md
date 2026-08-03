@@ -168,7 +168,6 @@ Exit code is `1` when something moved — usable straight from CI.
 
 ```sh
 anchor read                      # every anchor's current state
-anchor read --moved              # only the ones that have moved or failed
 anchor edges --since <seq>       # transitions / terminals / stalls since a journal point
 anchor edges --status drifted
 anchor health                    # per-anchor liveness
