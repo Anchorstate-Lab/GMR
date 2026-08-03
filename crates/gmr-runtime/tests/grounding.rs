@@ -329,7 +329,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
         .await
         .unwrap()
         .unwrap();
-    assert!(!bound.anchors.is_empty());
+    assert!(!bound.binding.anchors.is_empty());
 
     w.runtime
         .bind(reference.clone(), vec![], Version::new("v"))
@@ -344,7 +344,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
         .unwrap()
         .unwrap();
     assert!(
-        detached.anchors.is_empty(),
+        detached.binding.anchors.is_empty(),
         "detached, while history remains in the table"
     );
     assert!(

@@ -50,11 +50,14 @@ pub struct Link {
     pub kind: LinkKind,
 }
 
+/// `reference` is about which anchors, full stop. Anything about a
+/// particular write of that relation (what content version it saw, when it
+/// happened) is store-layer view metadata, not part of the relation itself
+/// -- see `BindingRecord` in `gmr-store`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Binding {
     pub reference: Ref,
     pub anchors: Vec<AnchorKey>,
-    pub bound_version: Version,
 }
 
 #[cfg(test)]
@@ -66,7 +69,6 @@ mod tests {
         let b = Binding {
             reference: Ref::new("git", "memories/core-modules.md"),
             anchors: vec![AnchorKey::new("core::modules")],
-            bound_version: Version::new("a".repeat(40)),
         };
         let s = serde_json::to_string(&b).unwrap();
         assert_eq!(serde_json::from_str::<Binding>(&s).unwrap(), b);
@@ -77,7 +79,6 @@ mod tests {
         let b = Binding {
             reference: Ref::new("git", "m.md"),
             anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
-            bound_version: Version::new("v1"),
         };
         assert_eq!(b.anchors.len(), 2);
     }

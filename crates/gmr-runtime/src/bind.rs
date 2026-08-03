@@ -1,4 +1,5 @@
 use gmr_core::{AnchorKey, Binding, Ref, Version};
+use gmr_store::BindingRecord;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -11,16 +12,15 @@ impl Runtime {
         bound_version: Version,
     ) -> Result<(), RuntimeError> {
         self.bindings
-            .bind(&Binding {
-                reference,
-                anchors,
-                bound_version,
-            })
+            .bind(&Binding { reference, anchors }, &bound_version)
             .await?;
         Ok(())
     }
 
-    pub async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<Binding>, RuntimeError> {
+    pub async fn bindings_on(
+        &self,
+        anchor: &AnchorKey,
+    ) -> Result<Vec<BindingRecord>, RuntimeError> {
         Ok(self.bindings.bindings_on(anchor).await?)
     }
 }

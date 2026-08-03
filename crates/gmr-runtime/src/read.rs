@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use gmr_core::{
-    Anchor, AnchorKey, Binding, Entry, Link, Outcome, Ref, Seq, State, StatusId, Version, fold,
-};
+use gmr_core::{Anchor, AnchorKey, Entry, Link, Outcome, Ref, Seq, State, StatusId, Version, fold};
+use gmr_store::BindingRecord;
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -76,14 +75,15 @@ impl Runtime {
     }
 
     pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
-        let Some(binding) = self.bindings.binding_of(reference).await? else {
+        let Some(record) = self.bindings.binding_of(reference).await? else {
             return Ok(Vec::new());
         };
         let mut out: Vec<Ref> = Vec::new();
-        for anchor in &binding.anchors {
+        for anchor in &record.binding.anchors {
             for other in self.bindings.bindings_on(anchor).await? {
-                if &other.reference != reference && !out.contains(&other.reference) {
-                    out.push(other.reference);
+                let other_reference = other.binding.reference;
+                if &other_reference != reference && !out.contains(&other_reference) {
+                    out.push(other_reference);
                 }
             }
         }
@@ -125,11 +125,18 @@ impl Runtime {
         Ok(())
     }
 
-    pub(crate) async fn fetch_memory(&self, binding: Binding) -> Result<MemoryView, RuntimeError> {
+    pub(crate) async fn fetch_memory(
+        &self,
+        record: BindingRecord,
+    ) -> Result<MemoryView, RuntimeError> {
+        let BindingRecord {
+            binding,
+            bound_version,
+        } = record;
         let links = self.links.links_of(&binding.reference).await?;
         let mut view = MemoryView {
             reference: binding.reference.clone(),
-            bound_version: binding.bound_version.clone(),
+            bound_version: bound_version.clone(),
             current_version: None,
             rewritten: false,
             content: None,
@@ -156,7 +163,7 @@ impl Runtime {
             Err(e) => view.unavailable = Some(e.message),
             Ok(None) => view.unavailable = Some("the provider says this record is gone".to_owned()),
             Ok(Some(fetched)) => {
-                view.rewritten = fetched.version != binding.bound_version;
+                view.rewritten = fetched.version != bound_version;
                 view.current_version = Some(fetched.version);
                 match String::from_utf8(fetched.bytes) {
                     Ok(text) => view.content = Some(text),
@@ -165,7 +172,7 @@ impl Runtime {
 
                 if view.rewritten {
                     match provider
-                        .fetch_at(&binding.reference.external_id, &binding.bound_version)
+                        .fetch_at(&binding.reference.external_id, &bound_version)
                         .await
                     {
                         Ok(Some(bytes)) => {

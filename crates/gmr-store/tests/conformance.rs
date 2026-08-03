@@ -207,15 +207,21 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     let binding = Binding {
         reference: Ref::new("git", "memories/core-modules.md"),
         anchors: vec![AnchorKey::new("core::modules")],
-        bound_version: Version::new("blob-v1"),
     };
-    b.bind(&binding).await.unwrap();
+    let bound_version = Version::new("blob-v1");
+    b.bind(&binding, &bound_version).await.unwrap();
 
     let on = b
         .bindings_on(&AnchorKey::new("core::modules"))
         .await
         .unwrap();
-    assert_eq!(on, vec![binding.clone()]);
+    assert_eq!(
+        on,
+        vec![gmr_store::BindingRecord {
+            binding: binding.clone(),
+            bound_version: bound_version.clone(),
+        }]
+    );
     assert_eq!(
         b.binding_of(&binding.reference)
             .await
@@ -230,11 +236,13 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
 async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/m.md");
     for v in ["v1", "v2"] {
-        b.bind(&Binding {
-            reference: reference.clone(),
-            anchors: vec![AnchorKey::new("a")],
-            bound_version: Version::new(v),
-        })
+        b.bind(
+            &Binding {
+                reference: reference.clone(),
+                anchors: vec![AnchorKey::new("a")],
+            },
+            &Version::new(v),
+        )
         .await
         .unwrap();
     }
@@ -258,11 +266,13 @@ async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
 async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/moved.md");
     for anchor in ["from", "to"] {
-        b.bind(&Binding {
-            reference: reference.clone(),
-            anchors: vec![AnchorKey::new(anchor)],
-            bound_version: Version::new("v"),
-        })
+        b.bind(
+            &Binding {
+                reference: reference.clone(),
+                anchors: vec![AnchorKey::new(anchor)],
+            },
+            &Version::new("v"),
+        )
         .await
         .unwrap();
     }

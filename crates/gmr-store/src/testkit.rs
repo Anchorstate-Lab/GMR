@@ -3,12 +3,13 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, Seq, content_hash_of_bytes,
+    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, Seq, Version,
+    content_hash_of_bytes,
 };
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::bindings::BindingStore;
+use crate::bindings::{BindingRecord, BindingStore};
 use crate::error::StoreError;
 use crate::journal::{Fence, Journal};
 use crate::links::LinkStore;
@@ -72,7 +73,7 @@ impl Journal for MemoryJournal {
 
 #[derive(Default)]
 struct BindingInner {
-    bindings: Vec<Binding>,
+    bindings: Vec<BindingRecord>,
     sealed: HashMap<ContentHash, Vec<u8>>,
     links: Vec<(Ref, Link)>,
 }
@@ -83,14 +84,14 @@ pub struct MemoryBindings {
 }
 
 impl MemoryBindings {
-    fn latest(&self) -> Vec<Binding> {
+    fn latest(&self) -> Vec<BindingRecord> {
         let inner = self.inner.lock().unwrap();
         let mut seen: Vec<&Ref> = Vec::new();
-        let mut out: Vec<Binding> = Vec::new();
-        for b in inner.bindings.iter().rev() {
-            if !seen.contains(&&b.reference) {
-                seen.push(&b.reference);
-                out.push(b.clone());
+        let mut out: Vec<BindingRecord> = Vec::new();
+        for r in inner.bindings.iter().rev() {
+            if !seen.contains(&&r.binding.reference) {
+                seen.push(&r.binding.reference);
+                out.push(r.clone());
             }
         }
         out.reverse();
@@ -100,30 +101,33 @@ impl MemoryBindings {
 
 #[async_trait]
 impl BindingStore for MemoryBindings {
-    async fn bind(&self, binding: &Binding) -> Result<(), StoreError> {
-        self.inner.lock().unwrap().bindings.push(binding.clone());
+    async fn bind(&self, binding: &Binding, bound_version: &Version) -> Result<(), StoreError> {
+        self.inner.lock().unwrap().bindings.push(BindingRecord {
+            binding: binding.clone(),
+            bound_version: bound_version.clone(),
+        });
         Ok(())
     }
 
-    async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<Binding>, StoreError> {
+    async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<BindingRecord>, StoreError> {
         Ok(self
             .latest()
             .into_iter()
-            .filter(|b| b.anchors.contains(anchor))
+            .filter(|r| r.binding.anchors.contains(anchor))
             .collect())
     }
 
-    async fn binding_of(&self, reference: &Ref) -> Result<Option<Binding>, StoreError> {
+    async fn binding_of(&self, reference: &Ref) -> Result<Option<BindingRecord>, StoreError> {
         let inner = self.inner.lock().unwrap();
         Ok(inner
             .bindings
             .iter()
             .rev()
-            .find(|b| &b.reference == reference)
+            .find(|r| &r.binding.reference == reference)
             .cloned())
     }
 
-    async fn all(&self) -> Result<Vec<Binding>, StoreError> {
+    async fn all(&self) -> Result<Vec<BindingRecord>, StoreError> {
         Ok(self.latest())
     }
 }

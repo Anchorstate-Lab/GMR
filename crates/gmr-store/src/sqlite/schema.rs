@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -17,9 +17,10 @@ CREATE INDEX IF NOT EXISTS journal_by_anchor ON journal(anchor, seq);
 -- ── Bindings: append-only. Rebinding appends; current = latest row ──
 
 CREATE TABLE IF NOT EXISTS bindings (
-    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
-    reference  TEXT NOT NULL,     -- canonical Ref
-    body       TEXT NOT NULL
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference      TEXT NOT NULL,     -- canonical Ref
+    body           TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
+    bound_version  TEXT NOT NULL      -- view metadata: content version current at bind time
 );
 CREATE INDEX IF NOT EXISTS bindings_by_reference ON bindings(reference, seq);
 

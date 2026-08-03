@@ -97,7 +97,10 @@ impl Runtime {
         let mut active = 0;
         let mut barren = Vec::new();
         for key in &anchors {
-            let n = bindings.iter().filter(|b| b.anchors.contains(key)).count();
+            let n = bindings
+                .iter()
+                .filter(|r| r.binding.anchors.contains(key))
+                .count();
             per_anchor.insert(key.to_string(), n);
             let entries = self.journal.entries(key, 0).await?;
             if fold(&entries).is_some_and(|s| !s.closed) {
