@@ -2,15 +2,18 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Binding, ContentHash, Entry, Ref, Seq, content_hash_of_bytes};
+use gmr_core::{
+    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, Seq, content_hash_of_bytes,
+};
 
 use chrono::{DateTime, Duration, Utc};
 
 use crate::bindings::BindingStore;
 use crate::error::StoreError;
-use crate::sealer::Sealer;
 use crate::journal::{Fence, Journal};
+use crate::links::LinkStore;
 use crate::queue::{Disposition, Queue, Ticket};
+use crate::sealer::Sealer;
 
 #[derive(Default)]
 struct JournalInner {
@@ -71,6 +74,7 @@ impl Journal for MemoryJournal {
 struct BindingInner {
     bindings: Vec<Binding>,
     sealed: HashMap<ContentHash, Vec<u8>>,
+    links: Vec<(Ref, Link)>,
 }
 
 #[derive(Default)]
@@ -138,6 +142,32 @@ impl Sealer for MemoryBindings {
 
     async fn sealed(&self, address: &ContentHash) -> Result<Option<Vec<u8>>, StoreError> {
         Ok(self.inner.lock().unwrap().sealed.get(address).cloned())
+    }
+}
+
+#[async_trait]
+impl LinkStore for MemoryBindings {
+    async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), StoreError> {
+        self.inner.lock().unwrap().links.push((
+            from.clone(),
+            Link {
+                to: to.clone(),
+                kind,
+            },
+        ));
+        Ok(())
+    }
+
+    async fn links_of(&self, reference: &Ref) -> Result<Vec<Link>, StoreError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .links
+            .iter()
+            .filter(|(from, _)| from == reference)
+            .map(|(_, link)| link.clone())
+            .collect())
     }
 }
 

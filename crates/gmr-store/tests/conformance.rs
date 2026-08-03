@@ -208,7 +208,6 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
         reference: Ref::new("git", "memories/core-modules.md"),
         anchors: vec![AnchorKey::new("core::modules")],
         bound_version: Version::new("blob-v1"),
-        links: vec![],
     };
     b.bind(&binding).await.unwrap();
 
@@ -235,7 +234,6 @@ async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
             reference: reference.clone(),
             anchors: vec![AnchorKey::new("a")],
             bound_version: Version::new(v),
-            links: vec![],
         })
         .await
         .unwrap();
@@ -264,7 +262,6 @@ async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
             reference: reference.clone(),
             anchors: vec![AnchorKey::new(anchor)],
             bound_version: Version::new("v"),
-            links: vec![],
         })
         .await
         .unwrap();
@@ -288,6 +285,29 @@ async fn sealing_is_content_addressed_and_idempotent<S: Sealer>(b: &S) {
     );
     assert_eq!(b.sealed(&a1).await.unwrap().as_deref(), Some(bytes));
     assert_ne!(a1, b.seal("another rationale".as_bytes()).await.unwrap());
+}
+
+async fn links_are_scoped_to_the_from_reference<L: gmr_store::LinkStore>(l: &L) {
+    let a = Ref::new("git", "memories/a.md");
+    let b = Ref::new("git", "memories/b.md");
+    let c = Ref::new("git", "memories/c.md");
+
+    l.link(&a, &b, gmr_core::LinkKind("elaborates".into()))
+        .await
+        .unwrap();
+    l.link(&a, &c, gmr_core::LinkKind("contradicts".into()))
+        .await
+        .unwrap();
+
+    let from_a = l.links_of(&a).await.unwrap();
+    assert_eq!(from_a.len(), 2);
+    assert!(from_a.iter().any(|link| link.to == b));
+    assert!(from_a.iter().any(|link| link.to == c));
+
+    assert!(
+        l.links_of(&b).await.unwrap().is_empty(),
+        "links are directed: b was linked to, not from"
+    );
 }
 
 macro_rules! journal_conformance {
@@ -322,6 +342,22 @@ macro_rules! bindings_conformance {
     };
 }
 
+macro_rules! links_conformance {
+    ($($name:ident),* $(,)?) => {
+        mod memory_links {
+            $(#[tokio::test] async fn $name() {
+                super::$name(&gmr_store::testkit::MemoryBindings::default()).await;
+            })*
+        }
+        mod sqlite_links {
+            $(#[tokio::test] async fn $name() {
+                let store = gmr_store::sqlite::open_in_memory().await.unwrap();
+                super::$name(&store.links()).await;
+            })*
+        }
+    };
+}
+
 journal_conformance!(
     journal_hands_back_what_it_was_given,
     journal_is_ordered_and_scoped_per_anchor,
@@ -335,6 +371,8 @@ bindings_conformance!(
     rebinding_can_move_a_record_off_an_anchor,
     sealing_is_content_addressed_and_idempotent,
 );
+
+links_conformance!(links_are_scoped_to_the_from_reference);
 
 async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
     use chrono::{Duration, TimeZone, Utc};

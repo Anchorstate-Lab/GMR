@@ -55,8 +55,6 @@ pub struct Binding {
     pub reference: Ref,
     pub anchors: Vec<AnchorKey>,
     pub bound_version: Version,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<Link>,
 }
 
 #[cfg(test)]
@@ -69,10 +67,6 @@ mod tests {
             reference: Ref::new("git", "memories/core-modules.md"),
             anchors: vec![AnchorKey::new("core::modules")],
             bound_version: Version::new("a".repeat(40)),
-            links: vec![Link {
-                to: Ref::new("git", "memories/other.md"),
-                kind: LinkKind("contradicts".into()),
-            }],
         };
         let s = serde_json::to_string(&b).unwrap();
         assert_eq!(serde_json::from_str::<Binding>(&s).unwrap(), b);
@@ -84,8 +78,17 @@ mod tests {
             reference: Ref::new("git", "m.md"),
             anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
             bound_version: Version::new("v1"),
-            links: vec![],
         };
         assert_eq!(b.anchors.len(), 2);
+    }
+
+    #[test]
+    fn link_roundtrips_the_wire() {
+        let l = Link {
+            to: Ref::new("git", "memories/other.md"),
+            kind: LinkKind("contradicts".into()),
+        };
+        let s = serde_json::to_string(&l).unwrap();
+        assert_eq!(serde_json::from_str::<Link>(&s).unwrap(), l);
     }
 }

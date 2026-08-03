@@ -51,7 +51,7 @@ impl Runtime {
 
         let mut memories = Vec::new();
         for binding in self.bindings.bindings_on(key).await? {
-            memories.push(self.fetch_memory(binding).await);
+            memories.push(self.fetch_memory(binding).await?);
         }
         self.carry_linked(&mut memories).await?;
 
@@ -120,12 +120,13 @@ impl Runtime {
             let Some(binding) = self.bindings.binding_of(&reference).await? else {
                 continue;
             };
-            memories.push(self.fetch_memory(binding).await);
+            memories.push(self.fetch_memory(binding).await?);
         }
         Ok(())
     }
 
-    pub(crate) async fn fetch_memory(&self, binding: Binding) -> MemoryView {
+    pub(crate) async fn fetch_memory(&self, binding: Binding) -> Result<MemoryView, RuntimeError> {
+        let links = self.links.links_of(&binding.reference).await?;
         let mut view = MemoryView {
             reference: binding.reference.clone(),
             bound_version: binding.bound_version.clone(),
@@ -136,7 +137,7 @@ impl Runtime {
             retrievable: None,
             grounded: !binding.anchors.is_empty(),
             unavailable: None,
-            links: binding.links,
+            links,
         };
 
         let Some(provider) = self
@@ -148,7 +149,7 @@ impl Runtime {
                 "no provider recognises a `{}` reference",
                 binding.reference.provider
             ));
-            return view;
+            return Ok(view);
         };
 
         match provider.fetch(&binding.reference.external_id).await {
@@ -179,7 +180,7 @@ impl Runtime {
                 }
             }
         }
-        view
+        Ok(view)
     }
 }
 

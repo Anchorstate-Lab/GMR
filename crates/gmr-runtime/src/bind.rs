@@ -1,4 +1,4 @@
-use gmr_core::{AnchorKey, Binding, Link, Ref, Version};
+use gmr_core::{AnchorKey, Binding, Ref, Version};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -9,14 +9,12 @@ impl Runtime {
         reference: Ref,
         anchors: Vec<AnchorKey>,
         bound_version: Version,
-        links: Vec<Link>,
     ) -> Result<(), RuntimeError> {
         self.bindings
             .bind(&Binding {
                 reference,
                 anchors,
                 bound_version,
-                links,
             })
             .await?;
         Ok(())

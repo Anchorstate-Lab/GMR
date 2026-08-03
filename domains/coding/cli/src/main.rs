@@ -60,6 +60,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))
+        .links(Arc::new(store.links()))
         .build();
 
     let json = cli.json;

@@ -25,7 +25,6 @@ pub async fn run(
         Ref::new("git", path.clone()),
         anchors.clone(),
         Version::new(version.clone()),
-        vec![],
     )
     .await?;
 

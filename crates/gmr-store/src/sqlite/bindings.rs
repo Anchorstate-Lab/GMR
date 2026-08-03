@@ -1,25 +1,18 @@
 use crate::{BindingStore, Sealer, StoreError};
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Binding, ContentHash, Ref, canonicalize, content_hash_of_bytes};
+use gmr_core::{AnchorKey, Binding, ContentHash, Ref, content_hash_of_bytes};
 use sqlx::{Row, SqlitePool};
 
-use super::{db_err, decode_err};
+use super::{db_err, decode_err, ref_key};
 
 pub struct SqliteBindings {
-    pool: SqlitePool,
+    pub(super) pool: SqlitePool,
 }
 
 impl SqliteBindings {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
-}
-
-fn ref_key(r: &Ref) -> String {
-    String::from_utf8(canonicalize(
-        &serde_json::to_value(r).expect("a Ref always serialises"),
-    ))
-    .expect("canonical JSON is always UTF-8")
 }
 
 #[async_trait]

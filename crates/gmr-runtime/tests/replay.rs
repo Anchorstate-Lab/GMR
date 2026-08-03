@@ -23,7 +23,8 @@ impl World {
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(journal.clone())
             .bindings(bindings.clone())
-            .sealer(bindings)
+            .sealer(bindings.clone())
+            .links(bindings)
             .build();
         Self {
             dir,

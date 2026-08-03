@@ -26,6 +26,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         .journal(journal.clone())
         .bindings(bindings.clone())
         .sealer(bindings.clone())
+        .links(bindings.clone())
         .build();
 
     let key = AnchorKey::new("a");

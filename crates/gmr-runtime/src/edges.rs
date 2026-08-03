@@ -94,7 +94,7 @@ impl Runtime {
             }
 
             for binding in self.bindings.bindings_on(&key).await? {
-                let view = self.fetch_memory(binding).await;
+                let view = self.fetch_memory(binding).await?;
                 if view.rewritten {
                     standing.push(Standing::Rewritten {
                         anchor: key.clone(),

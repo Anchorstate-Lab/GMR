@@ -73,7 +73,8 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         }))
         .journal(Arc::new(MemoryJournal::default()))
         .bindings(bindings.clone())
-        .sealer(bindings)
+        .sealer(bindings.clone())
+        .links(bindings)
         .build();
 
     let key = AnchorKey::new("core::modules");
@@ -98,7 +99,6 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         Ref::new("git", "memories/core-modules.md"),
         vec![key.clone()],
         Version::new("blob-at-bind-time"),
-        vec![],
     )
     .await
     .unwrap();

@@ -1,17 +1,26 @@
 pub mod bindings;
 pub mod journal;
+pub mod links;
 pub mod queue;
 pub mod schema;
 
 use std::path::Path;
 
 use crate::{ErrorCode, ErrorKind, StoreError};
+use gmr_core::{Ref, canonicalize};
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 pub use bindings::SqliteBindings;
 pub use journal::SqliteJournal;
 pub use queue::SqliteQueue;
+
+pub(crate) fn ref_key(r: &Ref) -> String {
+    String::from_utf8(canonicalize(
+        &serde_json::to_value(r).expect("a Ref always serialises"),
+    ))
+    .expect("canonical JSON is always UTF-8")
+}
 
 pub(crate) fn db_err(e: sqlx::Error) -> StoreError {
     let (kind, code) = match &e {
@@ -111,6 +120,10 @@ impl SqliteStore {
     }
 
     pub fn bindings(&self) -> SqliteBindings {
+        SqliteBindings::new(self.pool.clone())
+    }
+
+    pub fn links(&self) -> SqliteBindings {
         SqliteBindings::new(self.pool.clone())
     }
 

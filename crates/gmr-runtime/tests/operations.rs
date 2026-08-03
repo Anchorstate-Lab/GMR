@@ -37,7 +37,8 @@ impl World {
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(Arc::new(MemoryJournal::default()))
             .bindings(bindings.clone())
-            .sealer(bindings)
+            .sealer(bindings.clone())
+            .links(bindings)
             .policy(policy);
         if queue {
             b = b.queue(Arc::new(MemoryQueue::default()));
@@ -383,12 +384,7 @@ async fn corpus_health_sees_barren_anchors() {
     assert_eq!(c.bound_refs, 0);
 
     w.runtime
-        .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
-            Version::new("v1"),
-            vec![],
-        )
+        .bind(Ref::new("git", "m.md"), vec![key()], Version::new("v1"))
         .await
         .unwrap();
     let c = w.runtime.corpus_health().await.unwrap();

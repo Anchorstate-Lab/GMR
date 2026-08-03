@@ -5,6 +5,7 @@ pub mod content;
 pub mod edges;
 pub mod error;
 pub mod health;
+pub mod link;
 pub mod observe;
 pub mod open;
 pub mod pass;

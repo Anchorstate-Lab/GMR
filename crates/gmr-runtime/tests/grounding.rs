@@ -88,7 +88,8 @@ impl World {
             )))
             .journal(Arc::new(MemoryJournal::default()))
             .bindings(bindings.clone())
-            .sealer(bindings)
+            .sealer(bindings.clone())
+            .links(bindings)
             .build();
         Self { dir, runtime }
     }
@@ -125,7 +126,6 @@ impl World {
                 reference,
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
                 Version::new(version),
-                vec![],
             )
             .await
             .unwrap();
@@ -245,12 +245,7 @@ async fn cobound_is_derived_from_binds_not_stored() {
     );
 
     w.runtime
-        .bind(
-            Ref::new("git", "memories/b.md"),
-            vec![],
-            Version::new("v"),
-            vec![],
-        )
+        .bind(Ref::new("git", "memories/b.md"), vec![], Version::new("v"))
         .await
         .unwrap();
     assert!(
@@ -264,7 +259,7 @@ async fn cobound_is_derived_from_binds_not_stored() {
 
 #[tokio::test]
 async fn an_unanchored_record_is_carried_along_but_marked() {
-    use gmr_core::{Link, LinkKind};
+    use gmr_core::LinkKind;
 
     let w = World::new(true);
     w.memory("bound.md", "This one is anchored.");
@@ -279,10 +274,6 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
             Ref::new("git", "memories/bound.md"),
             vec![AnchorKey::new("a")],
             Version::new("v1"),
-            vec![Link {
-                to: Ref::new("git", "memories/loose.md"),
-                kind: LinkKind("elaborates".into()),
-            }],
         )
         .await
         .unwrap();
@@ -292,7 +283,14 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
             Ref::new("git", "memories/loose.md"),
             vec![],
             Version::new("v1"),
-            vec![],
+        )
+        .await
+        .unwrap();
+    w.runtime
+        .link(
+            &Ref::new("git", "memories/bound.md"),
+            &Ref::new("git", "memories/loose.md"),
+            LinkKind("elaborates".into()),
         )
         .await
         .unwrap();
@@ -334,7 +332,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
     assert!(!bound.anchors.is_empty());
 
     w.runtime
-        .bind(reference.clone(), vec![], Version::new("v"), vec![])
+        .bind(reference.clone(), vec![], Version::new("v"))
         .await
         .unwrap();
 
