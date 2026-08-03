@@ -3,8 +3,7 @@ use std::sync::Arc;
 use gmr_core::Anchor;
 use gmr_probe::{ProbeError, Sighted, Transport};
 
-/// The set of transports this deployment wired up. Only knows how to invoke a
-/// probe at a position — no journal, no bindings, no queue.
+/// The transports this deployment wired up. No journal, no bindings, no queue.
 pub struct Observer {
     transports: Vec<Arc<dyn Transport>>,
 }

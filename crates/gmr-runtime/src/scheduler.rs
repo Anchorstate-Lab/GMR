@@ -7,9 +7,8 @@ use gmr_store::{Disposition, Queue, Ticket};
 use crate::error::RuntimeError;
 use crate::policy::Policy;
 
-/// The queue and the policy numbers that govern it. A deployment without a
-/// queue is legal — `pass`/`observe`'s lease path is then simply unavailable,
-/// which the rest of the runtime treats as "poll it by hand instead."
+/// The queue and the policy numbers governing it. A deployment without a queue
+/// is legal; the lease path is then unavailable.
 pub struct Scheduler {
     queue: Option<Arc<dyn Queue>>,
     policy: Policy,
@@ -20,7 +19,7 @@ impl Scheduler {
         Self { queue, policy }
     }
 
-    pub fn has_lease(&self) -> bool {
+    pub fn leases_configured(&self) -> bool {
         self.queue.is_some()
     }
 
@@ -28,10 +27,6 @@ impl Scheduler {
         &self.policy
     }
 
-    /// Inserts `anchor` only if it has no queue row yet. `Ok(false)` if this
-    /// deployment has no queue, or if the anchor was already scheduled — either
-    /// way there is nothing to reset. This is what a routine sync should call:
-    /// it repairs a missing entry without touching one already backing off.
     pub async fn ensure_enqueued(
         &self,
         anchor: &AnchorKey,
@@ -43,9 +38,6 @@ impl Scheduler {
         Ok(queue.ensure_enqueued(anchor, due).await?)
     }
 
-    /// Unconditionally (re)schedules `anchor` right now, clearing any lease,
-    /// backoff, or parked state. A deliberate operator action — do not call
-    /// this from routine sync, which should use `ensure_enqueued` instead.
     pub async fn requeue_now(
         &self,
         anchor: &AnchorKey,

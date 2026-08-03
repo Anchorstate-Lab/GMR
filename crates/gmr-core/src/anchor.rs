@@ -48,8 +48,7 @@ pub struct Expr {
 impl Expr {
     pub fn text(source: impl Into<String>) -> Self {
         let source = source.into();
-        // Hashed as a JSON string (not the bare bytes) so the identity matches
-        // what it always was: a JCS-normalised `Value::String`.
+        // Hashed as a JSON string, so the identity is what it always was.
         let hash = content_hash_of(&Value::String(source.clone()));
         Self { source, hash }
     }
@@ -155,8 +154,6 @@ impl Anchor {
         state.status().is_some_and(|s| self.terminal.contains(&s))
     }
 
-    /// Keep a full record of every observation, instead of collapsing a world
-    /// that did not move into a note that we looked again.
     pub fn retains_full(&self) -> bool {
         matches!(self.retain, Retain::Full)
     }

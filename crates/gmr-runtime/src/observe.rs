@@ -18,10 +18,7 @@ pub enum Observed {
         from: State,
         to: State,
     },
-    /// A full entry was written (retain: Full, or the world moved along a
-    /// direction nobody watches) but no rule matched, so the state itself did
-    /// not move. Distinct from `Transitioned` so consumers do not have to
-    /// infer "nothing really changed" from `from == to` themselves.
+    /// A full entry was written, but no rule matched and the state held still.
     Unchanged {
         state: State,
     },
@@ -29,8 +26,7 @@ pub enum Observed {
     Attempt {
         reason: ReasonClass,
         message: String,
-        /// The streak length after this attempt. Carried here instead of
-        /// making the caller re-fold the journal to learn what it just wrote.
+        /// The streak length after this attempt.
         attempts: u32,
     },
     Closed,
@@ -53,7 +49,7 @@ async fn observe(
     scheduler: &Scheduler,
     key: &AnchorKey,
 ) -> Result<Observed, RuntimeError> {
-    if !scheduler.has_lease() {
+    if !scheduler.leases_configured() {
         return observe_with(log, observer, key, Fence::Unleased).await;
     }
 

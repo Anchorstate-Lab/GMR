@@ -28,11 +28,8 @@ impl Platform {
     }
 }
 
-/// Manifest of a probe artifact: it describes and pins down the closure of one
-/// derivation rule. This concept — entrypoint, argv, env, a file closure with
-/// executable bits, and the OS/arch it was captured on — belongs to shell-style
-/// transports specifically; an HTTP transport has no use for any of it.
-/// `ProbeVersion` is its content hash — the version is earned, not declared.
+/// Pins down the closure of one derivation rule, in the terms a shell-style
+/// transport needs. `ProbeVersion` is its content hash — earned, not declared.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     pub schema: String,

@@ -8,9 +8,8 @@ use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::read::MemoryView;
 
-/// Everything about a memory: which anchors it's bound to, its sealed
-/// rationales, the memories it links to, and the content providers that can
-/// fetch it. No journal, no transport, no queue.
+/// Bindings, seals, links, and the providers that fetch content. No journal,
+/// no transport, no queue.
 pub struct MemoryLens {
     bindings: Arc<dyn BindingStore>,
     sealer: Arc<dyn Sealer>,
@@ -33,10 +32,8 @@ impl MemoryLens {
         }
     }
 
-    /// Records `binding`, stamping the moment with the bound anchor's current
-    /// journal head — so a later read can tell whether the anchor has moved
-    /// since. Ambiguous (and left `None`) when `binding` names zero or
-    /// several anchors: there is no single "the" head to stamp in that case.
+    /// Stamps the bound anchor's current head, so a later read can tell
+    /// whether the anchor moved since. `None` unless exactly one anchor.
     pub async fn bind(
         &self,
         log: &AnchorLog,
@@ -93,12 +90,8 @@ impl MemoryLens {
             .find(|p| p.provider() == &reference.provider)
     }
 
-    /// What the registered `ContentProvider` says `reference` is at right now.
-    /// The one path for "what counts as the current version" — callers that
-    /// need to stamp a version (`bind`, `reaffirm`) go through this instead of
-    /// reaching past the runtime to a specific provider's implementation, so
-    /// they cannot end up disagreeing with `read`/`edges` about what a
-    /// reference's current version is.
+    /// The one path for "what counts as the current version", so version
+    /// stamping cannot disagree with what `read`/`edges` report.
     pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
         let Some(provider) = self.provider_for(reference) else {
             return Ok(None);

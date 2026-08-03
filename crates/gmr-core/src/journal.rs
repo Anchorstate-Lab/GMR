@@ -46,9 +46,6 @@ pub enum Change {
     Restate { state: State },
 }
 
-/// Which kind of revision, without its payload. Counting revisions by kind is
-/// a lookup, not a label, so it gets a type: a bare string key lets a rename
-/// pass compilation while silently zeroing whoever looks the old name up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChangeKind {
@@ -492,9 +489,6 @@ mod tests {
 
     #[test]
     fn counting_revisions_by_kind_stays_the_same_shape_on_the_wire() {
-        // The kind is a lookup key, so it is a type rather than a string — but
-        // consumers already read these names out of `health --json`, so the
-        // type has to serialise to exactly the names it replaced.
         let counted: BTreeMap<ChangeKind, u32> = [
             (ChangeKind::Reprobe, 1),
             (ChangeKind::Retransition, 2),
@@ -509,8 +503,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::from_value::<BTreeMap<ChangeKind, u32>>(wire).unwrap(),
-            counted,
-            "and it must read back what an older build wrote"
+            counted
         );
     }
 

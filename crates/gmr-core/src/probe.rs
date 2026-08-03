@@ -33,8 +33,7 @@ string_newtype! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
-    /// The transport verified the declaration's full content closure byte for
-    /// byte (a shell transport's manifest and every file it names, for one).
+    /// The transport verified the declaration's content closure byte for byte.
     ContentAddressed,
     /// Only a declaration to go on; what actually ran cannot be proven.
     Declared,
@@ -121,9 +120,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // A stand-in for an earned version. What earns it (a manifest hash, or
-    // something else) is a transport's concern, not this crate's — these
-    // tests only need two distinct opaque `ProbeVersion`s to compare.
+    // What earns a version is a transport's concern; these only need two
+    // distinct opaque ones.
     fn version(sha: &str) -> ProbeVersion {
         ProbeVersion::new(sha.repeat(64))
     }

@@ -19,15 +19,10 @@ pub struct Passed {
 }
 
 impl Runtime {
-    /// Repairs a missing queue row for `key` without disturbing one that
-    /// already exists. What a routine sync should call — see
-    /// [`Scheduler::ensure_enqueued`] for why this must not reset backoff.
     pub async fn ensure_scheduled(&self, key: &AnchorKey) -> Result<bool, RuntimeError> {
         ensure_scheduled(&self.log, &self.scheduler, key).await
     }
 
-    /// Unconditionally makes `key` due now, clearing any backoff or parked
-    /// state. An explicit operator action, not something sync does for you.
     pub async fn requeue(&self, key: &AnchorKey) -> Result<bool, RuntimeError> {
         self.scheduler.requeue_now(key, Utc::now()).await
     }
@@ -75,9 +70,7 @@ async fn pass(
             }
             // Our failures and the world's do not share a backoff: a blown
             // expression blows up just the same sooner or later, and rushing to
-            // retry only spams the log. `attempts` came back with the Observed
-            // itself — no need to re-fold the journal just to learn what it
-            // was just told.
+            // retry only spams the log.
             Observed::Attempt {
                 reason, attempts, ..
             } => {
@@ -90,15 +83,10 @@ async fn pass(
                 }
             }
             other => {
-                // `Transitioned` only ever carries an actual move now — a
-                // no-op full write comes back as `Unchanged` instead, so
-                // there is no `from == to` case left to guard against here.
                 if matches!(other, Observed::Transitioned { .. }) {
                     out.moved += 1;
                 }
-                // The anchor's own declaration (terminal set, cadence) cannot
-                // have changed mid-observation, so one fold serves both checks
-                // instead of two separate re-reads of the journal.
+                // One fold serves both the terminal check and the cadence.
                 let anchor = fold(&log.entries(&ticket.anchor, 0).await?).map(|s| s.anchor);
                 let sealed = matches!(other, Observed::Transitioned { to, .. }
                     if anchor.as_ref().is_some_and(|a| a.is_terminal(to)));

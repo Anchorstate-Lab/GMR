@@ -10,11 +10,9 @@ use crate::observer::Observer;
 use crate::policy::Policy;
 use crate::scheduler::Scheduler;
 
-/// The runtime is a facade over four services, split by what they can
-/// touch: the log (journal), the observer (transports), memory (bindings /
-/// seals / links / content providers), and the scheduler (queue / policy).
-/// Each verb module takes only the services it actually needs, so a new
-/// verb no longer inherits every capability by default.
+/// A facade over four services, split by what each may touch. Verb modules
+/// take only the services they need, so a new verb inherits no capability by
+/// default.
 pub struct Runtime {
     pub(crate) log: AnchorLog,
     pub(crate) observer: Observer,

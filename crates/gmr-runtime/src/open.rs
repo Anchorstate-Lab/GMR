@@ -160,7 +160,7 @@ async fn seal_supersede(
 }
 
 fn accumulator_warning(scheduler: &Scheduler, anchor: &Anchor) -> Option<String> {
-    if scheduler.has_lease() {
+    if scheduler.leases_configured() {
         return None;
     }
     let reads_state = anchor

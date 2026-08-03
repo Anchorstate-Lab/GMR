@@ -5,9 +5,7 @@ use gmr_store::{Fence, Journal};
 
 use crate::error::RuntimeError;
 
-/// The append-only anchor log. Every verb that only needs to read or write
-/// entries goes through here — it does not carry the capability to invoke a
-/// probe, touch a memory binding, or reach the queue.
+/// The append-only anchor log. No probe, no bindings, no queue.
 pub struct AnchorLog {
     journal: Arc<dyn Journal>,
 }

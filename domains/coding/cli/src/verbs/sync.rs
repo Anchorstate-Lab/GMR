@@ -160,9 +160,6 @@ pub async fn run(
         for k in &drifted_schedule {
             println!("  ~= {k}");
         }
-        // Do not send them to `revise`: Change has no variant for either field,
-        // so there is currently no way to act on this at all. Say so plainly
-        // rather than naming a verb that will turn them away.
         println!(
             "\nThese two say how an anchor is run, not what it judges. They are fixed when the\n\
              anchor is opened and there is no revision channel for them yet — revise cannot move\n\
@@ -173,17 +170,10 @@ pub async fn run(
     Ok(0)
 }
 
-/// How the declaration on file differs from what the anchor is actually
-/// running. The two halves are not the same kind of problem and must not be
-/// reported as one: only the first has a way to act on it.
 struct Drift {
-    /// Probe, transition table, terminal set. Sealed criteria — `revise`
-    /// moves these and leaves a record when it does.
+    /// probe / transitions / terminal — revisable.
     criteria: bool,
-    /// `retain` and `cadence_secs`: how this anchor is *run*, not what it
-    /// judges. They are fixed at open time and have **no revision channel at
-    /// all** — `Change` has no variant for either — so pointing the reader at
-    /// `revise` here would send them at a wall with no door in it.
+    /// retain / cadence_secs — no revision channel exists.
     schedule: bool,
 }
 

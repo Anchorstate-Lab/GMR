@@ -63,11 +63,8 @@ pub enum Standing {
 pub struct Edges {
     /// What actually happened in the log after the cursor. Handed over once.
     pub edges: Vec<Edge>,
-    /// Conditions as of now — see [`Standing`]. `None` when a `status` filter
-    /// was asked for: that is a specific question about edges, and standing
-    /// conditions have no status to filter by, so it is not computed at all
-    /// rather than silently emitted empty (which a caller cannot tell apart
-    /// from "nothing is stale or rewritten right now").
+    /// Conditions as of now — see [`Standing`]. `None` means not computed
+    /// (a `status` filter was asked for), which is not the same as empty.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub standing: Option<Vec<Standing>>,
     pub cursor: Seq,
@@ -99,9 +96,6 @@ async fn changed_since(
 ) -> Result<Edges, RuntimeError> {
     let now = Utc::now();
     let mut edges = Vec::new();
-    // Asking for a status is asking a specific question about edges; standing
-    // conditions have no status to filter by, so skip computing them at all
-    // rather than throwing away work.
     let mut standing = status.is_none().then(Vec::new);
     let mut head = cursor;
 

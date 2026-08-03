@@ -53,10 +53,6 @@ async fn health(
     let mut initial: Option<State> = None;
     let mut last_failure = None;
 
-    // One walk decides both the canonical state (`s`) and everything below that
-    // needs a per-event view (restate timestamps, rationale hashes, the last
-    // failure) — a second hand-rolled loop over the same entries risked
-    // disagreeing with `s.revisions` about what counts as a restate.
     let s = scan(&entries, |_, entry, _| match entry {
         Entry::Open { state, .. } => initial = Some(state.clone()),
         Entry::Attempt {
@@ -79,9 +75,7 @@ async fn health(
     })
     .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
-    // Fetching sealed bytes is the one part of this that has to be async I/O,
-    // so it stays a separate pass — but only over the handful of rationales
-    // the scan above already identified, not the whole entry list again.
+    // Async I/O, so a separate pass — but only over what the scan identified.
     let mut rationale_sizes = Vec::new();
     for rationale in &rationale_hashes {
         if let Some(bytes) = memory.sealed(rationale).await? {

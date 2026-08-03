@@ -25,14 +25,11 @@ pub enum Disposition {
 /// wedges that anchor forever.
 #[async_trait]
 pub trait Queue: Send + Sync {
-    /// Unconditionally (re)schedules `anchor`, clearing any lease and parked
-    /// state — even if it was backing off or retired. A deliberate reset, not
-    /// something a routine sync should do to every anchor on every run.
+    /// Resets `anchor`: due now, lease and parked state cleared.
     async fn enqueue(&self, anchor: &AnchorKey, due: DateTime<Utc>) -> Result<(), StoreError>;
 
-    /// Schedules `anchor` only if it has no row yet. `Ok(true)` if a row was
-    /// inserted, `Ok(false)` if one already existed — in which case it is left
-    /// untouched, backoff/park state included.
+    /// Inserts only if absent. `Ok(false)` leaves an existing row untouched,
+    /// backoff and park included.
     async fn ensure_enqueued(
         &self,
         anchor: &AnchorKey,

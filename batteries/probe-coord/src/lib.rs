@@ -5,11 +5,8 @@ use sha2::{Digest, Sha256};
 
 pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
 
-/// The shape `report()` emits: `found/matched/missed/at/facts/candidates/exact/
-/// priority/matches`. Every anchor's rules read these fields as `obs.*`, so a
-/// silent field rename would silently change every anchor's judgement input.
-/// Not enforced yet — this only gives it a name to diff against, the way
-/// `gmr_core::OUTCOME_CONTRACT` names the transport's output shape.
+/// Names the shape `report()` emits, which anchors read as `obs.*`. Not
+/// enforced — it only gives a rename something to diff against.
 pub const COORD_REPORT_SCHEMA: &str = "gmr.probe-coord.v1";
 
 pub fn hash(s: &str) -> String {
