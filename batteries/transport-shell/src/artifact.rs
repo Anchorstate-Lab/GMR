@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use gmr_core::{ContentHash, Manifest, ProbeVersion, content_hash_of_bytes};
+use gmr_core::{ContentHash, ProbeVersion, content_hash_of_bytes};
+
+use crate::manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
 pub const MANIFEST_FILE: &str = "manifest.json";
 
@@ -56,11 +58,10 @@ impl Artifacts {
         let manifest: Manifest = serde_json::from_slice(&bytes)
             .map_err(|e| bad(format!("{version}'s manifest is not valid: {e}")))?;
 
-        if manifest.schema != gmr_core::MANIFEST_SCHEMA {
+        if manifest.schema != MANIFEST_SCHEMA {
             return Err(bad(format!(
                 "{version}'s manifest declares schema `{}`, but this build only accepts `{}`",
-                manifest.schema,
-                gmr_core::MANIFEST_SCHEMA
+                manifest.schema, MANIFEST_SCHEMA
             )));
         }
 
@@ -118,20 +119,20 @@ pub fn publish(
 ) -> Result<ProbeVersion, ArtifactError> {
     let mut files = Vec::new();
     collect(from, from, &mut files)?;
-    files.sort_by(|a: &gmr_core::FileEntry, b| a.path.cmp(&b.path));
+    files.sort_by(|a: &FileEntry, b| a.path.cmp(&b.path));
 
     if !files.iter().any(|f| f.path == entrypoint) {
         return Err(bad(format!("`{entrypoint}` is not in {from:?}")));
     }
 
     let manifest = Manifest {
-        schema: gmr_core::MANIFEST_SCHEMA.to_owned(),
+        schema: MANIFEST_SCHEMA.to_owned(),
         kind,
         entrypoint: entrypoint.to_owned(),
         args,
         env,
         files,
-        platform: gmr_core::Platform::host(),
+        platform: Platform::host(),
         output_contract: gmr_core::OUTCOME_CONTRACT.to_owned(),
     };
     let version = manifest.version();
@@ -153,11 +154,7 @@ pub fn publish(
     Ok(version)
 }
 
-fn collect(
-    base: &Path,
-    dir: &Path,
-    out: &mut Vec<gmr_core::FileEntry>,
-) -> Result<(), ArtifactError> {
+fn collect(base: &Path, dir: &Path, out: &mut Vec<FileEntry>) -> Result<(), ArtifactError> {
     let entries =
         std::fs::read_dir(dir).map_err(|e| bad(format!("cannot read directory {dir:?}: {e}")))?;
     for entry in entries {
@@ -173,7 +170,7 @@ fn collect(
             .to_string_lossy()
             .replace('\\', "/");
         let bytes = std::fs::read(&path).map_err(|e| bad(format!("cannot read {path:?}: {e}")))?;
-        out.push(gmr_core::FileEntry {
+        out.push(FileEntry {
             path: rel,
             sha256: content_hash_of_bytes(&bytes),
             executable: is_executable(&path),

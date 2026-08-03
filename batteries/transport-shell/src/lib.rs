@@ -1,4 +1,5 @@
 pub mod artifact;
+pub mod manifest;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 
@@ -15,6 +16,7 @@ use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
 
 pub use artifact::{ArtifactError, Artifacts, publish};
 pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
+pub use manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
 /// Executes only artifacts. The anchor names an artifact; this transport
 /// resolves it, verifies every byte, then runs its entrypoint. The version in

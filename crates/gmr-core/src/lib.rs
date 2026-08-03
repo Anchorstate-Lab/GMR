@@ -15,6 +15,6 @@ pub use journal::{
 };
 pub use memory::{Binding, ExternalId, Link, LinkKind, ProviderId, Ref, Version};
 pub use probe::{
-    Derivation, FactAddress, Facts, FileEntry, Kind, MANIFEST_SCHEMA, Manifest, OUTCOME_CONTRACT,
-    Outcome, Platform, ProbeRef, ProbeVersion, Verifiability,
+    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Outcome, ProbeRef, ProbeVersion,
+    Verifiability,
 };
