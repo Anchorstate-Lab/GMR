@@ -774,7 +774,10 @@ async fn a_misspelt_direction_is_loud_at_the_first_real_observation() {
         .await;
 
     let seen = w.observe().await;
-    let Observed::Attempt { reason, message } = &seen else {
+    let Observed::Attempt {
+        reason, message, ..
+    } = &seen
+    else {
         panic!("a misspelled direction must be loud, not silently false forever: {seen:?}")
     };
     assert_eq!(*reason, gmr_core::ReasonClass::Unevaluable);

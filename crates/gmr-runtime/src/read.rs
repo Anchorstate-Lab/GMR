@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use gmr_core::{Anchor, AnchorKey, Entry, Link, Outcome, Ref, Seq, State, StatusId, Version, fold};
+use gmr_core::{Anchor, AnchorKey, Link, Outcome, Ref, State, StatusId, Version, scan};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -64,7 +64,13 @@ async fn read(
     key: &AnchorKey,
 ) -> Result<AnchorView, RuntimeError> {
     let entries = log.entries(key, 0).await?;
-    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    let mut sightings: u64 = 0;
+    let s = scan(&entries, |_, entry, _| {
+        if entry.is_sighting() {
+            sightings += 1;
+        }
+    })
+    .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
     let mut memories = Vec::new();
     for binding in memory.bindings_on(key).await? {
@@ -87,7 +93,7 @@ async fn read(
         attempts: s.attempts,
         entered_at: s.entered_at,
         last_sighting: s.last_sighting,
-        sightings: count_sightings(&entries),
+        sightings,
         memories,
     })
 }
@@ -115,8 +121,4 @@ async fn read_all(log: &AnchorLog, memory: &MemoryLens) -> Result<Vec<AnchorView
         out.push(read(log, memory, &key).await?);
     }
     Ok(out)
-}
-
-fn count_sightings(entries: &[(Seq, Entry)]) -> u64 {
-    entries.iter().filter(|(_, e)| e.is_sighting()).count() as u64
 }

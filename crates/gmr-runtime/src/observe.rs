@@ -22,6 +22,9 @@ pub enum Observed {
     Attempt {
         reason: ReasonClass,
         message: String,
+        /// The streak length after this attempt. Carried here instead of
+        /// making the caller re-fold the journal to learn what it just wrote.
+        attempts: u32,
     },
     Closed,
 }
@@ -81,7 +84,9 @@ pub(crate) async fn observe_with(
 
     let sighted = match observer.invoke(&s.anchor, s.position()).await {
         Ok(o) => o,
-        Err(e) => return record_attempt(log, key, e.reason, e.message, fence).await,
+        Err(e) => {
+            return record_attempt(log, key, e.reason, e.message, fence, s.attempts + 1).await;
+        }
     };
 
     let observation = observe_into(&s.anchor, sighted);
@@ -91,7 +96,15 @@ pub(crate) async fn observe_with(
         Transitioned::To(next) => next,
         Transitioned::Unchanged => s.state.clone(),
         Transitioned::Unevaluable(message) => {
-            return record_attempt(log, key, ReasonClass::Unevaluable, message, fence).await;
+            return record_attempt(
+                log,
+                key,
+                ReasonClass::Unevaluable,
+                message,
+                fence,
+                s.attempts + 1,
+            )
+            .await;
         }
     };
 
@@ -141,6 +154,7 @@ async fn record_attempt(
     reason: ReasonClass,
     message: String,
     fence: Fence,
+    attempts: u32,
 ) -> Result<Observed, RuntimeError> {
     log.append(
         key,
@@ -152,7 +166,11 @@ async fn record_attempt(
         fence,
     )
     .await?;
-    Ok(Observed::Attempt { reason, message })
+    Ok(Observed::Attempt {
+        reason,
+        message,
+        attempts,
+    })
 }
 
 pub(crate) fn observe_into(anchor: &Anchor, sighted: gmr_probe::Sighted) -> Observation {

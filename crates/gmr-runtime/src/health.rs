@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
-use gmr_core::{AnchorKey, Change, Entry, Seq, State, fold};
+use gmr_core::{AnchorKey, Change, ContentHash, Entry, Seq, State, fold, scan};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -47,35 +47,45 @@ async fn health(
     key: &AnchorKey,
 ) -> Result<AnchorHealth, RuntimeError> {
     let entries = log.entries(key, 0).await?;
-    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
     let mut restate_at: Vec<DateTime<Utc>> = Vec::new();
-    let mut rationale_sizes = Vec::new();
+    let mut rationale_hashes: Vec<ContentHash> = Vec::new();
     let mut initial: Option<State> = None;
     let mut last_failure = None;
 
-    for (_, entry) in &entries {
-        match entry {
-            Entry::Open { state, .. } => initial = Some(state.clone()),
-            Entry::Attempt {
-                reason, message, ..
-            } => {
-                last_failure = Some(format!("{reason:?}: {message}"));
+    // One walk decides both the canonical state (`s`) and everything below that
+    // needs a per-event view (restate timestamps, rationale hashes, the last
+    // failure) — a second hand-rolled loop over the same entries risked
+    // disagreeing with `s.revisions` about what counts as a restate.
+    let s = scan(&entries, |_, entry, _| match entry {
+        Entry::Open { state, .. } => initial = Some(state.clone()),
+        Entry::Attempt {
+            reason, message, ..
+        } => {
+            last_failure = Some(format!("{reason:?}: {message}"));
+        }
+        Entry::Revise {
+            change,
+            rationale,
+            at,
+            ..
+        } => {
+            if matches!(change, Change::Restate { .. }) {
+                restate_at.push(*at);
             }
-            Entry::Revise {
-                change,
-                rationale,
-                at,
-                ..
-            } => {
-                if matches!(change, Change::Restate { .. }) {
-                    restate_at.push(*at);
-                }
-                if let Some(bytes) = memory.sealed(rationale).await? {
-                    rationale_sizes.push(bytes.len());
-                }
-            }
-            _ => {}
+            rationale_hashes.push(rationale.clone());
+        }
+        _ => {}
+    })
+    .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+
+    // Fetching sealed bytes is the one part of this that has to be async I/O,
+    // so it stays a separate pass — but only over the handful of rationales
+    // the scan above already identified, not the whole entry list again.
+    let mut rationale_sizes = Vec::new();
+    for rationale in &rationale_hashes {
+        if let Some(bytes) = memory.sealed(rationale).await? {
+            rationale_sizes.push(bytes.len());
         }
     }
 

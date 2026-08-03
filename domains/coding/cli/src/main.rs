@@ -93,7 +93,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Reaffirm { path } => verbs::reaffirm::run(&rt, &root, path, json).await,
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Edges { since, status } => verbs::edges::run(&rt, since, status, json).await,
-        Command::Health { key } => verbs::edges::health(&rt, key, json).await,
+        Command::Health { key } => verbs::health::run(&rt, key, json).await,
         Command::Pass => verbs::pass::run(&rt, json).await,
         Command::Doctor => verbs::doctor::run(&rt, json).await,
     }

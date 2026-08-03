@@ -66,16 +66,17 @@ async fn pass(
             }
             // Our failures and the world's do not share a backoff: a blown
             // expression blows up just the same sooner or later, and rushing to
-            // retry only spams the log.
-            Observed::Attempt { reason, .. } => {
+            // retry only spams the log. `attempts` came back with the Observed
+            // itself — no need to re-fold the journal just to learn what it
+            // was just told.
+            Observed::Attempt {
+                reason, attempts, ..
+            } => {
                 out.unseen += 1;
-                let attempts = fold(&log.entries(&ticket.anchor, 0).await?)
-                    .map(|s| s.attempts)
-                    .unwrap_or(1);
                 Disposition::Backoff {
                     after_secs: match reason {
                         ReasonClass::Unevaluable => scheduler.policy().backoff_cap_secs as i64,
-                        _ => scheduler.policy().backoff_secs(attempts),
+                        _ => scheduler.policy().backoff_secs(*attempts),
                     },
                 }
             }
@@ -83,16 +84,22 @@ async fn pass(
                 if matches!(other, Observed::Transitioned { from, to } if from != to) {
                     out.moved += 1;
                 }
+                // The anchor's own declaration (terminal set, cadence) cannot
+                // have changed mid-observation, so one fold serves both checks
+                // instead of two separate re-reads of the journal.
+                let anchor = fold(&log.entries(&ticket.anchor, 0).await?).map(|s| s.anchor);
                 let sealed = matches!(other, Observed::Transitioned { to, .. }
-                    if fold(&log.entries(&ticket.anchor, 0).await?)
-                        .is_some_and(|s| s.anchor.is_terminal(to)));
+                    if anchor.as_ref().is_some_and(|a| a.is_terminal(to)));
                 if sealed {
                     out.retired += 1;
                     Disposition::Retire
                 } else {
-                    Disposition::Reschedule {
-                        after_secs: cadence_of(log, scheduler, &ticket.anchor).await?,
-                    }
+                    let after_secs = anchor
+                        .as_ref()
+                        .and_then(|a| a.cadence_secs)
+                        .unwrap_or(scheduler.policy().cadence_secs)
+                        as i64;
+                    Disposition::Reschedule { after_secs }
                 }
             }
         };

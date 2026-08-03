@@ -2,6 +2,7 @@ pub mod bind;
 pub mod close;
 pub mod doctor;
 pub mod edges;
+pub mod health;
 pub mod observe;
 pub mod open;
 pub mod pass;
