@@ -115,7 +115,7 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let still_ref = if gmr_core::journal::always_full(&s.anchor) {
+    let still_ref = if s.anchor.retains_full() {
         None
     } else {
         s.latest

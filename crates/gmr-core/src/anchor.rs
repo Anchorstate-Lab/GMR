@@ -154,6 +154,12 @@ impl Anchor {
     pub fn is_terminal(&self, state: &State) -> bool {
         state.status().is_some_and(|s| self.terminal.contains(&s))
     }
+
+    /// Keep a full record of every observation, instead of collapsing a world
+    /// that did not move into a note that we looked again.
+    pub fn retains_full(&self) -> bool {
+        matches!(self.retain, Retain::Full)
+    }
 }
 
 #[cfg(test)]

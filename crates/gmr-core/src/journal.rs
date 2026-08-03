@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::addr::ContentHash;
-use crate::anchor::{Anchor, Retain, State, StatusId, Transitions};
+use crate::anchor::{Anchor, State, StatusId, Transitions};
 use crate::probe::{Derivation, FactAddress, Facts, Outcome, ProbeRef};
 
 pub type Seq = u64;
@@ -276,13 +276,10 @@ fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
     }
 }
 
-pub fn always_full(anchor: &Anchor) -> bool {
-    matches!(anchor.retain, Retain::Full)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::anchor::Retain;
     use crate::anchor::{AnchorKey, Expr, POSITION, Rule, STATUS};
     use crate::probe::{Kind, ProbeRef, ProbeVersion, Verifiability};
     use serde_json::json;
