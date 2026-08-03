@@ -71,7 +71,8 @@ pub async fn run(
 
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
-    let mut drifted_declaration = Vec::new();
+    let mut drifted_criteria = Vec::new();
+    let mut drifted_schedule = Vec::new();
     let mut warnings = Vec::new();
 
     let mut scheduled = 0;
@@ -82,8 +83,12 @@ pub async fn run(
         }
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
-            if differs(&view.anchor, decl)? {
-                drifted_declaration.push(decl.key.clone());
+            let drift = differs(&view.anchor, decl)?;
+            if drift.criteria {
+                drifted_criteria.push(decl.key.clone());
+            }
+            if drift.schedule {
+                drifted_schedule.push(decl.key.clone());
             }
             continue;
         }
@@ -113,7 +118,9 @@ pub async fn run(
         println!(
             "{}",
             serde_json::json!({
-                "opened": opened, "declaration_drifted": drifted_declaration,
+                "opened": opened,
+                "criteria_drifted": drifted_criteria,
+                "schedule_drifted": drifted_schedule,
                 "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
             })
         );
@@ -132,12 +139,12 @@ pub async fn run(
     for w in &warnings {
         println!("  ! {w}");
     }
-    if !drifted_declaration.is_empty() {
+    if !drifted_criteria.is_empty() {
         println!(
             "\n{} anchors have declarations that differ from their current criteria:",
-            drifted_declaration.len()
+            drifted_criteria.len()
         );
-        for k in &drifted_declaration {
+        for k in &drifted_criteria {
             println!("  != {k}");
         }
         println!(
@@ -145,13 +152,46 @@ pub async fn run(
              Decide whether to accept it, then use revise so it leaves a sealed record."
         );
     }
+    if !drifted_schedule.is_empty() {
+        println!(
+            "\n{} anchors declare a retain/cadence that is not the one they are running:",
+            drifted_schedule.len()
+        );
+        for k in &drifted_schedule {
+            println!("  ~= {k}");
+        }
+        // Do not send them to `revise`: Change has no variant for either field,
+        // so there is currently no way to act on this at all. Say so plainly
+        // rather than naming a verb that will turn them away.
+        println!(
+            "\nThese two say how an anchor is run, not what it judges. They are fixed when the\n\
+             anchor is opened and there is no revision channel for them yet — revise cannot move\n\
+             them either. The declaration on file is not in force; the anchor keeps what it was\n\
+             opened with. To actually change one today, the anchor has to be superseded."
+        );
+    }
     Ok(0)
 }
 
-fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
-    Ok(anchor.probe != decl.to_probe()?
-        || anchor.transitions != decl.to_transitions()?
-        || anchor.terminal != rules::terminal(&decl.terminal)
-        || anchor.retain != decl.retain()
-        || anchor.cadence_secs != decl.cadence_secs)
+/// How the declaration on file differs from what the anchor is actually
+/// running. The two halves are not the same kind of problem and must not be
+/// reported as one: only the first has a way to act on it.
+struct Drift {
+    /// Probe, transition table, terminal set. Sealed criteria — `revise`
+    /// moves these and leaves a record when it does.
+    criteria: bool,
+    /// `retain` and `cadence_secs`: how this anchor is *run*, not what it
+    /// judges. They are fixed at open time and have **no revision channel at
+    /// all** — `Change` has no variant for either — so pointing the reader at
+    /// `revise` here would send them at a wall with no door in it.
+    schedule: bool,
+}
+
+fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<Drift, CliError> {
+    Ok(Drift {
+        criteria: anchor.probe != decl.to_probe()?
+            || anchor.transitions != decl.to_transitions()?
+            || anchor.terminal != rules::terminal(&decl.terminal),
+        schedule: anchor.retain != decl.retain() || anchor.cadence_secs != decl.cadence_secs,
+    })
 }
