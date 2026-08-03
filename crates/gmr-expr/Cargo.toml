@@ -17,3 +17,4 @@ workspace = true
 
 [build-dependencies]
 sha2 = { workspace = true }
+toml = { workspace = true }
