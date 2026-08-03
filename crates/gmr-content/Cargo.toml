@@ -1,0 +1,15 @@
+[package]
+name = "gmr-content"
+description = "取回的契约：引用 → 字节与版本。提供方的实现是电池，不在这里。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gmr-core = { path = "../gmr-core" }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

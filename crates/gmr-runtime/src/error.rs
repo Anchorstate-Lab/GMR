@@ -40,7 +40,7 @@ pub enum RuntimeError {
     Store(#[from] gmr_store::StoreError),
 
     #[error(transparent)]
-    Content(#[from] crate::content::ContentError),
+    Content(#[from] gmr_content::ContentError),
 }
 
 impl RuntimeError {

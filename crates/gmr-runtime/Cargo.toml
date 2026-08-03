@@ -1,6 +1,6 @@
 [package]
 name = "gmr-runtime"
-description = "编排：把 core / expr / probe / store 装成 open · observe · bind · revise · close · read。"
+description = "编排：把 core / expr / probe / content / store 装成 open · observe · bind · revise · close · read。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,6 +12,7 @@ gmr-expr = { path = "../gmr-expr" }
 # default-features = false：runtime 只要 Transport trait，不替使用方
 # 选传输方式。开哪个 transport 由门面/产品决定。
 gmr-probe = { path = "../gmr-probe", default-features = false }
+gmr-content = { path = "../gmr-content" }
 gmr-store = { path = "../gmr-store" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -27,6 +28,7 @@ gmr-transport-shell = { path = "../../batteries/transport-shell", features = ["t
 async-trait = { workspace = true }
 gmr-store = { path = "../gmr-store", features = ["testkit"] }
 gmr-probe = { path = "../gmr-probe" }
+gmr-content = { path = "../gmr-content" }
 tokio = { workspace = true }
 tempfile = { workspace = true }
 

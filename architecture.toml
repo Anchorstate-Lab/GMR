@@ -85,6 +85,12 @@ layer  = "substrate"
 kind   = "package"
 path   = "crates/gmr-probe"
 [[member]]
+name          = "gmr-content"
+may_depend_on = ["gmr-core"]
+layer  = "substrate"
+kind   = "package"
+path   = "crates/gmr-content"
+[[member]]
 name          = "gmr-store"
 may_depend_on = ["gmr-core"]
 layer  = "substrate"
@@ -93,13 +99,13 @@ path   = "crates/gmr-store"
 forbidden_default = ["db"]  # 后端是 feature：默认 feature 集里不许有数据库
 [[member]]
 name          = "gmr-runtime"
-may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-store"]
+may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-content", "gmr-store"]
 layer  = "substrate"
 kind   = "package"
 path   = "crates/gmr-runtime"
 [[member]]
 name          = "gmr"
-may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-store", "gmr-runtime"]
+may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-content", "gmr-store", "gmr-runtime"]
 layer  = "substrate"
 kind   = "package"
 path   = "crates/gmr"

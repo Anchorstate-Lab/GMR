@@ -469,11 +469,21 @@ dependencies = [
 name = "gmr"
 version = "0.1.0"
 dependencies = [
+ "gmr-content",
  "gmr-core",
  "gmr-expr",
  "gmr-probe",
  "gmr-runtime",
  "gmr-store",
+]
+
+[[package]]
+name = "gmr-content"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "gmr-core",
+ "thiserror",
 ]
 
 [[package]]
@@ -522,8 +532,8 @@ name = "gmr-provider-git"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "gmr-content",
  "gmr-core",
- "gmr-runtime",
  "tokio",
 ]
 
@@ -533,6 +543,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "gmr-content",
  "gmr-core",
  "gmr-expr",
  "gmr-probe",

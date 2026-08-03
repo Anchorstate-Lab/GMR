@@ -3,10 +3,10 @@ use std::sync::Arc;
 use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Version, fold};
 use gmr_store::{BindingRecord, BindingStore, LinkStore, Sealer};
 
-use crate::content::ContentProvider;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::read::MemoryView;
+use gmr_content::ContentProvider;
 
 /// Bindings, seals, links, and the providers that fetch content. No journal,
 /// no transport, no queue.

@@ -5,8 +5,9 @@
 #   gmr-core          名词：探针声明 · 锚 · 条目 · 绑定；它们的地址；日志→状态的纯折叠
 #   gmr-expr          求值：JSON + 命名槽 → 值 | ⌀ | ⊥ₑ。自带 EVALUATOR_VERSION
 #   gmr-probe         调用的契约：探针声明 → 输出。传输的实现是电池
+#   gmr-content       取回的契约：引用 → 字节与版本。提供方的实现是电池
 #   gmr-store         存储：契约（只出动词）+ 可选后端（feature，不是包）
-#   gmr-runtime       编排：把上面四个装成 open/observe/bind/revise/close/read
+#   gmr-runtime       编排：把上面五个装成 open/observe/bind/revise/close/read
 #   gmr               门面。只许 pub use，不许定义任何类型或函数
 
 # batteries/ 是可复用的具体实现：传输、内容提供方。**基底 ship 接口，
@@ -25,6 +26,7 @@ members = [
     "crates/gmr-core",
     "crates/gmr-expr",
     "crates/gmr-probe",
+    "crates/gmr-content",
     "crates/gmr-store",
     "crates/gmr-runtime",
     "crates/gmr",

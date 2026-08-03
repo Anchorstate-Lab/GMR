@@ -8,7 +8,7 @@ license.workspace = true
 
 [dependencies]
 gmr-core = { path = "../../crates/gmr-core" }
-gmr-runtime = { path = "../../crates/gmr-runtime" }
+gmr-content = { path = "../../crates/gmr-content" }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 

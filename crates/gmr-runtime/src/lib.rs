@@ -1,7 +1,6 @@
 pub mod assembly;
 pub mod bind;
 pub mod close;
-pub mod content;
 pub mod edges;
 pub mod error;
 pub mod health;
@@ -20,7 +19,6 @@ mod seal_context;
 mod translate;
 
 pub use assembly::{Runtime, RuntimeBuilder};
-pub use content::{ContentError, ContentErrorCode, ContentProvider, Fetched};
 pub use edges::{Edge, Edges, Standing};
 pub use error::RuntimeError;
 pub use health::{AnchorHealth, CorpusHealth};

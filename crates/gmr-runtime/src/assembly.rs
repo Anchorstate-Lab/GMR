@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer};
 
-use crate::content::ContentProvider;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
 use crate::observer::Observer;
 use crate::policy::Policy;
 use crate::scheduler::Scheduler;
+use gmr_content::ContentProvider;
 
 /// A facade over four services, split by what each may touch. Verb modules
 /// take only the services they need, so a new verb inherits no capability by
