@@ -38,10 +38,10 @@ impl Runtime {
             "evaluator_version": gmr_expr::EVALUATOR_VERSION,
         });
         let context = self
-            .bindings
+            .sealer
             .seal(&serde_json::to_vec(&context).expect("the context always serialises"))
             .await?;
-        let rationale = self.bindings.seal(rationale).await?;
+        let rationale = self.sealer.seal(rationale).await?;
 
         let warnings = match (&change, s.latest.as_ref()) {
             (Change::Retransition { transitions }, Some(latest)) => {

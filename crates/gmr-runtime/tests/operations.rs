@@ -32,10 +32,12 @@ impl World {
 
     fn with(policy: Policy, queue: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
+        let bindings = Arc::new(MemoryBindings::default());
         let mut b = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(Arc::new(MemoryJournal::default()))
-            .bindings(Arc::new(MemoryBindings::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings)
             .policy(policy);
         if queue {
             b = b.queue(Arc::new(MemoryQueue::default()));

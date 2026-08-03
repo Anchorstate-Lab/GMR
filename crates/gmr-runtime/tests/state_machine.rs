@@ -27,10 +27,12 @@ struct World {
 impl World {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
+        let bindings = Arc::new(MemoryBindings::default());
         let rt = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(Arc::new(MemoryJournal::default()))
-            .bindings(Arc::new(MemoryBindings::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings)
             .build();
         Self { dir, rt }
     }
@@ -224,10 +226,12 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
     std::fs::write(dir.path().join("a.json"), r#"{"v":1}"#).unwrap();
     std::fs::write(dir.path().join("b.json"), r#"{"v":2}"#).unwrap();
 
+    let bindings = Arc::new(MemoryBindings::default());
     let rt = Runtime::builder()
         .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .journal(Arc::new(MemoryJournal::default()))
-        .bindings(Arc::new(MemoryBindings::default()))
+        .bindings(bindings.clone())
+        .sealer(bindings)
         .build();
 
     let opened = rt
@@ -292,10 +296,12 @@ async fn a_transition_that_cannot_be_evaluated_must_be_loud() {
 #[tokio::test]
 async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
     let dir = tempfile::tempdir().unwrap();
+    let bindings = Arc::new(MemoryBindings::default());
     let rt = Runtime::builder()
         .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .journal(Arc::new(MemoryJournal::default()))
-        .bindings(Arc::new(MemoryBindings::default()))
+        .bindings(bindings.clone())
+        .sealer(bindings)
         .build();
 
     rt.open(OpenRequest {
@@ -443,7 +449,7 @@ async fn accepting_a_change_by_hand_is_sealed() {
     assert_eq!(w.status().await.as_deref(), Some("ok"));
     assert_ne!(revised.context, revised.rationale);
     assert!(
-        w.rt.bindings()
+        w.rt.sealer()
             .sealed(&revised.rationale)
             .await
             .unwrap()
@@ -690,7 +696,7 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
     let cited = w.rt.read(&heir).await.unwrap().anchor.supersedes.unwrap();
     assert_eq!(cited.key, key());
     assert_eq!(
-        w.rt.bindings().sealed(&cited.rationale).await.unwrap(),
+        w.rt.sealer().sealed(&cited.rationale).await.unwrap(),
         Some("threshold was wrong; 10 was too low".as_bytes().to_vec()),
     );
 

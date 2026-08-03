@@ -56,7 +56,7 @@ impl Runtime {
                     if matches!(change, Change::Restate { .. }) {
                         restate_at.push(*at);
                     }
-                    if let Some(bytes) = self.bindings.sealed(rationale).await? {
+                    if let Some(bytes) = self.sealer.sealed(rationale).await? {
                         rationale_sizes.push(bytes.len());
                     }
                 }

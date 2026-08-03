@@ -79,6 +79,7 @@ impl World {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("memories")).unwrap();
         std::fs::write(dir.path().join("world.json"), r#"{"x":1}"#).unwrap();
+        let bindings = Arc::new(MemoryBindings::default());
         let runtime = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .provider(Arc::new(Versioned::new(
@@ -86,7 +87,8 @@ impl World {
                 keeps_history,
             )))
             .journal(Arc::new(MemoryJournal::default()))
-            .bindings(Arc::new(MemoryBindings::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings)
             .build();
         Self { dir, runtime }
     }

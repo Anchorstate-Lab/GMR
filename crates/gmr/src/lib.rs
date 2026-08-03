@@ -22,5 +22,6 @@ pub use gmr_runtime::{
     Sighting, Standing, Supersede,
 };
 pub use gmr_store::{
-    BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, Queue, StoreError, Ticket,
+    BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, Queue, Sealer, StoreError,
+    Ticket,
 };

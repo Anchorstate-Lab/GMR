@@ -22,10 +22,10 @@ impl Runtime {
             "entered_at": state.entered_at,
         });
         let context = self
-            .bindings
+            .sealer
             .seal(&serde_json::to_vec(&context).expect("the context always serialises"))
             .await?;
-        let rationale = self.bindings.seal(rationale).await?;
+        let rationale = self.sealer.seal(rationale).await?;
 
         self.journal
             .append(

@@ -1,4 +1,4 @@
-use crate::{BindingStore, StoreError};
+use crate::{BindingStore, Sealer, StoreError};
 use async_trait::async_trait;
 use gmr_core::{AnchorKey, Binding, ContentHash, Ref, canonicalize, content_hash_of_bytes};
 use sqlx::{Row, SqlitePool};
@@ -92,7 +92,10 @@ impl BindingStore for SqliteBindings {
         .map_err(db_err)?;
         decode_all(rows)
     }
+}
 
+#[async_trait]
+impl Sealer for SqliteBindings {
     async fn seal(&self, bytes: &[u8]) -> Result<ContentHash, StoreError> {
         let address = content_hash_of_bytes(bytes);
         sqlx::query("INSERT OR IGNORE INTO sealed (address, body) VALUES (?1, ?2)")

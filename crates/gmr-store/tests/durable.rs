@@ -72,7 +72,7 @@ async fn the_log_refuses_rewriting_itself() {
 
 #[tokio::test]
 async fn sealed_records_refuse_to_be_rewritten() {
-    use gmr_store::BindingStore;
+    use gmr_store::Sealer;
     let store = gmr_store::sqlite::open_in_memory().await.unwrap();
     let address = store.bindings().seal(b"why").await.unwrap();
 

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Binding, ContentHash, Ref};
+use gmr_core::{AnchorKey, Binding, Ref};
 
 use crate::error::StoreError;
 
@@ -12,8 +12,4 @@ pub trait BindingStore: Send + Sync {
     async fn binding_of(&self, reference: &Ref) -> Result<Option<Binding>, StoreError>;
 
     async fn all(&self) -> Result<Vec<Binding>, StoreError>;
-
-    async fn seal(&self, bytes: &[u8]) -> Result<ContentHash, StoreError>;
-
-    async fn sealed(&self, address: &ContentHash) -> Result<Option<Vec<u8>>, StoreError>;
 }

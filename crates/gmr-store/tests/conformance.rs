@@ -3,7 +3,7 @@ use gmr_core::{
     ProbeRef, ProbeVersion, ReasonClass, Ref, Retain, Rule, State, Transitions, Version, Versions,
     fold,
 };
-use gmr_store::{BindingStore, ErrorCode, ErrorKind, Fence, Journal};
+use gmr_store::{BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()
@@ -278,7 +278,7 @@ async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
     assert_eq!(b.bindings_on(&AnchorKey::new("to")).await.unwrap().len(), 1);
 }
 
-async fn sealing_is_content_addressed_and_idempotent<B: BindingStore>(b: &B) {
+async fn sealing_is_content_addressed_and_idempotent<S: Sealer>(b: &S) {
     let bytes = "I accepted the move, but not the signature change".as_bytes();
     let a1 = b.seal(bytes).await.unwrap();
     let a2 = b.seal(bytes).await.unwrap();

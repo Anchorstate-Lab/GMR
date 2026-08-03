@@ -8,6 +8,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::bindings::BindingStore;
 use crate::error::StoreError;
+use crate::sealer::Sealer;
 use crate::journal::{Fence, Journal};
 use crate::queue::{Disposition, Queue, Ticket};
 
@@ -121,7 +122,10 @@ impl BindingStore for MemoryBindings {
     async fn all(&self) -> Result<Vec<Binding>, StoreError> {
         Ok(self.latest())
     }
+}
 
+#[async_trait]
+impl Sealer for MemoryBindings {
     async fn seal(&self, bytes: &[u8]) -> Result<ContentHash, StoreError> {
         let address = content_hash_of_bytes(bytes);
         self.inner

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gmr_store::{BindingStore, Journal, Queue};
+use gmr_store::{BindingStore, Journal, Queue, Sealer};
 
 use crate::content::ContentProvider;
 use crate::error::RuntimeError;
@@ -10,6 +10,7 @@ pub struct Runtime {
     pub(crate) transports: Vec<Arc<dyn gmr_probe::Transport>>,
     pub(crate) journal: Arc<dyn Journal>,
     pub(crate) bindings: Arc<dyn BindingStore>,
+    pub(crate) sealer: Arc<dyn Sealer>,
     pub(crate) providers: Vec<Arc<dyn ContentProvider>>,
     pub(crate) queue: Option<Arc<dyn Queue>>,
     pub(crate) policy: Policy,
@@ -26,6 +27,10 @@ impl Runtime {
 
     pub fn bindings(&self) -> &dyn BindingStore {
         self.bindings.as_ref()
+    }
+
+    pub fn sealer(&self) -> &dyn Sealer {
+        self.sealer.as_ref()
     }
 
     pub fn policy(&self) -> &Policy {
@@ -46,6 +51,7 @@ pub struct RuntimeBuilder {
     transports: Vec<Arc<dyn gmr_probe::Transport>>,
     journal: Option<Arc<dyn Journal>>,
     bindings: Option<Arc<dyn BindingStore>>,
+    sealer: Option<Arc<dyn Sealer>>,
     providers: Vec<Arc<dyn ContentProvider>>,
     queue: Option<Arc<dyn Queue>>,
     policy: Option<Policy>,
@@ -64,6 +70,11 @@ impl RuntimeBuilder {
 
     pub fn bindings(mut self, b: Arc<dyn BindingStore>) -> Self {
         self.bindings = Some(b);
+        self
+    }
+
+    pub fn sealer(mut self, s: Arc<dyn Sealer>) -> Self {
+        self.sealer = Some(s);
         self
     }
 
@@ -87,6 +98,7 @@ impl RuntimeBuilder {
             transports: self.transports,
             journal: self.journal.expect("a Journal is not optional"),
             bindings: self.bindings.expect("a BindingStore is not optional"),
+            sealer: self.sealer.expect("a Sealer is not optional"),
             providers: self.providers,
             queue: self.queue,
             policy: self.policy.unwrap_or_default(),

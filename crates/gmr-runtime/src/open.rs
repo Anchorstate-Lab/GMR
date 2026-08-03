@@ -132,7 +132,7 @@ impl Runtime {
         }
         Ok(Superseded {
             key: s.key,
-            rationale: self.bindings.seal(&s.rationale).await?,
+            rationale: self.sealer.seal(&s.rationale).await?,
         })
     }
 

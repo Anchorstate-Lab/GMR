@@ -64,6 +64,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
     )
     .unwrap();
 
+    let bindings = Arc::new(MemoryBindings::default());
     let rt = Runtime::builder()
         .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .provider(Arc::new(Files {
@@ -71,7 +72,8 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
             id: ProviderId::new("git"),
         }))
         .journal(Arc::new(MemoryJournal::default()))
-        .bindings(Arc::new(MemoryBindings::default()))
+        .bindings(bindings.clone())
+        .sealer(bindings)
         .build();
 
     let key = AnchorKey::new("core::modules");

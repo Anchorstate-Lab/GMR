@@ -3,7 +3,7 @@ use std::sync::Arc;
 use gmr_core::{AnchorKey, Change, Entry, Expr, Retain, Rule, State, Transitions};
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal};
-use gmr_store::{BindingStore, Journal};
+use gmr_store::{Journal, Sealer};
 use gmr_transport_shell::Shell;
 
 /// Every test publishes a real artifact. Otherwise "earned versions" would
@@ -25,6 +25,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
         .journal(journal.clone())
         .bindings(bindings.clone())
+        .sealer(bindings.clone())
         .build();
 
     let key = AnchorKey::new("a");

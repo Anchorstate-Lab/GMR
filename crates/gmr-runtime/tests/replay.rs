@@ -18,10 +18,12 @@ impl World {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let journal = Arc::new(MemoryJournal::default());
+        let bindings = Arc::new(MemoryBindings::default());
         let runtime = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(journal.clone())
-            .bindings(Arc::new(MemoryBindings::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings)
             .build();
         Self {
             dir,
