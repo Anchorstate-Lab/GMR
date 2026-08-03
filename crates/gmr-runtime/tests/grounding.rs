@@ -369,7 +369,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
     let reference = Ref::new("git", "memories/a.md");
     let bound = w
         .runtime
-        .bindings()
+        .memory()
         .binding_of(&reference)
         .await
         .unwrap()
@@ -383,7 +383,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
 
     let detached = w
         .runtime
-        .bindings()
+        .memory()
         .binding_of(&reference)
         .await
         .unwrap()

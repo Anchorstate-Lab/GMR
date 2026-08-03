@@ -338,7 +338,7 @@ async fn nothing_moving_writes_a_still_not_a_transition() {
     assert_eq!(w.observe().await, Observed::Still);
     assert_eq!(w.observe().await, Observed::Still);
 
-    let entries = w.rt.journal().entries(&key(), 0).await.unwrap();
+    let entries = w.rt.log().entries(&key(), 0).await.unwrap();
     let stills = entries.iter().filter(|(_, e)| e.name() == "still").count();
     assert_eq!(stills, 2);
     assert_eq!(fold(&entries).unwrap().attempts, 0);
@@ -452,7 +452,7 @@ async fn accepting_a_change_by_hand_is_sealed() {
     assert_eq!(w.status().await.as_deref(), Some("ok"));
     assert_ne!(revised.context, revised.rationale);
     assert!(
-        w.rt.sealer()
+        w.rt.memory()
             .sealed(&revised.rationale)
             .await
             .unwrap()
@@ -503,7 +503,7 @@ async fn every_still_in_a_run_points_at_the_record_it_was_compared_against() {
     }
 
     let refs: Vec<u64> =
-        w.rt.journal()
+        w.rt.log()
             .entries(&key(), 0)
             .await
             .unwrap()
@@ -699,7 +699,7 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
     let cited = w.rt.read(&heir).await.unwrap().anchor.supersedes.unwrap();
     assert_eq!(cited.key, key());
     assert_eq!(
-        w.rt.sealer().sealed(&cited.rationale).await.unwrap(),
+        w.rt.memory().sealed(&cited.rationale).await.unwrap(),
         Some("threshold was wrong; 10 was too low".as_bytes().to_vec()),
     );
 

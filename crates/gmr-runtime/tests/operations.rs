@@ -636,7 +636,7 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
 
     // Push an observation directly through the storage layer; this is the
     // second writer the lease exists to prevent.
-    let entries = w.runtime.journal().entries(&key(), 0).await.unwrap();
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
     let (_, sighting) = entries
         .iter()
         .find(|(_, e)| e.is_sighting())
@@ -644,7 +644,7 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
         .clone();
     let err = w
         .runtime
-        .journal()
+        .log()
         .append(&key(), &sighting, Fence::Unleased)
         .await
         .unwrap_err();

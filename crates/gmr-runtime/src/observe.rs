@@ -7,6 +7,9 @@ use gmr_store::{Disposition, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
+use crate::observer::Observer;
+use crate::scheduler::Scheduler;
 use crate::translate::{Transitioned, transition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,137 +33,126 @@ impl Runtime {
     /// writing past the token is precisely the second writer the lease prevents.
     /// If someone else holds it, let them write.
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
-        let Some(queue) = self.queue.as_ref() else {
-            return self.observe_with(key, Fence::Unleased).await;
-        };
+        observe(&self.log, &self.observer, &self.scheduler, key).await
+    }
+}
 
-        let now = chrono::Utc::now();
-        let lease = chrono::Duration::seconds(self.policy.lease_secs as i64);
-        let Some(ticket) = queue.lease(key, now, lease).await? else {
-            return Err(RuntimeError::Leased { key: key.clone() });
-        };
-
-        let seen = self.observe_with(key, ticket.fence).await;
-        let after = match &seen {
-            Ok(Observed::Closed) => Disposition::Retire,
-            _ => Disposition::Reschedule {
-                after_secs: self.cadence_of(key).await?,
-            },
-        };
-        queue.settle(&ticket, after, Utc::now()).await?;
-        seen
+async fn observe(
+    log: &AnchorLog,
+    observer: &Observer,
+    scheduler: &Scheduler,
+    key: &AnchorKey,
+) -> Result<Observed, RuntimeError> {
+    if !scheduler.has_lease() {
+        return observe_with(log, observer, key, Fence::Unleased).await;
     }
 
-    pub(crate) async fn observe_with(
-        &self,
-        key: &AnchorKey,
-        fence: Fence,
-    ) -> Result<Observed, RuntimeError> {
-        let entries = self.journal.entries(key, 0).await?;
-        let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    let now = chrono::Utc::now();
+    let lease = chrono::Duration::seconds(scheduler.policy().lease_secs as i64);
+    let Some(ticket) = scheduler.lease(key, now, lease).await? else {
+        return Err(RuntimeError::Leased { key: key.clone() });
+    };
 
-        if s.closed {
-            return Ok(Observed::Closed);
+    let seen = observe_with(log, observer, key, ticket.fence).await;
+    let after = match &seen {
+        Ok(Observed::Closed) => Disposition::Retire,
+        _ => Disposition::Reschedule {
+            after_secs: crate::pass::cadence_of(log, scheduler, key).await?,
+        },
+    };
+    scheduler.settle(&ticket, after, Utc::now()).await?;
+    seen
+}
+
+pub(crate) async fn observe_with(
+    log: &AnchorLog,
+    observer: &Observer,
+    key: &AnchorKey,
+    fence: Fence,
+) -> Result<Observed, RuntimeError> {
+    let entries = log.entries(key, 0).await?;
+    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+
+    if s.closed {
+        return Ok(Observed::Closed);
+    }
+
+    let at = Utc::now();
+
+    let sighted = match observer.invoke(&s.anchor, s.position()).await {
+        Ok(o) => o,
+        Err(e) => return record_attempt(log, key, e.reason, e.message, fence).await,
+    };
+
+    let observation = observe_into(&s.anchor, sighted);
+    let entered_at = s.entered_at.unwrap_or(at);
+
+    let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
+        Transitioned::To(next) => next,
+        Transitioned::Unchanged => s.state.clone(),
+        Transitioned::Unevaluable(message) => {
+            return record_attempt(log, key, ReasonClass::Unevaluable, message, fence).await;
         }
+    };
 
-        let at = Utc::now();
+    let still_ref = if gmr_core::journal::always_full(&s.anchor) {
+        None
+    } else {
+        s.latest
+            .as_ref()
+            .filter(|last| {
+                should_still(
+                    &s.state,
+                    &last.fact_address,
+                    &next,
+                    &observation.fact_address,
+                )
+            })
+            .and(s.latest_seq)
+    };
 
-        let sighted = match self.invoke(&s.anchor, s.position()).await {
-            Ok(o) => o,
-            Err(e) => return self.record_attempt(key, e.reason, e.message, fence).await,
-        };
+    let entry = match still_ref {
+        Some(ref_entry) => Entry::Still {
+            ref_entry,
+            at,
+            versions: observation.versions.clone(),
+        },
+        None => Entry::Transition {
+            observation,
+            state: next.clone(),
+            at,
+        },
+    };
 
-        let observation = observe_into(&s.anchor, sighted);
-        let entered_at = s.entered_at.unwrap_or(at);
+    log.append(key, &entry, fence).await?;
 
-        let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
-            Transitioned::To(next) => next,
-            Transitioned::Unchanged => s.state.clone(),
-            Transitioned::Unevaluable(message) => {
-                return self
-                    .record_attempt(key, ReasonClass::Unevaluable, message, fence)
-                    .await;
-            }
-        };
+    Ok(match still_ref {
+        Some(_) => Observed::Still,
+        None => Observed::Transitioned {
+            from: s.state,
+            to: next,
+        },
+    })
+}
 
-        let still_ref = if gmr_core::journal::always_full(&s.anchor) {
-            None
-        } else {
-            s.latest
-                .as_ref()
-                .filter(|last| {
-                    should_still(
-                        &s.state,
-                        &last.fact_address,
-                        &next,
-                        &observation.fact_address,
-                    )
-                })
-                .and(s.latest_seq)
-        };
-
-        let entry = match still_ref {
-            Some(ref_entry) => Entry::Still {
-                ref_entry,
-                at,
-                versions: observation.versions.clone(),
-            },
-            None => Entry::Transition {
-                observation,
-                state: next.clone(),
-                at,
-            },
-        };
-
-        self.journal.append(key, &entry, fence).await?;
-
-        Ok(match still_ref {
-            Some(_) => Observed::Still,
-            None => Observed::Transitioned {
-                from: s.state,
-                to: next,
-            },
-        })
-    }
-
-    async fn record_attempt(
-        &self,
-        key: &AnchorKey,
-        reason: ReasonClass,
-        message: String,
-        fence: Fence,
-    ) -> Result<Observed, RuntimeError> {
-        self.journal
-            .append(
-                key,
-                &Entry::Attempt {
-                    reason,
-                    message: message.clone(),
-                    at: Utc::now(),
-                },
-                fence,
-            )
-            .await?;
-        Ok(Observed::Attempt { reason, message })
-    }
-
-    pub(crate) async fn invoke(
-        &self,
-        anchor: &Anchor,
-        position: &serde_json::Value,
-    ) -> Result<gmr_probe::Sighted, gmr_probe::ProbeError> {
-        let transport = self
-            .transports
-            .iter()
-            .find(|t| t.kind() == &anchor.probe.kind)
-            .ok_or_else(|| {
-                gmr_probe::ProbeError::unreachable(format!(
-                    "no transport recognises a `{}` probe",
-                    anchor.probe.kind
-                ))
-            })?;
-        transport.invoke(&anchor.probe, position).await
-    }
+async fn record_attempt(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    reason: ReasonClass,
+    message: String,
+    fence: Fence,
+) -> Result<Observed, RuntimeError> {
+    log.append(
+        key,
+        &Entry::Attempt {
+            reason,
+            message: message.clone(),
+            at: Utc::now(),
+        },
+        fence,
+    )
+    .await?;
+    Ok(Observed::Attempt { reason, message })
 }
 
 pub(crate) fn observe_into(anchor: &Anchor, sighted: gmr_probe::Sighted) -> Observation {

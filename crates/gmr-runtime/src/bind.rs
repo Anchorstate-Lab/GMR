@@ -3,6 +3,7 @@ use gmr_store::BindingRecord;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
+use crate::memory::MemoryLens;
 
 impl Runtime {
     pub async fn bind(
@@ -11,17 +12,16 @@ impl Runtime {
         anchors: Vec<AnchorKey>,
         bound_version: Version,
     ) -> Result<(), RuntimeError> {
-        self.bindings
+        self.memory
             .bind(&Binding { reference, anchors }, &bound_version)
-            .await?;
-        Ok(())
+            .await
     }
 
     pub async fn bindings_on(
         &self,
         anchor: &AnchorKey,
     ) -> Result<Vec<BindingRecord>, RuntimeError> {
-        Ok(self.bindings.bindings_on(anchor).await?)
+        self.memory.bindings_on(anchor).await
     }
 
     /// Re-stamps the content version on an existing binding without touching
@@ -34,14 +34,20 @@ impl Runtime {
         reference: &Ref,
         bound_version: Version,
     ) -> Result<(), RuntimeError> {
-        let record =
-            self.bindings
-                .binding_of(reference)
-                .await?
-                .ok_or_else(|| RuntimeError::NotBound {
-                    reference: reference.clone(),
-                })?;
-        self.bindings.bind(&record.binding, &bound_version).await?;
-        Ok(())
+        reaffirm(&self.memory, reference, bound_version).await
     }
+}
+
+async fn reaffirm(
+    memory: &MemoryLens,
+    reference: &Ref,
+    bound_version: Version,
+) -> Result<(), RuntimeError> {
+    let record = memory
+        .binding_of(reference)
+        .await?
+        .ok_or_else(|| RuntimeError::NotBound {
+            reference: reference.clone(),
+        })?;
+    memory.bind(&record.binding, &bound_version).await
 }

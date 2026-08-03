@@ -4,17 +4,22 @@ use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer};
 
 use crate::content::ContentProvider;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
+use crate::memory::MemoryLens;
+use crate::observer::Observer;
 use crate::policy::Policy;
+use crate::scheduler::Scheduler;
 
+/// The runtime is a facade over four services, split by what they can
+/// touch: the log (journal), the observer (transports), memory (bindings /
+/// seals / links / content providers), and the scheduler (queue / policy).
+/// Each verb module takes only the services it actually needs, so a new
+/// verb no longer inherits every capability by default.
 pub struct Runtime {
-    pub(crate) transports: Vec<Arc<dyn gmr_probe::Transport>>,
-    pub(crate) journal: Arc<dyn Journal>,
-    pub(crate) bindings: Arc<dyn BindingStore>,
-    pub(crate) sealer: Arc<dyn Sealer>,
-    pub(crate) links: Arc<dyn LinkStore>,
-    pub(crate) providers: Vec<Arc<dyn ContentProvider>>,
-    pub(crate) queue: Option<Arc<dyn Queue>>,
-    pub(crate) policy: Policy,
+    pub(crate) log: AnchorLog,
+    pub(crate) observer: Observer,
+    pub(crate) memory: MemoryLens,
+    pub(crate) scheduler: Scheduler,
 }
 
 impl Runtime {
@@ -22,32 +27,24 @@ impl Runtime {
         RuntimeBuilder::default()
     }
 
-    pub fn journal(&self) -> &dyn Journal {
-        self.journal.as_ref()
+    pub fn log(&self) -> &AnchorLog {
+        &self.log
     }
 
-    pub fn bindings(&self) -> &dyn BindingStore {
-        self.bindings.as_ref()
+    pub fn memory(&self) -> &MemoryLens {
+        &self.memory
     }
 
-    pub fn sealer(&self) -> &dyn Sealer {
-        self.sealer.as_ref()
-    }
-
-    pub fn links(&self) -> &dyn LinkStore {
-        self.links.as_ref()
+    pub fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
     }
 
     pub fn policy(&self) -> &Policy {
-        &self.policy
-    }
-
-    pub(crate) fn has_lease(&self) -> bool {
-        self.queue.is_some()
+        self.scheduler.policy()
     }
 
     pub async fn anchors(&self) -> Result<Vec<gmr_core::AnchorKey>, RuntimeError> {
-        Ok(self.journal.anchors().await?)
+        self.log.anchors().await
     }
 }
 
@@ -106,14 +103,15 @@ impl RuntimeBuilder {
 
     pub fn build(self) -> Runtime {
         Runtime {
-            transports: self.transports,
-            journal: self.journal.expect("a Journal is not optional"),
-            bindings: self.bindings.expect("a BindingStore is not optional"),
-            sealer: self.sealer.expect("a Sealer is not optional"),
-            links: self.links.expect("a LinkStore is not optional"),
-            providers: self.providers,
-            queue: self.queue,
-            policy: self.policy.unwrap_or_default(),
+            log: AnchorLog::new(self.journal.expect("a Journal is not optional")),
+            observer: Observer::new(self.transports),
+            memory: MemoryLens::new(
+                self.bindings.expect("a BindingStore is not optional"),
+                self.sealer.expect("a Sealer is not optional"),
+                self.links.expect("a LinkStore is not optional"),
+                self.providers,
+            ),
+            scheduler: Scheduler::new(self.queue, self.policy.unwrap_or_default()),
         }
     }
 }

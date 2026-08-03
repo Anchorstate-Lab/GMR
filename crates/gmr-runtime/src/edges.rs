@@ -4,6 +4,9 @@ use serde::Serialize;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
+use crate::memory::MemoryLens;
+use crate::policy::Policy;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "edge", rename_all = "snake_case")]
@@ -71,63 +74,80 @@ impl Runtime {
         cursor: Seq,
         status: Option<&StatusId>,
     ) -> Result<Edges, RuntimeError> {
-        let now = Utc::now();
-        let mut edges = Vec::new();
-        let mut standing = Vec::new();
-        let mut head = cursor;
+        changed_since(
+            &self.log,
+            &self.memory,
+            self.scheduler.policy(),
+            cursor,
+            status,
+        )
+        .await
+    }
+}
 
-        for key in self.journal.anchors().await? {
-            let entries = self.journal.entries(&key, 0).await?;
-            let last = walk(&key, &entries, cursor, &self.policy, &mut edges);
-            if let Some((seq, _)) = entries.last() {
-                head = head.max(*seq);
-            }
-            if let Some(s) = last
-                && !s.closed
-                && s.last_sighting
-                    .is_none_or(|t| (now - t).num_seconds() > self.policy.stalled_staleness_secs)
-            {
-                standing.push(Standing::Stale {
+async fn changed_since(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    policy: &Policy,
+    cursor: Seq,
+    status: Option<&StatusId>,
+) -> Result<Edges, RuntimeError> {
+    let now = Utc::now();
+    let mut edges = Vec::new();
+    let mut standing = Vec::new();
+    let mut head = cursor;
+
+    for key in log.anchors().await? {
+        let entries = log.entries(&key, 0).await?;
+        let last = walk(&key, &entries, cursor, policy, &mut edges);
+        if let Some((seq, _)) = entries.last() {
+            head = head.max(*seq);
+        }
+        if let Some(s) = last
+            && !s.closed
+            && s.last_sighting
+                .is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
+        {
+            standing.push(Standing::Stale {
+                anchor: key.clone(),
+                last_sighting: s.last_sighting,
+            });
+        }
+
+        for binding in memory.bindings_on(&key).await? {
+            let view = memory.fetch_memory(binding).await?;
+            if view.rewritten {
+                standing.push(Standing::Rewritten {
                     anchor: key.clone(),
-                    last_sighting: s.last_sighting,
+                    reference: view.reference,
+                    bound_version: view.bound_version,
+                    current_version: view.current_version,
+                    retrievable: view.retrievable,
                 });
             }
-
-            for binding in self.bindings.bindings_on(&key).await? {
-                let view = self.fetch_memory(binding).await?;
-                if view.rewritten {
-                    standing.push(Standing::Rewritten {
-                        anchor: key.clone(),
-                        reference: view.reference,
-                        bound_version: view.bound_version,
-                        current_version: view.current_version,
-                        retrievable: view.retrievable,
-                    });
-                }
-            }
         }
-
-        // Asking for a status is asking a specific question: do not muddy it.
-        if let Some(want) = status {
-            edges.retain(|e| match e {
-                Edge::Transitioned { status, .. } => status.as_ref() == Some(want),
-                _ => false,
-            });
-            standing.clear();
-        }
-
-        edges.sort_by_key(|e| match e {
-            Edge::Transitioned { seq, .. }
-            | Edge::Closed { seq, .. }
-            | Edge::Stalled { seq, .. } => *seq,
-        });
-
-        Ok(Edges {
-            edges,
-            standing,
-            cursor: head,
-        })
     }
+
+    // Asking for a status is asking a specific question: do not muddy it.
+    if let Some(want) = status {
+        edges.retain(|e| match e {
+            Edge::Transitioned { status, .. } => status.as_ref() == Some(want),
+            _ => false,
+        });
+        standing.clear();
+    }
+
+    edges.sort_by_key(|e| match e {
+        Edge::Transitioned { seq, .. } | Edge::Closed { seq, .. } | Edge::Stalled { seq, .. } => {
+            *seq
+        }
+    });
+
+    Ok(Edges {
+        edges,
+        standing,
+        cursor: head,
+    })
 }
 
 /// Edges are derived from **the same fold**, never a second projection.
@@ -139,7 +159,7 @@ fn walk(
     key: &AnchorKey,
     entries: &[(Seq, Entry)],
     cursor: Seq,
-    policy: &crate::policy::Policy,
+    policy: &Policy,
     out: &mut Vec<Edge>,
 ) -> Option<AnchorState> {
     let mut was = State::default();

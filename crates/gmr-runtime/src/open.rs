@@ -8,6 +8,10 @@ use gmr_store::Fence;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
+use crate::memory::MemoryLens;
+use crate::observer::Observer;
+use crate::scheduler::Scheduler;
 use crate::translate::{Transitioned, bind_warnings, transition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,119 +41,137 @@ pub struct OpenRequest {
 
 impl Runtime {
     pub async fn open(&self, request: OpenRequest) -> Result<Opened, RuntimeError> {
-        let key = request.key.clone();
-        if !self.journal.entries(&key, 0).await?.is_empty() {
-            return Err(RuntimeError::AlreadyOpen { key });
-        }
+        open(
+            &self.log,
+            &self.observer,
+            &self.memory,
+            &self.scheduler,
+            request,
+        )
+        .await
+    }
+}
 
-        let sealed = match request.supersedes {
-            None => None,
-            Some(s) => Some(self.seal_supersede(s).await?),
-        };
-        let supersedes = sealed.as_ref().map(|s| s.key.clone());
-
-        let anchor = Anchor {
-            key: key.clone(),
-            probe: request.probe,
-            transitions: if request.transitions.is_empty() {
-                Transitions::watch_everything()
-            } else {
-                request.transitions
-            },
-            terminal: request.terminal,
-            retain: request.retain,
-            cadence_secs: request.cadence_secs,
-            supersedes: sealed,
-        };
-
-        let initial = request.initial.unwrap_or_default();
-
-        let outcome = self
-            .invoke(&anchor, initial.position())
-            .await
-            .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
-
-        let at = Utc::now();
-        let observation = crate::observe::observe_into(&anchor, outcome);
-        let mut warnings = bind_warnings(&anchor, &observation);
-        warnings.extend(self.accumulator_warning(&anchor));
-
-        // Failing to compute the first state is no reason to refuse: an anchor may
-        // precede its target, and then the rules naturally resolve to nothing. A
-        // typo and "not grown yet" look identical at this moment; both surface at
-        // the first real observation — and there it is loud.
-        let state = match transition(&anchor, &observation, &initial, at, at) {
-            Transitioned::To(next) => next,
-            Transitioned::Unchanged => initial,
-            Transitioned::Unevaluable(message) => {
-                warnings.push(format!("{message}; the initial state is kept as is"));
-                initial
-            }
-        };
-
-        self.journal
-            .append(
-                &key,
-                &Entry::Open {
-                    anchor: Box::new(anchor),
-                    observation,
-                    state: state.clone(),
-                    at,
-                },
-                Fence::Unleased,
-            )
-            .await?;
-
-        // Journal and queue are two stores with no shared transaction, so be clear
-        // about who decides: **the anchor is that log entry**, and once it lands the
-        // anchor exists. Enqueueing is a recoverable side branch; failing it must
-        // not misreport "already open" as "failed to open" — that makes the caller
-        // retry, hit AlreadyOpen, and still leave the real gap unrepaired.
-        if let Some(queue) = self.queue.as_ref()
-            && let Err(e) = queue.enqueue(&key, at).await
-        {
-            warnings.push(format!(
-                "the anchor opened but could not be enqueued ({e}); it will not be \
-                 observed automatically until the next sync repairs it"
-            ));
-        }
-
-        Ok(Opened {
-            key,
-            state,
-            warnings,
-            supersedes,
-        })
+async fn open(
+    log: &AnchorLog,
+    observer: &Observer,
+    memory: &MemoryLens,
+    scheduler: &Scheduler,
+    request: OpenRequest,
+) -> Result<Opened, RuntimeError> {
+    let key = request.key.clone();
+    if !log.entries(&key, 0).await?.is_empty() {
+        return Err(RuntimeError::AlreadyOpen { key });
     }
 
-    /// The old one must really have finished — two generations alive at once is a
-    /// bypass around finishing.
-    async fn seal_supersede(&self, s: Supersede) -> Result<Superseded, RuntimeError> {
-        let old = fold(&self.journal.entries(&s.key, 0).await?)
-            .ok_or_else(|| RuntimeError::NoSuchAnchor { key: s.key.clone() })?;
-        if !old.closed {
-            return Err(RuntimeError::NotClosedYet { key: s.key });
+    let sealed = match request.supersedes {
+        None => None,
+        Some(s) => Some(seal_supersede(log, memory, s).await?),
+    };
+    let supersedes = sealed.as_ref().map(|s| s.key.clone());
+
+    let anchor = Anchor {
+        key: key.clone(),
+        probe: request.probe,
+        transitions: if request.transitions.is_empty() {
+            Transitions::watch_everything()
+        } else {
+            request.transitions
+        },
+        terminal: request.terminal,
+        retain: request.retain,
+        cadence_secs: request.cadence_secs,
+        supersedes: sealed,
+    };
+
+    let initial = request.initial.unwrap_or_default();
+
+    let outcome = observer
+        .invoke(&anchor, initial.position())
+        .await
+        .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
+
+    let at = Utc::now();
+    let observation = crate::observe::observe_into(&anchor, outcome);
+    let mut warnings = bind_warnings(&anchor, &observation);
+    warnings.extend(accumulator_warning(scheduler, &anchor));
+
+    // Failing to compute the first state is no reason to refuse: an anchor may
+    // precede its target, and then the rules naturally resolve to nothing. A
+    // typo and "not grown yet" look identical at this moment; both surface at
+    // the first real observation — and there it is loud.
+    let state = match transition(&anchor, &observation, &initial, at, at) {
+        Transitioned::To(next) => next,
+        Transitioned::Unchanged => initial,
+        Transitioned::Unevaluable(message) => {
+            warnings.push(format!("{message}; the initial state is kept as is"));
+            initial
         }
-        Ok(Superseded {
-            key: s.key,
-            rationale: self.sealer.seal(&s.rationale).await?,
-        })
+    };
+
+    log.append(
+        &key,
+        &Entry::Open {
+            anchor: Box::new(anchor),
+            observation,
+            state: state.clone(),
+            at,
+        },
+        Fence::Unleased,
+    )
+    .await?;
+
+    // Journal and queue are two stores with no shared transaction, so be clear
+    // about who decides: **the anchor is that log entry**, and once it lands the
+    // anchor exists. Enqueueing is a recoverable side branch; failing it must
+    // not misreport "already open" as "failed to open" — that makes the caller
+    // retry, hit AlreadyOpen, and still leave the real gap unrepaired.
+    if let Err(e) = scheduler.enqueue(&key, at).await {
+        warnings.push(format!(
+            "the anchor opened but could not be enqueued ({e}); it will not be \
+             observed automatically until the next sync repairs it"
+        ));
     }
 
-    fn accumulator_warning(&self, anchor: &Anchor) -> Option<String> {
-        if self.has_lease() {
-            return None;
-        }
-        let reads_state = anchor
-            .transitions
-            .iter()
-            .any(|r| crate::translate::compile(&r.to).is_ok_and(|n| n.reads_state()));
-        reads_state.then(|| {
-            "the transition table reads the previous state into the new one, and \
-             this deployment has no lease: a repeated observation would over-count. \
-             Idempotent forms (carrying a field through unchanged) are unaffected; \
-             increments are not. The substrate cannot tell them apart, so it only warns"
-                .to_owned()
-        })
+    Ok(Opened {
+        key,
+        state,
+        warnings,
+        supersedes,
+    })
+}
+
+/// The old one must really have finished — two generations alive at once is a
+/// bypass around finishing.
+async fn seal_supersede(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    s: Supersede,
+) -> Result<Superseded, RuntimeError> {
+    let old = fold(&log.entries(&s.key, 0).await?)
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: s.key.clone() })?;
+    if !old.closed {
+        return Err(RuntimeError::NotClosedYet { key: s.key });
     }
+    Ok(Superseded {
+        key: s.key,
+        rationale: memory.seal(&s.rationale).await?,
+    })
+}
+
+fn accumulator_warning(scheduler: &Scheduler, anchor: &Anchor) -> Option<String> {
+    if scheduler.has_lease() {
+        return None;
+    }
+    let reads_state = anchor
+        .transitions
+        .iter()
+        .any(|r| crate::translate::compile(&r.to).is_ok_and(|n| n.reads_state()));
+    reads_state.then(|| {
+        "the transition table reads the previous state into the new one, and \
+         this deployment has no lease: a repeated observation would over-count. \
+         Idempotent forms (carrying a field through unchanged) are unaffected; \
+         increments are not. The substrate cannot tell them apart, so it only warns"
+            .to_owned()
+    })
 }

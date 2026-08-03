@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
 use gmr_core::{Anchor, AnchorKey, Entry, Link, Outcome, Ref, Seq, State, StatusId, Version, fold};
-use gmr_store::BindingRecord;
 use serde::Serialize;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
+use crate::memory::MemoryLens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,150 +46,75 @@ pub struct MemoryView {
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
-        let entries = self.journal.entries(key, 0).await?;
-        let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
-
-        let mut memories = Vec::new();
-        for binding in self.bindings.bindings_on(key).await? {
-            memories.push(self.fetch_memory(binding).await?);
-        }
-        self.carry_linked(&mut memories).await?;
-
-        let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
-            Some(Outcome::Found { .. }) => Sighting::Found,
-            _ => Sighting::Absent,
-        };
-
-        Ok(AnchorView {
-            key: key.clone(),
-            status: s.state.status(),
-            state: s.state,
-            anchor: s.anchor,
-            sighting,
-            closed: s.closed,
-            attempts: s.attempts,
-            entered_at: s.entered_at,
-            last_sighting: s.last_sighting,
-            sightings: count_sightings(&entries),
-            memories,
-        })
+        read(&self.log, &self.memory, key).await
     }
 
     pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
-        let Some(record) = self.bindings.binding_of(reference).await? else {
-            return Ok(Vec::new());
-        };
-        let mut out: Vec<Ref> = Vec::new();
-        for anchor in &record.binding.anchors {
-            for other in self.bindings.bindings_on(anchor).await? {
-                let other_reference = other.binding.reference;
-                if &other_reference != reference && !out.contains(&other_reference) {
-                    out.push(other_reference);
-                }
-            }
-        }
-        out.sort();
-        Ok(out)
+        cobound(&self.memory, reference).await
     }
 
     pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
-        let mut out = Vec::new();
-        for key in self.journal.anchors().await? {
-            out.push(self.read(&key).await?);
-        }
-        Ok(out)
+        read_all(&self.log, &self.memory).await
     }
 }
 
-impl Runtime {
-    /// Carry unanchored records along the links, marked ungrounded.
-    ///
-    /// **Grounding does not propagate along links**: what is carried along gets no
-    /// guarantee, so it has to be visible as carried. One hop only — deeper needs
-    /// cycle handling, and "is that distant one still about this anchor" is the
-    /// domain's judgement, not something the substrate can answer for it.
-    async fn carry_linked(&self, memories: &mut Vec<MemoryView>) -> Result<(), RuntimeError> {
-        let linked: Vec<Ref> = memories
-            .iter()
-            .flat_map(|m| m.links.iter().map(|l| l.to.clone()))
-            .collect();
+async fn read(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    key: &AnchorKey,
+) -> Result<AnchorView, RuntimeError> {
+    let entries = log.entries(key, 0).await?;
+    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
-        for reference in linked {
-            if memories.iter().any(|m| m.reference == reference) {
-                continue;
-            }
-            let Some(binding) = self.bindings.binding_of(&reference).await? else {
-                continue;
-            };
-            memories.push(self.fetch_memory(binding).await?);
-        }
-        Ok(())
+    let mut memories = Vec::new();
+    for binding in memory.bindings_on(key).await? {
+        memories.push(memory.fetch_memory(binding).await?);
     }
+    memory.carry_linked(&mut memories).await?;
 
-    pub(crate) async fn fetch_memory(
-        &self,
-        record: BindingRecord,
-    ) -> Result<MemoryView, RuntimeError> {
-        let BindingRecord {
-            binding,
-            bound_version,
-        } = record;
-        let links = self.links.links_of(&binding.reference).await?;
-        let mut view = MemoryView {
-            reference: binding.reference.clone(),
-            bound_version: bound_version.clone(),
-            current_version: None,
-            rewritten: false,
-            content: None,
-            content_at_bind: None,
-            retrievable: None,
-            grounded: !binding.anchors.is_empty(),
-            unavailable: None,
-            links,
-        };
+    let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
+        Some(Outcome::Found { .. }) => Sighting::Found,
+        _ => Sighting::Absent,
+    };
 
-        let Some(provider) = self
-            .providers
-            .iter()
-            .find(|p| p.provider() == &binding.reference.provider)
-        else {
-            view.unavailable = Some(format!(
-                "no provider recognises a `{}` reference",
-                binding.reference.provider
-            ));
-            return Ok(view);
-        };
+    Ok(AnchorView {
+        key: key.clone(),
+        status: s.state.status(),
+        state: s.state,
+        anchor: s.anchor,
+        sighting,
+        closed: s.closed,
+        attempts: s.attempts,
+        entered_at: s.entered_at,
+        last_sighting: s.last_sighting,
+        sightings: count_sightings(&entries),
+        memories,
+    })
+}
 
-        match provider.fetch(&binding.reference.external_id).await {
-            Err(e) => view.unavailable = Some(e.message),
-            Ok(None) => view.unavailable = Some("the provider says this record is gone".to_owned()),
-            Ok(Some(fetched)) => {
-                view.rewritten = fetched.version != bound_version;
-                view.current_version = Some(fetched.version);
-                match String::from_utf8(fetched.bytes) {
-                    Ok(text) => view.content = Some(text),
-                    Err(_) => view.unavailable = Some("the record is not UTF-8 text".to_owned()),
-                }
-
-                if view.rewritten {
-                    match provider
-                        .fetch_at(&binding.reference.external_id, &bound_version)
-                        .await
-                    {
-                        Ok(Some(bytes)) => {
-                            view.retrievable = Some(true);
-                            view.content_at_bind = String::from_utf8(bytes).ok();
-                        }
-                        Ok(None) => view.retrievable = Some(false),
-                        Err(e) => view.unavailable = Some(e.message),
-                    }
-                } else {
-                    view.retrievable = Some(true);
-                }
+async fn cobound(memory: &MemoryLens, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
+    let Some(record) = memory.binding_of(reference).await? else {
+        return Ok(Vec::new());
+    };
+    let mut out: Vec<Ref> = Vec::new();
+    for anchor in &record.binding.anchors {
+        for other in memory.bindings_on(anchor).await? {
+            let other_reference = other.binding.reference;
+            if &other_reference != reference && !out.contains(&other_reference) {
+                out.push(other_reference);
             }
         }
-        Ok(view)
     }
+    out.sort();
+    Ok(out)
+}
+
+async fn read_all(log: &AnchorLog, memory: &MemoryLens) -> Result<Vec<AnchorView>, RuntimeError> {
+    let mut out = Vec::new();
+    for key in log.anchors().await? {
+        out.push(read(log, memory, &key).await?);
+    }
+    Ok(out)
 }
 
 fn count_sightings(entries: &[(Seq, Entry)]) -> u64 {
