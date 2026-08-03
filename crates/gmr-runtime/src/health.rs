@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
-use gmr_core::{AnchorKey, Change, ContentHash, Entry, Seq, State, fold, scan};
+use gmr_core::{AnchorKey, Change, ChangeKind, ContentHash, Entry, Seq, State, fold, scan};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -12,7 +12,7 @@ use crate::memory::MemoryLens;
 #[derive(Debug, Clone, Serialize)]
 pub struct AnchorHealth {
     pub anchor: AnchorKey,
-    pub revisions: BTreeMap<String, u32>,
+    pub revisions: BTreeMap<ChangeKind, u32>,
     pub restate_count: u32,
     pub restate_interval_secs: Vec<i64>,
     pub state_drifted: bool,
@@ -97,7 +97,7 @@ async fn health(
 
     Ok(AnchorHealth {
         anchor: key.clone(),
-        restate_count: *s.revisions.get("restate").unwrap_or(&0),
+        restate_count: *s.revisions.get(&ChangeKind::Restate).unwrap_or(&0),
         restate_interval_secs: restate_at
             .windows(2)
             .map(|w| (w[1] - w[0]).num_seconds())

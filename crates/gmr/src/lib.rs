@@ -8,10 +8,10 @@ pub use gmr_store as store;
 pub use gmr_store::sqlite;
 
 pub use gmr_core::{
-    Anchor, AnchorKey, AnchorState, Binding, Change, ContentHash, Derivation, Entry, Expr,
-    ExternalId, Facts, Kind, Link, LinkKind, OUTCOME_CONTRACT, Observation, Outcome, ProbeRef,
-    ProbeVersion, ProviderId, ReasonClass, Ref, Retain, Rule, State, StatusId, Superseded,
-    Transitions, Verifiability, Version, fold,
+    Anchor, AnchorKey, AnchorState, Binding, Change, ChangeKind, ContentHash, Derivation, Entry,
+    Expr, ExternalId, Facts, Kind, Link, LinkKind, OUTCOME_CONTRACT, Observation, Outcome,
+    ProbeRef, ProbeVersion, ProviderId, ReasonClass, Ref, Retain, Rule, State, StatusId,
+    Superseded, Transitions, Verifiability, Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;
 pub use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};

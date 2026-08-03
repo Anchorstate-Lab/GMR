@@ -46,13 +46,25 @@ pub enum Change {
     Restate { state: State },
 }
 
+/// Which kind of revision, without its payload. Counting revisions by kind is
+/// a lookup, not a label, so it gets a type: a bare string key lets a rename
+/// pass compilation while silently zeroing whoever looks the old name up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeKind {
+    Reprobe,
+    Retransition,
+    Reterminal,
+    Restate,
+}
+
 impl Change {
-    pub fn kind_name(&self) -> &'static str {
+    pub fn kind(&self) -> ChangeKind {
         match self {
-            Self::Reprobe { .. } => "reprobe",
-            Self::Retransition { .. } => "retransition",
-            Self::Reterminal { .. } => "reterminal",
-            Self::Restate { .. } => "restate",
+            Self::Reprobe { .. } => ChangeKind::Reprobe,
+            Self::Retransition { .. } => ChangeKind::Retransition,
+            Self::Reterminal { .. } => ChangeKind::Reterminal,
+            Self::Restate { .. } => ChangeKind::Restate,
         }
     }
 }
@@ -153,7 +165,7 @@ pub struct AnchorState {
     pub last_sighting: Option<DateTime<Utc>>,
     pub entered_at: Option<DateTime<Utc>>,
     pub head: Seq,
-    pub revisions: BTreeMap<String, u32>,
+    pub revisions: BTreeMap<ChangeKind, u32>,
 }
 
 impl AnchorState {
@@ -249,9 +261,7 @@ pub fn scan(
 }
 
 fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
-    *s.revisions
-        .entry(change.kind_name().to_owned())
-        .or_insert(0) += 1;
+    *s.revisions.entry(change.kind()).or_insert(0) += 1;
 
     match change {
         Change::Reprobe { probe } => s.anchor.probe = probe.clone(),
@@ -479,8 +489,50 @@ mod tests {
         let s = fold(&log).unwrap();
         assert_eq!(s.position(), &json!("b.rs"));
         assert_eq!(s.state.status(), Some(StatusId::new("ok")));
-        assert_eq!(s.revisions.get("restate"), Some(&1));
+        assert_eq!(s.revisions.get(&ChangeKind::Restate), Some(&1));
         assert_eq!(s.entered_at, Some(at(20)));
+    }
+
+    #[test]
+    fn counting_revisions_by_kind_stays_the_same_shape_on_the_wire() {
+        // The kind is a lookup key, so it is a type rather than a string — but
+        // consumers already read these names out of `health --json`, so the
+        // type has to serialise to exactly the names it replaced.
+        let counted: BTreeMap<ChangeKind, u32> = [
+            (ChangeKind::Reprobe, 1),
+            (ChangeKind::Retransition, 2),
+            (ChangeKind::Reterminal, 3),
+            (ChangeKind::Restate, 4),
+        ]
+        .into();
+        let wire = serde_json::to_value(&counted).unwrap();
+        assert_eq!(
+            wire,
+            json!({ "reprobe": 1, "retransition": 2, "reterminal": 3, "restate": 4 })
+        );
+        assert_eq!(
+            serde_json::from_value::<BTreeMap<ChangeKind, u32>>(wire).unwrap(),
+            counted,
+            "and it must read back what an older build wrote"
+        );
+    }
+
+    #[test]
+    fn a_kind_is_the_variant_without_its_payload() {
+        assert_eq!(
+            Change::Restate {
+                state: State::default()
+            }
+            .kind(),
+            ChangeKind::Restate
+        );
+        assert_eq!(
+            Change::Reterminal {
+                terminal: BTreeSet::new()
+            }
+            .kind(),
+            ChangeKind::Reterminal
+        );
     }
 
     #[test]
