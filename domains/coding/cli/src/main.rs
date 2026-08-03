@@ -69,7 +69,11 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Open(args) => verbs::open::run(&rt, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
-        Command::Read { key, moved } => verbs::read::run(&rt, key, moved, json).await,
+        Command::Read {
+            key,
+            status,
+            not_status,
+        } => verbs::read::run(&rt, key, status, not_status, json).await,
         Command::Reprobe {
             key,
             artifact,
