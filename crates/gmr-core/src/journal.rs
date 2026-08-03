@@ -74,6 +74,49 @@ pub enum ReasonClass {
     Unevaluable,
 }
 
+/// Why an observation did not land, at the granularity the failure was
+/// actually known — [`ReasonClass`] is what the substrate acts on, this is
+/// what a person needs to diagnose it.
+///
+/// Both halves of "our failure" are enumerated. A log that recorded seven
+/// kinds of probe failure and one kind of rule failure would be describing
+/// the tooling's history rather than the anchor's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureCode {
+    Unreachable,
+    TimedOut,
+    ProcessFailed,
+    Unusable,
+    ArtifactInvalid,
+    OutputTooLarge,
+    InvalidJson,
+    Unparseable,
+    GuardNotBoolean,
+    NewStateNotAnObject,
+    NewStateAbsent,
+    NoSuchField,
+    NotAnObject,
+    NotAnArray,
+    IndexOutOfRange,
+    NotComparable,
+    DividedByZero,
+}
+
+impl FailureCode {
+    /// The class the substrate acts on. Derived rather than stored beside the
+    /// code, so the two cannot come to disagree.
+    pub fn reason(self) -> ReasonClass {
+        match self {
+            Self::Unreachable | Self::TimedOut | Self::ProcessFailed => ReasonClass::Unreachable,
+            Self::Unusable | Self::ArtifactInvalid | Self::OutputTooLarge | Self::InvalidJson => {
+                ReasonClass::Unusable
+            }
+            _ => ReasonClass::Unevaluable,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "entry", rename_all = "snake_case")]
 pub enum Entry {
@@ -95,6 +138,9 @@ pub enum Entry {
     },
     Attempt {
         reason: ReasonClass,
+        /// Absent only in entries written before codes were recorded.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<FailureCode>,
         message: String,
         at: DateTime<Utc>,
     },
@@ -367,6 +413,7 @@ mod tests {
                 2,
                 Entry::Attempt {
                     reason: ReasonClass::Unreachable,
+                    code: None,
                     message: "boom".into(),
                     at: at(10),
                 },
@@ -375,6 +422,7 @@ mod tests {
                 3,
                 Entry::Attempt {
                     reason: ReasonClass::Unevaluable,
+                    code: None,
                     message: "no such field".into(),
                     at: at(20),
                 },
@@ -403,6 +451,7 @@ mod tests {
                 2,
                 Entry::Attempt {
                     reason: ReasonClass::Unreachable,
+                    code: None,
                     message: "boom".into(),
                     at: at(10),
                 },
@@ -639,5 +688,49 @@ mod tests {
         };
         let s = serde_json::to_string(&e).unwrap();
         assert_eq!(serde_json::from_str::<Entry>(&s).unwrap(), e);
+    }
+
+    #[test]
+    fn an_attempt_written_before_codes_existed_still_reads() {
+        // The log is append-only, so entries already on disk have no `code`
+        // and never will. They have to keep folding, not become unreadable.
+        let old = json!({
+            "entry": "attempt",
+            "reason": "unreachable",
+            "message": "boom",
+            "at": at(10),
+        });
+        let e: Entry = serde_json::from_value(old).unwrap();
+        let Entry::Attempt { reason, code, .. } = &e else {
+            panic!("expected an attempt")
+        };
+        assert_eq!(*reason, ReasonClass::Unreachable);
+        assert_eq!(*code, None, "absent, not guessed at");
+
+        let s = fold(&[opened(&[], json!({ STATUS: "ok" })), (2, e)]).unwrap();
+        assert_eq!(s.attempts, 1);
+    }
+
+    #[test]
+    fn a_recorded_code_agrees_with_the_class_the_substrate_acts_on() {
+        for code in [
+            FailureCode::TimedOut,
+            FailureCode::InvalidJson,
+            FailureCode::NoSuchField,
+            FailureCode::Unparseable,
+        ] {
+            let e = Entry::Attempt {
+                reason: code.reason(),
+                code: Some(code),
+                message: "m".into(),
+                at: at(0),
+            };
+            let back: Entry = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+            assert_eq!(back, e);
+        }
+        assert_eq!(FailureCode::TimedOut.reason(), ReasonClass::Unreachable);
+        assert_eq!(FailureCode::InvalidJson.reason(), ReasonClass::Unusable);
+        assert_eq!(FailureCode::NoSuchField.reason(), ReasonClass::Unevaluable);
+        assert_eq!(FailureCode::Unparseable.reason(), ReasonClass::Unevaluable);
     }
 }

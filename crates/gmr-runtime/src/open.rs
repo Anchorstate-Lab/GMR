@@ -99,7 +99,7 @@ async fn open(
     let state = match transition(&anchor, &observation, &initial, at, at) {
         Transitioned::To(next) => next,
         Transitioned::Unchanged => initial,
-        Transitioned::Unevaluable(message) => {
+        Transitioned::Unevaluable(_, message) => {
             warnings.push(format!("{message}; the initial state is kept as is"));
             initial
         }

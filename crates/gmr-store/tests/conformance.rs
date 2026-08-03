@@ -120,6 +120,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
         &a,
         &Entry::Attempt {
             reason: ReasonClass::Unreachable,
+            code: None,
             message: "boom".into(),
             at: at(10),
         },

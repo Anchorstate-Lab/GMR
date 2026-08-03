@@ -1,6 +1,7 @@
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, Observation, ReasonClass, State, Versions, fold, should_still,
+    Anchor, AnchorKey, Entry, FailureCode, Observation, ReasonClass, State, Versions, fold,
+    should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
 use gmr_store::{Disposition, Fence};
@@ -25,6 +26,7 @@ pub enum Observed {
     Still,
     Attempt {
         reason: ReasonClass,
+        code: FailureCode,
         message: String,
         /// The streak length after this attempt.
         attempts: u32,
@@ -88,7 +90,7 @@ pub(crate) async fn observe_with(
     let sighted = match observer.invoke(&s.anchor, s.position()).await {
         Ok(o) => o,
         Err(e) => {
-            return record_attempt(log, key, e.reason, e.message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
         }
     };
 
@@ -98,16 +100,8 @@ pub(crate) async fn observe_with(
     let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
         Transitioned::To(next) => next,
         Transitioned::Unchanged => s.state.clone(),
-        Transitioned::Unevaluable(message) => {
-            return record_attempt(
-                log,
-                key,
-                ReasonClass::Unevaluable,
-                message,
-                fence,
-                s.attempts + 1,
-            )
-            .await;
+        Transitioned::Unevaluable(code, message) => {
+            return record_attempt(log, key, code, message, fence, s.attempts + 1).await;
         }
     };
 
@@ -155,15 +149,17 @@ pub(crate) async fn observe_with(
 async fn record_attempt(
     log: &AnchorLog,
     key: &AnchorKey,
-    reason: ReasonClass,
+    code: FailureCode,
     message: String,
     fence: Fence,
     attempts: u32,
 ) -> Result<Observed, RuntimeError> {
+    let reason = code.reason();
     log.append(
         key,
         &Entry::Attempt {
             reason,
+            code: Some(code),
             message: message.clone(),
             at: Utc::now(),
         },
@@ -172,6 +168,7 @@ async fn record_attempt(
     .await?;
     Ok(Observed::Attempt {
         reason,
+        code,
         message,
         attempts,
     })

@@ -56,9 +56,15 @@ async fn health(
     let s = scan(&entries, |_, entry, _| match entry {
         Entry::Open { state, .. } => initial = Some(state.clone()),
         Entry::Attempt {
-            reason, message, ..
+            reason,
+            code,
+            message,
+            ..
         } => {
-            last_failure = Some(format!("{reason:?}: {message}"));
+            last_failure = Some(match code {
+                Some(c) => format!("{c:?}: {message}"),
+                None => format!("{reason:?}: {message}"),
+            });
         }
         Entry::Revise {
             change,

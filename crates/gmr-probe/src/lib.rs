@@ -40,6 +40,23 @@ impl ProbeErrorCode {
     }
 }
 
+/// Kept separate from [`gmr_core::FailureCode`] so this type stays the set a
+/// transport can actually produce; the log's vocabulary also covers rule
+/// failures, which no transport can raise.
+impl From<ProbeErrorCode> for gmr_core::FailureCode {
+    fn from(code: ProbeErrorCode) -> Self {
+        match code {
+            ProbeErrorCode::Unreachable => Self::Unreachable,
+            ProbeErrorCode::Unusable => Self::Unusable,
+            ProbeErrorCode::ArtifactInvalid => Self::ArtifactInvalid,
+            ProbeErrorCode::TimedOut => Self::TimedOut,
+            ProbeErrorCode::ProcessFailed => Self::ProcessFailed,
+            ProbeErrorCode::OutputTooLarge => Self::OutputTooLarge,
+            ProbeErrorCode::InvalidJson => Self::InvalidJson,
+        }
+    }
+}
+
 impl ProbeError {
     pub fn unreachable(message: impl Into<String>) -> Self {
         Self::with_code(

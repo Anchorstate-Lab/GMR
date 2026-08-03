@@ -1,12 +1,25 @@
 use chrono::{DateTime, Utc};
-use gmr_core::{Anchor, Observation, State};
-use gmr_expr::{Ctx, Evaluated, Node};
+use gmr_core::{Anchor, FailureCode, Observation, State};
+use gmr_expr::{Ctx, Evaluated, Fault, Node};
 use serde_json::Value;
 
 pub(crate) enum Transitioned {
     To(State),
     Unchanged,
-    Unevaluable(String),
+    Unevaluable(FailureCode, String),
+}
+
+/// gmr-expr is a pure root and cannot name the log's vocabulary, so the
+/// translation lives here, where both are already in view.
+fn code_of(fault: Fault) -> FailureCode {
+    match fault {
+        Fault::NoSuchField => FailureCode::NoSuchField,
+        Fault::NotAnObject => FailureCode::NotAnObject,
+        Fault::NotAnArray => FailureCode::NotAnArray,
+        Fault::IndexOutOfRange => FailureCode::IndexOutOfRange,
+        Fault::NotComparable => FailureCode::NotComparable,
+        Fault::DividedByZero => FailureCode::DividedByZero,
+    }
 }
 
 pub(crate) fn compile(expr: &gmr_core::Expr) -> Result<Node, String> {
@@ -28,7 +41,12 @@ pub(crate) fn transition(
         let n = i + 1;
         let guard = match compile(&rule.when) {
             Ok(node) => node,
-            Err(e) => return Transitioned::Unevaluable(format!("guard of rule {n}: {e}")),
+            Err(e) => {
+                return Transitioned::Unevaluable(
+                    FailureCode::Unparseable,
+                    format!("guard of rule {n}: {e}"),
+                );
+            }
         };
 
         match gmr_expr::eval(&guard, ctx) {
@@ -36,28 +54,42 @@ pub(crate) fn transition(
             Evaluated::Absent => continue,
             Evaluated::Value(Value::Bool(true)) => {}
             Evaluated::Value(_) => {
-                return Transitioned::Unevaluable(format!("guard of rule {n} is not a boolean"));
+                return Transitioned::Unevaluable(
+                    FailureCode::GuardNotBoolean,
+                    format!("guard of rule {n} is not a boolean"),
+                );
             }
             Evaluated::Fault(f) => {
-                return Transitioned::Unevaluable(format!("guard of rule {n}: {}", f.class()));
+                return Transitioned::Unevaluable(
+                    code_of(f),
+                    format!("guard of rule {n}: {}", f.class()),
+                );
             }
         }
 
         let body = match compile(&rule.to) {
             Ok(node) => node,
-            Err(e) => return Transitioned::Unevaluable(format!("new state of rule {n}: {e}")),
+            Err(e) => {
+                return Transitioned::Unevaluable(
+                    FailureCode::Unparseable,
+                    format!("new state of rule {n}: {e}"),
+                );
+            }
         };
         return match gmr_expr::eval(&body, ctx) {
             Evaluated::Value(v @ Value::Object(_)) => Transitioned::To(State::new(v)),
-            Evaluated::Value(_) => {
-                Transitioned::Unevaluable(format!("new state of rule {n} is not an object"))
-            }
-            Evaluated::Absent => {
-                Transitioned::Unevaluable(format!("rule {n} cannot compute a new state"))
-            }
-            Evaluated::Fault(f) => {
-                Transitioned::Unevaluable(format!("new state of rule {n}: {}", f.class()))
-            }
+            Evaluated::Value(_) => Transitioned::Unevaluable(
+                FailureCode::NewStateNotAnObject,
+                format!("new state of rule {n} is not an object"),
+            ),
+            Evaluated::Absent => Transitioned::Unevaluable(
+                FailureCode::NewStateAbsent,
+                format!("rule {n} cannot compute a new state"),
+            ),
+            Evaluated::Fault(f) => Transitioned::Unevaluable(
+                code_of(f),
+                format!("new state of rule {n}: {}", f.class()),
+            ),
         };
     }
 
@@ -152,7 +184,7 @@ mod tests {
         match r {
             Transitioned::To(s) => s.as_value().clone(),
             Transitioned::Unchanged => panic!("expected a transition"),
-            Transitioned::Unevaluable(e) => panic!("could not evaluate: {e}"),
+            Transitioned::Unevaluable(_, e) => panic!("could not evaluate: {e}"),
         }
     }
 
@@ -204,10 +236,37 @@ mod tests {
     #[test]
     fn a_faulting_guard_is_our_failure_and_must_be_loud() {
         let t = rules(&[("obs.gone > 1", "{ status: \"x\" }")]);
-        let Transitioned::Unevaluable(e) = run(t, json!({ "here": 1 }), json!({})) else {
+        let Transitioned::Unevaluable(code, e) = run(t, json!({ "here": 1 }), json!({})) else {
             panic!("this must be loud")
         };
         assert!(e.contains("no_such_field"), "{e}");
+        assert_eq!(
+            code,
+            FailureCode::NoSuchField,
+            "which of our rules broke has to survive as a code, not only as prose"
+        );
+        assert_eq!(code.reason(), gmr_core::ReasonClass::Unevaluable);
+    }
+
+    #[test]
+    fn every_way_a_rule_can_fail_carries_its_own_code() {
+        let cases = [
+            ("obs.n", "{ x: 1 }", FailureCode::GuardNotBoolean),
+            ("true", "42", FailureCode::NewStateNotAnObject),
+            // obs is strict, so a missing field there faults; state is lenient,
+            // so a body that is only `state.missing` resolves to nothing at all.
+            ("true", "{ x: obs.missing }", FailureCode::NoSuchField),
+            ("true", "state.missing", FailureCode::NewStateAbsent),
+            ("true", "{ x: 1 / 0 }", FailureCode::DividedByZero),
+        ];
+        for (when, to, want) in cases {
+            let r = run(rules(&[(when, to)]), json!({ "n": 5 }), json!({}));
+            let Transitioned::Unevaluable(code, _) = r else {
+                panic!("`{when} => {to}` should not have evaluated")
+            };
+            assert_eq!(code, want, "for `{when} => {to}`");
+            assert_eq!(code.reason(), gmr_core::ReasonClass::Unevaluable);
+        }
     }
 
     #[test]
@@ -215,7 +274,7 @@ mod tests {
         let t = rules(&[("obs.n", "{ status: \"x\" }")]);
         assert!(matches!(
             run(t, json!({ "n": 5 }), json!({})),
-            Transitioned::Unevaluable(_)
+            Transitioned::Unevaluable(..)
         ));
     }
 
@@ -224,7 +283,7 @@ mod tests {
         let t = rules(&[("true", "42")]);
         assert!(matches!(
             run(t, json!({}), json!({})),
-            Transitioned::Unevaluable(_)
+            Transitioned::Unevaluable(..)
         ));
     }
 

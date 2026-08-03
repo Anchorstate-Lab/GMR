@@ -19,9 +19,9 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
                 ("moved", Some(to.as_value().to_string()))
             }
             Observed::Still => ("still", None),
-            Observed::Attempt {
-                reason, message, ..
-            } => ("unseen", Some(format!("{reason:?}: {message}"))),
+            Observed::Attempt { code, message, .. } => {
+                ("unseen", Some(format!("{code:?}: {message}")))
+            }
             Observed::Closed => ("closed", None),
         };
 
