@@ -7,6 +7,7 @@ pub mod open;
 pub mod pass;
 pub mod publish;
 pub mod read;
+pub mod reaffirm;
 pub mod reprobe;
 pub mod restate;
 pub mod reterminal;

@@ -180,6 +180,51 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 }
 
 #[tokio::test]
+async fn reaffirming_clears_rewritten_without_touching_anchors() {
+    let w = World::new(true);
+    w.memory("a.md", "Original wording.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+
+    w.memory("a.md", "Just a typo fix, nothing structural.");
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    assert!(view.memories[0].rewritten, "content moved since bind");
+
+    let reference = Ref::new("git", "memories/a.md");
+    let bytes = std::fs::read(w.dir.path().join("memories/a.md")).unwrap();
+    let current = gmr_core::content_hash_of_bytes(&bytes).into_inner();
+    w.runtime
+        .reaffirm(&reference, Version::new(current))
+        .await
+        .unwrap();
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    assert!(
+        !view.memories[0].rewritten,
+        "reaffirm re-stamped the version, so it's no longer stale"
+    );
+    assert_eq!(
+        view.memories.len(),
+        1,
+        "reaffirm must not have disturbed which anchors this is bound to"
+    );
+}
+
+#[tokio::test]
+async fn reaffirming_an_unbound_reference_is_refused() {
+    let w = World::new(true);
+    let err = w
+        .runtime
+        .reaffirm(
+            &Ref::new("git", "memories/never-bound.md"),
+            Version::new("v"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "not_bound");
+}
+
+#[tokio::test]
 async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
     let w = World::new(false);
     w.memory("a.md", "Original wording.");

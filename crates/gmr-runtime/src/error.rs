@@ -1,9 +1,12 @@
-use gmr_core::AnchorKey;
+use gmr_core::{AnchorKey, Ref};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     #[error("anchor `{key}` has never been opened")]
     NoSuchAnchor { key: AnchorKey },
+
+    #[error("`{reference:?}` is not bound to anything — nothing to reaffirm; bind it first")]
+    NotBound { reference: Ref },
 
     #[error("anchor `{key}` is already open — change it with revise, which leaves a sealed record")]
     AlreadyOpen { key: AnchorKey },
@@ -41,6 +44,7 @@ impl RuntimeError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::NoSuchAnchor { .. } => "no_such_anchor",
+            Self::NotBound { .. } => "not_bound",
             Self::AlreadyOpen { .. } => "already_open",
             Self::AnchorClosed { .. } => "anchor_closed",
             Self::NotClosedYet { .. } => "not_closed_yet",

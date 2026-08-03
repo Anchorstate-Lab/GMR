@@ -94,6 +94,11 @@ pub enum Command {
         detach: bool,
     },
 
+    /// Re-stamp a binding's content version without changing which anchors it's about.
+    Reaffirm {
+        path: String,
+    },
+
     Close {
         key: String,
         #[arg(long)]

@@ -90,6 +90,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
             anchors,
             detach,
         } => verbs::bind::run(&rt, &root, path, anchors, detach, json).await,
+        Command::Reaffirm { path } => verbs::reaffirm::run(&rt, &root, path, json).await,
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Edges { since, status } => verbs::edges::run(&rt, since, status, json).await,
         Command::Health { key } => verbs::edges::health(&rt, key, json).await,
