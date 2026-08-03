@@ -44,8 +44,9 @@ GMR 是领域无关的 grounded memory runtime。
 # crate 边界：
 - gmr-core：词汇 + 内容地址 + Entry + fold。不能知道怎么取事实、怎么算规则、怎么存。
 - gmr-expr：纯表达式求值。不能 IO、不能时钟、不能依赖 gmr-core。
+  （obs 侧严格 / state 侧宽容、changed() 认 obs↔state 约定：这两条是锚定层的语义决定，不是通用求值器特性——只是恰好没有编译期依赖 gmr-core，不要把"不依赖 gmr-core"读成"不认识锚"。）
 - gmr-probe：探针调用契约。不能放具体传输实现。
-- gmr-store：存储 trait 和 feature-gated 后端。按可变性切：Journal / BindingStore / Queue。
+- gmr-store：存储 trait 和 feature-gated 后端。按可变性切：Journal / BindingStore / Sealer / LinkStore / Queue。
 - gmr-runtime：唯一编排层。可以同时看 core / expr / probe / store，但不能替领域做判断。
 - gmr：只 re-export。
 
