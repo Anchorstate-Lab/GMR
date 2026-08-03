@@ -41,18 +41,17 @@ string_newtype! {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Expr {
-    pub source: Value,
+    pub source: String,
     pub hash: ContentHash,
 }
 
 impl Expr {
-    pub fn seal(source: Value) -> Self {
-        let hash = content_hash_of(&source);
-        Self { source, hash }
-    }
-
     pub fn text(source: impl Into<String>) -> Self {
-        Self::seal(Value::String(source.into()))
+        let source = source.into();
+        // Hashed as a JSON string (not the bare bytes) so the identity matches
+        // what it always was: a JCS-normalised `Value::String`.
+        let hash = content_hash_of(&Value::String(source.clone()));
+        Self { source, hash }
     }
 }
 

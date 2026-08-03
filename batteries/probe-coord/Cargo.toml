@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+gmr-probe = { path = "../../crates/gmr-probe" }
 serde_json = { workspace = true }
 sha2 = "0.10"
 

@@ -14,10 +14,7 @@ use tokio::process::Command;
 use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
 
 pub use artifact::{ArtifactError, Artifacts, publish};
-
-pub const POSITION_ENV: &str = "GMR_POSITION";
-
-pub const PARAMS_ENV: &str = "GMR_PARAMS";
+pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
 
 /// Executes only artifacts. The anchor names an artifact; this transport
 /// resolves it, verifies every byte, then runs its entrypoint. The version in

@@ -10,11 +10,7 @@ pub(crate) enum Transitioned {
 }
 
 pub(crate) fn compile(expr: &gmr_core::Expr) -> Result<Node, String> {
-    let source = expr
-        .source
-        .as_str()
-        .ok_or_else(|| "the expression is not text".to_owned())?;
-    gmr_expr::parse(source).map_err(|e| e.to_string())
+    gmr_expr::parse(&expr.source).map_err(|e| e.to_string())
 }
 
 pub(crate) fn transition(

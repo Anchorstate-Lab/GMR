@@ -1,6 +1,14 @@
 use async_trait::async_trait;
 use gmr_core::{Derivation, Kind, Outcome, ProbeRef, ReasonClass};
 
+/// Env var a shell-style transport hands the position through. Shared by every
+/// caller (`transport-shell`) and every callee (`probe-coord`) so the name only
+/// has one owner instead of a copy each side can drift from independently.
+pub const POSITION_ENV: &str = "GMR_POSITION";
+
+/// Env var a shell-style transport hands the probe's params through.
+pub const PARAMS_ENV: &str = "GMR_PARAMS";
+
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
 pub struct ProbeError {

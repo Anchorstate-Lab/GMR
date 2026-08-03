@@ -511,6 +511,7 @@ dependencies = [
 name = "gmr-probe-coord"
 version = "0.1.0"
 dependencies = [
+ "gmr-probe",
  "serde_json",
  "sha2",
 ]

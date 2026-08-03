@@ -3,9 +3,14 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-pub const POSITION_ENV: &str = "GMR_POSITION";
+pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
 
-pub const PARAMS_ENV: &str = "GMR_PARAMS";
+/// The shape `report()` emits: `found/matched/missed/at/facts/candidates/exact/
+/// priority/matches`. Every anchor's rules read these fields as `obs.*`, so a
+/// silent field rename would silently change every anchor's judgement input.
+/// Not enforced yet — this only gives it a name to diff against, the way
+/// `gmr_core::OUTCOME_CONTRACT` names the transport's output shape.
+pub const COORD_REPORT_SCHEMA: &str = "gmr.probe-coord.v1";
 
 pub fn hash(s: &str) -> String {
     format!("{:x}", Sha256::digest(s.as_bytes()))
@@ -101,6 +106,7 @@ pub fn report(
 
     let Some(best) = best.filter(|b| b.iter().any(|hit| *hit)) else {
         return Ok(json!({
+            "schema": COORD_REPORT_SCHEMA,
             "extractor": extractor, "found": false,
             "matched": [], "missed": names(),
             "at": Value::Null, "facts": Value::Null,
@@ -118,6 +124,7 @@ pub fn report(
     };
     let pairs = || want.iter().zip(&best);
     let out = json!({
+        "schema": COORD_REPORT_SCHEMA,
         "extractor": extractor, "found": true,
         "matched": pairs().filter(|(_, h)| **h).map(|((k, _), _)| k).collect::<Vec<_>>(),
         "missed": pairs().filter(|(_, h)| !**h).map(|((k, _), _)| k).collect::<Vec<_>>(),

@@ -59,8 +59,8 @@ mod tests {
     #[test]
     fn a_rule_splits_on_the_arrow() {
         let r = rule("changed(\"shape\") => { status: \"drifted\" }").unwrap();
-        assert_eq!(r.when.source.as_str().unwrap(), "changed(\"shape\")");
-        assert_eq!(r.to.source.as_str().unwrap(), "{ status: \"drifted\" }");
+        assert_eq!(r.when.source, "changed(\"shape\")");
+        assert_eq!(r.to.source, "{ status: \"drifted\" }");
     }
 
     #[test]
@@ -71,6 +71,6 @@ mod tests {
 
     #[test]
     fn the_arrow_inside_an_expression_still_splits_at_the_first_one() {
-        assert!(rule("a => b => c").unwrap().to.source.as_str().unwrap() == "b => c");
+        assert!(rule("a => b => c").unwrap().to.source == "b => c");
     }
 }
