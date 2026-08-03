@@ -3,6 +3,7 @@ use gmr_store::BindingRecord;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
 
 impl Runtime {
@@ -13,7 +14,7 @@ impl Runtime {
         bound_version: Version,
     ) -> Result<(), RuntimeError> {
         self.memory
-            .bind(&Binding { reference, anchors }, &bound_version)
+            .bind(&self.log, &Binding { reference, anchors }, &bound_version)
             .await
     }
 
@@ -34,11 +35,12 @@ impl Runtime {
         reference: &Ref,
         bound_version: Version,
     ) -> Result<(), RuntimeError> {
-        reaffirm(&self.memory, reference, bound_version).await
+        reaffirm(&self.log, &self.memory, reference, bound_version).await
     }
 }
 
 async fn reaffirm(
+    log: &AnchorLog,
     memory: &MemoryLens,
     reference: &Ref,
     bound_version: Version,
@@ -49,5 +51,5 @@ async fn reaffirm(
         .ok_or_else(|| RuntimeError::NotBound {
             reference: reference.clone(),
         })?;
-    memory.bind(&record.binding, &bound_version).await
+    memory.bind(log, &record.binding, &bound_version).await
 }

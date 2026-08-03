@@ -101,10 +101,16 @@ impl MemoryBindings {
 
 #[async_trait]
 impl BindingStore for MemoryBindings {
-    async fn bind(&self, binding: &Binding, bound_version: &Version) -> Result<(), StoreError> {
+    async fn bind(
+        &self,
+        binding: &Binding,
+        bound_version: &Version,
+        bound_at_seq: Option<Seq>,
+    ) -> Result<(), StoreError> {
         self.inner.lock().unwrap().bindings.push(BindingRecord {
             binding: binding.clone(),
             bound_version: bound_version.clone(),
+            bound_at_seq,
         });
         Ok(())
     }

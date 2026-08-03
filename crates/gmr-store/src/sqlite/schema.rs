@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS bindings (
     seq            INTEGER PRIMARY KEY AUTOINCREMENT,
     reference      TEXT NOT NULL,     -- canonical Ref
     body           TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
-    bound_version  TEXT NOT NULL      -- view metadata: content version current at bind time
+    bound_version  TEXT NOT NULL,     -- view metadata: content version current at bind time
+    bound_at_seq   INTEGER            -- the single anchor's journal head at bind time;
+                                       -- NULL when the binding names zero or several anchors,
+                                       -- where "which anchor's head" has no single answer
 );
 CREATE INDEX IF NOT EXISTS bindings_by_reference ON bindings(reference, seq);
 

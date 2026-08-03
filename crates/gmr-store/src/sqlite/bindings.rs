@@ -1,6 +1,6 @@
 use crate::{BindingRecord, BindingStore, Sealer, StoreError};
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Binding, ContentHash, Ref, Version, content_hash_of_bytes};
+use gmr_core::{AnchorKey, Binding, ContentHash, Ref, Seq, Version, content_hash_of_bytes};
 use sqlx::{Row, SqlitePool};
 
 use super::{db_err, decode_err, ref_key};
@@ -17,17 +17,23 @@ impl SqliteBindings {
 
 #[async_trait]
 impl BindingStore for SqliteBindings {
-    async fn bind(&self, binding: &Binding, bound_version: &Version) -> Result<(), StoreError> {
+    async fn bind(
+        &self,
+        binding: &Binding,
+        bound_version: &Version,
+        bound_at_seq: Option<Seq>,
+    ) -> Result<(), StoreError> {
         let body = serde_json::to_string(binding)
             .map_err(|e| StoreError::other(format!("could not serialise the binding: {e}")))?;
 
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let seq: i64 = sqlx::query_scalar(
-            "INSERT INTO bindings (reference, body, bound_version) VALUES (?1, ?2, ?3) RETURNING seq",
+            "INSERT INTO bindings (reference, body, bound_version, bound_at_seq) VALUES (?1, ?2, ?3, ?4) RETURNING seq",
         )
         .bind(ref_key(&binding.reference))
         .bind(&body)
         .bind(bound_version.as_str())
+        .bind(bound_at_seq.map(|s| s as i64))
         .fetch_one(&mut *tx)
         .await
         .map_err(db_err)?;
@@ -47,7 +53,7 @@ impl BindingStore for SqliteBindings {
     async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<BindingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT b.body, b.bound_version FROM bindings b
+            SELECT b.body, b.bound_version, b.bound_at_seq FROM bindings b
             JOIN binding_anchors ba ON ba.seq = b.seq
             WHERE ba.anchor = ?1
               AND b.seq = (SELECT MAX(seq) FROM bindings WHERE reference = b.reference)
@@ -63,7 +69,7 @@ impl BindingStore for SqliteBindings {
 
     async fn binding_of(&self, reference: &Ref) -> Result<Option<BindingRecord>, StoreError> {
         let row = sqlx::query(
-            "SELECT body, bound_version FROM bindings WHERE reference = ?1 ORDER BY seq DESC LIMIT 1",
+            "SELECT body, bound_version, bound_at_seq FROM bindings WHERE reference = ?1 ORDER BY seq DESC LIMIT 1",
         )
         .bind(ref_key(reference))
         .fetch_optional(&self.pool)
@@ -76,7 +82,7 @@ impl BindingStore for SqliteBindings {
     async fn all(&self) -> Result<Vec<BindingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT b.body, b.bound_version FROM bindings b
+            SELECT b.body, b.bound_version, b.bound_at_seq FROM bindings b
             WHERE b.seq = (SELECT MAX(seq) FROM bindings WHERE reference = b.reference)
             ORDER BY b.seq
             "#,
@@ -117,6 +123,7 @@ fn decode_one(row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, StoreError>
     Ok(BindingRecord {
         binding,
         bound_version: Version::new(row.get::<String, _>("bound_version")),
+        bound_at_seq: row.get::<Option<i64>, _>("bound_at_seq").map(|s| s as Seq),
     })
 }
 

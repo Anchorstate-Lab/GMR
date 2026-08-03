@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Version};
+use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Version, fold};
 use gmr_store::{BindingRecord, BindingStore, LinkStore, Sealer};
 
 use crate::content::ContentProvider;
 use crate::error::RuntimeError;
+use crate::log::AnchorLog;
 use crate::read::MemoryView;
 
 /// Everything about a memory: which anchors it's bound to, its sealed
@@ -32,12 +33,27 @@ impl MemoryLens {
         }
     }
 
+    /// Records `binding`, stamping the moment with the bound anchor's current
+    /// journal head — so a later read can tell whether the anchor has moved
+    /// since. Ambiguous (and left `None`) when `binding` names zero or
+    /// several anchors: there is no single "the" head to stamp in that case.
     pub async fn bind(
         &self,
+        log: &AnchorLog,
         binding: &Binding,
         bound_version: &Version,
     ) -> Result<(), RuntimeError> {
-        Ok(self.bindings.bind(binding, bound_version).await?)
+        let bound_at_seq = match binding.anchors.as_slice() {
+            [only] => {
+                let entries = log.entries(only, 0).await?;
+                fold(&entries).map(|s| s.head)
+            }
+            _ => None,
+        };
+        Ok(self
+            .bindings
+            .bind(binding, bound_version, bound_at_seq)
+            .await?)
     }
 
     pub async fn bindings_on(
@@ -100,6 +116,7 @@ impl MemoryLens {
         let BindingRecord {
             binding,
             bound_version,
+            bound_at_seq,
         } = record;
         let links = self.links.links_of(&binding.reference).await?;
         let mut view = MemoryView {
@@ -113,6 +130,8 @@ impl MemoryLens {
             grounded: !binding.anchors.is_empty(),
             unavailable: None,
             links,
+            bound_at_seq,
+            stale: None,
         };
 
         let Some(provider) = self.provider_for(&binding.reference) else {

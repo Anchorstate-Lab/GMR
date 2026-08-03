@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use gmr_core::{Anchor, AnchorKey, Link, Outcome, Ref, State, StatusId, Version, scan};
+use gmr_core::{Anchor, AnchorKey, Link, Outcome, Ref, Seq, State, StatusId, Version, scan};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -42,6 +42,16 @@ pub struct MemoryView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unavailable: Option<String>,
     pub links: Vec<Link>,
+    /// The bound anchor's journal head when this was bound. `None` when the
+    /// binding named zero or several anchors — see `BindingRecord`.
+    pub bound_at_seq: Option<Seq>,
+    /// Whether the anchor has moved (`head` advanced) since `bound_at_seq`.
+    /// `None` when there is nothing to compare: `bound_at_seq` is absent, or
+    /// this memory was carried in along a link rather than looked up for the
+    /// anchor being read (see `carry_linked` — a carried record's "current"
+    /// anchor isn't the one this view is about).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale: Option<bool>,
 }
 
 impl Runtime {
@@ -74,7 +84,12 @@ async fn read(
 
     let mut memories = Vec::new();
     for binding in memory.bindings_on(key).await? {
-        memories.push(memory.fetch_memory(binding).await?);
+        let mut view = memory.fetch_memory(binding).await?;
+        // Only meaningful relative to *this* anchor's head — a record carried
+        // in via a link may be bound to some other anchor entirely, so it is
+        // left `None` below rather than compared against the wrong head.
+        view.stale = view.bound_at_seq.map(|seq| seq < s.head);
+        memories.push(view);
     }
     memory.carry_linked(&mut memories).await?;
 

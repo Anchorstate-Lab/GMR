@@ -209,7 +209,7 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
         anchors: vec![AnchorKey::new("core::modules")],
     };
     let bound_version = Version::new("blob-v1");
-    b.bind(&binding, &bound_version).await.unwrap();
+    b.bind(&binding, &bound_version, Some(7)).await.unwrap();
 
     let on = b
         .bindings_on(&AnchorKey::new("core::modules"))
@@ -220,6 +220,7 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
         vec![gmr_store::BindingRecord {
             binding: binding.clone(),
             bound_version: bound_version.clone(),
+            bound_at_seq: Some(7),
         }]
     );
     assert_eq!(
@@ -233,6 +234,24 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     );
 }
 
+async fn a_binding_naming_several_anchors_has_no_single_bound_at_seq<B: BindingStore>(b: &B) {
+    let binding = Binding {
+        reference: Ref::new("git", "memories/shared.md"),
+        anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
+    };
+    b.bind(&binding, &Version::new("v"), None).await.unwrap();
+
+    assert_eq!(
+        b.binding_of(&binding.reference)
+            .await
+            .unwrap()
+            .unwrap()
+            .bound_at_seq,
+        None,
+        "which anchor's head would this be? there is no single answer, so it is not stored"
+    );
+}
+
 async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/m.md");
     for v in ["v1", "v2"] {
@@ -242,6 +261,7 @@ async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
                 anchors: vec![AnchorKey::new("a")],
             },
             &Version::new(v),
+            None,
         )
         .await
         .unwrap();
@@ -272,6 +292,7 @@ async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
                 anchors: vec![AnchorKey::new(anchor)],
             },
             &Version::new("v"),
+            None,
         )
         .await
         .unwrap();
@@ -377,6 +398,7 @@ journal_conformance!(
 
 bindings_conformance!(
     bindings_record_the_version_they_bound,
+    a_binding_naming_several_anchors_has_no_single_bound_at_seq,
     rebinding_appends_and_the_latest_wins,
     rebinding_can_move_a_record_off_an_anchor,
     sealing_is_content_addressed_and_idempotent,
