@@ -145,6 +145,7 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
         !before
             .standing
             .iter()
+            .flatten()
             .any(|e| matches!(e, Standing::Rewritten { .. })),
         "not rewritten yet"
     );
@@ -167,7 +168,7 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
-        after.standing.iter().any(|e| matches!(
+        after.standing.iter().flatten().any(|e| matches!(
             e,
             Standing::Rewritten {
                 retrievable: Some(true),
@@ -250,6 +251,7 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
             .unwrap()
             .standing
             .iter()
+            .flatten()
             .any(|e| matches!(
                 e,
                 Standing::Rewritten {

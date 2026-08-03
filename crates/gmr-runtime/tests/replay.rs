@@ -147,10 +147,12 @@ async fn the_two_hops_version_independently() {
         "the evaluator belongs to the substrate; probe authors cannot change it"
     );
 
-    let gmr_runtime::Observed::Transitioned { from, to } = observed else {
-        panic!("the first observation after Reprobe must retain a full entry")
+    let gmr_runtime::Observed::Unchanged { .. } = observed else {
+        panic!(
+            "the first observation after Reprobe must retain a full entry, \
+             but unchanged content must not be reported as a move: {observed:?}"
+        )
     };
-    assert_eq!(from, to, "unchanged content should not move state");
 }
 
 #[tokio::test]

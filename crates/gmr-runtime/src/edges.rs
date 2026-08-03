@@ -63,8 +63,13 @@ pub enum Standing {
 pub struct Edges {
     /// What actually happened in the log after the cursor. Handed over once.
     pub edges: Vec<Edge>,
-    /// Conditions as of now. Recomputed on every call — see [`Standing`].
-    pub standing: Vec<Standing>,
+    /// Conditions as of now — see [`Standing`]. `None` when a `status` filter
+    /// was asked for: that is a specific question about edges, and standing
+    /// conditions have no status to filter by, so it is not computed at all
+    /// rather than silently emitted empty (which a caller cannot tell apart
+    /// from "nothing is stale or rewritten right now").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub standing: Option<Vec<Standing>>,
     pub cursor: Seq,
 }
 
@@ -94,7 +99,10 @@ async fn changed_since(
 ) -> Result<Edges, RuntimeError> {
     let now = Utc::now();
     let mut edges = Vec::new();
-    let mut standing = Vec::new();
+    // Asking for a status is asking a specific question about edges; standing
+    // conditions have no status to filter by, so skip computing them at all
+    // rather than throwing away work.
+    let mut standing = status.is_none().then(Vec::new);
     let mut head = cursor;
 
     for key in log.anchors().await? {
@@ -103,38 +111,39 @@ async fn changed_since(
         if let Some((seq, _)) = entries.last() {
             head = head.max(*seq);
         }
-        if let Some(s) = last
-            && !s.closed
-            && s.last_sighting
-                .is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
-        {
-            standing.push(Standing::Stale {
-                anchor: key.clone(),
-                last_sighting: s.last_sighting,
-            });
-        }
 
-        for binding in memory.bindings_on(&key).await? {
-            let view = memory.fetch_memory(binding).await?;
-            if view.rewritten {
-                standing.push(Standing::Rewritten {
+        if let Some(standing) = standing.as_mut() {
+            if let Some(s) = &last
+                && !s.closed
+                && s.last_sighting
+                    .is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
+            {
+                standing.push(Standing::Stale {
                     anchor: key.clone(),
-                    reference: view.reference,
-                    bound_version: view.bound_version,
-                    current_version: view.current_version,
-                    retrievable: view.retrievable,
+                    last_sighting: s.last_sighting,
                 });
+            }
+
+            for binding in memory.bindings_on(&key).await? {
+                let view = memory.fetch_memory(binding).await?;
+                if view.rewritten {
+                    standing.push(Standing::Rewritten {
+                        anchor: key.clone(),
+                        reference: view.reference,
+                        bound_version: view.bound_version,
+                        current_version: view.current_version,
+                        retrievable: view.retrievable,
+                    });
+                }
             }
         }
     }
 
-    // Asking for a status is asking a specific question: do not muddy it.
     if let Some(want) = status {
         edges.retain(|e| match e {
             Edge::Transitioned { status, .. } => status.as_ref() == Some(want),
             _ => false,
         });
-        standing.clear();
     }
 
     edges.sort_by_key(|e| match e {

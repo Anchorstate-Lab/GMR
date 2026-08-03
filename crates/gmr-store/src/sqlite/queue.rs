@@ -32,6 +32,24 @@ impl Queue for SqliteQueue {
         Ok(())
     }
 
+    async fn ensure_enqueued(
+        &self,
+        anchor: &AnchorKey,
+        due: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let row = sqlx::query(
+            "INSERT INTO queue (anchor, due, lease_until, parked) VALUES (?1, ?2, 0, 0)
+             ON CONFLICT(anchor) DO NOTHING
+             RETURNING anchor",
+        )
+        .bind(anchor.as_str())
+        .bind(due.timestamp())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?;
+        Ok(row.is_some())
+    }
+
     async fn due(
         &self,
         now: DateTime<Utc>,

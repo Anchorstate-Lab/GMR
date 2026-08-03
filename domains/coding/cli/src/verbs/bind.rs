@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, Ref, Runtime, Version};
+use gmr::{AnchorKey, Ref, Runtime};
 
 use crate::error::CliError;
 
@@ -18,15 +18,19 @@ pub async fn run(
     if !root.join(&path).exists() {
         return Err(CliError(format!("`{path}` is not in this repository")));
     }
-    let version = gmr_provider_git::blob_version(root, &path).map_err(|e| CliError(e.message))?;
+    let reference = Ref::new("git", path.clone());
+    // Goes through the same registered ContentProvider that read/edges use to
+    // decide "current version" — not a second, separate call to provider-git,
+    // which could silently drift from what the provider itself reports.
+    let version = rt
+        .memory()
+        .current_version(&reference)
+        .await?
+        .ok_or_else(|| CliError(format!("no content provider could version `{path}`")))?;
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
-    rt.bind(
-        Ref::new("git", path.clone()),
-        anchors.clone(),
-        Version::new(version.clone()),
-    )
-    .await?;
+    rt.bind(reference, anchors.clone(), version.clone()).await?;
+    let version = version.into_inner();
 
     if json {
         println!(

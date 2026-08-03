@@ -1,8 +1,10 @@
 pub mod bind;
 pub mod close;
+pub mod cobound;
 pub mod doctor;
 pub mod edges;
 pub mod health;
+pub mod link;
 pub mod observe;
 pub mod open;
 pub mod pass;
@@ -10,6 +12,7 @@ pub mod publish;
 pub mod read;
 pub mod reaffirm;
 pub mod reprobe;
+pub mod requeue;
 pub mod restate;
 pub mod reterminal;
 pub mod retransition;

@@ -28,9 +28,25 @@ impl Scheduler {
         &self.policy
     }
 
-    /// `Ok(true)` if actually enqueued, `Ok(false)` if this deployment has no
-    /// queue — that is not a failure, just a no-op.
-    pub async fn enqueue(
+    /// Inserts `anchor` only if it has no queue row yet. `Ok(false)` if this
+    /// deployment has no queue, or if the anchor was already scheduled — either
+    /// way there is nothing to reset. This is what a routine sync should call:
+    /// it repairs a missing entry without touching one already backing off.
+    pub async fn ensure_enqueued(
+        &self,
+        anchor: &AnchorKey,
+        due: DateTime<Utc>,
+    ) -> Result<bool, RuntimeError> {
+        let Some(queue) = self.queue.as_ref() else {
+            return Ok(false);
+        };
+        Ok(queue.ensure_enqueued(anchor, due).await?)
+    }
+
+    /// Unconditionally (re)schedules `anchor` right now, clearing any lease,
+    /// backoff, or parked state. A deliberate operator action — do not call
+    /// this from routine sync, which should use `ensure_enqueued` instead.
+    pub async fn requeue_now(
         &self,
         anchor: &AnchorKey,
         due: DateTime<Utc>,

@@ -16,11 +16,11 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
         .filter(|v| v.sighting == gmr::Sighting::Absent)
         .map(|v| v.key.as_str())
         .collect();
-    let barren: Vec<&str> = live
-        .iter()
-        .filter(|v| v.memories.is_empty())
-        .map(|v| v.key.as_str())
-        .collect();
+    // Barren comes from corpus_health, not a second `memories.is_empty()` scan
+    // of these same views — one definition of "unbound" instead of two that
+    // could drift apart.
+    let corpus = rt.corpus_health().await?;
+    let barren: Vec<&str> = corpus.barren_anchors.iter().map(|k| k.as_str()).collect();
     let states: Vec<String> = live
         .iter()
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))

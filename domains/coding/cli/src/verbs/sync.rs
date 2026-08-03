@@ -77,7 +77,7 @@ pub async fn run(
     let mut scheduled = 0;
     for decl in &declared.anchor {
         let key = AnchorKey::new(decl.key.clone());
-        if !dry_run && rt.schedule(&key).await? {
+        if !dry_run && rt.ensure_scheduled(&key).await? {
             scheduled += 1;
         }
         if existing.contains(&key) {

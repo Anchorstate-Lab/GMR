@@ -38,6 +38,9 @@ pub enum RuntimeError {
 
     #[error(transparent)]
     Store(#[from] gmr_store::StoreError),
+
+    #[error(transparent)]
+    Content(#[from] crate::content::ContentError),
 }
 
 impl RuntimeError {
@@ -52,6 +55,7 @@ impl RuntimeError {
             Self::NoQueue => "no_queue",
             Self::Leased { .. } => "leased",
             Self::Store(e) => e.code(),
+            Self::Content(e) => e.code(),
         }
     }
 }

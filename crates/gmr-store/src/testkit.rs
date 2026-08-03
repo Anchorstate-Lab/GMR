@@ -199,6 +199,22 @@ impl Queue for MemoryQueue {
         Ok(())
     }
 
+    async fn ensure_enqueued(
+        &self,
+        anchor: &AnchorKey,
+        due: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.contains_key(anchor) {
+            return Ok(false);
+        }
+        let slot = inner.entry(anchor.clone()).or_default();
+        slot.due = due;
+        slot.lease_until = None;
+        slot.parked = false;
+        Ok(true)
+    }
+
     async fn due(
         &self,
         now: DateTime<Utc>,

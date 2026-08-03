@@ -13,7 +13,7 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
     for key in &keys {
         let observed = rt.observe(key).await?;
         let (word, detail) = match &observed {
-            Observed::Transitioned { from, to } if from == to => ("settled", None),
+            Observed::Unchanged { .. } => ("settled", None),
             Observed::Transitioned { to, .. } => {
                 moved += 1;
                 ("moved", Some(to.as_value().to_string()))

@@ -99,6 +99,20 @@ pub enum Command {
         path: String,
     },
 
+    /// Other references bound to any anchor `path` is also bound to.
+    Cobound {
+        path: String,
+    },
+
+    /// Record that `from` relates to `to`. Independent of anchoring — linking
+    /// two references says nothing about which anchors either is bound to.
+    Link {
+        from: String,
+        to: String,
+        #[arg(long)]
+        kind: String,
+    },
+
     Close {
         key: String,
         #[arg(long)]
@@ -114,6 +128,12 @@ pub enum Command {
 
     Health {
         key: Option<String>,
+    },
+
+    /// Force `key` due now, clearing any backoff or parked state. Unlike
+    /// `sync`, which only repairs a missing queue row, this always resets it.
+    Requeue {
+        key: String,
     },
 
     Pass,

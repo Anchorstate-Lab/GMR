@@ -17,9 +17,9 @@ pub use gmr_core::{
 pub use gmr_expr::EVALUATOR_VERSION;
 pub use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
 pub use gmr_runtime::{
-    AnchorHealth, AnchorView, ContentError, ContentProvider, CorpusHealth, Edge, Edges, Fetched,
-    MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised, Runtime, RuntimeError,
-    Sighting, Standing, Supersede,
+    AnchorHealth, AnchorLog, AnchorView, ContentError, ContentProvider, CorpusHealth, Edge, Edges,
+    Fetched, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised,
+    Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
 };
 pub use gmr_store::{
     BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, LinkStore, Queue, Sealer,

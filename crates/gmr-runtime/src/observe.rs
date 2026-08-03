@@ -18,6 +18,13 @@ pub enum Observed {
         from: State,
         to: State,
     },
+    /// A full entry was written (retain: Full, or the world moved along a
+    /// direction nobody watches) but no rule matched, so the state itself did
+    /// not move. Distinct from `Transitioned` so consumers do not have to
+    /// infer "nothing really changed" from `from == to` themselves.
+    Unchanged {
+        state: State,
+    },
     Still,
     Attempt {
         reason: ReasonClass,
@@ -141,6 +148,7 @@ pub(crate) async fn observe_with(
 
     Ok(match still_ref {
         Some(_) => Observed::Still,
+        None if s.state == next => Observed::Unchanged { state: next },
         None => Observed::Transitioned {
             from: s.state,
             to: next,

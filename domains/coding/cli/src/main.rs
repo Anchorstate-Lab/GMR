@@ -91,9 +91,12 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
             detach,
         } => verbs::bind::run(&rt, &root, path, anchors, detach, json).await,
         Command::Reaffirm { path } => verbs::reaffirm::run(&rt, &root, path, json).await,
+        Command::Cobound { path } => verbs::cobound::run(&rt, path, json).await,
+        Command::Link { from, to, kind } => verbs::link::run(&rt, from, to, kind, json).await,
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Edges { since, status } => verbs::edges::run(&rt, since, status, json).await,
         Command::Health { key } => verbs::health::run(&rt, key, json).await,
+        Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
         Command::Pass => verbs::pass::run(&rt, json).await,
         Command::Doctor => verbs::doctor::run(&rt, json).await,
     }

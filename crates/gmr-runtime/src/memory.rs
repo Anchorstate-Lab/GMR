@@ -71,6 +71,28 @@ impl MemoryLens {
         Ok(self.links.links_of(reference).await?)
     }
 
+    fn provider_for(&self, reference: &Ref) -> Option<&Arc<dyn ContentProvider>> {
+        self.providers
+            .iter()
+            .find(|p| p.provider() == &reference.provider)
+    }
+
+    /// What the registered `ContentProvider` says `reference` is at right now.
+    /// The one path for "what counts as the current version" — callers that
+    /// need to stamp a version (`bind`, `reaffirm`) go through this instead of
+    /// reaching past the runtime to a specific provider's implementation, so
+    /// they cannot end up disagreeing with `read`/`edges` about what a
+    /// reference's current version is.
+    pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
+        let Some(provider) = self.provider_for(reference) else {
+            return Ok(None);
+        };
+        Ok(provider
+            .fetch(&reference.external_id)
+            .await?
+            .map(|f| f.version))
+    }
+
     pub(crate) async fn fetch_memory(
         &self,
         record: BindingRecord,
@@ -93,11 +115,7 @@ impl MemoryLens {
             links,
         };
 
-        let Some(provider) = self
-            .providers
-            .iter()
-            .find(|p| p.provider() == &binding.reference.provider)
-        else {
+        let Some(provider) = self.provider_for(&binding.reference) else {
             view.unavailable = Some(format!(
                 "no provider recognises a `{}` reference",
                 binding.reference.provider

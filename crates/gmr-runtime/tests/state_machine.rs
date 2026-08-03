@@ -98,7 +98,7 @@ fn transitions(pairs: &[(&str, &str)]) -> Transitions {
 }
 
 fn moved(o: &Observed) -> bool {
-    matches!(o, Observed::Transitioned { from, to } if from != to)
+    matches!(o, Observed::Transitioned { .. })
 }
 
 #[tokio::test]

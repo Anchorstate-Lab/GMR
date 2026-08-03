@@ -126,7 +126,7 @@ async fn open(
     // anchor exists. Enqueueing is a recoverable side branch; failing it must
     // not misreport "already open" as "failed to open" — that makes the caller
     // retry, hit AlreadyOpen, and still leave the real gap unrepaired.
-    if let Err(e) = scheduler.enqueue(&key, at).await {
+    if let Err(e) = scheduler.ensure_enqueued(&key, at).await {
         warnings.push(format!(
             "the anchor opened but could not be enqueued ({e}); it will not be \
              observed automatically until the next sync repairs it"

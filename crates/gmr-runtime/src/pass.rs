@@ -19,8 +19,17 @@ pub struct Passed {
 }
 
 impl Runtime {
-    pub async fn schedule(&self, key: &AnchorKey) -> Result<bool, RuntimeError> {
-        schedule(&self.log, &self.scheduler, key).await
+    /// Repairs a missing queue row for `key` without disturbing one that
+    /// already exists. What a routine sync should call — see
+    /// [`Scheduler::ensure_enqueued`] for why this must not reset backoff.
+    pub async fn ensure_scheduled(&self, key: &AnchorKey) -> Result<bool, RuntimeError> {
+        ensure_scheduled(&self.log, &self.scheduler, key).await
+    }
+
+    /// Unconditionally makes `key` due now, clearing any backoff or parked
+    /// state. An explicit operator action, not something sync does for you.
+    pub async fn requeue(&self, key: &AnchorKey) -> Result<bool, RuntimeError> {
+        self.scheduler.requeue_now(key, Utc::now()).await
     }
 
     pub async fn pass(&self) -> Result<Passed, RuntimeError> {
@@ -28,14 +37,14 @@ impl Runtime {
     }
 }
 
-async fn schedule(
+async fn ensure_scheduled(
     log: &AnchorLog,
     scheduler: &Scheduler,
     key: &AnchorKey,
 ) -> Result<bool, RuntimeError> {
     let entries = log.entries(key, 0).await?;
     match fold(&entries) {
-        Some(state) if !state.closed => scheduler.enqueue(key, Utc::now()).await,
+        Some(state) if !state.closed => scheduler.ensure_enqueued(key, Utc::now()).await,
         _ => Ok(false),
     }
 }
@@ -81,7 +90,10 @@ async fn pass(
                 }
             }
             other => {
-                if matches!(other, Observed::Transitioned { from, to } if from != to) {
+                // `Transitioned` only ever carries an actual move now — a
+                // no-op full write comes back as `Unchanged` instead, so
+                // there is no `from == to` case left to guard against here.
+                if matches!(other, Observed::Transitioned { .. }) {
                     out.moved += 1;
                 }
                 // The anchor's own declaration (terminal set, cadence) cannot
