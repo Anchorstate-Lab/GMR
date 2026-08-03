@@ -6,6 +6,7 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
+use crate::seal_context;
 use crate::translate::bind_warnings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,15 +42,11 @@ async fn revise(
         return Err(RuntimeError::AnchorClosed { key: key.clone() });
     }
 
-    let context = serde_json::json!({
-        "at_entry": s.head,
-        "state": s.state,
-        "entered_at": s.entered_at,
-        "closed": s.closed,
-        "latest": s.latest,
-        "probe_declaration": s.anchor.probe.declaration_hash(),
-        "evaluator_version": gmr_expr::EVALUATOR_VERSION,
-    });
+    let mut context = seal_context::base(&s);
+    context["closed"] = serde_json::json!(s.closed);
+    context["latest"] = serde_json::json!(s.latest);
+    context["probe_declaration"] = serde_json::json!(s.anchor.probe.declaration_hash());
+    context["evaluator_version"] = serde_json::json!(gmr_expr::EVALUATOR_VERSION);
     let context = memory
         .seal(&serde_json::to_vec(&context).expect("the context always serialises"))
         .await?;

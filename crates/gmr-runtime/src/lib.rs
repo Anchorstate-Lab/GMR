@@ -16,6 +16,7 @@ pub mod policy;
 pub mod read;
 pub mod revise;
 mod scheduler;
+mod seal_context;
 mod translate;
 
 pub use assembly::{Runtime, RuntimeBuilder};

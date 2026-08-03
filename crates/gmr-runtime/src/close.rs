@@ -6,6 +6,7 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
+use crate::seal_context;
 
 impl Runtime {
     pub async fn close(&self, key: &AnchorKey, rationale: &[u8]) -> Result<(), RuntimeError> {
@@ -26,12 +27,8 @@ async fn close(
         return Err(RuntimeError::AnchorClosed { key: key.clone() });
     }
 
-    let context = serde_json::json!({
-        "closed_by": "author",
-        "at_entry": state.head,
-        "state": state.state,
-        "entered_at": state.entered_at,
-    });
+    let mut context = seal_context::base(&state);
+    context["closed_by"] = serde_json::json!("author");
     let context = memory
         .seal(&serde_json::to_vec(&context).expect("the context always serialises"))
         .await?;
