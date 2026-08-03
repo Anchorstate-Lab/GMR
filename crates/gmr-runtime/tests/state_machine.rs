@@ -102,6 +102,26 @@ fn moved(o: &Observed) -> bool {
 }
 
 #[tokio::test]
+async fn an_anchor_that_declares_no_rule_still_records_that_the_world_moved() {
+    // An empty rule table is a legal form, not an omission to be filled in:
+    // it says "keep the record, interpret nothing". The substrate must not
+    // supply a status vocabulary of its own to fill the gap.
+    let w = World::new();
+    w.write(r#"{"shape":"(a)->c"}"#);
+    w.open(&[], &[]).await;
+    assert_eq!(w.status().await, None, "nobody declared a status");
+
+    assert_eq!(w.observe().await, Observed::Still, "the world held still");
+
+    w.write(r#"{"shape":"(a,b)->c"}"#);
+    assert!(
+        matches!(w.observe().await, Observed::Unchanged { .. }),
+        "the facts moved, so a full entry is kept — but no rule matched, so the state did not"
+    );
+    assert_eq!(w.state().await, State::default());
+}
+
+#[tokio::test]
 async fn a_declared_direction_moves_the_machine() {
     let w = World::new();
     w.write(r#"{"shape":"(a)->c"}"#);

@@ -65,19 +65,6 @@ pub struct Rule {
 pub struct Transitions(pub Vec<Rule>);
 
 impl Transitions {
-    pub fn watch_everything() -> Self {
-        Self(vec![
-            Rule {
-                when: Expr::text("not exists(state.obs)"),
-                to: Expr::text("{ obs: obs, status: \"captured\" }"),
-            },
-            Rule {
-                when: Expr::text("obs != state.obs"),
-                to: Expr::text("{ obs: obs, was: state.obs, status: \"moved\" }"),
-            },
-        ])
-    }
-
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

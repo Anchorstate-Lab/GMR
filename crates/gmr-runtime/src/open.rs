@@ -73,11 +73,7 @@ async fn open(
     let anchor = Anchor {
         key: key.clone(),
         probe: request.probe,
-        transitions: if request.transitions.is_empty() {
-            Transitions::watch_everything()
-        } else {
-            request.transitions
-        },
+        transitions: request.transitions,
         terminal: request.terminal,
         retain: request.retain,
         cadence_secs: request.cadence_secs,
