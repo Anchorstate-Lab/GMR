@@ -33,7 +33,7 @@ members = [
     # 电池 —— 可复用的具体实现，不属于任何单一域。一个角色一个包，
     # 后端是包内的 feature（跟 crates/gmr-store 的 sqlite 一样）。
     "batteries/transport",
-    "batteries/provider-git",
+    "batteries/provider",
     # 探针工件自成一个 workspace（batteries/probes/，含 coord 约定库）——
     # 它们是 exec 的不是链接的，跟根 workspace 的依赖解析互不干扰，所以
     # 不在这个 members 列表里。

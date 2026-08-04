@@ -15,7 +15,7 @@ path = "src/main.rs"
 gmr = { path = "../../../crates/gmr", features = ["sqlite"] }
 # 电池 —— **挑哪一块是域的决定**，这三行就是那个决定
 gmr-transport = { path = "../../../batteries/transport", features = ["shell"] }
-gmr-provider-git = { path = "../../../batteries/provider-git" }
+gmr-provider = { path = "../../../batteries/provider", features = ["git"] }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,0 +1,21 @@
+[package]
+name = "gmr-provider"
+description = "电池：ContentProvider 的具体实现。一个后端一个 feature + 一个模块，不是一个包。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gmr-core = { path = "../../crates/gmr-core", optional = true }
+gmr-content = { path = "../../crates/gmr-content", optional = true }
+async-trait = { workspace = true, optional = true }
+
+[features]
+default = []
+# ── 后端：一个 feature 一个，跟 crates/gmr-store 的 sqlite feature 同一个
+#    惯例。加 mem0 / Claude 原生记忆 = 加一个 feature + 一个模块。
+git = ["dep:gmr-core", "dep:gmr-content", "dep:async-trait"]
+
+[lints]
+workspace = true

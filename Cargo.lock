@@ -204,7 +204,7 @@ dependencies = [
  "chrono",
  "clap",
  "gmr",
- "gmr-provider-git",
+ "gmr-provider",
  "gmr-transport",
  "serde",
  "serde_json",
@@ -519,13 +519,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "gmr-provider-git"
+name = "gmr-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "gmr-content",
  "gmr-core",
- "tokio",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use gmr::Runtime;
-use gmr_provider_git::Git;
+use gmr_provider::git::Git;
 use gmr_transport::shell::Shell;
 
 use cli::{Cli, Command};
