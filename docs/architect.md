@@ -82,8 +82,8 @@ flowchart LR
     cli -. "exec（不链接）" .-> maps
 ```
 
-- 允许的依赖方向写在 `architecture.toml` 的 `may_depend_on`，但目前只是声明——`gate.sh` 实际机械校验的是「禁区库清单」（`forbidden`/`forbidden_default`，逐个 `cargo tree` 比对）和「层间不许倒着依赖」（按 `crates/batteries/domains` 三个物理目录分层），两者都不读 `may_depend_on` 本身；这条字段目前还是文档，不是判据。
-- `probe-impl` 层标了 `linkable = false`：探针只能被 `exec`，任何 `crates/` 下的包依赖它就算违规——但这条同样没有对应的机械检查，且 `addr-map`/`ast-map`/`name-map`/`prose-map` 活在 `batteries/probes/` 这个独立 workspace 里，根仓库的 `cargo tree -p <name>` 本来就够不到它们。
+- 允许的依赖方向没有单独声明。`gate.sh` 机械校验两件事：「禁区库清单」（`architecture.toml` 的 `forbidden`/`forbidden_default`，逐个 `cargo tree` 比对）和「层间不许倒着依赖」（按 `crates/batteries/domains` 三个物理目录分层）。曾经有一个 `may_depend_on` 字段写着精确的依赖图，但没有任何代码读它 —— 已删除，因为一条没人兑现的判据比没有判据更坏。
+- 探针只能被 `exec`，任何 `crates/` 下的包依赖它就算违规。这条**有**机械检查，只是不在禁区清单里：分层检查用 `cargo metadata --manifest-path` 逐个读 `crates|batteries|domains/**/Cargo.toml`（够得到 `batteries/probes/` 这个独立 workspace，而根仓库的 `cargo tree -p <name>` 够不到），探针落在 `batteries` rank 1，`crates/` 是 rank 0，链接它就是「底层依赖上层」。`architecture.toml` 里曾经有一个 `linkable = false` 字段声明这件事，没人读，与真正兑现它的检查也不在一处 —— 已删除。
 - **装配是域的决定**：选 shell 传输（`gmr-transport` 的 `shell` feature）/ git 提供方（`gmr-provider` 的 `git` feature）/ sqlite 后端这三行只出现在 `domains/coding/cli/Cargo.toml` 与 `main.rs`，基底一旦写死就不再领域无关。
 - **一个角色一个包，不是一个实现一个包**：`gmr-transport`/`gmr-provider` 默认 feature 集是空的，不 ship 任何具体后端；加一个新后端（http 传输、mem0/Claude 原生记忆 provider）是加一个 feature + 一个模块，参照 `crates/gmr-store` 的 `sqlite` feature 同一惯例，不必再开一个新 crate。
 
@@ -93,7 +93,7 @@ flowchart LR
 
 | 包 | 职责（给什么） | 边界（不许做什么） | 守卫方式 |
 |---|---|---|---|
-| **gmr-core** | 名词与地址：`Anchor/AnchorKey/State/StatusId/Rule/Transitions`、`Entry/Observation/Versions/Seq`、`Binding/Ref`、`Manifest/ProbeRef/Outcome`、JCS 规范化 + `content_hash_of`，以及**日志→状态的纯折叠 `fold/scan`** | 不知道怎么取事实、怎么算规则、怎么存；零 workspace 依赖 | `gate.sh` 纯根检查（`cargo tree` 里不许出现 `gmr-*`）；`architecture.toml: pure_root = true` |
+| **gmr-core** | 名词与地址：`Anchor/AnchorKey/State/StatusId/Rule/Transitions`、`Entry/Observation/Versions/Seq`、`Binding/Ref`、`Manifest/ProbeRef/Outcome`、JCS 规范化 + `content_hash_of`，以及**日志→状态的纯折叠 `fold/scan`** | 不知道怎么取事实、怎么算规则、怎么存；零 workspace 依赖 | `gate.sh` 纯根检查（`cargo tree` 里不许出现 `gmr-*`，名单硬编码在 gate.sh 里） |
 | **gmr-expr** | 规则语言：`parse → Node → eval`，roots 只有 `obs/state/taken_at/entered_at`，builtins 只有 `exists()/changed()`，能构造对象（转换要吐完整 state）；`bind` 做拼错字段的**警告**；自带 `EVALUATOR_VERSION`（build.rs 由源码哈希算） | 纯、可终止、无 IO、无时钟、无随机；**不依赖 gmr-core**（求值器不认识锚） | 纯根检查 + `forbidden = ["io"]` 依赖禁区 |
 | **gmr-probe** | 调用契约：`Transport { kind(), invoke(probe, position) -> Sighted }`、`ProbeError{reason, code}`。区分「世界的答案」`Outcome::NotFound` 与「我们的失败」`ProbeError` | 不放任何具体传输实现（无 tokio/reqwest/hyper） | `gate.sh` 显式 grep 依赖树 |
 | **gmr-store** | 按**可变性**切三个 trait：`Journal`（只增，带 `Fence` 写入令牌）、`BindingStore`（只增 + `seal/sealed`）、`Queue`（可变：到期/租约/失败计数，可选）；sqlite 后端是 feature | 默认 feature 里不许出现数据库；基底 ship 接口不 ship 后端 | `forbidden_default = ["db"]` + `gate.sh` |
@@ -169,7 +169,9 @@ sequenceDiagram
 
 ## 6. 自举数据不是系统本体（读这个仓库最容易踩的坑）
 
-`.anchor/anchors.toml` / `.anchor/probes.toml` / `architecture.toml` / `memories/` 是**本仓库作为 GMR 用户**的数据：GMR 用自己监督自己。它们不是 GMR ship 出去的能力、默认规则或产品清单 —— GMR 明确把"ship 一份该检测什么的清单"列为红牌。`gate.sh` 读 `architecture.toml` 是这个仓库的自举门禁，不代表别的用户必须有这份文件。
+`.anchor/anchors.toml` / `.anchor/probes.toml` / `memories/` 是**本仓库作为 GMR 用户**的数据：GMR 用自己监督自己。它们不是 GMR ship 出去的能力、默认规则或产品清单 —— GMR 明确把"ship 一份该检测什么的清单"列为红牌。
+
+`architecture.toml` 不属于这一批：没有任何 GMR 代码读它，它只是 `gate.sh` 的依赖禁区清单。一个包有没有依赖 tokio 由 `cargo tree` 完全决定，那是明确不该锚的一类。
 
 ---
 

@@ -26,22 +26,22 @@ GMR 是领域无关的 grounded memory runtime。
 
 本仓库用 GMR 监督 GMR 自己，所以有一批“使用数据”：
 
-- .anchor/anchors.toml：这个仓库选择锚哪些东西
+- .anchor/anchors.toml：这个仓库选择锚哪些东西（没有笔记认领的锚才写这里）
 - .anchor/probes.toml：这些锚用的探针配方（名字 → 那个名字是什么）
-- architecture.toml：这些锚使用的目标架构判据
-- memories/：绑定到锚上的人工记录
+- memories/：人写的记录。frontmatter 声明它关于哪个坐标，锚由此诞生
 - .codegraph/：CodeGraph 的本地索引
 
 机器读的声明住在 `.anchor/` 里，人写的记忆留在外面。这不是审美：toml 摊在仓库根目录会被 Agent 当成项目自身的代码读，而记忆藏进点目录就没人看得见 —— 两边都会毁掉这套东西的用处。`.anchor/` 里只有 `anchors.toml` 和 `probes.toml` 跟 git，日志和制品不跟（见 `.anchor/.gitignore`）。
 
 这些文件和 crates/ 里的 GMR 本体不是同一层。不要因为它们在仓库里，就把它们当成系统自带能力、默认规则、产品清单或 crate 依赖。
 
-代码中尽可能的简化注释, 所有声明依靠这套自举的记忆去描述. 
+**`architecture.toml` 不在这一批里。** 它不被任何 GMR 代码读取：不走探针、不走锚、不进日志、不随产品分发。它只是 gate.sh 的依赖禁区清单 —— 一个手写 linter 的配置。之所以不做成锚：一个包有没有依赖 tokio，`cargo tree` 一跑就是确定答案，那是「事实完全决定判断」的一类，明确不该锚。
 
-修改这些文件 = 修改本仓库作为 GMR 用户时的判据或记录；通常需要 owner 判断。
+代码中尽可能的简化注释, 所有声明依靠这套自举的记忆去描述. 必要的注释用英文。
+
+修改 memories/ 或 .anchor/*.toml = 修改本仓库作为 GMR 用户时的判据或记录；通常需要 owner 判断。
 修改 crates/ = 修改 GMR 工具本体；必须遵守 crate 边界。
-本仓库的部分自举约束由 gate.sh 检查；gate.sh 读取 architecture.toml。
-这不表示 GMR ship 一份 architecture.toml，也不表示别的用户必须有这份文件。
+修改 architecture.toml = 修改 gate.sh 的门禁判据，跟 GMR 的语义无关。
 
 
 # crate 边界：

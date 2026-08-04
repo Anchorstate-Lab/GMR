@@ -1,13 +1,20 @@
-# 目标架构的声明。**判据的来源，不是文档。**
+# gate.sh 的依赖禁区清单。**不是 GMR 的数据。**
 #
-# 它由作者维护、住在作者的仓库里 —— 探针只是把「这里现在写着什么」搬回来。
-# 工具不 ship 它：ship 一份「该检测什么」的清单是红牌，判据是所有权而不是
-# 逻辑结构（GMR.md §6.4）。
+# 没有任何 GMR 代码读这个文件：不走探针，不走锚，不进日志，不随产品分发。
+# 陌生用户装上 gmr 永远不会见到它。它只被 gate.sh 里那段 Python 读，用来跑
+# `cargo tree` 比对禁用库 —— 一个手写 linter 的配置，恰好也是 TOML。
 #
-# 改这个文件 = 改判据的判据。停下来读全文。
+# 为什么这些判据不做成锚：`gmr-expr` 有没有依赖 tokio，`cargo tree` 一跑就是
+# 确定答案，没有需要人判断的余地。README 写着「事实完全决定判断 → 别锚」，
+# 这正是那一类。锚留给「事实约束判断但不决定判断」的东西。
+#
+# **这里只留 gate.sh 真的会读的字段。** 曾经还有 may_depend_on、pure_root、
+# linkable、zh/why 和一批 kind=document/whole/corpus 的成员，全部没有任何代码
+# 读取 —— 声明和事实分家，正是这套工具要治的病，不该由它自己得。删掉的东西
+# 要么已被别的检查机械覆盖，要么降级成了下面的注释。
 
 # ── 命名的库清单 ───────────────────────────────────────────────
-# 判据引用这些名字，**探针不再各自硬编码**。改一处，全部引用它的锚跟着变。
+# 判据引用这些名字，**探针不再各自硬编码**。改一处，全部引用它的成员跟着变。
 
 [libs]
 domain = ["syn", "proc-macro2", "quote", "tree-sitter", "swc_ecma_parser", "rustc_ast", "regex-syntax"]
@@ -15,168 +22,96 @@ io     = ["tokio", "reqwest", "hyper", "mio", "socket2", "sqlx", "sqlx-core", "a
 db     = ["sqlx", "rusqlite", "libsqlite3-sys", "postgres", "tokio-postgres"]
 
 # ── 层 ─────────────────────────────────────────────────────────
-# 每层的规则必须是**探针能读的字段**，不是散文 —— 散文没人读，真规则会跑到
-# 探针里去，然后复制成好几份。写不成字段的那些写进 memories/。
-#
-# 层内的依赖顺序**不在这里**：层只有 5 个，而基底内部有 5 级顺序，层级
-# rank 算术表达不了它 —— 我试过，结果每条合法依赖都被判成违反。精确的规则
-# 在成员的 may_depend_on 上：依赖图本身就是这一级的架构，不用再抽象一层。
+# 只有 forbidden 被读。层内的依赖顺序不在这里，也不在别处声明 —— 它由
+# gate.sh 的分层检查兑现（crates < batteries < domains，底层不许依赖上层）。
+# 那条检查也顺带兑现了「探针只能被 exec，不许被 crates/ 下的包链接」：探针住在
+# batteries/ 下，rank 比 crates/ 高，链接它就是底层依赖上层。
 
+# 基底：领域无关。
 [layer.substrate]
-zh         = "基底"
-why        = "领域无关"
-forbidden  = ["domain"]
+forbidden = ["domain"]
 
+# 产品壳：领域无关。只装配与分发，判断住在探针与表达式里。
 [layer.shell]
-zh         = "产品壳"
-why        = "领域无关：只装配与分发，判断住在探针与表达式里"
-forbidden  = ["domain"]
+forbidden = ["domain"]
 
-[layer.probe-impl]
-zh         = "探针实现"
-why        = "GMR 不链接它，只通过传输 exec 它"
-forbidden  = []
-linkable   = false          # 不许被任何 crates/ 下的包依赖
-
+# 电池：可复用的具体实现，被域装配选用；不知道自己会被哪个域用。
 [layer.battery]
-zh         = "电池"
-why        = "可复用的具体实现，被域装配选用；不知道自己会被哪个域用"
-forbidden  = ["domain"]
-
-[layer.data]
-zh         = "数据"
-why        = "声明与模板：锚可以覆盖，用户不必用"
-forbidden  = []
-
-[layer.spec]
-zh         = "规格"
-why        = "只写长期契约；机械可查的约束不写在这里"
-forbidden  = []
+forbidden = ["domain"]
 
 # ── 成员 ───────────────────────────────────────────────────────
-# 一个成员声明一次，带它的层与种类。**name 必须是 cargo 认得的包名** ——
-# 禁区检查是 `cargo tree -p <name>`，名字对不上就静默跳过，写了等于没写。
-# 这条不是风格约定，是它能不能被查到的唯一条件。
+# **name 必须是 cargo 认得的包名**，path 必须指向真的 Cargo.toml —— 禁区检查
+# 走 `cargo tree --manifest-path <path>/Cargo.toml`，路径写错会让 gate 报
+# 「够不到这些成员」而不是静默通过。
+#
+# 探针实现（batteries/probes/*）不在这里：它们的层没有禁区，列了也是空转。
 
 [[member]]
-name   = "repo"
-layer  = "data"
-kind   = "whole"
-path   = "."
+name  = "gmr-core"
+layer = "substrate"
+kind  = "package"
+path  = "crates/gmr-core"
+
 [[member]]
-name   = "workspace"
-layer  = "substrate"
-kind   = "whole"
-path   = "Cargo.toml"
-[[member]]
-name          = "gmr-core"
-may_depend_on = []
-layer     = "substrate"
-kind      = "package"
-path      = "crates/gmr-core"
-pure_root = true
-[[member]]
-name          = "gmr-expr"
-may_depend_on = []
+name      = "gmr-expr"
 layer     = "substrate"
 kind      = "package"
 path      = "crates/gmr-expr"
-pure_root = true
 forbidden = ["io"]          # 纯根之外：求值那一跳不许碰世界
+
 [[member]]
-name          = "gmr-probe"
-may_depend_on = ["gmr-core"]
-layer  = "substrate"
-kind   = "package"
-path   = "crates/gmr-probe"
+name  = "gmr-probe"
+layer = "substrate"
+kind  = "package"
+path  = "crates/gmr-probe"
+
 [[member]]
-name          = "gmr-content"
-may_depend_on = ["gmr-core"]
-layer  = "substrate"
-kind   = "package"
-path   = "crates/gmr-content"
+name  = "gmr-content"
+layer = "substrate"
+kind  = "package"
+path  = "crates/gmr-content"
+
 [[member]]
-name          = "gmr-store"
-may_depend_on = ["gmr-core"]
-layer  = "substrate"
-kind   = "package"
-path   = "crates/gmr-store"
+name              = "gmr-store"
+layer             = "substrate"
+kind              = "package"
+path              = "crates/gmr-store"
 forbidden_default = ["db"]  # 后端是 feature：默认 feature 集里不许有数据库
+
 [[member]]
-name          = "gmr-runtime"
-may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-content", "gmr-store"]
-layer  = "substrate"
-kind   = "package"
-path   = "crates/gmr-runtime"
+name  = "gmr-runtime"
+layer = "substrate"
+kind  = "package"
+path  = "crates/gmr-runtime"
+
 [[member]]
-name          = "gmr"
-may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-content", "gmr-store", "gmr-runtime"]
-layer  = "substrate"
-kind   = "package"
-path   = "crates/gmr"
+name  = "gmr"
+layer = "substrate"
+kind  = "package"
+path  = "crates/gmr"
+
 [[member]]
-name          = "gmr-transport"
-may_depend_on = ["gmr-core", "gmr-probe"]
+name              = "gmr-transport"
 layer             = "battery"
 kind              = "package"
 path              = "batteries/transport"
 forbidden_default = ["io"]  # 后端是 feature：默认 feature 集里不许有 io 依赖
+
 [[member]]
-name          = "gmr-provider"
-may_depend_on = ["gmr-core", "gmr-content"]
+name              = "gmr-provider"
 layer             = "battery"
 kind              = "package"
 path              = "batteries/provider"
 forbidden_default = ["io"]
+
 [[member]]
-name          = "gmr-probe-coord"
-may_depend_on = ["gmr-probe"]
-layer  = "battery"
-kind   = "package"
-path   = "batteries/probes/coord"
+name  = "gmr-probe-coord"
+layer = "battery"
+kind  = "package"
+path  = "batteries/probes/coord"
+
 [[member]]
-name   = "addr-map"
-layer  = "probe-impl"
-kind   = "package"
-path   = "batteries/probes/addr-map"
-[[member]]
-name   = "ast-map"
-layer  = "probe-impl"
-kind   = "package"
-path   = "batteries/probes/ast-map"
-[[member]]
-name   = "name-map"
-layer  = "probe-impl"
-kind   = "package"
-path   = "batteries/probes/name-map"
-[[member]]
-name   = "prose-map"
-layer  = "probe-impl"
-kind   = "package"
-path   = "batteries/probes/prose-map"
-[[member]]
-name          = "coding-anchor"
-may_depend_on = ["gmr"]
-layer  = "shell"
-kind   = "package"
-path   = "domains/coding/cli"
-[[member]]
-name   = "constitution"
-layer  = "spec"
-kind   = "document"
-path   = "CLAUDE.md"
-[[member]]
-name   = "architecture"
-layer  = "spec"
-kind   = "document"
-path   = "docs/GMR.md"
-[[member]]
-name   = "declaration"
-layer  = "data"
-kind   = "document"
-path   = "architecture.toml"
-[[member]]
-name   = "tests"
-layer  = "substrate"
-kind   = "corpus"
-path   = "crates"
+name  = "coding-anchor"
+layer = "shell"
+kind  = "package"
+path  = "domains/coding/cli"
