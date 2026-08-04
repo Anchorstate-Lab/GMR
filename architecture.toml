@@ -38,6 +38,11 @@ why        = "GMR 不链接它，只通过传输 exec 它"
 forbidden  = []
 linkable   = false          # 不许被任何 crates/ 下的包依赖
 
+[layer.battery]
+zh         = "电池"
+why        = "可复用的具体实现，被域装配选用；不知道自己会被哪个域用"
+forbidden  = ["domain"]
+
 [layer.data]
 zh         = "数据"
 why        = "声明与模板：锚可以覆盖，用户不必用"
@@ -109,6 +114,46 @@ may_depend_on = ["gmr-core", "gmr-expr", "gmr-probe", "gmr-content", "gmr-store"
 layer  = "substrate"
 kind   = "package"
 path   = "crates/gmr"
+[[member]]
+name          = "gmr-transport"
+may_depend_on = ["gmr-core", "gmr-probe"]
+layer             = "battery"
+kind              = "package"
+path              = "batteries/transport"
+forbidden_default = ["io"]  # 后端是 feature：默认 feature 集里不许有 io 依赖
+[[member]]
+name          = "gmr-provider"
+may_depend_on = ["gmr-core", "gmr-content"]
+layer             = "battery"
+kind              = "package"
+path              = "batteries/provider"
+forbidden_default = ["io"]
+[[member]]
+name          = "gmr-probe-coord"
+may_depend_on = ["gmr-probe"]
+layer  = "battery"
+kind   = "package"
+path   = "batteries/probes/coord"
+[[member]]
+name   = "addr-map"
+layer  = "probe-impl"
+kind   = "package"
+path   = "batteries/probes/addr-map"
+[[member]]
+name   = "ast-map"
+layer  = "probe-impl"
+kind   = "package"
+path   = "batteries/probes/ast-map"
+[[member]]
+name   = "name-map"
+layer  = "probe-impl"
+kind   = "package"
+path   = "batteries/probes/name-map"
+[[member]]
+name   = "prose-map"
+layer  = "probe-impl"
+kind   = "package"
+path   = "batteries/probes/prose-map"
 [[member]]
 name          = "coding-anchor"
 may_depend_on = ["gmr"]

@@ -38,7 +38,8 @@ bad = []
 for m in arch["member"]:
     if m.get("kind") != "package":
         continue
-    keys = arch["layer"][m["layer"]].get("forbidden", []) + m.get("forbidden", [])
+    keys = (arch["layer"][m["layer"]].get("forbidden", [])
+            + m.get("forbidden", []) + m.get("forbidden_default", []))
     banned = {n for k in keys for n in arch["libs"][k]}
     if not banned:
         continue
@@ -111,14 +112,13 @@ if grep -qE '^pub (fn|struct|enum|trait|const|type) ' crates/gmr/src/lib.rs; the
 fi
 cargo build -p gmr --no-default-features
 
-# **探针实现自成 workspace，所以 --workspace 扫不到它们。** 不在这儿点名，
-# 它们的测试就既不进 gate 也不进任何名册 —— 一整块电池静悄悄地没人查。
-for m in batteries/probe-ast batteries/probe-prose batteries/probe-name batteries/probe-addr; do
-  echo "── 电池（独立 workspace）：$m"
-  cargo fmt --manifest-path "$m/Cargo.toml" --all --check
-  cargo clippy --quiet --manifest-path "$m/Cargo.toml" --all-targets -- -D warnings
-  cargo test --quiet --manifest-path "$m/Cargo.toml"
-done
+# **探针实现自成 workspace，所以 --workspace 扫不到它们。** 一条命令点名
+# 整个 batteries/probes/ workspace，新增 member 自动被 --workspace 覆盖，
+# 不用再在这里逐个加名字。
+echo "── 电池（独立 workspace）：batteries/probes"
+cargo fmt --manifest-path batteries/probes/Cargo.toml --all --check
+cargo clippy --quiet --manifest-path batteries/probes/Cargo.toml --all-targets -- -D warnings
+cargo test --quiet --manifest-path batteries/probes/Cargo.toml
 
 echo
 echo "gate: 基底全绿"

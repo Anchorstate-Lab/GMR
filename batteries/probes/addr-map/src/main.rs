@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use gmr_probe_coord as coord;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const SELF_SRC: &str = include_str!("main.rs");
 

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use gmr_probe_coord as coord;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const SELF_SRC: &str = include_str!("main.rs");
 
@@ -88,10 +88,10 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<coord::Candidate>) {
         }
         if p.is_dir() {
             walk(&p, base, out);
-        } else if name.ends_with(".md") {
-            if let (Ok(rel), Ok(src)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
-                sections(&rel.to_string_lossy(), &src, out);
-            }
+        } else if name.ends_with(".md")
+            && let (Ok(rel), Ok(src)) = (p.strip_prefix(base), std::fs::read_to_string(&p))
+        {
+            sections(&rel.to_string_lossy(), &src, out);
         }
     }
 }
