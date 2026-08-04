@@ -15,6 +15,7 @@ use clap::Parser;
 use gmr::Runtime;
 use gmr_provider::git::Git;
 use gmr_transport::inproc::InProcess;
+use gmr_transport::script::Script;
 use gmr_transport::shell::Shell;
 
 use cli::{Cli, Command};
@@ -90,10 +91,12 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .map_err(|e| CliError(format!("cannot create {state:?}: {e}")))?;
     let store = gmr::sqlite::open(state.join("memory.db")).await?;
 
-    // Two transports, one router. The four extractors are linked in; anything
-    // a user declares is still an artifact this exec's.
+    // Three transports, one router: the extractors are linked in, a user's own
+    // script is a file in their repo, and an artifact is still exec'd.
+    let catalog = probes::Catalog::load(&root)?;
     let rt = Runtime::builder()
         .transport(Arc::new(InProcess::new(&root, coding_extract::registry())))
+        .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .provider(Arc::new(Git::new(&root)))
         .queue(Arc::new(store.queue()))

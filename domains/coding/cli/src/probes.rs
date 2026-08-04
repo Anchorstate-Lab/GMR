@@ -58,9 +58,22 @@ pub struct Recipe {
     pub handles: Vec<String>,
 }
 
+/// A probe that is just a file in this repository. `run` is the path; its
+/// content is the identity, computed when it is called.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScriptDecl {
+    pub run: String,
+    pub obs: Obs,
+    #[serde(default)]
+    pub handles: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct File {
+    #[serde(default)]
     probe: BTreeMap<String, Recipe>,
+    #[serde(default)]
+    script: BTreeMap<String, ScriptDecl>,
 }
 
 #[derive(Debug, Default)]
@@ -139,6 +152,16 @@ impl Recipes {
             .find(|(_, r)| r.handles.iter().any(|h| h == ext))
             .map(|(name, _)| name.as_str())
     }
+}
+
+fn read_scripts(root: &Path) -> Result<BTreeMap<String, ScriptDecl>, CliError> {
+    let path = anchor_dir(root).join(RECIPES_FILE);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(BTreeMap::new());
+    };
+    Ok(toml::from_str::<File>(&text)
+        .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))?
+        .script)
 }
 
 fn read_pinned(path: &Path) -> Result<BTreeMap<String, String>, CliError> {
@@ -338,13 +361,22 @@ fn copy_mode(_src: &Path, _dst: &Path) -> Result<(), CliError> {
 /// it is not.
 pub struct Catalog {
     recipes: Recipes,
+    scripts: BTreeMap<String, ScriptDecl>,
 }
 
 impl Catalog {
     pub fn load(root: &Path) -> Result<Self, CliError> {
         Ok(Self {
             recipes: Recipes::load(root)?,
+            scripts: read_scripts(root)?,
         })
+    }
+
+    pub fn script_paths(&self) -> BTreeMap<gmr::ProbeName, PathBuf> {
+        self.scripts
+            .iter()
+            .map(|(n, d)| (gmr::ProbeName::new(n.clone()), PathBuf::from(&d.run)))
+            .collect()
     }
 
     fn builtin(name: &str) -> Option<&'static coding_extract::Vocabulary> {
@@ -352,9 +384,12 @@ impl Catalog {
     }
 
     pub fn kind_of(&self, name: &str) -> Kind {
-        match Self::builtin(name) {
-            Some(_) => Kind::new("builtin"),
-            None => Kind::new("shell"),
+        if Self::builtin(name).is_some() {
+            return Kind::new("builtin");
+        }
+        match self.scripts.contains_key(name) {
+            true => Kind::new("script"),
+            false => Kind::new("shell"),
         }
     }
 
@@ -366,13 +401,26 @@ impl Catalog {
                 facts: v.facts.iter().map(|s| (*s).to_owned()).collect(),
             });
         }
+        if let Some(d) = self.scripts.get(name) {
+            return Ok(d.obs.clone());
+        }
         Ok(self.recipes.get(name)?.obs.clone())
     }
 
     pub fn for_extension(&self, ext: &str) -> Option<String> {
         coding_extract::for_extension(ext)
             .map(str::to_owned)
+            .or_else(|| {
+                self.scripts
+                    .iter()
+                    .find(|(_, d)| d.handles.iter().any(|h| h == ext))
+                    .map(|(n, _)| n.clone())
+            })
             .or_else(|| self.recipes.for_extension(ext).map(str::to_owned))
+    }
+
+    pub fn scripts(&self) -> impl Iterator<Item = (&str, &ScriptDecl)> {
+        self.scripts.iter().map(|(n, d)| (n.as_str(), d))
     }
 }
 

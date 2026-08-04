@@ -24,11 +24,13 @@ default = []
 shell = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:thiserror", "dep:serde"]
 # 进程内：机制在这里，探针本身由域注册。
 inproc = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
+# 用户仓库里的一个文件。身份 = 那个文件的内容，调用时算。
+script = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 # 契约自带的参考实现，只服务 shell 后端的测试。
 testkit = ["shell", "dep:tempfile"]
 
 [dev-dependencies]
-gmr-transport = { path = ".", features = ["shell", "inproc", "testkit"] }
+gmr-transport = { path = ".", features = ["shell", "inproc", "script", "testkit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = { workspace = true }
 

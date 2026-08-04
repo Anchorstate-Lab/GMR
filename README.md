@@ -213,8 +213,29 @@ the artifacts but not the sources, and so cannot earn those hashes itself.
 
 ## Writing a probe
 
-A probe is any executable. Under the shell transport it runs via `sh -c` from the
-repo root, with a 30s timeout and a 1 MiB output cap.
+The bundled extractors are linked into the binary. Your own probe is a file in
+your own repository — declare it in `.anchor/probes.toml` and it needs no
+build step, no toolchain, and nothing installed:
+
+```toml
+[script.deploy-sha]
+run = "scripts/deploy.sh"
+obs = { schema = "gmr.probe-coord.v1", at = ["env"], facts = ["sha", "age_days"] }
+```
+
+Its version is that file's content hash, computed when it is called — the script
+does not get to say what it is. A directory is hashed whole, paths included, so
+moving a line between two of its files still moves the version. Verifiability is
+`open`: the interpreter is not in the hash, and the environment is inherited
+rather than cleared, because clearing it only means you cannot find your own
+python.
+
+**This is what anchors facts that are not in the source at all** — which commit
+staging is running, whether a migration has been applied, whether a flag is still
+on. Static analysis cannot see those, and they are exactly where a note goes
+stale without anyone noticing.
+
+Whatever runs, the contract is the same, with a 30s timeout and a 1 MiB output cap.
 
 ```
 input     $GMR_POSITION — the anchor's position, as JSON

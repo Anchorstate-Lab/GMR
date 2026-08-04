@@ -4,6 +4,8 @@
 
 #[cfg(feature = "inproc")]
 pub mod inproc;
+#[cfg(feature = "script")]
+pub mod script;
 #[cfg(feature = "shell")]
 pub mod shell;
 

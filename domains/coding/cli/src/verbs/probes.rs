@@ -3,7 +3,12 @@ use std::path::Path;
 use gmr_transport::shell::Artifacts;
 
 use crate::error::CliError;
-use crate::probes::{PINNED_FILE, RECIPES_FILE, Recipes, anchor_dir, build_all, store_dir};
+use gmr::Transport;
+use gmr_transport::script::Script;
+
+use crate::probes::{
+    Catalog, PINNED_FILE, RECIPES_FILE, Recipes, anchor_dir, build_all, store_dir,
+};
 
 pub fn build(root: &Path, json: bool) -> Result<i32, CliError> {
     let built = build_all(root, &store_dir(root))?;
@@ -43,6 +48,19 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             "version": coding_extract::registry()[&gmr::ProbeName::new(v.name)].version,
             "handles": v.handles,
             "obs": { "schema": v.schema, "at": v.at, "facts": v.facts },
+        }));
+    }
+    let catalog = Catalog::load(root)?;
+    for (name, decl) in catalog.scripts() {
+        rows.push(serde_json::json!({
+            "probe": name,
+            "kind": "script",
+            "version": Script::new(root, catalog.script_paths())
+                .resolve(&gmr::ProbeName::new(name))
+                .map(|d| d.version.as_str().to_owned()),
+            "run": decl.run,
+            "handles": decl.handles,
+            "obs": { "schema": decl.obs.schema, "at": decl.obs.at, "facts": decl.obs.facts },
         }));
     }
     for (name, recipe) in recipes.iter() {
