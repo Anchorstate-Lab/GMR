@@ -197,6 +197,21 @@ pub enum Command {
     /// Anchors that were never seen, or that carry no note.
     #[command(display_order = 15)]
     Doctor,
+
+    /// Snapshot the journal, bindings, links and sealed rationale as JSONL,
+    /// independent of this database's schema version. Run this with the old
+    /// binary before upgrading — `import` on the new one replays it.
+    #[command(display_order = 40)]
+    Export {
+        /// Where to write the JSONL. Defaults to stdout, so it can be piped.
+        #[arg(long)]
+        out: Option<String>,
+    },
+
+    /// Replay a `gmr export` file into this repo's store. Refuses anything
+    /// but a fresh store — this recreates history, it does not merge it.
+    #[command(display_order = 41)]
+    Import { file: String },
 }
 
 #[derive(Subcommand)]

@@ -583,6 +583,7 @@ dependencies = [
  "chrono",
  "gmr-core",
  "gmr-store",
+ "serde",
  "serde_json",
  "sqlx",
  "tempfile",

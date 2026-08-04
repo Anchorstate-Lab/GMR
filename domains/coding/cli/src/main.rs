@@ -92,6 +92,15 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .map_err(|e| CliError(format!("cannot create {state:?}: {e}")))?;
     let store = gmr::sqlite::open(state.join("memory.db")).await?;
 
+    // Export and import work on the raw store, not the Runtime — a version
+    // gap is exactly the case where building a Runtime is the wrong move.
+    if let Command::Export { out } = cli.command {
+        return verbs::export::run(&store, out, cli.json).await;
+    }
+    if let Command::Import { file } = cli.command {
+        return verbs::import::run(&store, file, cli.json).await;
+    }
+
     // Three transports, one router: the extractors are linked in, a user's own
     // script is a file in their repo, and an artifact is still exec'd.
     let catalog = probes::Catalog::load(&root)?;
@@ -147,5 +156,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
         Command::Pass => verbs::pass::run(&rt, json).await,
         Command::Doctor => verbs::doctor::run(&rt, &root, json).await,
+        Command::Export { .. } => unreachable!("export was handled above"),
+        Command::Import { .. } => unreachable!("import was handled above"),
     }
 }

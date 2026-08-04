@@ -1,6 +1,7 @@
 pub mod bindings;
 pub mod journal;
 pub mod links;
+pub mod portable;
 pub mod queue;
 pub mod schema;
 pub mod settings;
@@ -14,6 +15,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 pub use bindings::SqliteBindings;
 pub use journal::SqliteJournal;
+pub use portable::{EXPORT_SCHEMA, PortableSummary};
 pub use queue::SqliteQueue;
 
 pub(crate) fn ref_key(r: &Ref) -> String {
