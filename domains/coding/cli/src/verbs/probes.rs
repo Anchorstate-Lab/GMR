@@ -37,7 +37,7 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
 
     let mut rows = Vec::new();
     for (name, recipe) in recipes.iter() {
-        let version = recipe.version(name, root)?;
+        let version = recipes.version_of(name, root)?;
         let installed = artifacts
             .installed(&version)
             .map_err(|e| CliError(e.0))?
@@ -46,6 +46,7 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
         rows.push(serde_json::json!({
             "probe": name,
             "recipe": version,
+            "pinned": recipes.is_pinned(name),
             "artifact": built.then(|| installed.as_str().to_owned()),
             "obs": { "schema": recipe.obs.schema, "at": recipe.obs.at, "facts": recipe.obs.facts },
         }));

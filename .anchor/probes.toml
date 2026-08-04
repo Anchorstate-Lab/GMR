@@ -19,6 +19,10 @@ sources = [
   "batteries/probes/Cargo.lock",
 ]
 obs = { schema = "gmr.probe-coord.v1", at = ["file", "kind", "vis", "name", "shape"], facts = ["body", "line"] }
+# `handles` 只给 ast-map：`about: f#name` 派生出的坐标是 {file, name}，只有
+# 这个探针的词表对得上。prose-map 要的是 heading，走显式形式声明，否则
+# coord::wanted 会把 name 静默丢掉，用户以为锚住了某一节，其实锚住了整个文件。
+handles = ["rs", "ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "py", "pyi", "go"]
 
 [probe.addr-map]
 build = ["cargo", "build", "--release", "--manifest-path", "batteries/probes/Cargo.toml", "-p", "addr-map"]

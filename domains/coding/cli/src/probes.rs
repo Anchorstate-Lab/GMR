@@ -11,6 +11,19 @@ pub const RECIPES_FILE: &str = "probes.toml";
 
 pub const RECIPE_SCHEMA: &str = "gmr.probe-recipe.v1";
 
+pub const PINNED_FILE: &str = "recipes.json";
+
+pub const PINNED_SCHEMA: &str = "gmr.probe-recipes.v1";
+
+/// Recipe versions computed at release time. A user machine has the artifacts
+/// but not the sources, so it cannot earn these hashes itself; shipping them
+/// is what lets `probe = "<name>"` resolve without a toolchain.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct Pinned {
+    pub schema: String,
+    pub versions: BTreeMap<String, String>,
+}
+
 /// The obs vocabulary a probe emits. Deliberately outside the recipe version:
 /// it does not change the derivation rule, only which shapes fit.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -51,7 +64,10 @@ struct File {
 }
 
 #[derive(Debug, Default)]
-pub struct Recipes(BTreeMap<String, Recipe>);
+pub struct Recipes {
+    declared: BTreeMap<String, Recipe>,
+    pinned: BTreeMap<String, String>,
+}
 
 /// What the recipe version hashes. Deliberately excludes platform, built-binary
 /// hashes and captured host env: those are what make artifact versions local.
@@ -72,37 +88,91 @@ struct Record<'a> {
 impl Recipes {
     pub fn load(root: &Path) -> Result<Self, CliError> {
         let path = anchor_dir(root).join(RECIPES_FILE);
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Ok(Self::default());
+        let declared = match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                toml::from_str::<File>(&text)
+                    .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))?
+                    .probe
+            }
+            Err(_) => BTreeMap::new(),
         };
-        let file: File = toml::from_str(&text)
-            .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))?;
-        Ok(Self(file.probe))
+        Ok(Self {
+            declared,
+            pinned: read_pinned(&store_dir(root).join(PINNED_FILE))?,
+        })
     }
 
     pub fn get(&self, name: &str) -> Result<&Recipe, CliError> {
-        self.0.get(name).ok_or_else(|| {
+        self.declared.get(name).ok_or_else(|| {
             CliError(format!(
                 "no probe recipe named `{name}`; {} declares {}",
                 RECIPES_FILE,
-                match self.0.is_empty() {
+                match self.declared.is_empty() {
                     true => "none".to_owned(),
-                    false => self.0.keys().cloned().collect::<Vec<_>>().join(" · "),
+                    false => self
+                        .declared
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(" · "),
                 }
             ))
         })
     }
 
+    /// Pinned wins: on a user machine the sources are absent by design, and a
+    /// version earned at release time is still earned.
+    pub fn version_of(&self, name: &str, root: &Path) -> Result<ProbeVersion, CliError> {
+        if let Some(v) = self.pinned.get(name) {
+            return Ok(ProbeVersion::new(v.clone()));
+        }
+        self.get(name)?.version(name, root)
+    }
+
+    pub fn is_pinned(&self, name: &str) -> bool {
+        self.pinned.contains_key(name)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Recipe)> {
-        self.0.iter().map(|(k, v)| (k.as_str(), v))
+        self.declared.iter().map(|(k, v)| (k.as_str(), v))
     }
 
     pub fn for_extension(&self, ext: &str) -> Option<&str> {
-        self.0
+        self.declared
             .iter()
             .find(|(_, r)| r.handles.iter().any(|h| h == ext))
             .map(|(name, _)| name.as_str())
     }
+}
+
+fn read_pinned(path: &Path) -> Result<BTreeMap<String, String>, CliError> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Ok(BTreeMap::new());
+    };
+    let pinned: Pinned = serde_json::from_slice(&bytes)
+        .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))?;
+    if pinned.schema != PINNED_SCHEMA {
+        return Err(CliError(format!(
+            "{} declares schema `{}`, but this build only accepts `{PINNED_SCHEMA}`",
+            path.display(),
+            pinned.schema
+        )));
+    }
+    Ok(pinned.versions)
+}
+
+/// Emitted by `probes build` so a release can ship versions it earned here.
+fn write_pinned(store: &Path, built: &[Installed]) -> Result<(), CliError> {
+    let pinned = Pinned {
+        schema: PINNED_SCHEMA.to_owned(),
+        versions: built
+            .iter()
+            .map(|i| (i.name.clone(), i.recipe.as_str().to_owned()))
+            .collect(),
+    };
+    let body = serde_json::to_vec_pretty(&pinned).expect("pinned recipes must serialize");
+    std::fs::write(store.join(PINNED_FILE), body)
+        .map_err(|e| CliError(format!("cannot write {PINNED_FILE}: {e}")))
 }
 
 impl Recipe {
@@ -177,6 +247,7 @@ pub fn build_all(root: &Path, store: &Path) -> Result<Vec<Installed>, CliError> 
     for (name, recipe) in recipes.iter() {
         out.push(build_one(root, &artifacts, name, recipe)?);
     }
+    write_pinned(store, &out)?;
     Ok(out)
 }
 

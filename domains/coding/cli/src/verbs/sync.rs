@@ -9,12 +9,17 @@ use crate::error::CliError;
 use crate::probes::Recipes;
 use crate::rules;
 
+/// init writes no anchors, so a repo whose anchors all come from notes has no
+/// such file. Missing at the default path means "none declared here"; missing
+/// at a path the user named is a typo worth stopping for.
+pub const DEFAULT_FILE: &str = ".anchor/anchors.toml";
+
 pub struct Context {
     pub root: std::path::PathBuf,
     pub recipes: Recipes,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct Declared {
     #[serde(default)]
     pub anchor: Vec<AnchorDecl>,
@@ -59,8 +64,7 @@ impl AnchorDecl {
                 self.key
             ))),
             (Some(name), None) => {
-                let recipe = ctx.recipes.get(name)?;
-                let version = recipe.version(name, &ctx.root)?;
+                let version = ctx.recipes.version_of(name, &ctx.root)?;
                 rules::probe(version.as_str(), &params)
             }
             (None, Some(artifact)) => rules::probe(artifact, &params),
@@ -121,9 +125,12 @@ pub async fn run(
     dry_run: bool,
     json: bool,
 ) -> Result<i32, CliError> {
-    let text = std::fs::read_to_string(root.join(&file))
-        .map_err(|e| CliError(format!("cannot read `{file}`: {e}")))?;
-    let declared: Declared = toml::from_str(&text)?;
+    let path = root.join(&file);
+    let declared: Declared = match std::fs::read_to_string(&path) {
+        Ok(text) => toml::from_str(&text)?,
+        Err(_) if !path.exists() && file == DEFAULT_FILE => Declared::default(),
+        Err(e) => return Err(CliError(format!("cannot read `{file}`: {e}"))),
+    };
     let ctx = Context {
         root: root.to_path_buf(),
         recipes: Recipes::load(root)?,

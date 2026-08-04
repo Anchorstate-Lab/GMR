@@ -29,7 +29,7 @@ pub enum Command {
     Probes(ProbesCmd),
 
     Sync {
-        #[arg(default_value = ".anchor/anchors.toml")]
+        #[arg(default_value = crate::verbs::sync::DEFAULT_FILE)]
         file: String,
         #[arg(long)]
         dry_run: bool,
