@@ -10,13 +10,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  gate:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Substrate gate
+      run: sh gate.sh
+
+  # Kept out of the gate on purpose. gate.sh only checks the substrate and the
+  # batteries and never touches an anchor, because a red anchor is a signal for
+  # a human rather than a build failure. This job asserts on a fixture repo's
+  # anchors, which are test data, and on the one thing the product is for: when
+  # a fact moves, the note bound to it comes back.
+  acceptance:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - name: A stranger, a non-Rust repo, no toolchain
+      run: sh acceptance.sh
