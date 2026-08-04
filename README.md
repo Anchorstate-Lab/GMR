@@ -148,7 +148,7 @@ For anchors no single note owns, or coordinates the minimal form cannot express,
 ```toml
 [[anchor]]
 key   = "surface::gmr-core"
-probe = "ast-map"                            # a recipe name, not a machine-local hash
+probe = "ast-map"                            # a name; never a version
 params = { root = "crates/gmr-core" }
 position = { kind = "function", vis = "pub" }
 shape = "roster"                             # or spell out `rules = [...]`
@@ -158,7 +158,7 @@ terminal = []
 | field | meaning |
 |---|---|
 | `key` | the anchor's name. Yours to choose; the substrate does not parse it |
-| `probe` | a recipe declared in `.anchor/probes.toml`. Its version is the hash of that recipe's sources |
+| `probe` | the probe's name. What it stands for is local; the name is what travels, and it does not move when the engine behind it does |
 | `position` | where the probe looks. Becomes `state.position`; the probe never returns it |
 | `shape` | a named transition preset, expanded into literal rules at sync time |
 | `rules` | the transition table written out, `guard => new state`, first match wins |
@@ -185,7 +185,7 @@ When an anchor reports a transition, you either change the code or change the
 criteria. Changing the criteria is a judgment call, and it is recorded as one:
 
 ```sh
-gmr reprobe      <key> --artifact <version>       --why '...'   # look somewhere else
+gmr reprobe      <key> --probe <name>             --why '...'   # look somewhere else
 gmr retransition <key> --rule '<guard> => ...'    --why '...'   # what counts as a change
 gmr reterminal   <key> --terminal a,b             --why '...'   # what is irreversible
 gmr restate      <key> --state '{...}'            --why '...'   # move the state directly

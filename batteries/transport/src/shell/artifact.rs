@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gmr_core::{ContentHash, ProbeVersion, content_hash_of_bytes};
+use gmr_core::{ContentHash, ProbeName, ProbeVersion, content_hash_of_bytes};
 use serde::{Deserialize, Serialize};
 
 use super::manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
@@ -10,10 +10,10 @@ pub const MANIFEST_FILE: &str = "manifest.json";
 
 pub const INSTALL_FILE: &str = "installed.json";
 
-pub const INSTALL_SCHEMA: &str = "gmr.probe-install.v1";
+pub const INSTALL_SCHEMA: &str = "gmr.probe-install.v2";
 
-/// Declared version -> the artifact installed for it here. Declarations travel
-/// across platforms; artifacts do not.
+/// Probe name -> the artifact installed for it here. The name travels; the
+/// artifact does not. Self-describing, so no assembly has to thread a table in.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InstallIndex {
     schema: String,
@@ -75,17 +75,12 @@ impl Artifacts {
         Ok(index)
     }
 
-    /// Reinstalling a declaration overwrites it. Refusing would leave this
-    /// machine running the old binary forever; the journal records what ran.
-    pub fn install(
-        &self,
-        declared: &ProbeVersion,
-        built: &ProbeVersion,
-    ) -> Result<(), ArtifactError> {
+    /// Overwrites: refusing would leave this machine on the old binary forever.
+    pub fn install(&self, name: &ProbeName, built: &ProbeVersion) -> Result<(), ArtifactError> {
         let mut index = self.index()?;
         index
             .installed
-            .insert(declared.as_str().to_owned(), built.as_str().to_owned());
+            .insert(name.as_str().to_owned(), built.as_str().to_owned());
         std::fs::create_dir_all(&self.root)
             .map_err(|e| bad(format!("cannot create {:?}: {e}", self.root)))?;
         let body = serde_json::to_vec_pretty(&index).expect("install index must serialize");
@@ -93,36 +88,49 @@ impl Artifacts {
             .map_err(|e| bad(format!("cannot write the install index: {e}")))
     }
 
-    /// With no indirection a version stands for itself, so a version printed by
-    /// `publish` still works unchanged.
-    pub fn installed(&self, declared: &ProbeVersion) -> Result<ProbeVersion, ArtifactError> {
+    /// `None` is a real answer: a good name, simply not installed here.
+    pub fn installed(&self, name: &ProbeName) -> Result<Option<ProbeVersion>, ArtifactError> {
         Ok(self
             .index()?
             .installed
-            .get(declared.as_str())
-            .map(|v| ProbeVersion::new(v.clone()))
-            .unwrap_or_else(|| declared.clone()))
+            .get(name.as_str())
+            .map(|v| ProbeVersion::new(v.clone())))
+    }
+
+    pub fn names(&self) -> Result<Vec<ProbeName>, ArtifactError> {
+        Ok(self
+            .index()?
+            .installed
+            .into_keys()
+            .map(ProbeName::new)
+            .collect())
     }
 
     /// Read the manifest, verify its own hash, then verify every file it names.
     ///
     /// Any mismatch is refused. An artifact with mismatched content is not an
     /// old version; it is a derivation rule we cannot name.
-    pub fn resolve(&self, declared: &ProbeVersion) -> Result<Resolved, ArtifactError> {
-        let version = &self.installed(declared)?;
+    pub fn resolve(&self, name: &ProbeName) -> Result<Resolved, ArtifactError> {
+        let version = &self.installed(name)?.ok_or_else(|| {
+            bad(format!(
+                "no probe named `{name}` is installed here; this machine has \
+                 {}",
+                match self.names() {
+                    Ok(ns) if !ns.is_empty() => ns
+                        .iter()
+                        .map(ProbeName::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" · "),
+                    _ => "none".to_owned(),
+                }
+            ))
+        })?;
         let dir = self.dir(version);
         let path = dir.join(MANIFEST_FILE);
         let bytes = std::fs::read(&path).map_err(|e| {
-            if version == declared {
-                bad(format!(
-                    "nothing is installed for {declared}: {e}.\n\
-                     If that is a recipe rather than an artifact, this machine has not built it yet — run `probes build`."
-                ))
-            } else {
-                bad(format!(
-                    "{declared} is installed as {version}, but its manifest is unreadable ({path:?}): {e}"
-                ))
-            }
+            bad(format!(
+                "`{name}` is installed as {version}, but its manifest is unreadable ({path:?}): {e}"
+            ))
         })?;
         let manifest: Manifest = serde_json::from_slice(&bytes)
             .map_err(|e| bad(format!("{version}'s manifest is not valid: {e}")))?;

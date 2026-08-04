@@ -20,6 +20,28 @@ string_newtype! {
     Kind, check_kind
 }
 
+fn check_probe_name(s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Err("must not be empty".to_owned());
+    }
+    if !s
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err("expected lowercase ASCII letters, digits or `-`".to_owned());
+    }
+    // Nobody names a probe with 64 hex digits; someone pasted a version here.
+    if crate::addr::check_sha256_hex(s).is_ok() {
+        return Err("that is a version, not a name".to_owned());
+    }
+    Ok(())
+}
+
+string_newtype! {
+    /// A name, not a hash: it must survive an engine upgrade unchanged.
+    ProbeName, check_probe_name
+}
+
 string_newtype! {
     ProbeVersion, crate::addr::check_sha256_hex
 }
@@ -41,37 +63,36 @@ pub enum Verifiability {
     Unverifiable,
 }
 
-/// What actually derived this observation. Handed over by the transport at call
-/// time — not computed by the anchor.
+/// What actually derived this observation, handed over by the transport.
+///
+/// `version` hashes every input that can change the output — sources, the
+/// versions of what they parse with, the output contract. Not a binary's bytes:
+/// those also move with platform and compiler, and a version that moves without
+/// the behaviour moving is noise nothing can filter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Derivation {
     pub version: ProbeVersion,
     pub verifiability: Verifiability,
 }
 
-/// What the anchor wrote down: which artifact, with which params. This is *not*
-/// the identity of the derivation rule.
+/// What the anchor wrote down. This is *not* [`Derivation`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeRef {
     pub kind: Kind,
-    pub artifact: ProbeVersion,
+    pub name: ProbeName,
     #[serde(default)]
     pub params: Value,
 }
 
 impl ProbeRef {
-    pub fn new(kind: Kind, artifact: ProbeVersion, params: Value) -> Self {
-        Self {
-            kind,
-            artifact,
-            params,
-        }
+    pub fn new(kind: Kind, name: ProbeName, params: Value) -> Self {
+        Self { kind, name, params }
     }
 
     pub fn declaration_hash(&self) -> ContentHash {
         content_hash_of(&serde_json::json!({
             "kind": &self.kind,
-            "artifact": &self.artifact,
+            "name": &self.name,
             "params": &self.params,
         }))
     }
@@ -129,28 +150,57 @@ mod tests {
     #[test]
     fn what_the_anchor_wrote_is_not_what_derived_the_facts() {
         let a = ProbeRef::new(
-            Kind::new("shell"),
-            version("a"),
+            Kind::new("builtin"),
+            ProbeName::new("ast-map"),
             json!({ "kind": "function" }),
         );
         let b = ProbeRef::new(
-            Kind::new("shell"),
-            version("b"),
+            Kind::new("builtin"),
+            ProbeName::new("name-map"),
             json!({ "kind": "function" }),
         );
         assert_ne!(
             a.declaration_hash(),
             b.declaration_hash(),
-            "swapping the artifact is swapping the declaration"
+            "naming a different probe is a different declaration"
         );
     }
 
     #[test]
     fn params_are_part_of_the_declaration() {
-        let v = version("a");
-        let a = ProbeRef::new(Kind::new("shell"), v.clone(), json!({ "kind": "function" }));
-        let b = ProbeRef::new(Kind::new("shell"), v, json!({ "kind": "module" }));
+        let n = ProbeName::new("ast-map");
+        let a = ProbeRef::new(
+            Kind::new("builtin"),
+            n.clone(),
+            json!({ "kind": "function" }),
+        );
+        let b = ProbeRef::new(Kind::new("builtin"), n, json!({ "kind": "module" }));
         assert_ne!(a.declaration_hash(), b.declaration_hash());
+    }
+
+    #[test]
+    fn upgrading_the_engine_leaves_the_declaration_alone() {
+        let probe = ProbeRef::new(
+            Kind::new("builtin"),
+            ProbeName::new("ast-map"),
+            json!({ "root": "." }),
+        );
+        let before = probe.declaration_hash();
+        // A release changes the extractor: the derivation moves, nothing else.
+        let old = Outcome::Found {
+            facts: Facts::new(json!({ "candidates": 3 })),
+        };
+        assert_ne!(old.address(&version("a")), old.address(&version("b")));
+        assert_eq!(before, probe.declaration_hash());
+    }
+
+    #[test]
+    fn a_probe_name_is_not_a_hash() {
+        assert!(ProbeName::try_new("ast-map").is_ok());
+        assert!(ProbeName::try_new("deploy-sha-2").is_ok());
+        assert!(ProbeName::try_new("Ast_Map").is_err());
+        assert!(ProbeName::try_new("").is_err());
+        assert!(ProbeName::try_new("d9".repeat(32)).is_err());
     }
 
     #[test]

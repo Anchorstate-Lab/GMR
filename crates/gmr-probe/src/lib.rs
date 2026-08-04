@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use gmr_core::{Derivation, Kind, Outcome, ProbeRef, ReasonClass};
+use gmr_core::{Derivation, Kind, Outcome, ProbeName, ProbeRef, ReasonClass};
 
 /// Shared by caller and callee so the name has one owner, not two copies.
 pub const POSITION_ENV: &str = "GMR_POSITION";
@@ -87,22 +87,19 @@ impl ProbeError {
     }
 }
 
-/// Everything one call produces: the world's answer, and **the identity of the
-/// rule that actually derived it**. The transport hands that over rather than the
-/// anchor computing it — only whoever executed knows what really ran.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Sighted {
-    pub outcome: Outcome,
-    pub derivation: Derivation,
-}
-
 #[async_trait]
 pub trait Transport: Send + Sync {
     fn kind(&self) -> &Kind;
 
+    /// What a name stands for, **answerable before the call**: so a bad name is
+    /// refused at declaration time, and so a swapped instrument is knowable
+    /// without first taking a reading with it.
+    fn resolve(&self, name: &ProbeName) -> Option<Derivation>;
+
+    /// The world's answer. The identity came from [`Transport::resolve`].
     async fn invoke(
         &self,
         probe: &ProbeRef,
         position: &serde_json::Value,
-    ) -> Result<Sighted, ProbeError>;
+    ) -> Result<Outcome, ProbeError>;
 }

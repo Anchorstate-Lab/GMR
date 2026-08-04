@@ -8,15 +8,14 @@ use gmr_runtime::{Observed, OpenRequest, Runtime, Sighting};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes a real artifact. Otherwise "earned versions" would
-/// hold on the production path while tests bypass it.
-fn script_probe(root: &std::path::Path, body: &str) -> gmr_core::ProbeRef {
-    let version = gmr_transport::shell::testkit::publish_script(root.join(".probes"), body);
-    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+/// Every test publishes and installs a real artifact. Otherwise "earned
+/// versions" would hold on the production path while tests bypass it.
+fn script_probe(root: &std::path::Path, name: &str, body: &str) -> gmr_core::ProbeRef {
+    gmr_transport::shell::testkit::install_script(root.join(".probes"), name, body)
 }
 
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
-    script_probe(root, "cat world.json")
+    script_probe(root, "cat", "cat world.json")
 }
 
 struct World {
@@ -263,7 +262,11 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
     let opened = rt
         .open(OpenRequest {
             key: key(),
-            probe: script_probe(dir.path(), r#"cat "$(echo "$GMR_POSITION" | tr -d '"')""#),
+            probe: script_probe(
+                dir.path(),
+                "at-position",
+                r#"cat "$(echo "$GMR_POSITION" | tr -d '"')""#,
+            ),
             transitions: transitions(&[("true", "{ position: state.position, v: obs.v }")]),
             terminal: Default::default(),
             initial: Some(State::new(serde_json::json!({ "position": "a.json" }))),
@@ -336,7 +339,7 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
 
     rt.open(OpenRequest {
         key: key(),
-        probe: script_probe(dir.path(), "echo null"),
+        probe: script_probe(dir.path(), "absent", "echo null"),
         transitions: transitions(&[("true", r#"{ status: "empty" }"#)]),
         terminal: Default::default(),
         initial: None,
@@ -632,7 +635,7 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
         key: key(),
         probe: ProbeRef::new(
             Kind::new("shell"),
-            gmr_core::ProbeVersion::new("1".repeat(64)),
+            gmr_core::ProbeName::new("p"),
             serde_json::json!({}),
         ),
         transitions: Transitions::default(),

@@ -82,11 +82,9 @@ pub enum Command {
     #[command(display_order = 20)]
     Reprobe {
         key: String,
-        /// A recipe name from .anchor/probes.toml. Exclusive with --artifact.
+        /// The probe to look with, by name.
         #[arg(long)]
-        probe: Option<String>,
-        #[arg(long)]
-        artifact: Option<String>,
+        probe: String,
         #[arg(long, default_value = "{}")]
         params: String,
         #[arg(long)]
@@ -205,9 +203,9 @@ pub enum ProbesCmd {
 #[derive(clap::Args)]
 pub struct OpenArgs {
     pub key: String,
-    /// Probe artifact version printed by `anchor publish`.
+    /// The probe to look with, by name. `probes list` prints what this build knows.
     #[arg(long)]
-    pub artifact: String,
+    pub probe: String,
     #[arg(long, default_value = "{}")]
     pub params: String,
     #[arg(long = "rule", value_name = "GUARD => NEW_STATE")]

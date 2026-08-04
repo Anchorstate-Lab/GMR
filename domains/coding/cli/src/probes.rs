@@ -310,7 +310,7 @@ pub fn build_one(
     .map_err(|e| CliError(format!("cannot publish `{name}`: {}", e.0)))?;
 
     artifacts
-        .install(&version, &artifact)
+        .install(&gmr::ProbeName::new(name), &artifact)
         .map_err(|e| CliError(format!("cannot install `{name}`: {}", e.0)))?;
 
     Ok(Installed {
@@ -435,8 +435,10 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file"], facts = ["line"] }
         let built = build_all(d.path(), &store).unwrap();
         assert_eq!(built.len(), 1);
 
-        let installed = Artifacts::new(&store).installed(&built[0].recipe).unwrap();
-        assert_eq!(installed, built[0].artifact);
+        let installed = Artifacts::new(&store)
+            .installed(&gmr::ProbeName::new("demo"))
+            .unwrap();
+        assert_eq!(installed, Some(built[0].artifact.clone()));
         assert_ne!(built[0].recipe, built[0].artifact);
     }
 }

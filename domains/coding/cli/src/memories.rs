@@ -36,7 +36,7 @@ enum Entry {
 #[derive(Debug, Deserialize)]
 struct Spec {
     key: String,
-    probe: Option<String>,
+    probe: String,
     #[serde(default)]
     params: Option<Value>,
     #[serde(default)]
@@ -105,8 +105,7 @@ fn probe_for(about: &str, recipes: &Recipes) -> Result<String, CliError> {
 fn from_about(about: &str, recipes: &Recipes) -> Result<AnchorDecl, CliError> {
     Ok(AnchorDecl {
         key: about.to_owned(),
-        probe: Some(probe_for(about, recipes)?),
-        artifact: None,
+        probe: probe_for(about, recipes)?,
         params: json!({ "root": "." }),
         position: Some(position_of(about)),
         shape: Some("roster".to_owned()),
@@ -121,7 +120,6 @@ fn from_spec(spec: Spec) -> AnchorDecl {
     AnchorDecl {
         key: spec.key,
         probe: spec.probe,
-        artifact: None,
         params: spec.params.unwrap_or_else(|| json!({ "root": "." })),
         position: spec.position,
         shape: spec.shape,
@@ -247,7 +245,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             panic!("expected a declared anchor");
         };
         assert_eq!(decl.key, "src/auth.ts#createSession");
-        assert_eq!(decl.probe.as_deref(), Some("ast-map"));
+        assert_eq!(decl.probe, "ast-map");
         assert_eq!(decl.shape.as_deref(), Some("roster"));
         assert_eq!(
             decl.position,

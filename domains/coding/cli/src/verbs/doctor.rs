@@ -6,14 +6,14 @@ use gmr_transport::shell::Artifacts;
 use crate::error::CliError;
 use crate::probes::store_dir;
 
-/// Anchors whose probe cannot be resolved on this machine. This is the fresh
-/// clone failure: the declaration is portable, the artifact is not, and without
+/// Anchors whose probe is not installed on this machine. This is the fresh
+/// clone failure: the declaration travels, the artifact does not, and without
 /// this check it shows up as N identical Attempt entries instead of one answer.
 fn unresolvable(root: &Path, views: &[&gmr::AnchorView]) -> Vec<String> {
     let artifacts = Artifacts::new(store_dir(root));
     views
         .iter()
-        .filter(|v| artifacts.resolve(&v.anchor.probe.artifact).is_err())
+        .filter(|v| artifacts.resolve(&v.anchor.probe.name).is_err())
         .map(|v| v.key.to_string())
         .collect()
 }

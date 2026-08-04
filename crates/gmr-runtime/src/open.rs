@@ -81,13 +81,19 @@ async fn open(
 
     let initial = request.initial.unwrap_or_default();
 
+    // A name nothing provides is a typo; saying so beats opening an anchor that
+    // can only ever produce identical failures.
+    let derivation = observer
+        .resolve(&anchor.probe)
+        .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
+
     let outcome = observer
         .invoke(&anchor, initial.position())
         .await
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
     let at = Utc::now();
-    let observation = crate::observe::observe_into(&anchor, outcome);
+    let observation = crate::observe::observe_into(&anchor, outcome, derivation);
     let mut warnings = bind_warnings(&anchor, &observation);
     warnings.extend(accumulator_warning(scheduler, &anchor));
 

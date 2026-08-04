@@ -88,14 +88,21 @@ pub(crate) async fn observe_with(
 
     let at = Utc::now();
 
-    let sighted = match observer.invoke(&s.anchor, s.position()).await {
+    let derivation = match observer.resolve(&s.anchor.probe) {
+        Ok(d) => d,
+        Err(e) => {
+            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
+        }
+    };
+
+    let outcome = match observer.invoke(&s.anchor, s.position()).await {
         Ok(o) => o,
         Err(e) => {
             return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
         }
     };
 
-    let observation = observe_into(&s.anchor, sighted);
+    let observation = observe_into(&s.anchor, outcome, derivation);
     let entered_at = s.entered_at.unwrap_or(at);
 
     let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
@@ -175,11 +182,11 @@ async fn record_attempt(
     })
 }
 
-pub(crate) fn observe_into(anchor: &Anchor, sighted: gmr_probe::Sighted) -> Observation {
-    let gmr_probe::Sighted {
-        outcome,
-        derivation,
-    } = sighted;
+pub(crate) fn observe_into(
+    anchor: &Anchor,
+    outcome: gmr_core::Outcome,
+    derivation: gmr_core::Derivation,
+) -> Observation {
     // The address is fixed by **the rule that actually derived it**, not by the
     // declaration on the anchor. NotFound is addressed too — absence is an answer.
     let fact_address = outcome.address(&derivation.version);

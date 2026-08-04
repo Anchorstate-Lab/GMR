@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use gmr_core::Anchor;
-use gmr_probe::{ProbeError, Sighted, Transport};
+use gmr_core::{Anchor, Derivation, Outcome, ProbeRef};
+use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 
 /// The transports this deployment wired up. No journal, no bindings, no queue.
 pub struct Observer {
@@ -13,21 +13,39 @@ impl Observer {
         Self { transports }
     }
 
+    fn transport(&self, probe: &ProbeRef) -> Result<&dyn Transport, ProbeError> {
+        self.transports
+            .iter()
+            .find(|t| t.kind() == &probe.kind)
+            .map(Arc::as_ref)
+            .ok_or_else(|| {
+                ProbeError::unreachable(format!("no transport recognises a `{}` probe", probe.kind))
+            })
+    }
+
+    /// Unusable, not unreachable: an observation nobody can attribute is worse
+    /// than a missing one, so a name we cannot resolve is not run.
+    pub(crate) fn resolve(&self, probe: &ProbeRef) -> Result<Derivation, ProbeError> {
+        let transport = self.transport(probe)?;
+        transport.resolve(&probe.name).ok_or_else(|| {
+            ProbeError::with_code(
+                gmr_core::ReasonClass::Unusable,
+                ProbeErrorCode::ArtifactInvalid,
+                format!(
+                    "no `{}` probe named `{}` is available here",
+                    probe.kind, probe.name
+                ),
+            )
+        })
+    }
+
     pub(crate) async fn invoke(
         &self,
         anchor: &Anchor,
         position: &serde_json::Value,
-    ) -> Result<Sighted, ProbeError> {
-        let transport = self
-            .transports
-            .iter()
-            .find(|t| t.kind() == &anchor.probe.kind)
-            .ok_or_else(|| {
-                ProbeError::unreachable(format!(
-                    "no transport recognises a `{}` probe",
-                    anchor.probe.kind
-                ))
-            })?;
-        transport.invoke(&anchor.probe, position).await
+    ) -> Result<Outcome, ProbeError> {
+        self.transport(&anchor.probe)?
+            .invoke(&anchor.probe, position)
+            .await
     }
 }

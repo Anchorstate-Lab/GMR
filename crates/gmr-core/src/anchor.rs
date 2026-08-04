@@ -171,7 +171,7 @@ mod tests {
             key: AnchorKey::new("a"),
             probe: crate::probe::ProbeRef::new(
                 crate::probe::Kind::new("shell"),
-                crate::probe::ProbeVersion::new("1".repeat(64)),
+                crate::probe::ProbeName::new("p"),
                 json!({}),
             ),
             transitions: Transitions::default(),

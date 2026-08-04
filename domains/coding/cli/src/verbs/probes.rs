@@ -37,17 +37,14 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
 
     let mut rows = Vec::new();
     for (name, recipe) in recipes.iter() {
-        let version = recipes.version_of(name, root)?;
         let installed = artifacts
-            .installed(&version)
-            .map_err(|e| CliError(e.0))?
-            .clone();
-        let built = installed != version;
+            .installed(&gmr::ProbeName::new(name))
+            .map_err(|e| CliError(e.0))?;
         rows.push(serde_json::json!({
             "probe": name,
-            "recipe": version,
+            "recipe": recipes.version_of(name, root)?,
             "pinned": recipes.is_pinned(name),
-            "artifact": built.then(|| installed.as_str().to_owned()),
+            "artifact": installed.as_ref().map(|v| v.as_str().to_owned()),
             "obs": { "schema": recipe.obs.schema, "at": recipe.obs.at, "facts": recipe.obs.facts },
         }));
     }
@@ -99,15 +96,17 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
 
     let mut shipped = Vec::new();
     for (name, _) in recipes.iter() {
-        let recipe = recipes.version_of(name, root)?;
-        let artifact = artifacts.installed(&recipe).map_err(|e| CliError(e.0))?;
-        if artifact == recipe {
-            return Err(CliError(format!(
-                "`{name}` has no installed artifact; run `probes build` before bundling"
-            )));
-        }
+        let probe = gmr::ProbeName::new(name);
+        let artifact = artifacts
+            .installed(&probe)
+            .map_err(|e| CliError(e.0))?
+            .ok_or_else(|| {
+                CliError(format!(
+                    "`{name}` has no installed artifact; run `probes build` before bundling"
+                ))
+            })?;
         artifacts
-            .resolve(&recipe)
+            .resolve(&probe)
             .map_err(|e| CliError(format!("`{name}` does not verify: {}", e.0)))?;
         copy_dir(
             &store_dir(root).join(artifact.as_str()),

@@ -10,12 +10,10 @@ use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes a real artifact. Otherwise "earned versions" would
-/// hold on the production path while tests bypass it.
+/// Every test publishes and installs a real artifact. Otherwise "earned
+/// versions" would hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
-    let version =
-        gmr_transport::shell::testkit::publish_script(root.join(".probes"), "cat world.json");
-    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+    gmr_transport::shell::testkit::install_script(root.join(".probes"), "cat", "cat world.json")
 }
 
 struct Files {

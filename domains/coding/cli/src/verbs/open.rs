@@ -13,7 +13,7 @@ pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliErr
     let opened = rt
         .open(OpenRequest {
             key: key.clone(),
-            probe: rules::probe(&args.artifact, &args.params)?,
+            probe: rules::probe(&args.probe, &args.params)?,
             transitions: rules::transitions(&args.rules)?,
             terminal: rules::terminal(&args.terminal),
             initial: None,

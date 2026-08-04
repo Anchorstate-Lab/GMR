@@ -15,7 +15,6 @@ use crate::rules;
 pub const DEFAULT_FILE: &str = ".anchor/anchors.toml";
 
 pub struct Context {
-    pub root: std::path::PathBuf,
     pub recipes: Recipes,
 }
 
@@ -28,13 +27,8 @@ pub struct Declared {
 #[derive(Debug, Deserialize)]
 pub struct AnchorDecl {
     pub key: String,
-    /// A recipe name, portable across platforms. An artifact hash is not: it
-    /// carries the platform and the built binary's hash.
-    #[serde(default)]
-    pub probe: Option<String>,
-    /// Escape hatch pinning one artifact version. Exclusive with `probe`.
-    #[serde(default)]
-    pub artifact: Option<String>,
+    /// A name. A declaration has to survive an engine upgrade unchanged.
+    pub probe: String,
     #[serde(default)]
     pub params: serde_json::Value,
     #[serde(default)]
@@ -56,26 +50,15 @@ pub struct AnchorDecl {
 }
 
 impl AnchorDecl {
-    fn to_probe(&self, ctx: &Context) -> Result<ProbeRef, CliError> {
-        let params = self.params.to_string();
-        match (&self.probe, &self.artifact) {
-            (Some(_), Some(_)) | (None, None) => Err(CliError(format!(
-                "{}: declare either `probe` (a recipe name) or `artifact` (a version), not both",
-                self.key
-            ))),
-            (Some(name), None) => {
-                let version = ctx.recipes.version_of(name, &ctx.root)?;
-                rules::probe(version.as_str(), &params)
-            }
-            (None, Some(artifact)) => rules::probe(artifact, &params),
-        }
+    fn to_probe(&self) -> Result<ProbeRef, CliError> {
+        rules::probe(&self.probe, &self.params.to_string())
     }
 
-    /// A pinned artifact has no recipe and therefore no vocabulary to check.
     fn check_contract(&self, ctx: &Context) -> Result<(), CliError> {
-        let (Some(shape), Some(name)) = (&self.shape, &self.probe) else {
+        let Some(shape) = &self.shape else {
             return Ok(());
         };
+        let name = &self.probe;
         let missing = crate::shapes::unmet(crate::shapes::get(shape)?, &ctx.recipes.get(name)?.obs);
         match missing.is_empty() {
             true => Ok(()),
@@ -132,7 +115,6 @@ pub async fn run(
         Err(e) => return Err(CliError(format!("cannot read `{file}`: {e}"))),
     };
     let ctx = Context {
-        root: root.to_path_buf(),
         recipes: Recipes::load(root)?,
     };
 
@@ -169,7 +151,7 @@ pub async fn run(
         }
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
-            let facets = differs(&view.anchor, decl, &ctx)?;
+            let facets = differs(&view.anchor, decl)?;
             if !facets.is_empty() {
                 drifted_criteria.push(format!("{} ({})", decl.key, facets.join(" · ")));
             }
@@ -190,7 +172,7 @@ pub async fn run(
         let result = rt
             .open(OpenRequest {
                 key: key.clone(),
-                probe: decl.to_probe(&ctx)?,
+                probe: decl.to_probe()?,
                 transitions: decl.to_transitions()?,
                 terminal: rules::terminal(&decl.terminal),
                 initial: decl.initial(),
@@ -354,13 +336,9 @@ async fn align_bindings(
 /// Naming the facet matters: "the probe was renamed" and "the transition table
 /// was rewritten" are different judgments, and the sealed reason should say
 /// which one it is.
-fn differs(
-    anchor: &Anchor,
-    decl: &AnchorDecl,
-    ctx: &Context,
-) -> Result<Vec<&'static str>, CliError> {
+fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<Vec<&'static str>, CliError> {
     let mut facets = Vec::new();
-    if anchor.probe != decl.to_probe(ctx)? {
+    if anchor.probe != decl.to_probe()? {
         facets.push("probe");
     }
     if anchor.transitions != decl.to_transitions()? {
@@ -376,8 +354,7 @@ fn differs(
 mod tests {
     use super::*;
 
-    const ART: &str =
-        "artifact = \"d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62\"";
+    const ART: &str = "probe = \"ast-map\"";
 
     const RULES: &str = r#"
 rules = [
@@ -433,8 +410,7 @@ rules = [
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
         std::fs::write(dir.path().join("src/probe.sh"), "echo '{}'").unwrap();
         let recipes = Recipes::load(dir.path()).unwrap();
-        let root = dir.path().to_path_buf();
-        (dir, Context { root, recipes })
+        (dir, Context { recipes })
     }
 
     const AST_LIKE: &str = r#"
@@ -446,21 +422,21 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
 "#;
 
     #[test]
-    fn a_probe_name_resolves_to_a_recipe_version() {
-        let (_d, c) = ctx(AST_LIKE);
+    fn the_declaration_carries_the_name_verbatim() {
+        let (_d, _c) = ctx(AST_LIKE);
         let probe = decl("probe = \"ast-like\"\nshape = \"roster\"")
-            .to_probe(&c)
+            .to_probe()
             .unwrap();
-        assert_eq!(probe.artifact.as_str().len(), 64);
+        assert_eq!(probe.name.as_str(), "ast-like");
     }
 
     #[test]
-    fn naming_both_a_probe_and_an_artifact_is_refused() {
-        let (_d, c) = ctx(AST_LIKE);
-        let e = decl(&format!("probe = \"ast-like\"\n{ART}"))
-            .to_probe(&c)
+    fn a_version_where_a_name_belongs_is_refused() {
+        let (_d, _c) = ctx(AST_LIKE);
+        let e = decl(&format!("probe = \"{}\"", "d9".repeat(32)))
+            .to_probe()
             .unwrap_err();
-        assert!(e.to_string().contains("not both"), "{e}");
+        assert!(e.to_string().contains("probe name"), "{e}");
     }
 
     /// A mismatch must be caught before opening, not after observation.

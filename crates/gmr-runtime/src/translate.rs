@@ -122,8 +122,8 @@ pub(crate) fn bind_warnings(anchor: &Anchor, observation: &Observation) -> Vec<S
 mod tests {
     use super::*;
     use gmr_core::{
-        AnchorKey, Expr, Facts, Kind, Outcome, ProbeRef, ProbeVersion, Rule, StatusId, Transitions,
-        Versions,
+        AnchorKey, Expr, Facts, Kind, Outcome, ProbeName, ProbeRef, ProbeVersion, Rule, StatusId,
+        Transitions, Versions,
     };
     use serde_json::json;
 
@@ -142,11 +142,7 @@ mod tests {
     fn anchor(t: Transitions) -> Anchor {
         Anchor {
             key: AnchorKey::new("a"),
-            probe: ProbeRef::new(
-                Kind::new("shell"),
-                ProbeVersion::new("1".repeat(64)),
-                json!({}),
-            ),
+            probe: ProbeRef::new(Kind::new("shell"), ProbeName::new("p"), json!({})),
             transitions: t,
             terminal: [StatusId::new("settled")].into_iter().collect(),
             supersedes: None,

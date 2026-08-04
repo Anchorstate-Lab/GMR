@@ -8,12 +8,10 @@ use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes a real artifact. Otherwise "earned versions" would
-/// hold on the production path while tests bypass it.
+/// Every test publishes and installs a real artifact. Otherwise "earned
+/// versions" would hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
-    let version =
-        gmr_transport::shell::testkit::publish_script(root.join(".probes"), "cat world.json");
-    gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
+    gmr_transport::shell::testkit::install_script(root.join(".probes"), "cat", "cat world.json")
 }
 
 struct World {
@@ -152,7 +150,7 @@ async fn every_failure_path_emits_an_edge() {
             Change::Reprobe {
                 probe: ProbeRef::new(
                     Kind::new("nonesuch"),
-                    gmr_core::ProbeVersion::new("2".repeat(64)),
+                    gmr_core::ProbeName::new("p"),
                     serde_json::json!({}),
                 ),
             },

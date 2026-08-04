@@ -12,11 +12,11 @@ pub use gmr_content::{ContentError, ContentErrorCode, ContentProvider, Fetched};
 pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, Change, ChangeKind, ContentHash, Derivation, Entry,
     Expr, ExternalId, Facts, FailureCode, Kind, Link, LinkKind, OUTCOME_CONTRACT, Observation,
-    Outcome, ProbeRef, ProbeVersion, ProviderId, ReasonClass, Ref, Retain, Rule, RunSettings,
-    State, StatusId, Superseded, Transitions, Verifiability, Version, fold,
+    Outcome, ProbeName, ProbeRef, ProbeVersion, ProviderId, ReasonClass, Ref, Retain, Rule,
+    RunSettings, State, StatusId, Superseded, Transitions, Verifiability, Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;
-pub use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
+pub use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorLog, AnchorView, CorpusHealth, Edge, Edges, MemoryLens, MemoryView,
     Observed, OpenRequest, Opened, Passed, Policy, Revised, Runtime, RuntimeError, Scheduler,

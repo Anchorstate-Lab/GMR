@@ -1,13 +1,20 @@
 use std::path::Path;
 
-use gmr_core::{Kind, ProbeVersion};
+use gmr_core::{Kind, ProbeName, ProbeRef, ProbeVersion};
 
 use super::artifact::{Artifacts, publish};
 
-/// Publish a shell script as a probe artifact for tests.
-///
-/// Tests must go through real publishing too; otherwise "earned versions" only
+/// Tests publish and install for real; otherwise "earned versions" would only
 /// hold on the production path.
+pub fn install_script(store: impl AsRef<Path>, name: &str, body: &str) -> ProbeRef {
+    let name = ProbeName::new(name);
+    let version = publish_script(store.as_ref(), body);
+    Artifacts::new(store.as_ref())
+        .install(&name, &version)
+        .expect("cannot install");
+    ProbeRef::new(Kind::new("shell"), name, serde_json::json!({}))
+}
+
 pub fn publish_script(store: impl AsRef<Path>, body: &str) -> ProbeVersion {
     let staging = tempfile::tempdir().expect("cannot create staging directory");
     let entry = staging.path().join("probe");

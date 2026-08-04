@@ -8,18 +8,17 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeRef, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, ProbeRef, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Sighted, Transport};
+use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Transport};
 
 pub use artifact::{ArtifactError, Artifacts, publish};
 pub use manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
-/// Executes only artifacts. The anchor names an artifact; this transport
-/// resolves it, verifies every byte, then runs its entrypoint. The version in
-/// the log is therefore earned.
+/// Executes only artifacts. The anchor names a probe; the store says which
+/// artifact stands for that name here, verified byte for byte before it runs.
 pub struct Shell {
     kind: Kind,
     cwd: PathBuf,
@@ -60,10 +59,22 @@ impl Transport for Shell {
         &self.kind
     }
 
-    async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Sighted, ProbeError> {
+    fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
+        let resolved = self.artifacts.resolve(name).ok()?;
+        Some(Derivation {
+            version: resolved.manifest.version(),
+            verifiability: match resolved.manifest.env.is_empty() {
+                true => Verifiability::ContentAddressed,
+                // Host env in the closure: a rerun is not guaranteed to agree.
+                false => Verifiability::Declared,
+            },
+        })
+    }
+
+    async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Outcome, ProbeError> {
         // Resolution failure is unusable: if we cannot name the derivation rule,
         // we should not run it.
-        let resolved = self.artifacts.resolve(&probe.artifact).map_err(|e| {
+        let resolved = self.artifacts.resolve(&probe.name).map_err(|e| {
             ProbeError::with_code(
                 gmr_core::ReasonClass::Unusable,
                 ProbeErrorCode::ArtifactInvalid,
@@ -150,25 +161,10 @@ impl Transport for Shell {
             )
         })?;
 
-        let outcome = if facts.is_null() {
-            Outcome::NotFound
-        } else {
-            Outcome::Found {
+        Ok(match facts.is_null() {
+            true => Outcome::NotFound,
+            false => Outcome::Found {
                 facts: Facts::new(facts),
-            }
-        };
-
-        Ok(Sighted {
-            outcome,
-            // The declaration may be a portable recipe; the derivation can only
-            // be the artifact that actually ran. GMR.md §5 forbids merging them.
-            derivation: Derivation {
-                version: resolved.manifest.version(),
-                verifiability: match resolved.manifest.env.is_empty() {
-                    true => Verifiability::ContentAddressed,
-                    // Host env in the closure: a rerun is not guaranteed to agree.
-                    false => Verifiability::Declared,
-                },
             },
         })
     }
@@ -205,6 +201,10 @@ mod tests {
             Shell::new(&self.cwd, &self.store)
         }
 
+        fn probe(params: Value) -> ProbeRef {
+            ProbeRef::new(Kind::new("shell"), ProbeName::new("p"), params)
+        }
+
         fn publish_with_env(&self, body: &str, env: &[(&str, &str)]) -> ProbeVersion {
             self.publish_full(body, &[], env)
         }
@@ -225,7 +225,7 @@ mod tests {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
-            publish(
+            let version = publish(
                 &Artifacts::new(&self.store),
                 &src,
                 Kind::new("shell"),
@@ -235,27 +235,28 @@ mod tests {
                     .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
                     .collect(),
             )
-            .unwrap()
+            .unwrap();
+            Artifacts::new(&self.store)
+                .install(&ProbeName::new("p"), &version)
+                .unwrap();
+            version
         }
 
-        async fn invoke(
-            &self,
-            v: &ProbeVersion,
-            params: Value,
-            at: Value,
-        ) -> Result<Sighted, ProbeError> {
-            self.shell()
-                .invoke(&ProbeRef::new(Kind::new("shell"), v.clone(), params), &at)
-                .await
+        async fn invoke(&self, params: Value, at: Value) -> Result<Outcome, ProbeError> {
+            self.shell().invoke(&Self::probe(params), &at).await
+        }
+
+        fn resolve(&self) -> Option<Derivation> {
+            self.shell().resolve(&ProbeName::new("p"))
         }
     }
 
     #[tokio::test]
     async fn structured_output_is_the_state_vector() {
         let w = World::new();
-        let v = w.publish(r#"echo '{"count":2,"names":["a","b"]}'"#, &[]);
-        let got = w.invoke(&v, json!({}), Value::Null).await.unwrap();
-        let Outcome::Found { facts } = got.outcome else {
+        w.publish(r#"echo '{"count":2,"names":["a","b"]}'"#, &[]);
+        let got = w.invoke(json!({}), Value::Null).await.unwrap();
+        let Outcome::Found { facts } = got else {
             panic!("expected a found outcome")
         };
         assert_eq!(facts.as_value()["count"], json!(2));
@@ -265,12 +266,23 @@ mod tests {
     async fn the_version_is_the_artifact_that_actually_ran() {
         let w = World::new();
         let v = w.publish("echo '{}'", &[]);
-        let got = w.invoke(&v, json!({}), Value::Null).await.unwrap();
-        assert_eq!(got.derivation.version, v);
-        assert_eq!(
-            got.derivation.verifiability,
-            Verifiability::ContentAddressed
-        );
+        let d = w.resolve().expect("a published artifact resolves");
+        assert_eq!(d.version, v);
+        assert_eq!(d.verifiability, Verifiability::ContentAddressed);
+    }
+
+    #[tokio::test]
+    async fn resolving_names_the_rule_without_running_it() {
+        let w = World::new();
+        let v = w.publish("echo 'never ran' >&2; exit 9", &[]);
+        assert_eq!(w.resolve().unwrap().version, v);
+    }
+
+    #[test]
+    fn a_name_nothing_stands_for_resolves_to_nothing() {
+        let w = World::new();
+        w.publish("echo '{}'", &[]);
+        assert!(w.shell().resolve(&ProbeName::new("absent")).is_none());
     }
 
     #[tokio::test]
@@ -295,43 +307,42 @@ mod tests {
     #[tokio::test]
     async fn a_tampered_artifact_is_refused_not_run() {
         let w = World::new();
-        let v = w.publish("echo '{\"x\":1}'", &[]);
+        w.publish("echo '{\"x\":1}'", &[]);
         let entry = Artifacts::new(&w.store)
-            .resolve(&v)
+            .resolve(&ProbeName::new("p"))
             .unwrap()
             .root
             .join("probe");
         std::fs::write(&entry, "#!/bin/sh\necho '{\"x\":999}'\n").unwrap();
 
-        let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
+        let e = w.invoke(json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
         assert_eq!(e.code, ProbeErrorCode::ArtifactInvalid);
     }
 
+    /// Our failure, not the world's absence; it must never fold into the state.
     #[tokio::test]
-    async fn an_artifact_that_is_not_there_is_our_failure() {
+    async fn a_probe_that_is_not_installed_is_our_failure() {
         let w = World::new();
-        let e = w
-            .invoke(&ProbeVersion::new("f".repeat(64)), json!({}), Value::Null)
-            .await
-            .unwrap_err();
+        let e = w.invoke(json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
         assert_eq!(e.code, ProbeErrorCode::ArtifactInvalid);
+        assert!(e.message.contains('p'), "{}", e.message);
     }
 
     #[tokio::test]
     async fn null_is_the_worlds_absence_and_it_is_a_real_answer() {
         let w = World::new();
-        let v = w.publish("echo null", &[]);
-        let got = w.invoke(&v, json!({}), Value::Null).await.unwrap();
-        assert_eq!(got.outcome, Outcome::NotFound);
+        w.publish("echo null", &[]);
+        let got = w.invoke(json!({}), Value::Null).await.unwrap();
+        assert_eq!(got, Outcome::NotFound);
     }
 
     #[tokio::test]
     async fn a_nonzero_exit_is_our_failure_not_the_worlds_answer() {
         let w = World::new();
-        let v = w.publish("exit 1", &[]);
-        let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
+        w.publish("exit 1", &[]);
+        let e = w.invoke(json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
         assert_eq!(e.code, ProbeErrorCode::ProcessFailed);
     }
@@ -339,8 +350,8 @@ mod tests {
     #[tokio::test]
     async fn stderr_comes_back_so_the_failure_can_be_read() {
         let w = World::new();
-        let v = w.publish("echo 'boom: no such credential' >&2; exit 3", &[]);
-        let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
+        w.publish("echo 'boom: no such credential' >&2; exit 3", &[]);
+        let e = w.invoke(json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.code, ProbeErrorCode::ProcessFailed);
         assert!(e.message.contains("no such credential"), "{}", e.message);
     }
@@ -348,8 +359,8 @@ mod tests {
     #[tokio::test]
     async fn unstructured_output_is_a_failure_not_a_fact() {
         let w = World::new();
-        let v = w.publish("echo hello", &[]);
-        let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
+        w.publish("echo hello", &[]);
+        let e = w.invoke(json!({}), Value::Null).await.unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
         assert_eq!(e.code, ProbeErrorCode::InvalidJson);
     }
@@ -357,15 +368,15 @@ mod tests {
     #[tokio::test]
     async fn the_position_and_the_params_both_reach_the_probe() {
         let w = World::new();
-        let v = w.publish(
+        w.publish(
             &format!(r#"echo "{{\"at\": ${POSITION_ENV}, \"with\": ${PARAMS_ENV}}}""#),
             &[],
         );
         let got = w
-            .invoke(&v, json!({ "kind": "function" }), json!({ "file": "a.rs" }))
+            .invoke(json!({ "kind": "function" }), json!({ "file": "a.rs" }))
             .await
             .unwrap();
-        let Outcome::Found { facts } = got.outcome else {
+        let Outcome::Found { facts } = got else {
             panic!("expected a found outcome")
         };
         assert_eq!(facts.as_value()["at"], json!({ "file": "a.rs" }));
@@ -375,10 +386,10 @@ mod tests {
     #[tokio::test]
     async fn the_transport_never_looks_into_the_position() {
         let w = World::new();
-        let v = w.publish(&format!(r#"echo "{{\"p\": ${POSITION_ENV}}}""#), &[]);
+        w.publish(&format!(r#"echo "{{\"p\": ${POSITION_ENV}}}""#), &[]);
         for p in [json!("a.rs"), json!({ "x": 1 }), json!([1, 2])] {
-            let got = w.invoke(&v, json!({}), p.clone()).await.unwrap();
-            let Outcome::Found { facts } = got.outcome else {
+            let got = w.invoke(json!({}), p.clone()).await.unwrap();
+            let Outcome::Found { facts } = got else {
                 panic!("expected a found outcome")
             };
             assert_eq!(facts.as_value()["p"], p);
@@ -388,14 +399,11 @@ mod tests {
     #[tokio::test]
     async fn a_silent_probe_times_out_as_our_failure() {
         let w = World::new();
-        let v = w.publish("sleep 5", &[]);
+        w.publish("sleep 5", &[]);
         let e = w
             .shell()
             .with_timeout(Duration::from_millis(60))
-            .invoke(
-                &ProbeRef::new(Kind::new("shell"), v, json!({})),
-                &Value::Null,
-            )
+            .invoke(&World::probe(json!({})), &Value::Null)
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
@@ -405,14 +413,11 @@ mod tests {
     #[tokio::test]
     async fn oversized_output_is_refused_never_truncated() {
         let w = World::new();
-        let v = w.publish("printf 'x%.0s' $(seq 1 100)", &[]);
+        w.publish("printf 'x%.0s' $(seq 1 100)", &[]);
         let e = w
             .shell()
             .with_output_cap(16)
-            .invoke(
-                &ProbeRef::new(Kind::new("shell"), v, json!({})),
-                &Value::Null,
-            )
+            .invoke(&World::probe(json!({})), &Value::Null)
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);
@@ -422,46 +427,47 @@ mod tests {
     #[tokio::test]
     async fn same_artifact_same_position_same_answer() {
         let w = World::new();
-        let v = w.publish("echo '{\"x\":1}'", &[]);
-        let a = w.invoke(&v, json!({}), Value::Null).await.unwrap();
-        let b = w.invoke(&v, json!({}), Value::Null).await.unwrap();
-        assert_eq!(a.outcome, b.outcome);
-        assert_eq!(a.derivation, b.derivation);
-    }
-
-    /// A portable declaration points at a local artifact; the log records the latter.
-    #[tokio::test]
-    async fn the_derivation_is_the_installed_artifact_not_the_declaration() {
-        let w = World::new();
-        let built = w.publish("echo '{\"x\":1}'", &[]);
-        let recipe = ProbeVersion::new("a".repeat(64));
-        Artifacts::new(&w.store).install(&recipe, &built).unwrap();
-
-        let s = w.invoke(&recipe, json!({}), Value::Null).await.unwrap();
-        assert_eq!(s.derivation.version, built);
-        assert_ne!(s.derivation.version, recipe);
+        w.publish("echo '{\"x\":1}'", &[]);
+        let a = w.invoke(json!({}), Value::Null).await.unwrap();
+        let b = w.invoke(json!({}), Value::Null).await.unwrap();
+        assert_eq!(a, b);
+        assert_eq!(w.resolve(), w.resolve());
     }
 
     #[test]
-    fn with_nothing_installed_a_version_stands_for_itself() {
+    fn the_derivation_is_the_installed_artifact_not_the_name() {
         let w = World::new();
-        let v = w.publish("echo '{}'", &[]);
-        assert_eq!(Artifacts::new(&w.store).installed(&v).unwrap(), v);
+        let built = w.publish("echo '{\"x\":1}'", &[]);
+        assert_eq!(
+            w.resolve().expect("an installed name resolves").version,
+            built
+        );
+    }
+
+    #[test]
+    fn a_name_nothing_was_installed_under_stands_for_nothing() {
+        let w = World::new();
+        assert_eq!(
+            Artifacts::new(&w.store)
+                .installed(&ProbeName::new("never"))
+                .unwrap(),
+            None
+        );
     }
 
     /// Otherwise an upgrade leaves this machine running the old binary forever.
     #[test]
-    fn reinstalling_a_recipe_repoints_it() {
+    fn reinstalling_a_name_repoints_it() {
         let w = World::new();
         let first = w.publish("echo '{\"x\":1}'", &[]);
         let second = w.publish("echo '{\"x\":2}'", &[]);
         assert_ne!(first, second);
-
-        let store = Artifacts::new(&w.store);
-        let recipe = ProbeVersion::new("b".repeat(64));
-        store.install(&recipe, &first).unwrap();
-        store.install(&recipe, &second).unwrap();
-        assert_eq!(store.installed(&recipe).unwrap(), second);
+        assert_eq!(
+            Artifacts::new(&w.store)
+                .installed(&ProbeName::new("p"))
+                .unwrap(),
+            Some(second)
+        );
     }
 
     #[test]
@@ -473,33 +479,22 @@ mod tests {
         )
         .unwrap();
         let e = Artifacts::new(&w.store)
-            .installed(&ProbeVersion::new("c".repeat(64)))
+            .installed(&ProbeName::new("p"))
             .unwrap_err();
         assert!(e.0.contains("v99"), "{}", e.0);
     }
 
     /// With host env in the closure it cannot claim to be content-addressed.
-    #[tokio::test]
-    async fn a_host_env_in_the_closure_downgrades_verifiability() {
+    #[test]
+    fn a_host_env_in_the_closure_downgrades_verifiability() {
         let w = World::new();
-        let plain = w.publish("echo '{}'", &[]);
+        w.publish("echo '{}'", &[]);
         assert_eq!(
-            w.invoke(&plain, json!({}), Value::Null)
-                .await
-                .unwrap()
-                .derivation
-                .verifiability,
+            w.resolve().unwrap().verifiability,
             Verifiability::ContentAddressed
         );
 
-        let with_env = w.publish_with_env("echo '{}'", &[("HOME", "/somewhere")]);
-        assert_eq!(
-            w.invoke(&with_env, json!({}), Value::Null)
-                .await
-                .unwrap()
-                .derivation
-                .verifiability,
-            Verifiability::Declared
-        );
+        w.publish_with_env("echo '{}'", &[("HOME", "/somewhere")]);
+        assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Declared);
     }
 }

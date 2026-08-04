@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gmr_core::{
-    AnchorKey, Change, Entry, Expr, Kind, ProbeRef, Retain, Rule, RunSettings, Transitions, fold,
+    AnchorKey, Change, Entry, Expr, ProbeRef, Retain, Rule, RunSettings, Transitions, fold,
 };
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::Journal;
@@ -45,9 +45,8 @@ fn key() -> AnchorKey {
     AnchorKey::new("a")
 }
 
-fn probe(root: &std::path::Path, script: &str) -> ProbeRef {
-    let version = gmr_transport::shell::testkit::publish_script(root.join(".probes"), script);
-    ProbeRef::new(Kind::new("shell"), version, serde_json::json!({}))
+fn probe(root: &std::path::Path, name: &str, script: &str) -> ProbeRef {
+    gmr_transport::shell::testkit::install_script(root.join(".probes"), name, script)
 }
 
 fn rules(pairs: &[(&str, &str)]) -> Transitions {
@@ -69,7 +68,7 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe(w.dir.path(), "cat world.json"),
+            probe: probe(w.dir.path(), "world", "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
@@ -109,7 +108,7 @@ async fn the_two_hops_version_independently() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe(w.dir.path(), "cat world.json"),
+            probe: probe(w.dir.path(), "world", "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
@@ -126,7 +125,7 @@ async fn the_two_hops_version_independently() {
         .revise(
             &key(),
             Change::Reprobe {
-                probe: probe(w.dir.path(), "cat other.json"),
+                probe: probe(w.dir.path(), "other", "cat other.json"),
             },
             b"same content, different rule",
         )
@@ -171,7 +170,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe(w.dir.path(), "cat world.json"),
+            probe: probe(w.dir.path(), "world", "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,
@@ -187,7 +186,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
         .revise(
             &key(),
             Change::Reprobe {
-                probe: probe(w.dir.path(), "cat other.json"),
+                probe: probe(w.dir.path(), "other", "cat other.json"),
             },
             b"rule change",
         )
@@ -218,7 +217,7 @@ async fn folding_the_same_log_twice_yields_the_same_state() {
     w.runtime
         .open(OpenRequest {
             key: key(),
-            probe: probe(w.dir.path(), "cat world.json"),
+            probe: probe(w.dir.path(), "world", "cat world.json"),
             transitions: rules(&[("changed(\"shape\")", "{ shape: obs.shape }")]),
             terminal: Default::default(),
             initial: None,

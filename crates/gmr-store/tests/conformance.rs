@@ -1,6 +1,7 @@
 use gmr_core::{
     Anchor, AnchorKey, Binding, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome,
-    ProbeRef, ProbeVersion, ReasonClass, Ref, Rule, State, Transitions, Version, Versions, fold,
+    ProbeName, ProbeRef, ProbeVersion, ReasonClass, Ref, Rule, State, Transitions, Version,
+    Versions, fold,
 };
 use gmr_store::{BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
 
@@ -11,7 +12,7 @@ fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
 fn probe() -> ProbeRef {
     ProbeRef::new(
         Kind::new("shell"),
-        ProbeVersion::new("1".repeat(64)),
+        ProbeName::new("p"),
         serde_json::json!({}),
     )
 }

@@ -1,20 +1,20 @@
 use std::collections::BTreeSet;
 
-use gmr::{Expr, Kind, ProbeRef, ProbeVersion, Rule, StatusId, Transitions};
+use gmr::{Expr, Kind, ProbeName, ProbeRef, Rule, StatusId, Transitions};
 
 use crate::error::CliError;
 
-/// Probe written on the anchor: which artifact it points at and which params it carries.
-pub fn probe(artifact: &str, params: &str) -> Result<ProbeRef, CliError> {
-    let artifact = ProbeVersion::try_new(artifact).map_err(|e| {
+/// A name, never a version: upgrading the tool is not a change of mind.
+pub fn probe(name: &str, params: &str) -> Result<ProbeRef, CliError> {
+    let name = ProbeName::try_new(name).map_err(|e| {
         CliError(format!(
-            "`{artifact}` is not an artifact version ({e}).\n\
-             Publish one with `anchor publish <dir>`; it will print this value."
+            "`{name}` is not a probe name ({e}).\n\
+             `probes list` prints the names this build knows."
         ))
     })?;
     let params: serde_json::Value = serde_json::from_str(params)
         .map_err(|e| CliError(format!("params is not valid JSON: {e}")))?;
-    Ok(ProbeRef::new(Kind::new("shell"), artifact, params))
+    Ok(ProbeRef::new(Kind::new("shell"), name, params))
 }
 
 pub fn rule(text: &str) -> Result<Rule, CliError> {

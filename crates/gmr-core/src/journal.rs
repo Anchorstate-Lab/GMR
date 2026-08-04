@@ -323,7 +323,7 @@ fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
 mod tests {
     use super::*;
     use crate::anchor::{AnchorKey, Expr, POSITION, Rule, STATUS};
-    use crate::probe::{Kind, ProbeRef, ProbeVersion, Verifiability};
+    use crate::probe::{Kind, ProbeName, ProbeRef, ProbeVersion, Verifiability};
     use serde_json::json;
 
     fn versions() -> Versions {
@@ -340,11 +340,7 @@ mod tests {
     fn anchor(terminal: &[&str]) -> Anchor {
         Anchor {
             key: AnchorKey::new("a"),
-            probe: ProbeRef::new(
-                Kind::new("shell"),
-                ProbeVersion::new("1".repeat(64)),
-                json!({}),
-            ),
+            probe: ProbeRef::new(Kind::new("shell"), ProbeName::new("p"), json!({})),
             transitions: Transitions(vec![Rule {
                 when: Expr::text("changed(\"shape\")"),
                 to: Expr::text("{ status: \"drifted\" }"),

@@ -1,6 +1,6 @@
 use gmr_core::{
-    Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, ProbeRef,
-    ProbeVersion, Rule, State, Transitions, Versions, fold,
+    Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, ProbeName,
+    ProbeRef, ProbeVersion, Rule, State, Transitions, Versions, fold,
 };
 use gmr_store::{ErrorCode, ErrorKind, Fence, Journal};
 
@@ -10,7 +10,7 @@ fn entry(value: &str) -> Entry {
             key: AnchorKey::new("core::pure"),
             probe: ProbeRef::new(
                 Kind::new("shell"),
-                ProbeVersion::new("1".repeat(64)),
+                ProbeName::new("p"),
                 serde_json::json!({}),
             ),
             transitions: Transitions(vec![Rule {
