@@ -4,7 +4,7 @@
 
 const { spawnSync } = require("node:child_process");
 
-const pkg = `@gmr/cli-${process.platform}-${process.arch}`;
+const pkg = `@zongming_he/gmr-${process.platform}-${process.arch}`;
 
 let binary;
 try {

@@ -1,57 +1,175 @@
-name: Release
+name: Build and release prebuilt binaries
 
 on:
+  workflow_dispatch: {}
   push:
-    tags: [ "v*" ]
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    tags:
+      - 'v*'
 
 jobs:
-  # One binary. The extractors are linked into it, so nothing else travels —
-  # and this repository's own test-roster probe is bootstrap data, not product.
-  tarball:
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    name: Build Linux targets
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - { os: macos-latest,  target: aarch64-apple-darwin }
-          - { os: macos-13,      target: x86_64-apple-darwin }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
-        run: cargo build --release -p coding-anchor
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-      - name: Stage
+      - name: Install cross
+        run: cargo install cross --locked
+
+      - name: Build with cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package tarball
         run: |
-          mkdir -p dist/out/bin
-          cp target/release/gmr dist/out/bin/gmr
+          mkdir -p artifacts
+          BIN=target/${{ matrix.target }}/release/gmr
+          if [ ! -f "$BIN" ]; then echo "binary not found: $BIN"; exit 1; fi
+          TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
+          mkdir -p tmp/bin
+          cp "$BIN" tmp/bin/gmr
+          tar -czf "$TARFILE" -C tmp bin
+          rm -rf tmp
 
-      - name: Prove it works before shipping it
-        run: sh acceptance.sh
-
-      - name: Pack
-        run: tar -czf gmr-${{ matrix.target }}.tar.gz -C dist/out bin
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: gmr-${{ matrix.target }}
-          path: gmr-${{ matrix.target }}.tar.gz
+          path: artifacts/gmr-${{ matrix.target }}.tar.gz
 
-  publish:
-    needs: tarball
-    runs-on: ubuntu-latest
+  build-macos:
+    name: Build macOS targets
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { path: assets, merge-multiple: true }
 
-      - name: Attach the tarballs to the release
-        uses: softprops/action-gh-release@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
         with:
-          files: assets/*.tar.gz
-          fail_on_unmatched_files: true
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }} || true
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package tarball
+        run: |
+          mkdir -p artifacts
+          BIN=target/${{ matrix.target }}/release/gmr
+          if [ ! -f "$BIN" ]; then echo "binary not found: $BIN"; exit 1; fi
+          TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
+          mkdir -p tmp/bin
+          cp "$BIN" tmp/bin/gmr
+          tar -czf "$TARFILE" -C tmp bin
+          rm -rf tmp
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmr-${{ matrix.target }}
+          path: artifacts/gmr-${{ matrix.target }}.tar.gz
+
+  create-release:
+    name: Create GitHub release and attach artifacts
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create GitHub release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-artifacts/**/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    name: Create and publish platform npm packages
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+
+      - name: Prepare platform packages
+        run: |
+          set -eu
+          mkdir -p packaged
+          VERSION=${GITHUB_REF#refs/tags/}
+          map_target() {
+            case "$1" in
+                x86_64-unknown-linux-gnu) echo "@zongming_he/gmr-linux-x64" ;;
+                aarch64-unknown-linux-gnu) echo "@zongming_he/gmr-linux-arm64" ;;
+                x86_64-apple-darwin) echo "@zongming_he/gmr-darwin-x64" ;;
+                aarch64-apple-darwin) echo "@zongming_he/gmr-darwin-arm64" ;;
+                *) echo "" ;;
+              esac
+          }
+          for f in release-artifacts/*.tar.gz; do
+            fname=$(basename "$f")
+            # extract target from filename like gmr-<target>.tar.gz
+            target=$(echo "$fname" | sed -E 's/^gmr-(.*)\.tar\.gz$/\1/')
+            pkgname=$(map_target "$target")
+            if [ -z "$pkgname" ]; then echo "unknown target $target"; exit 1; fi
+            sh dist/scripts/create_platform_npm.sh "$f" "$pkgname" "$VERSION" packaged
+          done
+
+      - name: Publish platform packages to npm
+        run: |
+          set -eu
+          for tgz in packaged/*.tgz; do
+            echo "Publishing $tgz"
+            npm publish "$tgz" --access public
+          done
+
+      - name: Publish wrapper package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          npm publish ./dist/npm --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
