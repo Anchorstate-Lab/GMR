@@ -123,9 +123,7 @@ async fn every_failure_path_emits_an_edge() {
     }
     let e = w.runtime.changed_since(mid, None).await.unwrap();
     assert!(
-        e.edges
-            .iter()
-            .any(|x| matches!(x, Edge::Stalled { .. })),
+        e.edges.iter().any(|x| matches!(x, Edge::Stalled { .. })),
         "consecutive unevaluable observations are stalled too: {:?}",
         e.edges
     );
