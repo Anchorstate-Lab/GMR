@@ -154,7 +154,7 @@ jobs:
                 *) echo "" ;;
               esac
           }
-          for f in release-artifacts/*.tar.gz; do
+          for f in release-artifacts/*/*.tar.gz; do
             fname=$(basename "$f")
             # extract target from filename like gmr-<target>.tar.gz
             target=$(echo "$fname" | sed -E 's/^gmr-(.*)\.tar\.gz$/\1/')
