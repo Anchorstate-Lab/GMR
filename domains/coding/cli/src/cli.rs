@@ -26,7 +26,7 @@ pub enum Command {
     Probes(ProbesCmd),
 
     Sync {
-        #[arg(default_value = "anchors.toml")]
+        #[arg(default_value = ".anchor/anchors.toml")]
         file: String,
         #[arg(long)]
         dry_run: bool,

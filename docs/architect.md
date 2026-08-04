@@ -169,13 +169,13 @@ sequenceDiagram
 
 ## 6. 自举数据不是系统本体（读这个仓库最容易踩的坑）
 
-根目录的 `anchors.toml` / `architecture.toml` / `memories/` 是**本仓库作为 GMR 用户**的数据：GMR 用自己监督自己。它们不是 GMR ship 出去的能力、默认规则或产品清单 —— GMR 明确把"ship 一份该检测什么的清单"列为红牌。`gate.sh` 读 `architecture.toml` 是这个仓库的自举门禁，不代表别的用户必须有这份文件。
+`.anchor/anchors.toml` / `.anchor/probes.toml` / `architecture.toml` / `memories/` 是**本仓库作为 GMR 用户**的数据：GMR 用自己监督自己。它们不是 GMR ship 出去的能力、默认规则或产品清单 —— GMR 明确把"ship 一份该检测什么的清单"列为红牌。`gate.sh` 读 `architecture.toml` 是这个仓库的自举门禁，不代表别的用户必须有这份文件。
 
 ---
 
 ## 7. 读代码时发现的偏差（供你判断，未改动任何文件）
 
-1. **README 与 CLI 实参不一致**：README 写 `probe = "batteries/probes/ast-map/... crates/gmr-core"`、`anchor open --probe '<命令行>'`；代码里 `anchors.toml`/`OpenArgs` 要的是 `artifact = <64 位 sha256>` + `params`，命令行是 `--artifact`，工件先由 `anchor publish <dir>` 生成。README 少了 `publish` 这一步，也没提 `--params`。
+1. **README 与 CLI 实参不一致**：README 写 `probe = "batteries/probes/ast-map/... crates/gmr-core"`、`anchor open --probe '<命令行>'`；代码里 `.anchor/anchors.toml`/`OpenArgs` 要的是 `artifact = <64 位 sha256>` + `params`，命令行是 `--artifact`，工件先由 `anchor publish <dir>` 生成。README 少了 `publish` 这一步，也没提 `--params`。
 2. **README 的 `Documentation` 链接指向根目录**（`GMR.md` / `flow.svg` / `modules.svg`），实际文件在 `docs/` 下。
 3. README 说"每个锚报告 `settled · moved · still · unseen · closed`"，代码的 `Observed` 是 `Transitioned/Still/Attempt/Closed`，`settled/unseen` 是渲染层与 `Passed` 计数的词；`Retain::Full` 与 `--retain-full` 在 README 里没有出现。
 

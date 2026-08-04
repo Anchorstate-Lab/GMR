@@ -29,4 +29,4 @@ doctrine::       CLAUDE.md 某一节的内容指纹
 tests::roster    测试名册
 ```
 
-坐标写在 `anchors.toml` 的 `position` 里，探针一律是 `batteries/probe-*` 的通用探针。
+坐标写在 `.anchor/anchors.toml` 的 `position` 里，探针一律是 `batteries/probe-*` 的通用探针。

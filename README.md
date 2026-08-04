@@ -111,7 +111,7 @@ Every command takes `--repo <path>` (default `.`) and `--json`. State lives in
 
 ### 1. Declare anchors
 
-Anchors are data, in a TOML file (`anchors.toml` by default):
+Anchors are data, in a TOML file (`.anchor/anchors.toml` by default):
 
 ```toml
 [[anchor]]

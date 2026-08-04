@@ -24,14 +24,17 @@ GMR 是领域无关的 grounded memory runtime。
 
 # 自举数据不是系统本体
 
-本仓库用 GMR 监督 GMR 自己，所以根目录里有一批“使用数据”：
+本仓库用 GMR 监督 GMR 自己，所以有一批“使用数据”：
 
-- anchors.toml：这个仓库选择锚哪些东西
+- .anchor/anchors.toml：这个仓库选择锚哪些东西
+- .anchor/probes.toml：这些锚用的探针配方（名字 → 那个名字是什么）
 - architecture.toml：这些锚使用的目标架构判据
 - memories/：绑定到锚上的人工记录
 - .codegraph/：CodeGraph 的本地索引
 
-这些文件和 crates/ 里的 GMR 本体不是同一层。不要因为它们在仓库根目录，就把它们当成系统自带能力、默认规则、产品清单或 crate 依赖。
+机器读的声明住在 `.anchor/` 里，人写的记忆留在外面。这不是审美：toml 摊在仓库根目录会被 Agent 当成项目自身的代码读，而记忆藏进点目录就没人看得见 —— 两边都会毁掉这套东西的用处。`.anchor/` 里只有 `anchors.toml` 和 `probes.toml` 跟 git，日志和制品不跟（见 `.anchor/.gitignore`）。
+
+这些文件和 crates/ 里的 GMR 本体不是同一层。不要因为它们在仓库里，就把它们当成系统自带能力、默认规则、产品清单或 crate 依赖。
 
 代码中尽可能的简化注释, 所有声明依靠这套自举的记忆去描述. 
 

@@ -67,7 +67,7 @@ struct Record<'a> {
 
 impl Recipes {
     pub fn load(root: &Path) -> Result<Self, CliError> {
-        let path = root.join(".anchor").join(RECIPES_FILE);
+        let path = anchor_dir(root).join(RECIPES_FILE);
         let Ok(text) = std::fs::read_to_string(&path) else {
             return Ok(Self::default());
         };
@@ -254,8 +254,12 @@ fn copy_mode(_src: &Path, _dst: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
+pub fn anchor_dir(root: &Path) -> PathBuf {
+    root.join(".anchor")
+}
+
 pub fn store_dir(root: &Path) -> PathBuf {
-    root.join(".anchor").join("probes")
+    anchor_dir(root).join("probes")
 }
 
 #[cfg(test)]

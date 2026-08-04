@@ -1,11 +1,3 @@
-# 锚的日志。忽略它不是因为它不重要，而是因为它**只增不改**：每次
-# `anchor observe` 都追加条目，那正是设计要的，也正是一个被提交的文件
-# 不该有的样子。
-#
-# `anchor sync anchors.toml` 从声明重建它 —— 但重建捕获的是**此刻**的
-# 基准，不是当初那次。日志里的历史重建不回来。
-.anchor/
-
 target/
 
 # codegraph tool index (local, rebuildable)
