@@ -125,7 +125,7 @@ async fn every_failure_path_emits_an_edge() {
     assert!(
         e.edges
             .iter()
-            .any(|x| matches!(x, Edge::Stalled { count: _, .. })),
+            .any(|x| matches!(x, Edge::Stalled { .. })),
         "consecutive unevaluable observations are stalled too: {:?}",
         e.edges
     );

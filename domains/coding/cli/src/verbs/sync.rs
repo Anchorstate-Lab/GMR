@@ -147,7 +147,7 @@ pub async fn run(
 
     let mut scheduled = 0;
     let mut seen: Vec<String> = Vec::new();
-    for decl in declared.anchor.iter().chain(from_notes.into_iter()) {
+    for decl in declared.anchor.iter().chain(from_notes) {
         if seen.contains(&decl.key) {
             continue;
         }
