@@ -6,9 +6,7 @@ use crate::error::CliError;
 use gmr::Transport;
 use gmr_transport::script::Script;
 
-use crate::probes::{
-    Catalog, PINNED_FILE, RECIPES_FILE, Recipes, anchor_dir, build_all, store_dir,
-};
+use crate::probes::{Catalog, RECIPES_FILE, Recipes, anchor_dir, build_all, store_dir};
 
 pub fn build(root: &Path, json: bool) -> Result<i32, CliError> {
     let built = build_all(root, &store_dir(root))?;
@@ -112,9 +110,11 @@ fn join(v: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-/// Assemble what a release ships: the recipes, their pinned versions, and only
-/// the artifacts currently installed for them. The store accumulates every
-/// artifact ever built here; a tarball should carry none of that history.
+/// Assemble a tarball's `probes/`: the declarations, and only the artifacts
+/// currently installed for them. The store accumulates every artifact ever built
+/// here; a tarball should carry none of that history.
+///
+/// The bundled extractors are not here — they are in the binary.
 pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
     let recipes = Recipes::load(root)?;
     let artifacts = Artifacts::new(store_dir(root));
@@ -143,15 +143,12 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
         shipped.push((name.to_owned(), artifact.as_str().to_owned()));
     }
 
-    for file in [RECIPES_FILE, PINNED_FILE] {
-        let from = match file {
-            RECIPES_FILE => anchor_dir(root).join(file),
-            _ => store_dir(root).join(file),
-        };
-        std::fs::copy(&from, probes.join(file))
-            .map_err(|e| CliError(format!("cannot copy {from:?}: {e}")))?;
-    }
-    write_install_index(&probes, &recipes, root, &shipped)?;
+    std::fs::copy(
+        anchor_dir(root).join(RECIPES_FILE),
+        probes.join(RECIPES_FILE),
+    )
+    .map_err(|e| CliError(format!("cannot copy {RECIPES_FILE}: {e}")))?;
+    write_install_index(&probes, &shipped)?;
 
     if json {
         println!(
@@ -167,24 +164,15 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
     Ok(0)
 }
 
-/// Rewritten rather than copied: the working store keeps entries for recipe
-/// versions that are no longer declared, and a release should not carry them.
-fn write_install_index(
-    probes: &Path,
-    recipes: &Recipes,
-    root: &Path,
-    shipped: &[(String, String)],
-) -> Result<(), CliError> {
-    let mut index = serde_json::Map::new();
-    for (name, artifact) in shipped {
-        let recipe = recipes.version_of(name, root)?;
-        index.insert(
-            recipe.as_str().to_owned(),
-            serde_json::Value::String(artifact.clone()),
-        );
-    }
+/// Rewritten rather than copied: the working store keeps entries for probes that
+/// are no longer declared, and a release should not carry them.
+fn write_install_index(probes: &Path, shipped: &[(String, String)]) -> Result<(), CliError> {
+    let index: serde_json::Map<String, serde_json::Value> = shipped
+        .iter()
+        .map(|(name, artifact)| (name.clone(), serde_json::Value::String(artifact.clone())))
+        .collect();
     let body = serde_json::json!({
-        "schema": "gmr.probe-install.v1",
+        "schema": "gmr.probe-install.v2",
         "installed": index,
     });
     std::fs::write(

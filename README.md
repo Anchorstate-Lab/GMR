@@ -200,14 +200,16 @@ like a real judgment in the data.
 
 ```sh
 cargo build --release        # binary: target/release/gmr
-gmr probes build             # build and install the probe recipes (developers only)
 sh gate.sh                   # fmt · clippy · tests · substrate boundary checks
-sh acceptance.sh             # the whole chain, from a bundle, in a fixture TS repo
+sh acceptance.sh             # the whole chain, in a fixture TS repo with no toolchain
 ```
 
-Users never run `probes build`: probes are built at release time and ship
-prebuilt, with their recipe versions pinned in `recipes.json`. A user machine has
-the artifacts but not the sources, and so cannot earn those hashes itself.
+A release ships one file. The extractors are linked into it and their versions
+are earned at build time from their semantic closure, so nothing has to be
+downloaded, built, or resolved on a user machine — and the same version means
+the same rule on every machine, which is what makes two journals comparable at
+all. `probes build` exists for artifacts a *domain* declares; a plain user never
+runs it.
 
 ---
 

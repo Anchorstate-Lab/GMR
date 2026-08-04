@@ -25,23 +25,18 @@ fail() {
 
 step() { echo; echo "── $1"; }
 
-# ── 发布侧：构建二进制与探针，打成 bundle ────────────────────────────────
-step "build the bundle (release side; needs cargo)"
+# ── 发布侧：一个二进制。抽取器链在里面，别的什么都不随包走 ───────────────
+step "build the tarball (release side; needs cargo)"
 cargo build --quiet --release -p coding-anchor
-"$root/target/release/gmr" --repo "$root" probes build >/dev/null
-# 走发布用的同一条打包路径，不要在这里另抄一份。
-"$root/target/release/gmr" --repo "$root" probes bundle --out "$bundle" >/dev/null
 mkdir -p "$bundle/bin"
 cp "$root/target/release/gmr" "$bundle/bin/gmr"
-[ -f "$bundle/probes/recipes.json" ] || fail "bundle 里没有 recipes.json —— 用户机器算不出配方版本"
 
-# 按 dist/install.sh 的布局装：bin/ 里是符号链接，真身和 probes/ 在 libexec 下。
-# 这是每个包管理器都会做的事，也是探针差点找不到的地方。
-step "install the way dist/install.sh does (symlinked into bin/)"
-mkdir -p "$prefix/bin" "$prefix/libexec/gmr"
-cp -R "$bundle/probes" "$prefix/libexec/gmr/probes"
-cp "$bundle/bin/gmr" "$prefix/libexec/gmr/gmr"
-ln -sf "$prefix/libexec/gmr/gmr" "$prefix/bin/gmr"
+# 这个仓库自己的 test-roster 是自举数据，不是产品。发出去就错了。
+[ -e "$bundle/probes" ] && fail "tarball 里出现了 probes/ —— 那是这个仓库的自举数据"
+
+step "install the way dist/install.sh does"
+mkdir -p "$prefix/bin"
+cp "$bundle/bin/gmr" "$prefix/bin/gmr"
 
 gmr="$prefix/bin/gmr"
 
@@ -61,14 +56,22 @@ EOF
 
 step "init"
 out=$("$gmr" --repo "$repo" init)
-echo "$out" | grep -q "ast-map" || fail "init 没有装上预装探针" "$out"
+echo "$out" | grep -q "ast-map" || fail "init 没有报告内置探针" "$out"
 echo "$out" | grep -q "\.ts" || fail "init 没有认出 TypeScript" "$out"
 [ -f "$repo/.anchor/anchors.toml" ] && fail "init 写了锚声明；判据归 owner，不归工具"
 [ -f "$repo/.anchor/.gitignore" ] || fail "init 没有写 .anchor/.gitignore"
+[ -d "$repo/.anchor/probes" ] && [ -n "$(ls -A "$repo/.anchor/probes" 2>/dev/null)" ] \
+    && fail "init 往仓库里复制了探针；抽取器在二进制里，不该有东西落地"
 
-# 配方版本必须来自 recipes.json：这个仓库没有探针源码，算不出来。
+# 身份必须是挣来的，而且必须是跨机器可比的那一种。
 out=$("$gmr" --repo "$repo" probes list --json)
-echo "$out" | grep -q '"pinned":true' || fail "配方版本不是固定的，说明它去哈希源码了" "$out"
+echo "$out" | grep -q '"kind":"builtin"' || fail "内置探针没有被列出来" "$out"
+echo "$out" | python3 -c '
+import json, sys
+probes = json.load(sys.stdin)["probes"]
+bad = [p["probe"] for p in probes if len(p.get("version") or "") != 64]
+sys.exit("not an earned hash: " + ", ".join(bad) if bad else 0)
+' || fail "探针版本不是挣来的" "$out"
 
 # ── 一行 frontmatter。用户不写 anchors.toml，不写转换表 ────────────────────
 step "one line of frontmatter"
@@ -120,5 +123,45 @@ set -e
 echo "$out" | grep -q '"memories":\["memories/auth.md"\]' \
     || fail "pass --json 没有把笔记交回来" "$out"
 
+# ── 用户自己的探针：不在代码里的事实 ─────────────────────────────────────
+step "a probe the user wrote themselves"
+mkdir -p "$repo/scripts"
+cat > "$repo/scripts/deploy.sh" <<'EOF'
+#!/bin/sh
+printf '{"sha":"a1b2c3d"}\n'
+EOF
+chmod +x "$repo/scripts/deploy.sh"
+cat > "$repo/.anchor/probes.toml" <<'EOF'
+[script.deploy-sha]
+run = "scripts/deploy.sh"
+obs = { schema = "gmr.probe-coord.v1", at = [], facts = ["sha"] }
+EOF
+cat > "$repo/.anchor/anchors.toml" <<'EOF'
+[[anchor]]
+key = "deploy::staging"
+probe = "deploy-sha"
+position = { env = "staging" }
+rules = [
+  'not exists(state.sha) => { position: state.position, sha: obs.sha, status: "captured" }',
+  'obs.sha != state.sha => { position: state.position, sha: obs.sha, was: state.sha, status: "redeployed" }',
+]
+EOF
+printf -- '---\nanchors:\n  - deploy::staging\n---\n\n# staging 上跑的是哪个 commit\n' \
+    > "$repo/memories/deploy.md"
+(cd "$repo" && git add -A && git -c user.email=a@b -c user.name=t commit -qm deploy)
+
+out=$("$gmr" --repo "$repo" sync)
+echo "$out" | grep -q "1 anchors opened" || fail "脚本探针的锚没开出来" "$out"
+"$gmr" --repo "$repo" observe >/dev/null
+
+sed -i.bak 's/a1b2c3d/9f8e7d6/' "$repo/scripts/deploy.sh"
+set +e
+out=$("$gmr" --repo "$repo" observe); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "部署换了 commit，退出码应当是 1，得到 $code" "$out"
+echo "$out" | grep -q "memories/deploy.md" \
+    || fail "锚住了源码里看不见的事实，但笔记没有回到手上" "$out"
+
 echo
-echo "验收通过：陌生仓库、无工具链，记忆与事实连上了，且事实动时记忆回到手上。"
+echo "验收通过：陌生仓库、无工具链、零下载探针。记忆与事实连上了，"
+echo "          源码里的和源码外的都算，且事实动时记忆回到手上。"

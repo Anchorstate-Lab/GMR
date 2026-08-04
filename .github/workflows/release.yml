@@ -9,9 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  # Probes are built here, once per platform, and travel inside the tarball.
-  # That is the whole point: a user machine has the artifacts but not the
-  # sources, and so could never earn the recipe hashes itself.
+  # One binary. The extractors are linked into it, so nothing else travels —
+  # and this repository's own test-roster probe is bootstrap data, not product.
   tarball:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -27,18 +26,16 @@ jobs:
       - name: Build
         run: cargo build --release -p coding-anchor
 
-      - name: Build and bundle the probes
+      - name: Stage
         run: |
-          ./target/release/gmr probes build
-          ./target/release/gmr probes bundle --out dist/out
           mkdir -p dist/out/bin
           cp target/release/gmr dist/out/bin/gmr
 
-      - name: Prove the bundle works before shipping it
+      - name: Prove it works before shipping it
         run: sh acceptance.sh
 
       - name: Pack
-        run: tar -czf gmr-${{ matrix.target }}.tar.gz -C dist/out bin probes
+        run: tar -czf gmr-${{ matrix.target }}.tar.gz -C dist/out bin
 
       - uses: actions/upload-artifact@v4
         with:

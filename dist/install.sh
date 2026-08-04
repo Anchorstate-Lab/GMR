@@ -37,15 +37,10 @@ curl -fsSL "$url" -o "$work/gmr.tar.gz" \
     || { echo "gmr: cannot download $url" >&2; exit 1; }
 tar -xzf "$work/gmr.tar.gz" -C "$work"
 
-# The probes travel with the binary and are found relative to it, so bin/ and
-# probes/ must stay siblings. Installing only the binary would leave every
-# `about:` unresolvable.
-mkdir -p "$prefix/bin" "$prefix/libexec/gmr"
-rm -rf "$prefix/libexec/gmr/probes"
-cp -R "$work/probes" "$prefix/libexec/gmr/probes"
-cp "$work/bin/gmr" "$prefix/libexec/gmr/gmr"
-chmod +x "$prefix/libexec/gmr/gmr"
-ln -sf "$prefix/libexec/gmr/gmr" "$prefix/bin/gmr"
+# The extractors are inside the binary, so one file is the whole install.
+mkdir -p "$prefix/bin"
+cp "$work/bin/gmr" "$prefix/bin/gmr"
+chmod +x "$prefix/bin/gmr"
 
 echo "gmr: installed to $prefix/bin/gmr"
 case ":$PATH:" in
