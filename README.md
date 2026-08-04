@@ -36,7 +36,7 @@ fact changes.
 If the npm packages are published, install the wrapper package:
 
 ```sh
-npm install -g @gmr/cli
+npm install -g @zongming_he/gmr
 ```
 
 The npm wrapper will load the matching platform bundle, if available.
