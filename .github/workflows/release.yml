@@ -21,8 +21,6 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-          env:
-            NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           override: true
 
       - name: Install cross
@@ -36,15 +34,15 @@ jobs:
           mkdir -p artifacts
           BIN=target/${{ matrix.target }}/release/gmr
           if [ ! -f "$BIN" ]; then echo "binary not found: $BIN"; exit 1; fi
-            - name: Configure npm auth
-              run: |
-                if [ -z "${NODE_AUTH_TOKEN}" ]; then
-                  echo "NPM_TOKEN not set; skipping npm publish steps"
-                  exit 0
-                fi
-                npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
+          mkdir -p tmp/bin
+          cp "$BIN" tmp/bin/gmr
+          tar -czf "$TARFILE" -C tmp bin
+          rm -rf tmp
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        with:
           name: gmr-${{ matrix.target }}
           path: artifacts/gmr-${{ matrix.target }}.tar.gz
 
@@ -72,6 +70,7 @@ jobs:
 
       - name: Package tarball
         run: |
+          mkdir -p artifacts
           BIN=target/${{ matrix.target }}/release/gmr
           if [ ! -f "$BIN" ]; then echo "binary not found: $BIN"; exit 1; fi
           TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
@@ -84,6 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gmr-${{ matrix.target }}
+          path: artifacts/gmr-${{ matrix.target }}.tar.gz
 
   create-release:
     name: Create GitHub release and attach artifacts
@@ -116,6 +116,8 @@ jobs:
     name: Create and publish platform npm packages
     runs-on: ubuntu-latest
     needs: create-release
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -130,14 +132,12 @@ jobs:
           node-version: '20'
 
       - name: Configure npm auth
-        if: ${{ secrets.NPM_TOKEN != '' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        if: env.NPM_TOKEN != ''
         run: |
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
 
       - name: Prepare platform packages
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: env.NPM_TOKEN != ''
         run: |
           set -eu
           mkdir -p packaged
@@ -161,7 +161,7 @@ jobs:
           done
 
       - name: Publish platform packages to npm
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: env.NPM_TOKEN != ''
         run: |
           set -eu
           for tgz in packaged/*.tgz; do
@@ -170,9 +170,7 @@ jobs:
           done
 
       - name: Publish wrapper package
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: env.NPM_TOKEN != ''
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           npm publish ./dist/npm --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
