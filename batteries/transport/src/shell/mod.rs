@@ -160,9 +160,15 @@ impl Transport for Shell {
 
         Ok(Sighted {
             outcome,
+            // 声明可以是配方，跨平台通用；派生只能是实际跑的那个制品。
+            // 这两个合并过，GMR.md §5 说三者不许合并。
             derivation: Derivation {
-                version: probe.artifact.clone(),
-                verifiability: Verifiability::ContentAddressed,
+                version: resolved.manifest.version(),
+                verifiability: match resolved.manifest.env.is_empty() {
+                    true => Verifiability::ContentAddressed,
+                    // 闭包里带了宿主 env，重跑不保证得到同一答案。
+                    false => Verifiability::Declared,
+                },
             },
         })
     }
@@ -199,8 +205,16 @@ mod tests {
             Shell::new(&self.cwd, &self.store)
         }
 
+        fn publish_with_env(&self, body: &str, env: &[(&str, &str)]) -> ProbeVersion {
+            self.publish_full(body, &[], env)
+        }
+
         /// Publish an sh script as a probe.
         fn publish(&self, body: &str, args: &[&str]) -> ProbeVersion {
+            self.publish_full(body, args, &[])
+        }
+
+        fn publish_full(&self, body: &str, args: &[&str], env: &[(&str, &str)]) -> ProbeVersion {
             let src = self._dir.path().join("src");
             let _ = std::fs::remove_dir_all(&src);
             std::fs::create_dir_all(&src).unwrap();
@@ -217,7 +231,9 @@ mod tests {
                 Kind::new("shell"),
                 "probe",
                 args.iter().map(|a| (*a).to_owned()).collect(),
-                Default::default(),
+                env.iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                    .collect(),
             )
             .unwrap()
         }
@@ -280,7 +296,11 @@ mod tests {
     async fn a_tampered_artifact_is_refused_not_run() {
         let w = World::new();
         let v = w.publish("echo '{\"x\":1}'", &[]);
-        let entry = Artifacts::new(&w.store).dir(&v).join("probe");
+        let entry = Artifacts::new(&w.store)
+            .resolve(&v)
+            .unwrap()
+            .root
+            .join("probe");
         std::fs::write(&entry, "#!/bin/sh\necho '{\"x\":999}'\n").unwrap();
 
         let e = w.invoke(&v, json!({}), Value::Null).await.unwrap_err();
@@ -407,5 +427,79 @@ mod tests {
         let b = w.invoke(&v, json!({}), Value::Null).await.unwrap();
         assert_eq!(a.outcome, b.outcome);
         assert_eq!(a.derivation, b.derivation);
+    }
+
+    /// 一个跨平台的声明（配方）指向本机装上的制品。日志里必须记后者。
+    #[tokio::test]
+    async fn the_derivation_is_the_installed_artifact_not_the_declaration() {
+        let w = World::new();
+        let built = w.publish("echo '{\"x\":1}'", &[]);
+        let recipe = ProbeVersion::new("a".repeat(64));
+        Artifacts::new(&w.store).install(&recipe, &built).unwrap();
+
+        let s = w.invoke(&recipe, json!({}), Value::Null).await.unwrap();
+        assert_eq!(s.derivation.version, built);
+        assert_ne!(s.derivation.version, recipe);
+    }
+
+    #[test]
+    fn with_nothing_installed_a_version_stands_for_itself() {
+        let w = World::new();
+        let v = w.publish("echo '{}'", &[]);
+        assert_eq!(Artifacts::new(&w.store).installed(&v).unwrap(), v);
+    }
+
+    /// 同一配方重装就是覆盖：否则升级后这台机器永远继续跑旧二进制。
+    #[test]
+    fn reinstalling_a_recipe_repoints_it() {
+        let w = World::new();
+        let first = w.publish("echo '{\"x\":1}'", &[]);
+        let second = w.publish("echo '{\"x\":2}'", &[]);
+        assert_ne!(first, second);
+
+        let store = Artifacts::new(&w.store);
+        let recipe = ProbeVersion::new("b".repeat(64));
+        store.install(&recipe, &first).unwrap();
+        store.install(&recipe, &second).unwrap();
+        assert_eq!(store.installed(&recipe).unwrap(), second);
+    }
+
+    #[test]
+    fn an_install_index_from_a_future_schema_is_refused() {
+        let w = World::new();
+        std::fs::write(
+            w.store.join(super::artifact::INSTALL_FILE),
+            br#"{"schema":"gmr.probe-install.v99","installed":{}}"#,
+        )
+        .unwrap();
+        let e = Artifacts::new(&w.store)
+            .installed(&ProbeVersion::new("c".repeat(64)))
+            .unwrap_err();
+        assert!(e.0.contains("v99"), "{}", e.0);
+    }
+
+    /// 闭包里带宿主 env 时，重跑不保证同一答案，所以不能自称内容寻址。
+    #[tokio::test]
+    async fn a_host_env_in_the_closure_downgrades_verifiability() {
+        let w = World::new();
+        let plain = w.publish("echo '{}'", &[]);
+        assert_eq!(
+            w.invoke(&plain, json!({}), Value::Null)
+                .await
+                .unwrap()
+                .derivation
+                .verifiability,
+            Verifiability::ContentAddressed
+        );
+
+        let with_env = w.publish_with_env("echo '{}'", &[("HOME", "/somewhere")]);
+        assert_eq!(
+            w.invoke(&with_env, json!({}), Value::Null)
+                .await
+                .unwrap()
+                .derivation
+                .verifiability,
+            Verifiability::Declared
+        );
     }
 }

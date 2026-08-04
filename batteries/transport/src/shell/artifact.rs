@@ -1,10 +1,23 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use gmr_core::{ContentHash, ProbeVersion, content_hash_of_bytes};
+use serde::{Deserialize, Serialize};
 
 use super::manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
 pub const MANIFEST_FILE: &str = "manifest.json";
+
+pub const INSTALL_FILE: &str = "installed.json";
+
+pub const INSTALL_SCHEMA: &str = "gmr.probe-install.v1";
+
+/// 声明的版本 → 本机为它装上的制品版本。声明可以跨平台，制品不能。
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct InstallIndex {
+    schema: String,
+    installed: BTreeMap<String, String>,
+}
 
 /// Content-addressed probe store: `<root>/<version>/manifest.json` plus the
 /// files named by the manifest.
@@ -38,22 +51,76 @@ impl Artifacts {
         Self { root: root.into() }
     }
 
-    pub fn dir(&self, version: &ProbeVersion) -> PathBuf {
+    fn dir(&self, version: &ProbeVersion) -> PathBuf {
         self.root.join(version.as_str())
+    }
+
+    fn index(&self) -> Result<InstallIndex, ArtifactError> {
+        let path = self.root.join(INSTALL_FILE);
+        let Ok(bytes) = std::fs::read(&path) else {
+            return Ok(InstallIndex {
+                schema: INSTALL_SCHEMA.to_owned(),
+                installed: BTreeMap::new(),
+            });
+        };
+        let index: InstallIndex = serde_json::from_slice(&bytes)
+            .map_err(|e| bad(format!("{path:?} is not a valid install index: {e}")))?;
+        if index.schema != INSTALL_SCHEMA {
+            return Err(bad(format!(
+                "{path:?} declares schema `{}`, but this build only accepts `{INSTALL_SCHEMA}`",
+                index.schema
+            )));
+        }
+        Ok(index)
+    }
+
+    /// 同一个声明重装就是覆盖：换了就是换了，日志里的 derivation 会如实
+    /// 记下实际跑的那一个。拒绝覆盖会让这台机器永远继续跑旧二进制。
+    pub fn install(
+        &self,
+        declared: &ProbeVersion,
+        built: &ProbeVersion,
+    ) -> Result<(), ArtifactError> {
+        let mut index = self.index()?;
+        index
+            .installed
+            .insert(declared.as_str().to_owned(), built.as_str().to_owned());
+        std::fs::create_dir_all(&self.root)
+            .map_err(|e| bad(format!("cannot create {:?}: {e}", self.root)))?;
+        let body = serde_json::to_vec_pretty(&index).expect("install index must serialize");
+        std::fs::write(self.root.join(INSTALL_FILE), body)
+            .map_err(|e| bad(format!("cannot write the install index: {e}")))
+    }
+
+    /// 没有间接时返回声明本身，于是 `publish` 印出来的版本照样能直接用。
+    pub fn installed(&self, declared: &ProbeVersion) -> Result<ProbeVersion, ArtifactError> {
+        Ok(self
+            .index()?
+            .installed
+            .get(declared.as_str())
+            .map(|v| ProbeVersion::new(v.clone()))
+            .unwrap_or_else(|| declared.clone()))
     }
 
     /// Read the manifest, verify its own hash, then verify every file it names.
     ///
     /// Any mismatch is refused. An artifact with mismatched content is not an
     /// old version; it is a derivation rule we cannot name.
-    pub fn resolve(&self, version: &ProbeVersion) -> Result<Resolved, ArtifactError> {
+    pub fn resolve(&self, declared: &ProbeVersion) -> Result<Resolved, ArtifactError> {
+        let version = &self.installed(declared)?;
         let dir = self.dir(version);
         let path = dir.join(MANIFEST_FILE);
         let bytes = std::fs::read(&path).map_err(|e| {
-            bad(format!(
-                "cannot read manifest for {} ({path:?}): {e}",
-                version
-            ))
+            if version == declared {
+                bad(format!(
+                    "nothing is installed for {declared}: {e}.\n\
+                     If that is a recipe rather than an artifact, this machine has not built it yet — run `probes build`."
+                ))
+            } else {
+                bad(format!(
+                    "{declared} is installed as {version}, but its manifest is unreadable ({path:?}): {e}"
+                ))
+            }
         })?;
         let manifest: Manifest = serde_json::from_slice(&bytes)
             .map_err(|e| bad(format!("{version}'s manifest is not valid: {e}")))?;
