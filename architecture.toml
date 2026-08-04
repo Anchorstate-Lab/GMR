@@ -24,16 +24,17 @@ db     = ["sqlx", "rusqlite", "libsqlite3-sys", "postgres", "tokio-postgres"]
 # ── 层 ─────────────────────────────────────────────────────────
 # 只有 forbidden 被读。层内的依赖顺序不在这里，也不在别处声明 —— 它由
 # gate.sh 的分层检查兑现（crates < batteries < domains，底层不许依赖上层）。
-# 那条检查也顺带兑现了「探针只能被 exec，不许被 crates/ 下的包链接」：探针住在
-# batteries/ 下，rank 比 crates/ 高，链接它就是底层依赖上层。
+# 那条检查兑现的是「基底与电池不许知道任何一个域」：抽取器住在 domains/ 下，
+# rank 最高，crates/ 或 batteries/ 链接它就是底层依赖上层。
 
 # 基底：领域无关。
 [layer.substrate]
 forbidden = ["domain"]
 
-# 产品壳：领域无关。只装配与分发，判断住在探针与表达式里。
-[layer.shell]
-forbidden = ["domain"]
+# 域：判据、探针实现、装配。没有禁区 —— 语言知识本来就归这里，而「有没有
+# 判断」不是依赖清单量得出来的，判断住在 rules 里。
+[layer.domain]
+forbidden = []
 
 # 电池：可复用的具体实现，被域装配选用；不知道自己会被哪个域用。
 [layer.battery]
@@ -43,8 +44,6 @@ forbidden = ["domain"]
 # **name 必须是 cargo 认得的包名**，path 必须指向真的 Cargo.toml —— 禁区检查
 # 走 `cargo tree --manifest-path <path>/Cargo.toml`，路径写错会让 gate 报
 # 「够不到这些成员」而不是静默通过。
-#
-# 探针实现（batteries/probes/*）不在这里：它们的层没有禁区，列了也是空转。
 
 [[member]]
 name  = "gmr-core"
@@ -111,13 +110,13 @@ kind  = "package"
 path  = "batteries/survey"
 
 [[member]]
-name  = "gmr-probe-coord"
-layer = "battery"
+name  = "coding-extract"
+layer = "domain"
 kind  = "package"
-path  = "batteries/probes/coord"
+path  = "domains/coding/extract"
 
 [[member]]
 name  = "coding-anchor"
-layer = "shell"
+layer = "domain"
 kind  = "package"
 path  = "domains/coding/cli"

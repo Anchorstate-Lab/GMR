@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gmr::ProbeVersion;
+use gmr::{Kind, ProbeVersion};
 use gmr_transport::shell::{Artifacts, publish};
 use serde::{Deserialize, Serialize};
 
@@ -127,10 +127,6 @@ impl Recipes {
             return Ok(ProbeVersion::new(v.clone()));
         }
         self.get(name)?.version(name, root)
-    }
-
-    pub fn is_pinned(&self, name: &str) -> bool {
-        self.pinned.contains_key(name)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Recipe)> {
@@ -334,6 +330,50 @@ fn copy_mode(src: &Path, dst: &Path) -> Result<(), CliError> {
 #[cfg(not(unix))]
 fn copy_mode(_src: &Path, _dst: &Path) -> Result<(), CliError> {
     Ok(())
+}
+
+/// Every probe this build can reach: the ones linked in, and the ones declared
+/// as recipes. `kind` is how a declaration reaches the right transport, and it
+/// is decided here rather than written by hand — a name is either linked in or
+/// it is not.
+pub struct Catalog {
+    recipes: Recipes,
+}
+
+impl Catalog {
+    pub fn load(root: &Path) -> Result<Self, CliError> {
+        Ok(Self {
+            recipes: Recipes::load(root)?,
+        })
+    }
+
+    fn builtin(name: &str) -> Option<&'static coding_extract::Vocabulary> {
+        coding_extract::vocabularies().find(|v| v.name == name)
+    }
+
+    pub fn kind_of(&self, name: &str) -> Kind {
+        match Self::builtin(name) {
+            Some(_) => Kind::new("builtin"),
+            None => Kind::new("shell"),
+        }
+    }
+
+    pub fn obs_of(&self, name: &str) -> Result<Obs, CliError> {
+        if let Some(v) = Self::builtin(name) {
+            return Ok(Obs {
+                schema: v.schema.to_owned(),
+                at: v.at.iter().map(|s| (*s).to_owned()).collect(),
+                facts: v.facts.iter().map(|s| (*s).to_owned()).collect(),
+            });
+        }
+        Ok(self.recipes.get(name)?.obs.clone())
+    }
+
+    pub fn for_extension(&self, ext: &str) -> Option<String> {
+        coding_extract::for_extension(ext)
+            .map(str::to_owned)
+            .or_else(|| self.recipes.for_extension(ext).map(str::to_owned))
+    }
 }
 
 pub fn anchor_dir(root: &Path) -> PathBuf {

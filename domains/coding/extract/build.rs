@@ -1,0 +1,136 @@
+//! Each extractor's version, hashed over exactly what can change its output.
+//!
+//! Not the binary's bytes: those move with the platform and the compiler while
+//! the behaviour stands still, and a machine-local version can never be
+//! compared against another machine's journal.
+//!
+//! Not the module source alone either. A grammar bump changes how the same
+//! source parses, which is precisely "the logic changed and the version did
+//! not" — so the locked versions of what each one parses with are in the hash.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+/// Module -> the crates whose version decides how its source behaves.
+const CLOSURE: [(&str, &[&str]); 4] = [
+    (
+        "ast",
+        &[
+            "tree-sitter",
+            "tree-sitter-rust",
+            "tree-sitter-typescript",
+            "tree-sitter-python",
+            "tree-sitter-go",
+        ],
+    ),
+    ("addr", &[]),
+    ("name", &[]),
+    ("prose", &[]),
+];
+
+/// Read by every extractor: the match, the report shape, the walk's skip rules.
+const SHARED: [&str; 2] = [
+    "batteries/survey/src/matching.rs",
+    "batteries/survey/src/walk.rs",
+];
+
+const EXTRA: [(&str, &str); 1] = [("ast", "lang.rs")];
+
+fn main() {
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let root = workspace_root(&manifest);
+    let locked = locked_versions(&root.join("Cargo.lock"));
+
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("Cargo.lock").display()
+    );
+
+    let mut shared = String::new();
+    for rel in SHARED {
+        let path = root.join(rel);
+        println!("cargo:rerun-if-changed={}", path.display());
+        shared.push_str(&read(&path));
+    }
+
+    for (name, deps) in CLOSURE {
+        let mut closure = String::new();
+        closure.push_str(gmr_outcome_contract());
+        closure.push_str(&shared);
+        for (owner, extra) in EXTRA {
+            if owner == name {
+                let path = manifest.join("src").join(extra);
+                println!("cargo:rerun-if-changed={}", path.display());
+                closure.push_str(&read(&path));
+            }
+        }
+        let own = manifest.join("src").join(format!("{name}.rs"));
+        println!("cargo:rerun-if-changed={}", own.display());
+        closure.push_str(&read(&own));
+        for dep in deps {
+            let version = locked
+                .get(*dep)
+                .unwrap_or_else(|| panic!("`{dep}` is in {name}'s closure but not in Cargo.lock"));
+            closure.push_str(&format!("\n{dep} {version}"));
+        }
+        println!(
+            "cargo:rustc-env=GMR_EXTRACTOR_{}={}",
+            name.to_uppercase(),
+            hex(&closure)
+        );
+    }
+}
+
+/// Kept in step with `gmr_core::OUTCOME_CONTRACT` by the test in lib.rs; a build
+/// script cannot link the crate it is building for.
+fn gmr_outcome_contract() -> &'static str {
+    "gmr.outcome.v1"
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("cannot read {} for the closure: {e}", path.display()))
+}
+
+fn workspace_root(from: &Path) -> PathBuf {
+    from.ancestors()
+        .find(|d| d.join("Cargo.lock").is_file())
+        .unwrap_or_else(|| panic!("no Cargo.lock above {}", from.display()))
+        .to_path_buf()
+}
+
+/// `[[package]] name/version` pairs. Hand-parsed so the closure does not itself
+/// depend on a TOML parser's version.
+fn locked_versions(lock: &Path) -> BTreeMap<String, String> {
+    let text = read(lock);
+    let mut out = BTreeMap::new();
+    let mut name = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line == "[[package]]" {
+            name = None;
+        } else if let Some(v) = field(line, "name") {
+            name = Some(v);
+        } else if let Some(v) = field(line, "version")
+            && let Some(n) = name.take()
+        {
+            out.insert(n, v);
+        }
+    }
+    out
+}
+
+fn field(line: &str, key: &str) -> Option<String> {
+    let rest = line
+        .strip_prefix(key)?
+        .trim_start()
+        .strip_prefix('=')?
+        .trim();
+    Some(rest.trim_matches('"').to_owned())
+}
+
+fn hex(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(s.as_bytes()))
+}

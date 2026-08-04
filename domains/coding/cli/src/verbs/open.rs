@@ -2,9 +2,16 @@ use gmr::{AnchorKey, OpenRequest, Retain, RunSettings, Runtime, Supersede};
 
 use crate::cli::OpenArgs;
 use crate::error::CliError;
+use crate::probes::Catalog;
 use crate::rules;
 
-pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliError> {
+pub async fn run(
+    rt: &Runtime,
+    root: &std::path::Path,
+    args: OpenArgs,
+    json: bool,
+) -> Result<i32, CliError> {
+    let catalog = Catalog::load(root)?;
     let key = AnchorKey::new(args.key);
     let supersedes = args.supersedes.zip(args.why).map(|(k, why)| Supersede {
         key: AnchorKey::new(k),
@@ -13,7 +20,7 @@ pub async fn run(rt: &Runtime, args: OpenArgs, json: bool) -> Result<i32, CliErr
     let opened = rt
         .open(OpenRequest {
             key: key.clone(),
-            probe: rules::probe(&args.probe, &args.params)?,
+            probe: rules::probe(catalog.kind_of(&args.probe), &args.probe, &args.params)?,
             transitions: rules::transitions(&args.rules)?,
             terminal: rules::terminal(&args.terminal),
             initial: None,

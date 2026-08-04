@@ -2,6 +2,8 @@
 //! module — adding a backend is adding a feature and a module, not a
 //! new package (same convention as `crates/gmr-store`'s `sqlite` feature).
 
+#[cfg(feature = "inproc")]
+pub mod inproc;
 #[cfg(feature = "shell")]
 pub mod shell;
 

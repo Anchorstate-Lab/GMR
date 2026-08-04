@@ -57,9 +57,11 @@ string_newtype! {
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
     /// Complete. What [`crate::ProbeName`] resolved to is what ran.
+    #[serde(alias = "content_addressed")]
     Closed,
     /// Something outside the hash can change the answer — an interpreter, the
     /// host environment, an implementation living somewhere else.
+    #[serde(alias = "declared", alias = "unverifiable")]
     Open,
 }
 
@@ -79,6 +81,11 @@ pub struct Derivation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeRef {
     pub kind: Kind,
+    /// `artifact` is what this slot was called while it held a version. Entries
+    /// written then still say a version, and they are read back saying it: the
+    /// log records what was written down, and rewriting it to the name someone
+    /// later chose would be inventing a declaration nobody made.
+    #[serde(alias = "artifact")]
     pub name: ProbeName,
     #[serde(default)]
     pub params: Value,

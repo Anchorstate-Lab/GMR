@@ -230,7 +230,7 @@ truncated** — a truncated roster is precisely what hides "one went missing".
 A probe may be arbitrarily complex, because its hash pins it. **Push what can be
 computed into the probe; leave only the decision to the rule table.**
 
-`batteries/probes/coord` is the shared convention for probes that report *fuzzy
+`batteries/survey` is the shared convention for probes that report *fuzzy
 coordinates*: several optional coordinate items plus "which matched and which
 didn't". Exact addresses (line numbers, full paths, ordinals) die on the first
 edit; fuzzy coordinates let one observation answer several questions at once —

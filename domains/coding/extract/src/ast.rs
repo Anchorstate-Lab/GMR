@@ -1,19 +1,13 @@
-mod lang;
-
+use crate::lang;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use gmr_probe_coord as coord;
+use gmr_survey as coord;
 use serde_json::{Value, json};
 
-const SELF_SRC: &str = include_str!("main.rs");
-const LANG_SRC: &str = include_str!("lang.rs");
+const VERSION: &str = env!("GMR_EXTRACTOR_AST");
 
 const ITEMS: [&str; 5] = ["file", "kind", "vis", "name", "shape"];
-
-fn extractor() -> String {
-    coord::hash(&format!("{SELF_SRC}{LANG_SRC}"))
-}
 
 fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -131,7 +125,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
     Ok(())
 }
 
-fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
+pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut cands = Vec::new();
     coord::visit(root, &mut |p, rel| collect(p, rel, &mut cands))?;
@@ -141,15 +135,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
             root.display()
         ));
     }
-    coord::report(&extractor(), &want, coord::nth(pos), &cands)
-}
-
-fn main() -> std::process::ExitCode {
-    coord::emit(
-        coord::params()
-            .and_then(|params| Ok((coord::root(&params), coord::position()?)))
-            .and_then(|(root, pos)| probe(Path::new(&root), &pos)),
-    )
+    coord::report(VERSION, &want, coord::nth(pos), &cands)
 }
 
 #[cfg(test)]
@@ -261,7 +247,7 @@ mod tests {
     fn the_extractor_hashes_its_own_source() {
         let d = fixture("version", &[("a.rs", ONE)]);
         let v = at(&d, json!({"name": "alpha"}));
-        assert_eq!(v["extractor"], extractor());
+        assert_eq!(v["extractor"], VERSION);
         assert_eq!(v["extractor"].as_str().unwrap().len(), 64);
     }
 

@@ -1,71 +1,11 @@
-# 探针配方。锚只写名字；这里写「那个名字是什么」。
+# 脚本探针的声明。四个抽取器（ast-map · addr-map · name-map · prose-map）
+# 不在这里 —— 它们链进二进制，身份由语义闭包挣得，`probes list` 印得出来。
 #
-# 版本仍然是挣来的：配方的身份是下面 sources 那些文件的内容哈希，不是这里
-# 写下的任何一个数。二进制的哈希在 .anchor/probes/<version>/manifest.json
-# 里 —— 那一份是本机的，只有跑过的那一方给得出。
-#
-# obs 声明探针吐得出什么，供 shape 兼容性检查用；它不进配方版本，因为它不
-# 改变派生规则。
-
-[probe.ast-map]
-build = ["cargo", "build", "--release", "--manifest-path", "batteries/probes/Cargo.toml", "-p", "ast-map"]
-stage = { probe = "batteries/probes/target/release/ast-map" }
-entrypoint = "probe"
-sources = [
-  "batteries/probes/ast-map/src",
-  "batteries/probes/ast-map/Cargo.toml",
-  "batteries/probes/coord/src",
-  "batteries/probes/coord/Cargo.toml",
-  "batteries/probes/Cargo.lock",
-]
-obs = { schema = "gmr.probe-coord.v1", at = ["file", "kind", "vis", "name", "shape"], facts = ["body", "line"] }
-# `handles` 只给 ast-map：`about: f#name` 派生出的坐标是 {file, name}，只有
-# 这个探针的词表对得上。prose-map 要的是 heading，走显式形式声明，否则
-# coord::wanted 会把 name 静默丢掉，用户以为锚住了某一节，其实锚住了整个文件。
-handles = ["rs", "ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "py", "pyi", "go"]
-
-[probe.addr-map]
-build = ["cargo", "build", "--release", "--manifest-path", "batteries/probes/Cargo.toml", "-p", "addr-map"]
-stage = { probe = "batteries/probes/target/release/addr-map" }
-entrypoint = "probe"
-sources = [
-  "batteries/probes/addr-map/src",
-  "batteries/probes/addr-map/Cargo.toml",
-  "batteries/probes/coord/src",
-  "batteries/probes/coord/Cargo.toml",
-  "batteries/probes/Cargo.lock",
-]
-obs = { schema = "gmr.probe-coord.v1", at = ["path", "name", "fingerprint"], facts = ["bytes"] }
-
-[probe.name-map]
-build = ["cargo", "build", "--release", "--manifest-path", "batteries/probes/Cargo.toml", "-p", "name-map"]
-stage = { probe = "batteries/probes/target/release/name-map" }
-entrypoint = "probe"
-sources = [
-  "batteries/probes/name-map/src",
-  "batteries/probes/name-map/Cargo.toml",
-  "batteries/probes/coord/src",
-  "batteries/probes/coord/Cargo.toml",
-  "batteries/probes/Cargo.lock",
-]
-obs = { schema = "gmr.probe-coord.v1", at = ["name", "scope"], facts = ["occurrences", "file_count", "files", "first"] }
-
-[probe.prose-map]
-build = ["cargo", "build", "--release", "--manifest-path", "batteries/probes/Cargo.toml", "-p", "prose-map"]
-stage = { probe = "batteries/probes/target/release/prose-map" }
-entrypoint = "probe"
-sources = [
-  "batteries/probes/prose-map/src",
-  "batteries/probes/prose-map/Cargo.toml",
-  "batteries/probes/coord/src",
-  "batteries/probes/coord/Cargo.toml",
-  "batteries/probes/Cargo.lock",
-]
-obs = { schema = "gmr.probe-coord.v1", at = ["file", "heading", "fingerprint"], facts = ["line", "lines"] }
+# 这里只剩「不是抽取器」的那一类：shell 出去问别的程序的东西。
 
 # 这一个不走 coord，而且它 shell 出去调 cargo 和 jq —— 它报告的是关于宿主
 # 的事实，不是关于仓库的事实。env_from_host 让传输层把 verifiability 降级
-# 成 Declared，那正是它应得的。
+# 成 Open，那正是它应得的。
 [probe.test-roster]
 stage = { probe = "domains/coding/probes/test-roster.sh" }
 entrypoint = "probe"

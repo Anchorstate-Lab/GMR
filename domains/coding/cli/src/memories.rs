@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::error::CliError;
-use crate::probes::Recipes;
+use crate::probes::Catalog;
 use crate::verbs::sync::AnchorDecl;
 
 pub const NOTES_DIR: &str = "memories";
@@ -87,25 +87,22 @@ fn position_of(about: &str) -> Value {
     }
 }
 
-fn probe_for(about: &str, recipes: &Recipes) -> Result<String, CliError> {
+fn probe_for(about: &str, catalog: &Catalog) -> Result<String, CliError> {
     let file = about.split_once('#').map(|(f, _)| f).unwrap_or(about);
     let ext = file.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
-    recipes
-        .for_extension(ext)
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            CliError(format!(
-                "`about: {about}` needs a probe that reads `.{ext}`, and no recipe declares one"
-            ))
-        })
+    catalog.for_extension(ext).ok_or_else(|| {
+        CliError(format!(
+            "`about: {about}` needs a probe that reads `.{ext}`, and none does"
+        ))
+    })
 }
 
 /// The minimal form: the key is the coordinate itself, so nobody has to invent
 /// a permanent identity on their first note.
-fn from_about(about: &str, recipes: &Recipes) -> Result<AnchorDecl, CliError> {
+fn from_about(about: &str, catalog: &Catalog) -> Result<AnchorDecl, CliError> {
     Ok(AnchorDecl {
         key: about.to_owned(),
-        probe: probe_for(about, recipes)?,
+        probe: probe_for(about, catalog)?,
         params: json!({ "root": "." }),
         position: Some(position_of(about)),
         shape: Some("roster".to_owned()),
@@ -147,7 +144,7 @@ fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, CliError> {
         .map_err(|e| CliError(format!("frontmatter is not valid YAML: {e}")))
 }
 
-fn note_of(root: &Path, rel: &str, recipes: &Recipes) -> Result<Option<Note>, CliError> {
+fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> Result<Option<Note>, CliError> {
     let text = std::fs::read_to_string(root.join(rel))
         .map_err(|e| CliError(format!("cannot read `{rel}`: {e}")))?;
     let Some(fm) = frontmatter_of(&text).map_err(|e| CliError(format!("{rel}: {e}")))? else {
@@ -156,7 +153,7 @@ fn note_of(root: &Path, rel: &str, recipes: &Recipes) -> Result<Option<Note>, Cl
 
     let mut wants = Vec::new();
     for about in fm.about.map(OneOrMany::into_vec).unwrap_or_default() {
-        let decl = from_about(&about, recipes).map_err(|e| CliError(format!("{rel}: {e}")))?;
+        let decl = from_about(&about, catalog).map_err(|e| CliError(format!("{rel}: {e}")))?;
         wants.push(Want::Declared(Box::new(decl)));
     }
     for entry in fm.anchors {
@@ -175,14 +172,14 @@ fn note_of(root: &Path, rel: &str, recipes: &Recipes) -> Result<Option<Note>, Cl
     }
 }
 
-pub fn scan(root: &Path, recipes: &Recipes) -> Result<Vec<Note>, CliError> {
+pub fn scan(root: &Path, catalog: &Catalog) -> Result<Vec<Note>, CliError> {
     let mut rels = Vec::new();
     walk(root, &root.join(NOTES_DIR), &mut rels)?;
     rels.sort();
 
     let mut notes = Vec::new();
     for rel in rels {
-        if let Some(note) = note_of(root, &rel, recipes)? {
+        if let Some(note) = note_of(root, &rel, catalog)? {
             notes.push(note);
         }
     }
@@ -218,7 +215,7 @@ handles = ["rs", "ts", "tsx", "js", "py", "go"]
 obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "line"] }
 "#;
 
-    fn world(notes: &[(&str, &str)]) -> (tempfile::TempDir, Recipes) {
+    fn world(notes: &[(&str, &str)]) -> (tempfile::TempDir, Catalog) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".anchor")).unwrap();
         std::fs::write(dir.path().join(".anchor/probes.toml"), RECIPES).unwrap();
@@ -228,8 +225,8 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, body).unwrap();
         }
-        let recipes = Recipes::load(dir.path()).unwrap();
-        (dir, recipes)
+        let catalog = Catalog::load(dir.path()).unwrap();
+        (dir, catalog)
     }
 
     #[test]

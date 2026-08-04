@@ -5,7 +5,7 @@ use gmr::{Expr, Kind, ProbeName, ProbeRef, Rule, StatusId, Transitions};
 use crate::error::CliError;
 
 /// A name, never a version: upgrading the tool is not a change of mind.
-pub fn probe(name: &str, params: &str) -> Result<ProbeRef, CliError> {
+pub fn probe(kind: Kind, name: &str, params: &str) -> Result<ProbeRef, CliError> {
     let name = ProbeName::try_new(name).map_err(|e| {
         CliError(format!(
             "`{name}` is not a probe name ({e}).\n\
@@ -14,7 +14,7 @@ pub fn probe(name: &str, params: &str) -> Result<ProbeRef, CliError> {
     })?;
     let params: serde_json::Value = serde_json::from_str(params)
         .map_err(|e| CliError(format!("params is not valid JSON: {e}")))?;
-    Ok(ProbeRef::new(Kind::new("shell"), name, params))
+    Ok(ProbeRef::new(kind, name, params))
 }
 
 pub fn rule(text: &str) -> Result<Rule, CliError> {

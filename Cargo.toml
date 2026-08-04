@@ -35,10 +35,8 @@ members = [
     "batteries/transport",
     "batteries/provider",
     "batteries/survey",
-    # 探针工件自成一个 workspace（batteries/probes/，含 coord 约定库）——
-    # 它们是 exec 的不是链接的，跟根 workspace 的依赖解析互不干扰，所以
-    # 不在这个 members 列表里。
     # 域 —— 装配 + 探针实现 + 判据 + 记忆
+    "domains/coding/extract",
     "domains/coding/cli",
 ]
 resolver = "2"

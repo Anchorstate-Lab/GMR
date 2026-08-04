@@ -14,8 +14,10 @@ path = "src/main.rs"
 # 基底
 gmr = { path = "../../../crates/gmr", features = ["sqlite"] }
 # 电池 —— **挑哪一块是域的决定**，这三行就是那个决定
-gmr-transport = { path = "../../../batteries/transport", features = ["shell"] }
+gmr-transport = { path = "../../../batteries/transport", features = ["shell", "inproc"] }
 gmr-provider = { path = "../../../batteries/provider", features = ["git"] }
+# 域自己的抽取器 —— 链接进来，不 exec
+coding-extract = { path = "../extract" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

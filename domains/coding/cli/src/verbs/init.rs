@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::CliError;
 use crate::memories::NOTES_DIR;
-use crate::probes::{RECIPES_FILE, Recipes, anchor_dir, state_dir, store_dir};
+use crate::probes::{Catalog, RECIPES_FILE, Recipes, anchor_dir, state_dir, store_dir};
 
 const GITIGNORE: &str = "\
 # Declarations belong in git; the journal and the artifacts do not.
@@ -86,7 +86,9 @@ pub fn run(root: &Path, json: bool) -> Result<i32, CliError> {
         .map_err(|e| CliError(format!("cannot create {NOTES_DIR}: {e}")))?;
     write_new(&anchor_dir(root).join(".gitignore"), GITIGNORE)?;
 
-    let mut installed = Vec::new();
+    let mut installed: Vec<String> = coding_extract::vocabularies()
+        .map(|v| v.name.to_owned())
+        .collect();
     if let Some(from) = bundled() {
         write_new(
             &anchor_dir(root).join(RECIPES_FILE),
@@ -95,19 +97,16 @@ pub fn run(root: &Path, json: bool) -> Result<i32, CliError> {
         )?;
         copy_tree(&from, &store_dir(root))?;
         let _ = std::fs::remove_file(store_dir(root).join(RECIPES_FILE));
-        installed = Recipes::load(root)?
-            .iter()
-            .map(|(name, _)| name.to_owned())
-            .collect();
+        installed.extend(Recipes::load(root)?.iter().map(|(name, _)| name.to_owned()));
     }
 
-    let recipes = Recipes::load(root)?;
+    let catalog = Catalog::load(root)?;
     let mut counts = BTreeMap::new();
     extensions(root, &mut counts);
     let mut readable: Vec<(String, usize)> = Vec::new();
     let mut opaque: Vec<(String, usize)> = Vec::new();
     for (ext, n) in counts {
-        match recipes.for_extension(&ext).is_some() {
+        match catalog.for_extension(&ext).is_some() {
             true => readable.push((ext, n)),
             false => opaque.push((ext, n)),
         }

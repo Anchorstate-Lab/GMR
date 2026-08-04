@@ -36,15 +36,24 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
     let artifacts = Artifacts::new(store_dir(root));
 
     let mut rows = Vec::new();
+    for v in coding_extract::vocabularies() {
+        rows.push(serde_json::json!({
+            "probe": v.name,
+            "kind": "builtin",
+            "version": coding_extract::registry()[&gmr::ProbeName::new(v.name)].version,
+            "handles": v.handles,
+            "obs": { "schema": v.schema, "at": v.at, "facts": v.facts },
+        }));
+    }
     for (name, recipe) in recipes.iter() {
         let installed = artifacts
             .installed(&gmr::ProbeName::new(name))
             .map_err(|e| CliError(e.0))?;
         rows.push(serde_json::json!({
             "probe": name,
-            "recipe": recipes.version_of(name, root)?,
-            "pinned": recipes.is_pinned(name),
-            "artifact": installed.as_ref().map(|v| v.as_str().to_owned()),
+            "kind": "shell",
+            "version": installed.as_ref().map(|v| v.as_str().to_owned()),
+            "handles": recipe.handles,
             "obs": { "schema": recipe.obs.schema, "at": recipe.obs.at, "facts": recipe.obs.facts },
         }));
     }
@@ -55,14 +64,14 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
     }
 
     for row in &rows {
-        let built = match row["artifact"].as_str() {
-            Some(a) => format!("→ {}", &a[..12]),
-            None => "not built here — run `probes build`".to_owned(),
+        let version = match row["version"].as_str() {
+            Some(v) => v[..12].to_owned(),
+            None => "not installed here".to_owned(),
         };
         println!(
-            "{}  {}  {built}",
+            "{}  {}  {version}",
             row["probe"].as_str().unwrap_or(""),
-            &row["recipe"].as_str().unwrap_or("")[..12]
+            row["kind"].as_str().unwrap_or("")
         );
         if verbose {
             println!("    obs {}", row["obs"]["schema"].as_str().unwrap_or(""));

@@ -1,16 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use gmr_probe_coord as coord;
+use gmr_survey as coord;
 use serde_json::{Value, json};
 
-const SELF_SRC: &str = include_str!("main.rs");
+const VERSION: &str = env!("GMR_EXTRACTOR_NAME");
 
 const ITEMS: [&str; 2] = ["name", "scope"];
-
-fn extractor() -> String {
-    coord::hash(SELF_SRC)
-}
 
 #[derive(Default)]
 struct Seen {
@@ -54,7 +50,7 @@ fn collect(path: &Path, rel: &str, out: &mut BTreeMap<(String, String), Seen>) {
     }
 }
 
-fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
+pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut seen = BTreeMap::new();
     coord::visit(root, &mut |p, rel| {
@@ -85,15 +81,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
             )
         })
         .collect();
-    coord::report(&extractor(), &want, coord::nth(pos), &cands)
-}
-
-fn main() -> std::process::ExitCode {
-    coord::emit(
-        coord::params()
-            .and_then(|params| Ok((coord::root(&params), coord::position()?)))
-            .and_then(|(root, pos)| probe(Path::new(&root), &pos)),
-    )
+    coord::report(VERSION, &want, coord::nth(pos), &cands)
 }
 
 #[cfg(test)]
@@ -182,7 +170,7 @@ mod tests {
     fn the_extractor_hashes_its_own_source() {
         let d = fixture("version", &[("a.rs", "fn f(){}")]);
         let v = at(&d, json!({"name": "f"}));
-        assert_eq!(v["extractor"], extractor());
+        assert_eq!(v["extractor"], VERSION);
         assert_eq!(v["extractor"].as_str().unwrap().len(), 64);
     }
 }

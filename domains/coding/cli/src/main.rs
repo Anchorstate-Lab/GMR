@@ -14,6 +14,7 @@ use std::sync::Arc;
 use clap::Parser;
 use gmr::Runtime;
 use gmr_provider::git::Git;
+use gmr_transport::inproc::InProcess;
 use gmr_transport::shell::Shell;
 
 use cli::{Cli, Command};
@@ -89,7 +90,10 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .map_err(|e| CliError(format!("cannot create {state:?}: {e}")))?;
     let store = gmr::sqlite::open(state.join("memory.db")).await?;
 
+    // Two transports, one router. The four extractors are linked in; anything
+    // a user declares is still an artifact this exec's.
     let rt = Runtime::builder()
+        .transport(Arc::new(InProcess::new(&root, coding_extract::registry())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .provider(Arc::new(Git::new(&root)))
         .queue(Arc::new(store.queue()))
@@ -106,7 +110,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init => unreachable!("init was handled above"),
-        Command::Open(args) => verbs::open::run(&rt, args, json).await,
+        Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key } => verbs::read::run(&rt, key, json).await,
         Command::Reprobe {
@@ -114,7 +118,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
             probe,
             params,
             why,
-        } => verbs::reprobe::run(&rt, key, probe, params, why, json).await,
+        } => verbs::reprobe::run(&rt, &root, key, probe, params, why, json).await,
         Command::Retransition { key, rules, why } => {
             verbs::retransition::run(&rt, key, rules, why, json).await
         }

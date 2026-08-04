@@ -22,11 +22,13 @@ default = []
 #    也跟 crates/gmr-store 的 sqlite feature 一样。加 http = 加一个
 #    feature + 一个模块，不是加一个包。
 shell = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:thiserror", "dep:serde"]
+# 进程内：机制在这里，探针本身由域注册。
+inproc = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 # 契约自带的参考实现，只服务 shell 后端的测试。
 testkit = ["shell", "dep:tempfile"]
 
 [dev-dependencies]
-gmr-transport = { path = ".", features = ["shell", "testkit"] }
+gmr-transport = { path = ".", features = ["shell", "inproc", "testkit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = { workspace = true }
 

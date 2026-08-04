@@ -44,11 +44,6 @@ for m in arch["member"]:
     banned = {n for k in keys for n in arch["libs"][k]}
     if not banned:
         continue
-    # `-p <name>` only resolves inside the workspace gate.sh happens to be
-    # run from; members that live in a *different* workspace (batteries/
-    # probes/ is its own) would silently and permanently pass. Go straight
-    # to the member's own manifest instead — that resolves regardless of
-    # which workspace it belongs to.
     r = subprocess.run(["cargo", "tree", "--edges", "normal,no-proc-macro",
                         "--manifest-path", f"{m['path']}/Cargo.toml", "--prefix", "none"],
                        capture_output=True, text=True)
@@ -122,14 +117,6 @@ if grep -qE '^pub (fn|struct|enum|trait|const|type) ' crates/gmr/src/lib.rs; the
   exit 1
 fi
 cargo build -p gmr --no-default-features
-
-# **探针实现自成 workspace，所以 --workspace 扫不到它们。** 一条命令点名
-# 整个 batteries/probes/ workspace，新增 member 自动被 --workspace 覆盖，
-# 不用再在这里逐个加名字。
-echo "── 电池（独立 workspace）：batteries/probes"
-cargo fmt --manifest-path batteries/probes/Cargo.toml --all --check
-cargo clippy --quiet --manifest-path batteries/probes/Cargo.toml --all-targets -- -D warnings
-cargo test --quiet --manifest-path batteries/probes/Cargo.toml
 
 echo
 echo "gate: 基底全绿"

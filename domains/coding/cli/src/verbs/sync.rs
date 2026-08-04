@@ -6,7 +6,7 @@ use gmr::{
 use serde::Deserialize;
 
 use crate::error::CliError;
-use crate::probes::Recipes;
+use crate::probes::Catalog;
 use crate::rules;
 
 /// init writes no anchors, so a repo whose anchors all come from notes has no
@@ -15,7 +15,7 @@ use crate::rules;
 pub const DEFAULT_FILE: &str = ".anchor/anchors.toml";
 
 pub struct Context {
-    pub recipes: Recipes,
+    pub catalog: Catalog,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -50,21 +50,28 @@ pub struct AnchorDecl {
 }
 
 impl AnchorDecl {
-    fn to_probe(&self) -> Result<ProbeRef, CliError> {
-        rules::probe(&self.probe, &self.params.to_string())
+    fn to_probe(&self, ctx: &Context) -> Result<ProbeRef, CliError> {
+        rules::probe(
+            ctx.catalog.kind_of(&self.probe),
+            &self.probe,
+            &self.params.to_string(),
+        )
     }
 
     fn check_contract(&self, ctx: &Context) -> Result<(), CliError> {
         let Some(shape) = &self.shape else {
             return Ok(());
         };
-        let name = &self.probe;
-        let missing = crate::shapes::unmet(crate::shapes::get(shape)?, &ctx.recipes.get(name)?.obs);
+        let missing = crate::shapes::unmet(
+            crate::shapes::get(shape)?,
+            &ctx.catalog.obs_of(&self.probe)?,
+        );
         match missing.is_empty() {
             true => Ok(()),
             false => Err(CliError(format!(
-                "{}: shape `{shape}` reads {}, which probe `{name}` does not emit",
+                "{}: shape `{shape}` reads {}, which probe `{}` does not emit",
                 self.key,
+                self.probe,
                 missing.join(" · ")
             ))),
         }
@@ -115,10 +122,10 @@ pub async fn run(
         Err(e) => return Err(CliError(format!("cannot read `{file}`: {e}"))),
     };
     let ctx = Context {
-        recipes: Recipes::load(root)?,
+        catalog: Catalog::load(root)?,
     };
 
-    let notes = crate::memories::scan(root, &ctx.recipes)?;
+    let notes = crate::memories::scan(root, &ctx.catalog)?;
 
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
@@ -151,7 +158,7 @@ pub async fn run(
         }
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
-            let facets = differs(&view.anchor, decl)?;
+            let facets = differs(&view.anchor, decl, &ctx)?;
             if !facets.is_empty() {
                 drifted_criteria.push(format!("{} ({})", decl.key, facets.join(" · ")));
             }
@@ -172,7 +179,7 @@ pub async fn run(
         let result = rt
             .open(OpenRequest {
                 key: key.clone(),
-                probe: decl.to_probe()?,
+                probe: decl.to_probe(&ctx)?,
                 transitions: decl.to_transitions()?,
                 terminal: rules::terminal(&decl.terminal),
                 initial: decl.initial(),
@@ -336,9 +343,13 @@ async fn align_bindings(
 /// Naming the facet matters: "the probe was renamed" and "the transition table
 /// was rewritten" are different judgments, and the sealed reason should say
 /// which one it is.
-fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<Vec<&'static str>, CliError> {
+fn differs(
+    anchor: &Anchor,
+    decl: &AnchorDecl,
+    ctx: &Context,
+) -> Result<Vec<&'static str>, CliError> {
     let mut facets = Vec::new();
-    if anchor.probe != decl.to_probe()? {
+    if anchor.probe != decl.to_probe(ctx)? {
         facets.push("probe");
     }
     if anchor.transitions != decl.to_transitions()? {
@@ -409,8 +420,8 @@ rules = [
         std::fs::write(dir.path().join(".anchor/probes.toml"), toml_body).unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
         std::fs::write(dir.path().join("src/probe.sh"), "echo '{}'").unwrap();
-        let recipes = Recipes::load(dir.path()).unwrap();
-        (dir, Context { recipes })
+        let catalog = Catalog::load(dir.path()).unwrap();
+        (dir, Context { catalog })
     }
 
     const AST_LIKE: &str = r#"
@@ -423,18 +434,18 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
 
     #[test]
     fn the_declaration_carries_the_name_verbatim() {
-        let (_d, _c) = ctx(AST_LIKE);
+        let (_d, c) = ctx(AST_LIKE);
         let probe = decl("probe = \"ast-like\"\nshape = \"roster\"")
-            .to_probe()
+            .to_probe(&c)
             .unwrap();
         assert_eq!(probe.name.as_str(), "ast-like");
     }
 
     #[test]
     fn a_version_where_a_name_belongs_is_refused() {
-        let (_d, _c) = ctx(AST_LIKE);
+        let (_d, c) = ctx(AST_LIKE);
         let e = decl(&format!("probe = \"{}\"", "d9".repeat(32)))
-            .to_probe()
+            .to_probe(&c)
             .unwrap_err();
         assert!(e.to_string().contains("probe name"), "{e}");
     }
