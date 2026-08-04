@@ -116,7 +116,7 @@ Anchors are data, in a TOML file (`anchors.toml` by default):
 ```toml
 [[anchor]]
 key   = "surface::gmr-core"
-probe = "batteries/probe-ast/target/release/ast-map crates/gmr-core"
+probe = "batteries/probes/ast-map/target/release/ast-map crates/gmr-core"
 position = { kind = "function", vis = "pub" }
 rules = [
   'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
@@ -227,7 +227,7 @@ truncated** — a truncated roster is precisely what hides "one went missing".
 A probe may be arbitrarily complex, because its hash pins it. **Push what can be
 computed into the probe; leave only the decision to the rule table.**
 
-`batteries/probe-coord` is the shared convention for probes that report *fuzzy
+`batteries/probes/coord` is the shared convention for probes that report *fuzzy
 coordinates*: several optional coordinate items plus "which matched and which
 didn't". Exact addresses (line numbers, full paths, ordinals) die on the first
 edit; fuzzy coordinates let one observation answer several questions at once —
@@ -286,8 +286,9 @@ path may exist that produces neither an entry nor an edge.
 
 ```
 crates/      the substrate — domain-agnostic, produces no binary
-batteries/   reusable implementations belonging to no single domain:
-             transports, content providers, storage backends, shared probes
+batteries/   reusable implementations belonging to no single domain: one
+             package per role (transport, provider, probe artifacts), a
+             new backend is a feature and a module, not a new package
 domains/     one domain: its probes, anchor declarations, notes, and the CLI
              that assembles the above
 ```

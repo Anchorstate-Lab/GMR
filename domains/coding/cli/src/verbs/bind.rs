@@ -20,8 +20,8 @@ pub async fn run(
     }
     let reference = Ref::new("git", path.clone());
     // Goes through the same registered ContentProvider that read/edges use to
-    // decide "current version" — not a second, separate call to provider-git,
-    // which could silently drift from what the provider itself reports.
+    // decide "current version" — not a second, separate call to the git
+    // backend, which could silently drift from what the provider reports.
     let version = rt
         .memory()
         .current_version(&reference)

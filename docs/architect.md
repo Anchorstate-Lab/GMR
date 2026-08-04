@@ -50,36 +50,42 @@ flowchart LR
       core["gmr-core<br/>纯根"]
       expr["gmr-expr<br/>纯根 · 禁 IO"]
       probe["gmr-probe<br/>Transport trait"]
+      content["gmr-content<br/>ContentProvider trait"]
       store["gmr-store<br/>Journal/BindingStore/Queue trait<br/>后端是 feature"]
       rt["gmr-runtime<br/>唯一编排层"]
       facade["gmr<br/>只 re-export"]
     end
-    subgraph batteries["batteries/ 电池（可复用，不属任何域）"]
-      shell["transport-shell<br/>Transport 实现 + artifact 校验"]
-      git["provider-git<br/>ContentProvider 实现"]
-      coord["probe-coord<br/>模糊坐标约定（库）"]
-      probes["probe-ast / -name / -addr / -prose<br/>独立 workspace 的可执行探针"]
+    subgraph batteries["batteries/ 电池（可复用，不属任何域，一角色一包）"]
+      transport["gmr-transport<br/>shell feature = Transport 实现 + artifact 校验"]
+      provider["gmr-provider<br/>git feature = ContentProvider 实现"]
+      subgraph probes["batteries/probes/ 一个 workspace"]
+        coord["coord<br/>模糊坐标约定（库）"]
+        maps["addr-map / ast-map / name-map / prose-map<br/>可执行探针"]
+      end
     end
     subgraph domains["domains/coding 域（装配 + CLI）"]
       cli["coding-anchor → 二进制 anchor"]
     end
 
     probe --> core
+    content --> core
     store --> core
-    rt --> core & expr & probe & store
-    facade --> core & expr & probe & store & rt
-    shell --> core & probe
-    git --> core & rt
-    coord --> probes
+    rt --> core & expr & probe & content & store
+    facade --> core & expr & probe & content & store & rt
+    transport --> core & probe
+    provider --> core & content
+    maps --> coord
+    coord --> probe
     cli --> facade
-    cli --> shell
-    cli --> git
-    cli -. "exec（不链接）" .-> probes
+    cli --> transport
+    cli --> provider
+    cli -. "exec（不链接）" .-> maps
 ```
 
-- 允许的依赖方向写在 `architecture.toml` 的 `may_depend_on`，由 `gate.sh` 用 `cargo metadata/tree` 机械校验；层级 rank 表达不了这一级，所以精确规则挂在成员上。
-- `probe-impl` 层标了 `linkable = false`：探针只能被 `exec`，任何 `crates/` 下的包依赖它就算违规。
-- **装配是域的决定**：选 shell 传输 / git 提供方 / sqlite 后端这三行只出现在 `domains/coding/cli/Cargo.toml` 与 `main.rs`，基底一旦写死就不再领域无关。
+- 允许的依赖方向写在 `architecture.toml` 的 `may_depend_on`，但目前只是声明——`gate.sh` 实际机械校验的是「禁区库清单」（`forbidden`/`forbidden_default`，逐个 `cargo tree` 比对）和「层间不许倒着依赖」（按 `crates/batteries/domains` 三个物理目录分层），两者都不读 `may_depend_on` 本身；这条字段目前还是文档，不是判据。
+- `probe-impl` 层标了 `linkable = false`：探针只能被 `exec`，任何 `crates/` 下的包依赖它就算违规——但这条同样没有对应的机械检查，且 `addr-map`/`ast-map`/`name-map`/`prose-map` 活在 `batteries/probes/` 这个独立 workspace 里，根仓库的 `cargo tree -p <name>` 本来就够不到它们。
+- **装配是域的决定**：选 shell 传输（`gmr-transport` 的 `shell` feature）/ git 提供方（`gmr-provider` 的 `git` feature）/ sqlite 后端这三行只出现在 `domains/coding/cli/Cargo.toml` 与 `main.rs`，基底一旦写死就不再领域无关。
+- **一个角色一个包，不是一个实现一个包**：`gmr-transport`/`gmr-provider` 默认 feature 集是空的，不 ship 任何具体后端；加一个新后端（http 传输、mem0/Claude 原生记忆 provider）是加一个 feature + 一个模块，参照 `crates/gmr-store` 的 `sqlite` feature 同一惯例，不必再开一个新 crate。
 
 ---
 
@@ -98,10 +104,10 @@ flowchart LR
 
 | 单元 | 职责 | 边界 |
 |---|---|---|
-| **transport-shell** | 把内容寻址的探针工件跑起来：`Artifacts::resolve` 逐文件校验 sha256 → 定 `Verifiability`，`sh` 执行、超时、输出上限（**超限拒绝而非截断**），`GMR_POSITION/GMR_PARAMS` 传入，`publish()` 生成 manifest 并算出版本 | 只实现 `Transport`；不解释 obs 内容 |
-| **provider-git** | `ContentProvider`：git blob 按 id 取回、**按版本取回**（判断"还在说同一件事吗"必须要 from→to） | 不进基底，由域挑 |
-| **probe-coord** | 给探针作者的**模糊坐标约定**库：候选项 + "哪几项对上/没对上"（`exact`/`matches`/`candidates`） | 是建议不是基底规定；基底只知道有 `state.position` 这个槽 |
-| **probe-ast / -name / -addr / -prose** | 具体观测实现（tree-sitter 抽 pub 名册与签名等）；自成 workspace，源码哈希进 `extractor` | 不被链接，只被 exec；`gate.sh` 单独点名跑它们的 fmt/clippy/test |
+| **gmr-transport**（`shell` feature） | 把内容寻址的探针工件跑起来：`Artifacts::resolve` 逐文件校验 sha256 → 定 `Verifiability`，`sh` 执行、超时、输出上限（**超限拒绝而非截断**），`GMR_POSITION/GMR_PARAMS` 传入，`publish()` 生成 manifest 并算出版本。默认 feature 集是空的，不带 `shell` 就不 ship 任何具体传输 | 只实现 `Transport`；不解释 obs 内容；新增后端是加 feature + 模块，不是新开包 |
+| **gmr-provider**（`git` feature） | `ContentProvider`：git blob 按 id 取回、**按版本取回**（判断"还在说同一件事吗"必须要 from→to） | 不进基底，由域挑；同样是空默认 feature 集 |
+| **batteries/probes/coord** | 给探针作者的**模糊坐标约定**库：候选项 + "哪几项对上/没对上"（`exact`/`matches`/`candidates`），拆成 `env`（协议：读 `GMR_POSITION`/`GMR_PARAMS`，不可替换）与 `matching`（这套模糊匹配算法，目前唯一实现）两个模块 | 是建议不是基底规定；基底只知道有 `state.position` 这个槽 |
+| **batteries/probes/{addr,ast,name,prose}-map** | 具体观测实现（tree-sitter 抽 pub 名册与签名等）；跟 `coord` 共用 `batteries/probes/` 这一个 workspace，源码哈希进 `extractor` | 不被链接，只被 exec；`gate.sh` 一条命令跑整个 workspace 的 fmt/clippy/test，新增 member 自动被覆盖 |
 | **domains/coding/cli**（bin `anchor`） | 装配 + 分发 + 人类文本：解析 `anchors.toml` 声明、`rules.rs` 把 `GUARD => STATE` 切成 `Rule`、`render.rs` 出人读/JSON、`verbs/*` 一个动词一个文件；状态存 `<repo>/.anchor/memory.db` | 判断住在探针与表达式里，不住 CLI；`sync` 只开新锚**从不改判据** |
 
 ---
@@ -169,7 +175,7 @@ sequenceDiagram
 
 ## 7. 读代码时发现的偏差（供你判断，未改动任何文件）
 
-1. **README 与 CLI 实参不一致**：README 写 `probe = "batteries/probe-ast/... crates/gmr-core"`、`anchor open --probe '<命令行>'`；代码里 `anchors.toml`/`OpenArgs` 要的是 `artifact = <64 位 sha256>` + `params`，命令行是 `--artifact`，工件先由 `anchor publish <dir>` 生成。README 少了 `publish` 这一步，也没提 `--params`。
+1. **README 与 CLI 实参不一致**：README 写 `probe = "batteries/probes/ast-map/... crates/gmr-core"`、`anchor open --probe '<命令行>'`；代码里 `anchors.toml`/`OpenArgs` 要的是 `artifact = <64 位 sha256>` + `params`，命令行是 `--artifact`，工件先由 `anchor publish <dir>` 生成。README 少了 `publish` 这一步，也没提 `--params`。
 2. **README 的 `Documentation` 链接指向根目录**（`GMR.md` / `flow.svg` / `modules.svg`），实际文件在 `docs/` 下。
 3. README 说"每个锚报告 `settled · moved · still · unseen · closed`"，代码的 `Observed` 是 `Transitioned/Still/Attempt/Closed`，`settled/unseen` 是渲染层与 `Passed` 计数的词；`Retain::Full` 与 `--retain-full` 在 README 里没有出现。
 
