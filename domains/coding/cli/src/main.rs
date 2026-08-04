@@ -111,10 +111,11 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Read { key } => verbs::read::run(&rt, key, json).await,
         Command::Reprobe {
             key,
+            probe,
             artifact,
             params,
             why,
-        } => verbs::reprobe::run(&rt, key, artifact, params, why, json).await,
+        } => verbs::reprobe::run(&rt, &root, key, probe, artifact, params, why, json).await,
         Command::Retransition { key, rules, why } => {
             verbs::retransition::run(&rt, key, rules, why, json).await
         }

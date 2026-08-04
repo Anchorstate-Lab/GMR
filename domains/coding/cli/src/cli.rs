@@ -82,8 +82,11 @@ pub enum Command {
     #[command(display_order = 20)]
     Reprobe {
         key: String,
+        /// A recipe name from .anchor/probes.toml. Exclusive with --artifact.
         #[arg(long)]
-        artifact: String,
+        probe: Option<String>,
+        #[arg(long)]
+        artifact: Option<String>,
         #[arg(long, default_value = "{}")]
         params: String,
         #[arg(long)]

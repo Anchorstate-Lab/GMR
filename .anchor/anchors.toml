@@ -1,349 +1,209 @@
 [[anchor]]
 key = "packages::workspace"
-artifact = "1fbeb1e6ab3969fc9693e691130a32946e46b9e2d7c0d3ede9e57160933918d4"
+probe = "addr-map"
 params = { root = "." }
 position = { name = "Cargo.toml" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "modules::gmr-core"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-core" }
 position = { kind = "module", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "surface::gmr-core"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-core" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "modules::gmr-expr"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-expr" }
 position = { kind = "module", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "surface::gmr-expr"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-expr" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "surface::gmr-probe"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-probe" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "modules::gmr-store"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-store" }
 position = { kind = "module", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "surface::gmr-store"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-store" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "modules::gmr-runtime"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-runtime" }
 position = { kind = "module", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "surface::gmr-runtime"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "crates/gmr-runtime" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "modules::anchor-cli"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "domains/coding/cli" }
 position = { kind = "module", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "surface::anchor-cli"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+probe = "ast-map"
 params = { root = "domains/coding/cli" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"
 
 [[anchor]]
 key = "doctrine::decisions"
-artifact = "e9ed81cb5901a4bd32b33a763f0ade7b1672e48b0bd9c15be25ae5da66f0b6fb"
+probe = "prose-map"
 params = { root = "." }
 position = { file = "CLAUDE.md", heading = "一、这十三条是 owner 定的，不要重新论证" }
-rules = [
-  'not exists(state.fingerprint) => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }',
-  'obs.found == false => { position: state.position, fingerprint: state.fingerprint, status: "section-gone" }',
-  'obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }',
-]
+shape = "fingerprint"
 
 [[anchor]]
 key = "doctrine::red-cards"
-artifact = "e9ed81cb5901a4bd32b33a763f0ade7b1672e48b0bd9c15be25ae5da66f0b6fb"
+probe = "prose-map"
 params = { root = "." }
 position = { file = "CLAUDE.md", heading = "四、红牌 —— 违反了不会有人发现的那些" }
-rules = [
-  'not exists(state.fingerprint) => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }',
-  'obs.found == false => { position: state.position, fingerprint: state.fingerprint, status: "section-gone" }',
-  'obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }',
-]
+shape = "fingerprint"
 
 [[anchor]]
 key = "dead::Baseline"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "Baseline", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::BaselineEntry"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "BaselineEntry", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::Delta"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "Delta", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::Expect"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "Expect", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::ExpectValue"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "ExpectValue", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::FacetName"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "FacetName", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::FacetOutcome"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "FacetOutcome", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::FacetValue"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "FacetValue", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::Facets"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "Facets", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::FactStore"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "FactStore", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::SourceArchive"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "SourceArchive", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::delta_of"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "delta_of", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::located_at"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "located_at", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::prev"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "prev", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "dead::streak"
-artifact = "bae719e59b0faa2d466475018918edeff8352a654f76b5e590a6c5f5a6636956"
+probe = "name-map"
 params = { root = "." }
 position = { name = "streak", scope = "crates" }
-rules = [
-  'not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }',
-  'obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }',
-  'obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }',
-]
+shape = "occurrence"
 
 [[anchor]]
 key = "tests::roster"
-artifact = "f3f0bf8a3adb7f0dd1cdea3e29e84a819b829a404f88b7ac8d69d1741c6ccd04"
+probe = "test-roster"
 params = { root = "." }
 rules = [
   'not exists(state.tests) => { test_count: obs.test_count, ignored_count: obs.ignored_count, tests: obs.tests, ignored: obs.ignored, status: "captured" }',

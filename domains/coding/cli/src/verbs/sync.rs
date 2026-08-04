@@ -169,8 +169,9 @@ pub async fn run(
         }
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
-            if differs(&view.anchor, decl, &ctx)? {
-                drifted_criteria.push(decl.key.clone());
+            let facets = differs(&view.anchor, decl, &ctx)?;
+            if !facets.is_empty() {
+                drifted_criteria.push(format!("{} ({})", decl.key, facets.join(" · ")));
             }
             // Retain and cadence are not criteria, so sync just applies them.
             if rt.settings_for(&key).await? != decl.settings() {
@@ -350,10 +351,25 @@ async fn align_bindings(
     Ok((bound, renamed))
 }
 
-fn differs(anchor: &Anchor, decl: &AnchorDecl, ctx: &Context) -> Result<bool, CliError> {
-    Ok(anchor.probe != decl.to_probe(ctx)?
-        || anchor.transitions != decl.to_transitions()?
-        || anchor.terminal != rules::terminal(&decl.terminal))
+/// Naming the facet matters: "the probe was renamed" and "the transition table
+/// was rewritten" are different judgments, and the sealed reason should say
+/// which one it is.
+fn differs(
+    anchor: &Anchor,
+    decl: &AnchorDecl,
+    ctx: &Context,
+) -> Result<Vec<&'static str>, CliError> {
+    let mut facets = Vec::new();
+    if anchor.probe != decl.to_probe(ctx)? {
+        facets.push("probe");
+    }
+    if anchor.transitions != decl.to_transitions()? {
+        facets.push("rules");
+    }
+    if anchor.terminal != rules::terminal(&decl.terminal) {
+        facets.push("terminal");
+    }
+    Ok(facets)
 }
 
 #[cfg(test)]
