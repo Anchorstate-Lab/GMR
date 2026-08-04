@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use gmr::Kind;
-use gmr_transport_shell::{Artifacts, publish};
+use gmr_transport::shell::{Artifacts, publish};
 
 use crate::error::CliError;
 

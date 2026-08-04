@@ -12,10 +12,9 @@ use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeRef, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{ProbeError, ProbeErrorCode, Sighted, Transport};
+use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Sighted, Transport};
 
 pub use artifact::{ArtifactError, Artifacts, publish};
-pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
 pub use manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
 /// Executes only artifacts. The anchor names an artifact; this transport

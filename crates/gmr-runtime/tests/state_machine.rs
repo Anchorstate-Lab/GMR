@@ -6,12 +6,12 @@ use gmr_core::{
 };
 use gmr_runtime::{Observed, OpenRequest, Runtime, Sighting};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
-use gmr_transport_shell::Shell;
+use gmr_transport::shell::Shell;
 
 /// Every test publishes a real artifact. Otherwise "earned versions" would
 /// hold on the production path while tests bypass it.
 fn script_probe(root: &std::path::Path, body: &str) -> gmr_core::ProbeRef {
-    let version = gmr_transport_shell::testkit::publish_script(root.join(".probes"), body);
+    let version = gmr_transport::shell::testkit::publish_script(root.join(".probes"), body);
     gmr_core::ProbeRef::new(gmr_core::Kind::new("shell"), version, serde_json::json!({}))
 }
 

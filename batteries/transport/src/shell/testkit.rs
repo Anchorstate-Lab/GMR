@@ -2,7 +2,7 @@ use std::path::Path;
 
 use gmr_core::{Kind, ProbeVersion};
 
-use crate::artifact::{Artifacts, publish};
+use super::artifact::{Artifacts, publish};
 
 /// Publish a shell script as a probe artifact for tests.
 ///

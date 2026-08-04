@@ -205,7 +205,7 @@ dependencies = [
  "clap",
  "gmr",
  "gmr-provider-git",
- "gmr-transport-shell",
+ "gmr-transport",
  "serde",
  "serde_json",
  "tokio",
@@ -539,7 +539,7 @@ dependencies = [
  "gmr-expr",
  "gmr-probe",
  "gmr-store",
- "gmr-transport-shell",
+ "gmr-transport",
  "serde",
  "serde_json",
  "tempfile",
@@ -563,12 +563,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "gmr-transport-shell"
+name = "gmr-transport"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "gmr-core",
  "gmr-probe",
+ "gmr-transport",
  "serde",
  "serde_json",
  "tempfile",

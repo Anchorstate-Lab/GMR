@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use gmr_core::{ContentHash, ProbeVersion, content_hash_of_bytes};
 
-use crate::manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
+use super::manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
 pub const MANIFEST_FILE: &str = "manifest.json";
 
