@@ -19,6 +19,57 @@ fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn named_by_parent<'t>(
+    table: &lang::Table,
+    node: tree_sitter::Node<'t>,
+) -> Option<tree_sitter::Node<'t>> {
+    let parent = node.parent()?;
+    if !table.name_from_parent.contains(&parent.kind()) {
+        return None;
+    }
+    parent
+        .child_by_field_name("name")
+        .or_else(|| parent.child_by_field_name("key"))
+}
+
+fn visibility(
+    table: &lang::Table,
+    node: tree_sitter::Node,
+    name: &str,
+    text: &impl Fn(tree_sitter::Node) -> String,
+) -> String {
+    match &table.vis {
+        lang::Vis::Absent => String::new(),
+        lang::Vis::Child(kind) => {
+            let mut c = node.walk();
+            node.named_children(&mut c)
+                .find(|k| k.kind() == *kind)
+                .map(text)
+                .unwrap_or_default()
+        }
+        lang::Vis::Ancestor { kind, label } => {
+            let mut at = node.parent();
+            while let Some(n) = at {
+                if n.kind() == *kind {
+                    return (*label).to_owned();
+                }
+                // 只穿过把声明包起来的那几层，不要一路爬到根。
+                if n.child_by_field_name("body").is_some() {
+                    break;
+                }
+                at = n.parent();
+            }
+            String::new()
+        }
+        lang::Vis::LeadingUpper(label) => {
+            match name.chars().next().is_some_and(char::is_uppercase) {
+                true => (*label).to_owned(),
+                false => String::new(),
+            }
+        }
+    }
+}
+
 fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
     let Some(table) = lang::for_path(rel) else {
         return Ok(());
@@ -50,6 +101,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             .child_by_field_name("name")
             .map(text)
             .or_else(|| node.child_by_field_name("function").map(text))
+            .or_else(|| named_by_parent(table, node).map(text))
             .unwrap_or_default();
         let shape = table
             .shape_fields
@@ -61,12 +113,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             .child_by_field_name("body")
             .map(text)
             .unwrap_or_default();
-        let mut vc = node.walk();
-        let vis = node
-            .named_children(&mut vc)
-            .find(|k| k.kind() == "visibility_modifier")
-            .map(text)
-            .unwrap_or_default();
+        let vis = visibility(table, node, &name, &text);
 
         let c: BTreeMap<String, String> = [
             ("file", rel.to_owned()),
@@ -257,5 +304,105 @@ mod tests {
             at(&d, json!({"kind": "field", "name": "n"}))["missed"],
             json!([])
         );
+    }
+
+    const TS: &str = "export function alpha(x: number): string { return \"a\"; }\n\
+                      function beta() {}\n\
+                      export const gamma = (y: string) => y.length;\n";
+
+    #[test]
+    fn typescript_reads_export_off_the_ancestor_not_a_child() {
+        let d = fixture("ts-vis", &[("a.ts", TS)]);
+        let v = at(
+            &d,
+            json!({"file": "a.ts", "kind": "function", "name": "alpha"}),
+        );
+        assert_eq!(v["missed"], json!([]));
+        assert_eq!(v["at"]["vis"], "export");
+
+        let v = at(
+            &d,
+            json!({"file": "a.ts", "kind": "function", "name": "beta"}),
+        );
+        assert_eq!(v["at"]["vis"], "");
+    }
+
+    #[test]
+    fn an_arrow_function_borrows_its_name_from_the_declarator() {
+        let d = fixture("ts-arrow", &[("a.ts", TS)]);
+        let v = at(
+            &d,
+            json!({"file": "a.ts", "kind": "function", "name": "gamma"}),
+        );
+        assert_eq!(v["missed"], json!([]));
+        assert_eq!(v["at"]["vis"], "export");
+    }
+
+    #[test]
+    fn typescript_shape_drift_reads_like_rusts() {
+        let d = fixture("ts-shape", &[("a.ts", TS)]);
+        let v = at(
+            &d,
+            json!({"file": "a.ts", "kind": "function", "name": "alpha",
+                   "shape": "(x: number) : number"}),
+        );
+        assert_eq!(v["missed"], json!(["shape"]));
+        assert_eq!(v["at"]["shape"], "(x: number) : string");
+    }
+
+    #[test]
+    fn tsx_covers_plain_javascript_too() {
+        let d = fixture(
+            "jsx",
+            &[("a.js", "export function alpha(x) { return x; }\n")],
+        );
+        let v = at(
+            &d,
+            json!({"file": "a.js", "kind": "function", "name": "alpha"}),
+        );
+        assert_eq!(v["missed"], json!([]));
+        assert_eq!(v["at"]["vis"], "export");
+    }
+
+    #[test]
+    fn python_has_no_visibility_so_vis_stays_empty() {
+        let d = fixture(
+            "py",
+            &[(
+                "a.py",
+                "def alpha(x):\n    return x\n\ndef _beta():\n    pass\n",
+            )],
+        );
+        for name in ["alpha", "_beta"] {
+            let v = at(
+                &d,
+                json!({"file": "a.py", "kind": "function", "name": name}),
+            );
+            assert_eq!(v["missed"], json!([]), "{name}");
+            assert_eq!(v["at"]["vis"], "", "{name}");
+        }
+    }
+
+    #[test]
+    fn go_derives_export_from_the_leading_letter() {
+        let d = fixture(
+            "go",
+            &[(
+                "a.go",
+                "package p\nfunc Alpha(x int) int { return x }\nfunc beta() {}\n",
+            )],
+        );
+        let v = at(
+            &d,
+            json!({"file": "a.go", "kind": "function", "name": "Alpha"}),
+        );
+        assert_eq!(v["missed"], json!([]));
+        assert_eq!(v["at"]["vis"], "export");
+
+        let v = at(
+            &d,
+            json!({"file": "a.go", "kind": "function", "name": "beta"}),
+        );
+        assert_eq!(v["at"]["vis"], "");
     }
 }

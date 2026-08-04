@@ -24,6 +24,10 @@ pub struct AnchorDecl {
     pub params: serde_json::Value,
     #[serde(default)]
     pub position: Option<serde_json::Value>,
+    /// 具名转换表预设。与 rules 二选一；sync 时展开成字面规则存进锚，
+    /// 所以 declaration hash 仍然覆盖完整判据。
+    #[serde(default)]
+    pub shape: Option<String>,
     #[serde(default)]
     pub rules: Vec<String>,
     #[serde(default)]
@@ -42,7 +46,16 @@ impl AnchorDecl {
     }
 
     fn to_transitions(&self) -> Result<Transitions, CliError> {
-        rules::transitions(&self.rules)
+        match (&self.shape, self.rules.is_empty()) {
+            (Some(_), false) => Err(CliError(format!(
+                "{}: declare either `shape` or `rules`, not both",
+                self.key
+            ))),
+            (Some(name), true) => rules::transitions(&crate::shapes::rules_of(
+                crate::shapes::get(name).map_err(|e| CliError(format!("{}: {e}", self.key)))?,
+            )),
+            (None, _) => rules::transitions(&self.rules),
+        }
     }
 
     fn settings(&self) -> RunSettings {
@@ -176,4 +189,61 @@ fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
     Ok(anchor.probe != decl.to_probe()?
         || anchor.transitions != decl.to_transitions()?
         || anchor.terminal != rules::terminal(&decl.terminal))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ROSTER_LITERAL: &str = r#"
+[[anchor]]
+key = "k"
+artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+rules = [
+  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
+  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
+  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
+  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+]
+"#;
+
+    const ROSTER_SHAPE: &str = r#"
+[[anchor]]
+key = "k"
+artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+shape = "roster"
+"#;
+
+    fn decl(text: &str) -> AnchorDecl {
+        toml::from_str::<Declared>(text)
+            .unwrap()
+            .anchor
+            .into_iter()
+            .next()
+            .unwrap()
+    }
+
+    /// 迁移保证：把 anchors.toml 的字面规则换成 shape 不动判据。
+    #[test]
+    fn a_shape_expands_to_the_table_it_replaces() {
+        assert_eq!(
+            decl(ROSTER_SHAPE).to_transitions().unwrap(),
+            decl(ROSTER_LITERAL).to_transitions().unwrap()
+        );
+    }
+
+    #[test]
+    fn shape_and_rules_together_are_refused() {
+        let both = format!("{ROSTER_LITERAL}shape = \"roster\"\n");
+        let e = decl(&both).to_transitions().unwrap_err();
+        assert!(e.to_string().contains("not both"), "{e}");
+    }
+
+    #[test]
+    fn an_unknown_shape_names_the_anchor_that_asked_for_it() {
+        let text = ROSTER_SHAPE.replace("\"roster\"", "\"nope\"");
+        let e = decl(&text).to_transitions().unwrap_err();
+        assert!(e.to_string().contains('k'), "{e}");
+    }
 }
