@@ -2,6 +2,7 @@ mod cli;
 mod error;
 mod render;
 mod rules;
+mod shapes;
 mod verbs;
 
 use std::path::PathBuf;
