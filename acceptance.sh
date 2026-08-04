@@ -134,7 +134,7 @@ chmod +x "$repo/scripts/deploy.sh"
 cat > "$repo/.anchor/probes.toml" <<'EOF'
 [script.deploy-sha]
 run = "scripts/deploy.sh"
-obs = { schema = "gmr.probe-coord.v1", at = [], facts = ["sha"] }
+obs = { schema = "gmr.probe-deploy.v1", at = [], facts = ["sha"] }
 EOF
 cat > "$repo/.anchor/anchors.toml" <<'EOF'
 [[anchor]]

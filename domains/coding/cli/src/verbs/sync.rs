@@ -58,21 +58,20 @@ impl AnchorDecl {
         )
     }
 
+    /// Whether a named shape or hand-written rules — an agent's rules get
+    /// exactly the check a shape gets, because `reads_of` walks whatever
+    /// `to_transitions` produced rather than a preset's own declared list.
     fn check_contract(&self, ctx: &Context) -> Result<(), CliError> {
-        let Some(shape) = &self.shape else {
-            return Ok(());
-        };
-        let missing = crate::shapes::unmet(
-            crate::shapes::get(shape)?,
-            &ctx.catalog.obs_of(&self.probe)?,
-        );
+        let reads = crate::shapes::reads_of(&self.to_transitions()?)
+            .map_err(|e| CliError(format!("{}: {e}", self.key)))?;
+        let missing = crate::shapes::unmet(&reads, &ctx.catalog.obs_of(&self.probe)?);
         match missing.is_empty() {
             true => Ok(()),
             false => Err(CliError(format!(
-                "{}: shape `{shape}` reads {}, which probe `{}` does not emit",
+                "{}: rules read {}, which probe `{}` does not emit",
                 self.key,
-                self.probe,
-                missing.join(" · ")
+                missing.join(" · "),
+                self.probe
             ))),
         }
     }
@@ -180,11 +179,13 @@ pub async fn run(
             }
             continue;
         }
+        // Checked before the dry-run branch: a rule reading a field its probe
+        // never emits is refused whether or not this run actually opens anything.
+        decl.check_contract(&ctx)?;
         if dry_run {
             opened.push(decl.key.clone());
             continue;
         }
-        decl.check_contract(&ctx)?;
         let result = rt
             .open(OpenRequest {
                 key: key.clone(),
@@ -493,5 +494,27 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         decl("probe = \"ast-like\"\nshape = \"roster\"")
             .check_contract(&c)
             .unwrap();
+    }
+
+    /// The gap named shapes never had: hand-written rules — what an agent
+    /// writes by default — get the identical check.
+    #[test]
+    fn hand_written_rules_get_the_same_check_a_shape_gets() {
+        let (_d, c) = ctx(AST_LIKE);
+        let e = decl(
+            "probe = \"ast-like\"\nrules = ['obs.facts.occurrences > 0 => { status: \"x\" }']",
+        )
+        .check_contract(&c)
+        .unwrap_err();
+        assert!(e.to_string().contains("facts.occurrences"), "{e}");
+    }
+
+    #[test]
+    fn a_syntax_error_in_a_rule_is_caught_at_sync_time_not_observe_time() {
+        let (_d, c) = ctx(AST_LIKE);
+        let e = decl("probe = \"ast-like\"\nrules = ['obs.facts. => { status: \"x\" }']")
+            .check_contract(&c)
+            .unwrap_err();
+        assert!(e.to_string().starts_with("k:"), "{e}"); // tagged with the anchor key
     }
 }
