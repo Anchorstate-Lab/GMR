@@ -114,6 +114,18 @@ pub enum Command {
         why: String,
     },
 
+    /// Recapture against the instrument this build has. Needs --why, and the
+    /// reason is sealed.
+    #[command(display_order = 25)]
+    Rebase {
+        keys: Vec<String>,
+        /// Every anchor standing on a reading a different instrument took.
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        why: String,
+    },
+
     /// Move the state directly. Needs --why, and the reason is sealed.
     #[command(display_order = 23)]
     Restate {

@@ -189,8 +189,15 @@ gmr reprobe      <key> --probe <name>             --why '...'   # look somewhere
 gmr retransition <key> --rule '<guard> => ...'    --why '...'   # what counts as a change
 gmr reterminal   <key> --terminal a,b             --why '...'   # what is irreversible
 gmr restate      <key> --state '{...}'            --why '...'   # move the state directly
+gmr rebase       --all                            --why '...'   # recapture after the engine changed
 gmr close        <key> --why '...'                              # retire the anchor
 ```
+
+`rebase` is the one an upgrade calls for. When a probe's derivation moves, every
+baseline behind it was measured with a different ruler — the declarations did not
+change, so this is not drift, but the next comparison is between two rulers and
+nobody but you can say whether it still counts. `sync` reports it; `observe` keeps
+running and simply cannot tell you which of the two things moved.
 
 The journal is append-only; the substrate guarantees the reason is
 **tamper-proof**, not that it is **sound**. A rubber-stamp revision looks exactly

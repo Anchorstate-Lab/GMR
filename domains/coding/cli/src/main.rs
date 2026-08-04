@@ -129,6 +129,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Reterminal { key, terminal, why } => {
             verbs::reterminal::run(&rt, key, terminal, why, json).await
         }
+        Command::Rebase { keys, all, why } => verbs::rebase::run(&rt, keys, all, why, json).await,
         Command::Restate { key, state, why } => {
             verbs::restate::run(&rt, key, state, why, json).await
         }

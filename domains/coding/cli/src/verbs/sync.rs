@@ -130,6 +130,7 @@ pub async fn run(
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
     let mut drifted_criteria = Vec::new();
+    let mut swapped = Vec::new();
     let mut resettled = Vec::new();
     let mut warnings = Vec::new();
 
@@ -161,6 +162,14 @@ pub async fn run(
             let facets = differs(&view.anchor, decl, &ctx)?;
             if !facets.is_empty() {
                 drifted_criteria.push(format!("{} ({})", decl.key, facets.join(" · ")));
+            }
+            // The declaration can be identical and the instrument still be a
+            // different one. That is not drift; it is a baseline taken with
+            // another ruler, and only a person can say whether it still counts.
+            if let (Some(was), Ok(now)) = (&view.derivation, rt.instrument(&view.anchor.probe))
+                && was.version != now.version
+            {
+                swapped.push(decl.key.clone());
             }
             // Retain and cadence are not criteria, so sync just applies them.
             if rt.settings_for(&key).await? != decl.settings() {
@@ -201,6 +210,7 @@ pub async fn run(
             serde_json::json!({
                 "opened": opened,
                 "criteria_drifted": drifted_criteria,
+                "instrument_swapped": swapped,
                 "resettled": resettled,
                 "bound": bound, "renamed": renamed,
                 "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
@@ -232,6 +242,23 @@ pub async fn run(
         println!(
             "\nChanging a probe or transition table is a criteria revision, not a refactor; sync will not do it for you.\n\
              Decide whether to accept it, then use revise so it leaves a sealed record."
+        );
+    }
+    if !swapped.is_empty() {
+        println!(
+            "\n{} anchors last read with an instrument this build no longer has:",
+            swapped.len()
+        );
+        for k in &swapped {
+            println!("  ~= {k}");
+        }
+        println!(
+            "\nThe declarations are unchanged; what moved is the rule behind the name.\n\
+             Whatever those baselines are compared against next was measured differently,\n\
+             and only you can say whether that still counts as the same reading.\n\
+             \n    gmr rebase --all --why '...'\n\
+             \nObserve will keep running either way — it just cannot tell you which of\n\
+             the two things moved."
         );
     }
     if !bound.is_empty() {

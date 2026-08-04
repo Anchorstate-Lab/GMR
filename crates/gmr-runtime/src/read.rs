@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use gmr_core::{Anchor, AnchorKey, Link, Outcome, Ref, Seq, State, StatusId, Version, scan};
+use gmr_core::{
+    Anchor, AnchorKey, Derivation, Link, Outcome, Ref, Seq, State, StatusId, Version, scan,
+};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -26,6 +28,9 @@ pub struct AnchorView {
     pub entered_at: Option<DateTime<Utc>>,
     pub last_sighting: Option<DateTime<Utc>>,
     pub sightings: u64,
+    /// What derived the reading this state stands on. Compare it against what
+    /// the probe resolves to now and you know whether the instrument changed.
+    pub derivation: Option<Derivation>,
     pub memories: Vec<MemoryView>,
 }
 
@@ -91,6 +96,7 @@ async fn read(
         Some(Outcome::Found { .. }) => Sighting::Found,
         _ => Sighting::Absent,
     };
+    let derivation = s.latest.as_ref().map(|o| o.versions.derivation.clone());
 
     Ok(AnchorView {
         key: key.clone(),
@@ -103,6 +109,7 @@ async fn read(
         entered_at: s.entered_at,
         last_sighting: s.last_sighting,
         sightings,
+        derivation,
         memories,
     })
 }

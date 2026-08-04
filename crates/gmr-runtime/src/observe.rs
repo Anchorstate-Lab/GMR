@@ -35,6 +35,16 @@ pub enum Observed {
 }
 
 impl Runtime {
+    /// What the probe a declaration names would be derived by, right now, with
+    /// nothing run. Comparing it against an anchor's last derivation is how a
+    /// swapped instrument is noticed before it is mistaken for a moved world.
+    pub fn instrument(
+        &self,
+        probe: &gmr_core::ProbeRef,
+    ) -> Result<gmr_core::Derivation, gmr_probe::ProbeError> {
+        self.observer.resolve(probe)
+    }
+
     /// Observe one anchor by hand.
     ///
     /// In a queued deployment this takes the anchor's lease before writing —
