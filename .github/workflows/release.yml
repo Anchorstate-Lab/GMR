@@ -21,6 +21,8 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+          env:
+            NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           override: true
 
       - name: Install cross
@@ -34,15 +36,15 @@ jobs:
           mkdir -p artifacts
           BIN=target/${{ matrix.target }}/release/gmr
           if [ ! -f "$BIN" ]; then echo "binary not found: $BIN"; exit 1; fi
-          TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
-          mkdir -p tmp/bin
-          cp "$BIN" tmp/bin/gmr
-          tar -czf "$TARFILE" -C tmp bin
-          rm -rf tmp
-
+            - name: Configure npm auth
+              run: |
+                if [ -z "${NODE_AUTH_TOKEN}" ]; then
+                  echo "NPM_TOKEN not set; skipping npm publish steps"
+                  exit 0
+                fi
+                npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
-        with:
           name: gmr-${{ matrix.target }}
           path: artifacts/gmr-${{ matrix.target }}.tar.gz
 
@@ -70,7 +72,6 @@ jobs:
 
       - name: Package tarball
         run: |
-          mkdir -p artifacts
           BIN=target/${{ matrix.target }}/release/gmr
           if [ ! -f "$BIN" ]; then echo "binary not found: $BIN"; exit 1; fi
           TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
@@ -83,7 +84,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gmr-${{ matrix.target }}
-          path: artifacts/gmr-${{ matrix.target }}.tar.gz
 
   create-release:
     name: Create GitHub release and attach artifacts
