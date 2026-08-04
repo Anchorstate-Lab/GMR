@@ -29,6 +29,9 @@ pub fn publish_script(store: impl AsRef<Path>, body: &str) -> ProbeVersion {
         &Artifacts::new(store.as_ref()),
         staging.path(),
         Kind::new("shell"),
+        // Tests stand in for a publisher, so they state a closure too: the
+        // script body is all there is to earn one from.
+        ProbeVersion::new(gmr_core::content_hash_of_bytes(body.as_bytes()).into_inner()),
         "probe",
         Vec::new(),
         Default::default(),

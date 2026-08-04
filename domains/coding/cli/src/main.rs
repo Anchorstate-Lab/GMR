@@ -62,12 +62,13 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     // Publishing a probe does not touch the journal; it happens before any log exists.
     if let Command::Publish {
         from,
+        name,
         entrypoint,
         args,
         env,
     } = cli.command
     {
-        return verbs::publish::run(&root, from, entrypoint, args, env, cli.json);
+        return verbs::publish::run(&root, from, name, entrypoint, args, env, cli.json);
     }
 
     // Building probes does not touch the journal either.

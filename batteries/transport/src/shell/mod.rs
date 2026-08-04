@@ -62,7 +62,7 @@ impl Transport for Shell {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         let resolved = self.artifacts.resolve(name).ok()?;
         Some(Derivation {
-            version: resolved.manifest.version(),
+            version: resolved.manifest.derivation.clone(),
             verifiability: match resolved.manifest.env.is_empty() {
                 true => Verifiability::Closed,
                 false => Verifiability::Open,
@@ -176,6 +176,12 @@ mod tests {
     use gmr_probe::ProbeErrorCode;
     use serde_json::json;
 
+    /// Two hashes for one artifact: where it lives, and what rule it is.
+    struct Published {
+        address: ProbeVersion,
+        derivation: ProbeVersion,
+    }
+
     struct World {
         _dir: tempfile::TempDir,
         cwd: PathBuf,
@@ -204,16 +210,16 @@ mod tests {
             ProbeRef::new(Kind::new("shell"), ProbeName::new("p"), params)
         }
 
-        fn publish_with_env(&self, body: &str, env: &[(&str, &str)]) -> ProbeVersion {
+        fn publish_with_env(&self, body: &str, env: &[(&str, &str)]) -> Published {
             self.publish_full(body, &[], env)
         }
 
         /// Publish an sh script as a probe.
-        fn publish(&self, body: &str, args: &[&str]) -> ProbeVersion {
+        fn publish(&self, body: &str, args: &[&str]) -> Published {
             self.publish_full(body, args, &[])
         }
 
-        fn publish_full(&self, body: &str, args: &[&str], env: &[(&str, &str)]) -> ProbeVersion {
+        fn publish_full(&self, body: &str, args: &[&str], env: &[(&str, &str)]) -> Published {
             let src = self._dir.path().join("src");
             let _ = std::fs::remove_dir_all(&src);
             std::fs::create_dir_all(&src).unwrap();
@@ -224,10 +230,15 @@ mod tests {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
-            let version = publish(
+            let derivation = ProbeVersion::new(
+                gmr_core::content_hash_of_bytes(format!("{body}{args:?}{env:?}").as_bytes())
+                    .into_inner(),
+            );
+            let address = publish(
                 &Artifacts::new(&self.store),
                 &src,
                 Kind::new("shell"),
+                derivation.clone(),
                 "probe",
                 args.iter().map(|a| (*a).to_owned()).collect(),
                 env.iter()
@@ -236,9 +247,12 @@ mod tests {
             )
             .unwrap();
             Artifacts::new(&self.store)
-                .install(&ProbeName::new("p"), &version)
+                .install(&ProbeName::new("p"), &address)
                 .unwrap();
-            version
+            Published {
+                address,
+                derivation,
+            }
         }
 
         async fn invoke(&self, params: Value, at: Value) -> Result<Outcome, ProbeError> {
@@ -261,20 +275,23 @@ mod tests {
         assert_eq!(facts.as_value()["count"], json!(2));
     }
 
+    /// The journal gets the rule, not the file. Two machines building one probe
+    /// hold different bytes and must still be comparable.
     #[tokio::test]
-    async fn the_version_is_the_artifact_that_actually_ran() {
+    async fn the_version_is_the_rule_not_the_bytes_that_implement_it() {
         let w = World::new();
-        let v = w.publish("echo '{}'", &[]);
+        let p = w.publish("echo '{}'", &[]);
         let d = w.resolve().expect("a published artifact resolves");
-        assert_eq!(d.version, v);
+        assert_eq!(d.version, p.derivation);
+        assert_ne!(d.version, p.address);
         assert_eq!(d.verifiability, Verifiability::Closed);
     }
 
     #[tokio::test]
     async fn resolving_names_the_rule_without_running_it() {
         let w = World::new();
-        let v = w.publish("echo 'never ran' >&2; exit 9", &[]);
-        assert_eq!(w.resolve().unwrap().version, v);
+        let p = w.publish("echo 'never ran' >&2; exit 9", &[]);
+        assert_eq!(w.resolve().unwrap().version, p.derivation);
     }
 
     #[test]
@@ -284,22 +301,22 @@ mod tests {
         assert!(w.shell().resolve(&ProbeName::new("absent")).is_none());
     }
 
-    #[tokio::test]
-    async fn changing_one_byte_of_the_probe_changes_its_version() {
+    #[test]
+    fn changing_one_byte_of_the_probe_changes_its_version() {
         let w = World::new();
         assert_ne!(
-            w.publish("echo '{\"x\":1}'", &[]),
-            w.publish("echo '{\"x\":2}'", &[]),
-            "changing the implementation changes the derivation rule, so the version must change"
+            w.publish("echo '{\"x\":1}'", &[]).derivation,
+            w.publish("echo '{\"x\":2}'", &[]).derivation,
+            "changing the implementation changes the derivation rule"
         );
     }
 
-    #[tokio::test]
-    async fn changing_only_the_args_changes_the_version() {
+    #[test]
+    fn changing_only_the_args_changes_the_version() {
         let w = World::new();
         assert_ne!(
-            w.publish("echo '{}'", &["--mode", "a"]),
-            w.publish("echo '{}'", &["--mode", "b"])
+            w.publish("echo '{}'", &["--mode", "a"]).derivation,
+            w.publish("echo '{}'", &["--mode", "b"]).derivation
         );
     }
 
@@ -434,12 +451,12 @@ mod tests {
     }
 
     #[test]
-    fn the_derivation_is_the_installed_artifact_not_the_name() {
+    fn the_derivation_is_what_the_installed_artifact_declares() {
         let w = World::new();
         let built = w.publish("echo '{\"x\":1}'", &[]);
         assert_eq!(
             w.resolve().expect("an installed name resolves").version,
-            built
+            built.derivation
         );
     }
 
@@ -460,12 +477,12 @@ mod tests {
         let w = World::new();
         let first = w.publish("echo '{\"x\":1}'", &[]);
         let second = w.publish("echo '{\"x\":2}'", &[]);
-        assert_ne!(first, second);
+        assert_ne!(first.address, second.address);
         assert_eq!(
             Artifacts::new(&w.store)
                 .installed(&ProbeName::new("p"))
                 .unwrap(),
-            Some(second)
+            Some(second.address)
         );
     }
 

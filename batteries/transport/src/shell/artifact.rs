@@ -142,7 +142,7 @@ impl Artifacts {
             )));
         }
 
-        let earned = manifest.version();
+        let earned = manifest.address();
         if &earned != version {
             return Err(bad(format!(
                 "manifest hashes to {earned}, but it is stored under {version}; name and content disagree"
@@ -184,12 +184,14 @@ fn verify(dir: &Path, rel: &str, want: &ContentHash) -> Result<(), ArtifactError
     Ok(())
 }
 
-/// Publish a directory as an artifact: hash each file, write the manifest, and
-/// name the artifact by the manifest hash.
+/// Publish a directory as an artifact, addressed by its manifest hash. The
+/// `derivation` it stands for is the publisher's to state: only they have the
+/// sources it was earned from.
 pub fn publish(
     artifacts: &Artifacts,
     from: &Path,
     kind: gmr_core::Kind,
+    derivation: ProbeVersion,
     entrypoint: &str,
     args: Vec<String>,
     env: std::collections::BTreeMap<String, String>,
@@ -205,6 +207,7 @@ pub fn publish(
     let manifest = Manifest {
         schema: MANIFEST_SCHEMA.to_owned(),
         kind,
+        derivation,
         entrypoint: entrypoint.to_owned(),
         args,
         env,
@@ -212,7 +215,7 @@ pub fn publish(
         platform: Platform::host(),
         output_contract: gmr_core::OUTCOME_CONTRACT.to_owned(),
     };
-    let version = manifest.version();
+    let version = manifest.address();
 
     let dir = artifacts.dir(&version);
     for file in &manifest.files {

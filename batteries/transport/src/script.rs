@@ -1,17 +1,16 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use gmr_core::{
-    Derivation, Facts, Kind, Outcome, ProbeName, ProbeRef, ProbeVersion, Verifiability,
-    content_hash_of_bytes,
-};
+use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, ProbeRef, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
 use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Transport};
+
+use crate::closure;
 
 /// Runs a file in the user's own repository. Identity is that file's content,
 /// hashed at call time — the script does not get to say what it is.
@@ -54,31 +53,6 @@ impl Script {
     }
 }
 
-/// A file hashes to its content; a directory to every file under it, path and
-/// bytes alike, so moving code between files still moves the version.
-fn hash_of(path: &Path) -> Option<ProbeVersion> {
-    let mut acc = Vec::new();
-    absorb(path, path, &mut acc)?;
-    Some(ProbeVersion::new(content_hash_of_bytes(&acc).into_inner()))
-}
-
-fn absorb(base: &Path, at: &Path, acc: &mut Vec<u8>) -> Option<()> {
-    if at.is_dir() {
-        let mut entries: Vec<_> = std::fs::read_dir(at).ok()?.flatten().collect();
-        entries.sort_by_key(|e| e.path());
-        for e in entries {
-            absorb(base, &e.path(), acc)?;
-        }
-        return Some(());
-    }
-    let rel = at.strip_prefix(base).unwrap_or(at);
-    acc.extend_from_slice(rel.to_string_lossy().as_bytes());
-    acc.push(0);
-    acc.extend_from_slice(&std::fs::read(at).ok()?);
-    acc.push(0);
-    Some(())
-}
-
 #[async_trait]
 impl Transport for Script {
     fn kind(&self) -> &Kind {
@@ -87,7 +61,7 @@ impl Transport for Script {
 
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
-            version: hash_of(&self.entry(name)?)?,
+            version: closure::of_path(&self.entry(name)?)?,
             verifiability: Verifiability::Open,
         })
     }

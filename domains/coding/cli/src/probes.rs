@@ -318,10 +318,14 @@ pub fn build_one(
         env.insert(key.clone(), value);
     }
 
+    // The recipe hash is already a semantic closure: it covers the sources, the
+    // entrypoint, the args, the env and the contract, and deliberately excludes
+    // the platform and the built bytes. That is exactly the derivation.
     let artifact = publish(
         artifacts,
         staging.path(),
         gmr::Kind::new("shell"),
+        version.clone(),
         &recipe.entrypoint,
         recipe.args.clone(),
         env,

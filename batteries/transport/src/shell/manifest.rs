@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use gmr_core::{ContentHash, Kind, ProbeVersion, content_hash_of};
 use serde::{Deserialize, Serialize};
 
-pub const MANIFEST_SCHEMA: &str = "gmr.probe-artifact.v1";
+pub const MANIFEST_SCHEMA: &str = "gmr.probe-artifact.v2";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
@@ -28,12 +28,18 @@ impl Platform {
     }
 }
 
-/// Pins down the closure of one derivation rule, in the terms a shell-style
-/// transport needs. `ProbeVersion` is its content hash — earned, not declared.
+/// What this machine has, and what rule it stands for. **Two hashes, two jobs:**
+/// [`Manifest::address`] is the byte-exact identity of these files here, which
+/// moves with the platform and is what verification checks;
+/// [`Manifest::derivation`] is what the publisher earned from sources, is the
+/// same everywhere, and is what the journal records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     pub schema: String,
     pub kind: Kind,
+    /// The rule these bytes implement, earned from its sources by whoever
+    /// published it. Two platforms' artifacts of one probe share it.
+    pub derivation: ProbeVersion,
     pub entrypoint: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -45,7 +51,8 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn version(&self) -> ProbeVersion {
+    /// Where it lives and what it must hash to. Local by design.
+    pub fn address(&self) -> ProbeVersion {
         let value = serde_json::to_value(self).expect("a manifest always serialises");
         ProbeVersion::new(content_hash_of(&value).into_inner())
     }
@@ -64,6 +71,7 @@ mod tests {
         Manifest {
             schema: MANIFEST_SCHEMA.to_owned(),
             kind: Kind::new("shell"),
+            derivation: ProbeVersion::new("d".repeat(64)),
             entrypoint: entry.to_owned(),
             args: vec!["--mode".into(), "contract".into()],
             env: BTreeMap::new(),
@@ -81,34 +89,30 @@ mod tests {
     }
 
     #[test]
-    fn a_version_is_the_manifest_it_describes() {
+    fn an_address_is_the_manifest_it_describes() {
         assert_eq!(
-            manifest("bin/p", "a").version(),
-            manifest("bin/p", "a").version()
+            manifest("bin/p", "a").address(),
+            manifest("bin/p", "a").address()
         );
     }
 
     #[test]
-    fn changing_the_bytes_changes_the_version() {
+    fn changing_the_bytes_changes_the_address() {
         assert_ne!(
-            manifest("bin/p", "a").version(),
-            manifest("bin/p", "b").version(),
-            "same entrypoint, different bytes — those are two derivation rules"
+            manifest("bin/p", "a").address(),
+            manifest("bin/p", "b").address()
         );
     }
 
+    /// Which is exactly why it cannot be the derivation: the same rule built for
+    /// two machines would otherwise read as two rules, and no journal could be
+    /// compared against another.
     #[test]
-    fn changing_the_args_changes_the_version() {
-        let mut other = manifest("bin/p", "a");
-        other.args = vec!["--mode".into(), "shape".into()];
-        assert_ne!(manifest("bin/p", "a").version(), other.version());
-    }
-
-    #[test]
-    fn the_platform_is_part_of_the_rule() {
+    fn the_platform_is_part_of_the_address() {
         let mut other = manifest("bin/p", "a");
         other.platform.arch = "x86_64".into();
-        assert_ne!(manifest("bin/p", "a").version(), other.version());
+        assert_ne!(manifest("bin/p", "a").address(), other.address());
+        assert_eq!(manifest("bin/p", "a").derivation, other.derivation);
     }
 
     #[test]

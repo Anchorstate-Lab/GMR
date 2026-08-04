@@ -65,10 +65,13 @@ pub enum Command {
     #[command(display_order = 12)]
     Read { key: Option<String> },
 
-    /// Publish a directory as a probe artifact and print its earned version.
+    /// Install a directory as a named probe artifact.
     #[command(display_order = 34)]
     Publish {
         from: String,
+        /// The name anchors will write down.
+        #[arg(long)]
+        name: String,
         #[arg(long, default_value = "probe")]
         entrypoint: String,
         #[arg(long = "arg")]

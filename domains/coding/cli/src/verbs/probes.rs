@@ -63,14 +63,15 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             "obs": { "schema": decl.obs.schema, "at": decl.obs.at, "facts": decl.obs.facts },
         }));
     }
+    let shell = gmr_transport::shell::Shell::new(root, store_dir(root));
     for (name, recipe) in recipes.iter() {
-        let installed = artifacts
-            .installed(&gmr::ProbeName::new(name))
-            .map_err(|e| CliError(e.0))?;
+        let probe = gmr::ProbeName::new(name);
         rows.push(serde_json::json!({
             "probe": name,
             "kind": "shell",
-            "version": installed.as_ref().map(|v| v.as_str().to_owned()),
+            // The rule, not where it lives: that is what the journal records.
+            "version": shell.resolve(&probe).map(|d| d.version.as_str().to_owned()),
+            "address": artifacts.installed(&probe).map_err(|e| CliError(e.0))?,
             "handles": recipe.handles,
             "obs": { "schema": recipe.obs.schema, "at": recipe.obs.at, "facts": recipe.obs.facts },
         }));
