@@ -1,6 +1,6 @@
 [package]
 name = "gmr-probe-coord"
-description = "电池：探针作者的共同约定 —— 报告形状统一，坐标各自定。"
+description = "探针的子进程契约。匹配与走查在 gmr-survey。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 
 [dependencies]
 gmr-probe = { path = "../../../crates/gmr-probe" }
+gmr-survey = { path = "../../survey" }
 serde_json = { workspace = true }
-sha2 = "0.10"
 
 [lints]
 workspace = true

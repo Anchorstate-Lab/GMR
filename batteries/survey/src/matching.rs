@@ -30,8 +30,7 @@ pub fn wanted(pos: &Value, items: &[&str]) -> Result<Want, String> {
         .collect();
     if want.is_empty() {
         return Err(format!(
-            "{} has no coordinate fields; this probe needs a position, so provide at least one of {}",
-            crate::env::POSITION_ENV,
+            "the position has no coordinate fields; this probe needs at least one of {}",
             items.join("/")
         ));
     }

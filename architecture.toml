@@ -105,6 +105,12 @@ path              = "batteries/provider"
 forbidden_default = ["io"]
 
 [[member]]
+name  = "gmr-survey"
+layer = "battery"
+kind  = "package"
+path  = "batteries/survey"
+
+[[member]]
 name  = "gmr-probe-coord"
 layer = "battery"
 kind  = "package"

@@ -131,31 +131,10 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
     Ok(())
 }
 
-fn walk(dir: &Path, base: &Path, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Ok(());
-    };
-    let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(|e| e.path());
-    for e in entries {
-        let p = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == "target" || name == "node_modules" {
-            continue;
-        }
-        if p.is_dir() {
-            walk(&p, base, out)?;
-        } else if let Ok(rel) = p.strip_prefix(base) {
-            collect(&p, &rel.to_string_lossy(), out)?;
-        }
-    }
-    Ok(())
-}
-
 fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut cands = Vec::new();
-    walk(root, root, &mut cands)?;
+    coord::visit(root, &mut |p, rel| collect(p, rel, &mut cands))?;
     if cands.is_empty() {
         return Err(format!(
             "{} contains no parseable nodes; the probe is likely pointed at the wrong directory",

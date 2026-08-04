@@ -37,35 +37,18 @@ fn scopes_of(rel: &str) -> Vec<String> {
     out
 }
 
-fn walk(dir: &Path, base: &Path, out: &mut BTreeMap<(String, String), Seen>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+fn collect(path: &Path, rel: &str, out: &mut BTreeMap<(String, String), Seen>) {
+    let Ok(src) = std::fs::read_to_string(path) else {
         return;
     };
-    let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(|e| e.path());
-    for e in entries {
-        let p = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == "target" || name == "node_modules" {
-            continue;
-        }
-        if p.is_dir() {
-            walk(&p, base, out);
-            continue;
-        }
-        let (Ok(rel), Ok(src)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) else {
-            continue;
-        };
-        let rel = rel.to_string_lossy().into_owned();
-        let scopes = scopes_of(&rel);
-        for (i, line) in src.lines().enumerate() {
-            for w in idents(line) {
-                for s in &scopes {
-                    let e = out.entry((w.to_owned(), s.clone())).or_default();
-                    e.count += 1;
-                    e.files.insert(rel.clone());
-                    e.first.get_or_insert_with(|| (rel.clone(), i + 1));
-                }
+    let scopes = scopes_of(rel);
+    for (i, line) in src.lines().enumerate() {
+        for w in idents(line) {
+            for s in &scopes {
+                let e = out.entry((w.to_owned(), s.clone())).or_default();
+                e.count += 1;
+                e.files.insert(rel.to_owned());
+                e.first.get_or_insert_with(|| (rel.to_owned(), i + 1));
             }
         }
     }
@@ -74,7 +57,10 @@ fn walk(dir: &Path, base: &Path, out: &mut BTreeMap<(String, String), Seen>) {
 fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut seen = BTreeMap::new();
-    walk(root, root, &mut seen);
+    coord::visit(root, &mut |p, rel| {
+        collect(p, rel, &mut seen);
+        Ok(())
+    })?;
     if seen.is_empty() {
         return Err(format!(
             "{} contains no readable files; the probe is likely pointed at the wrong directory",

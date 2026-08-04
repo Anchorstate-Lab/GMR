@@ -211,6 +211,14 @@ name = "gmr-probe-coord"
 version = "0.1.0"
 dependencies = [
  "gmr-probe",
+ "gmr-survey",
+ "serde_json",
+]
+
+[[package]]
+name = "gmr-survey"
+version = "0.1.0"
+dependencies = [
  "serde_json",
  "sha2",
 ]

@@ -489,10 +489,7 @@ mod tests {
     fn host_env_opens_the_closure() {
         let w = World::new();
         w.publish("echo '{}'", &[]);
-        assert_eq!(
-            w.resolve().unwrap().verifiability,
-            Verifiability::Closed
-        );
+        assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Closed);
 
         w.publish_with_env("echo '{}'", &[("HOME", "/somewhere")]);
         assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Open);

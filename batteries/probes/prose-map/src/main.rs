@@ -74,32 +74,17 @@ fn sections(rel: &str, src: &str, out: &mut Vec<coord::Candidate>) {
     flush(&mut open, &mut body);
 }
 
-fn walk(dir: &Path, base: &Path, out: &mut Vec<coord::Candidate>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(|e| e.path());
-    for e in entries {
-        let p = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == "target" || name == "node_modules" {
-            continue;
-        }
-        if p.is_dir() {
-            walk(&p, base, out);
-        } else if name.ends_with(".md")
-            && let (Ok(rel), Ok(src)) = (p.strip_prefix(base), std::fs::read_to_string(&p))
-        {
-            sections(&rel.to_string_lossy(), &src, out);
-        }
-    }
-}
-
 fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut cands = Vec::new();
-    walk(root, root, &mut cands);
+    coord::visit(root, &mut |p, rel| {
+        if rel.ends_with(".md")
+            && let Ok(src) = std::fs::read_to_string(p)
+        {
+            sections(rel, &src, &mut cands);
+        }
+        Ok(())
+    })?;
     if cands.is_empty() {
         return Err(format!(
             "{} contains no Markdown sections; the probe is likely pointed at the wrong directory",

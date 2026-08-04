@@ -1,13 +1,8 @@
 use std::process::ExitCode;
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
-
-pub fn hash(s: &str) -> String {
-    format!("{:x}", Sha256::digest(s.as_bytes()))
-}
 
 pub fn position() -> Result<Value, String> {
     let raw = std::env::var(POSITION_ENV).unwrap_or_default();

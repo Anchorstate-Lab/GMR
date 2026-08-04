@@ -12,42 +12,32 @@ fn extractor() -> String {
     coord::hash(SELF_SRC)
 }
 
-fn walk(dir: &Path, base: &Path, out: &mut Vec<coord::Candidate>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
+    let Ok(bytes) = std::fs::read(path) else {
         return;
     };
-    let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(|e| e.path());
-    for e in entries {
-        let p = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == "target" || name == "node_modules" {
-            continue;
-        }
-        if p.is_dir() {
-            walk(&p, base, out);
-            continue;
-        }
-        let (Ok(rel), Ok(bytes)) = (p.strip_prefix(base), std::fs::read(&p)) else {
-            continue;
-        };
-        let fp = coord::hash(&String::from_utf8_lossy(&bytes));
-        let c: BTreeMap<String, String> = [
-            ("path", rel.to_string_lossy().into_owned()),
-            ("name", name.clone()),
-            ("fingerprint", fp),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_owned(), v))
-        .collect();
-        out.push(coord::Candidate::new(c, json!({ "bytes": bytes.len() })));
-    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let c: BTreeMap<String, String> = [
+        ("path", rel.to_owned()),
+        ("name", name),
+        ("fingerprint", coord::hash(&String::from_utf8_lossy(&bytes))),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect();
+    out.push(coord::Candidate::new(c, json!({ "bytes": bytes.len() })));
 }
 
 fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut cands = Vec::new();
-    walk(root, root, &mut cands);
+    coord::visit(root, &mut |p, rel| {
+        collect(p, rel, &mut cands);
+        Ok(())
+    })?;
     if cands.is_empty() {
         return Err(format!(
             "{} contains no files; the probe is likely pointed at the wrong directory",

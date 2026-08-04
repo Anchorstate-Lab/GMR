@@ -1,0 +1,21 @@
+# 电池：在一个文件树里找候选，按模糊坐标报告哪几项对上。
+#
+# 领域无关：它不认识任何一门语言。语言知识住在域里。
+
+[package]
+name = "gmr-survey"
+description = "电池：模糊坐标的匹配与报告，以及走查文件树的那一跳。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
