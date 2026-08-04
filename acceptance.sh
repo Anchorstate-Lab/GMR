@@ -13,6 +13,7 @@ root=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 bundle=$work/bundle
+prefix=$work/prefix
 repo=$work/repo
 
 fail() {
@@ -28,14 +29,21 @@ step() { echo; echo "── $1"; }
 step "build the bundle (release side; needs cargo)"
 cargo build --quiet --release -p coding-anchor
 "$root/target/release/gmr" --repo "$root" probes build >/dev/null
-
-mkdir -p "$bundle/bin" "$bundle/probes"
+# 走发布用的同一条打包路径，不要在这里另抄一份。
+"$root/target/release/gmr" --repo "$root" probes bundle --out "$bundle" >/dev/null
+mkdir -p "$bundle/bin"
 cp "$root/target/release/gmr" "$bundle/bin/gmr"
-cp -R "$root/.anchor/probes/." "$bundle/probes/"
-cp "$root/.anchor/probes.toml" "$bundle/probes/probes.toml"
 [ -f "$bundle/probes/recipes.json" ] || fail "bundle 里没有 recipes.json —— 用户机器算不出配方版本"
 
-gmr="$bundle/bin/gmr"
+# 按 dist/install.sh 的布局装：bin/ 里是符号链接，真身和 probes/ 在 libexec 下。
+# 这是每个包管理器都会做的事，也是探针差点找不到的地方。
+step "install the way dist/install.sh does (symlinked into bin/)"
+mkdir -p "$prefix/bin" "$prefix/libexec/gmr"
+cp -R "$bundle/probes" "$prefix/libexec/gmr/probes"
+cp "$bundle/bin/gmr" "$prefix/libexec/gmr/gmr"
+ln -sf "$prefix/libexec/gmr/gmr" "$prefix/bin/gmr"
+
+gmr="$prefix/bin/gmr"
 
 # ── 用户侧：一个普通 TS 仓库。没有 Rust 源码，没有 Cargo.toml ──────────────
 step "a stranger's TypeScript repo"

@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Probes are built here, once per platform, and travel inside the tarball.
+  # That is the whole point: a user machine has the artifacts but not the
+  # sources, and so could never earn the recipe hashes itself.
+  tarball:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest,  target: aarch64-apple-darwin }
+          - { os: macos-13,      target: x86_64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release -p coding-anchor
+
+      - name: Build and bundle the probes
+        run: |
+          ./target/release/gmr probes build
+          ./target/release/gmr probes bundle --out dist/out
+          mkdir -p dist/out/bin
+          cp target/release/gmr dist/out/bin/gmr
+
+      - name: Prove the bundle works before shipping it
+        run: sh acceptance.sh
+
+      - name: Pack
+        run: tar -czf gmr-${{ matrix.target }}.tar.gz -C dist/out bin probes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gmr-${{ matrix.target }}
+          path: gmr-${{ matrix.target }}.tar.gz
+
+  publish:
+    needs: tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: assets, merge-multiple: true }
+
+      - name: Attach the tarballs to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*.tar.gz
+          fail_on_unmatched_files: true

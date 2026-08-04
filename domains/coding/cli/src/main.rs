@@ -73,6 +73,9 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         return match cmd {
             cli::ProbesCmd::Build => verbs::probes::build(&root, cli.json),
             cli::ProbesCmd::List { verbose } => verbs::probes::list(&root, verbose, cli.json),
+            cli::ProbesCmd::Bundle { out } => {
+                verbs::probes::bundle(&root, std::path::Path::new(&out), cli.json)
+            }
         };
     }
 

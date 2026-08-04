@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "gmr",
+    version,
     about = "Attach judgment to recomputable observations",
     long_about = "You write the memories; anchors are mechanical observations.\n\
                   Probes say what to inspect, transition tables say what counts as change,\n\
@@ -190,6 +191,11 @@ pub enum ProbesCmd {
     List {
         #[arg(short, long)]
         verbose: bool,
+    },
+    /// Assemble what a release ships: recipes, pinned versions, artifacts.
+    Bundle {
+        #[arg(long)]
+        out: String,
     },
 }
 

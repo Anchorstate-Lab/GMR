@@ -1,0 +1,14 @@
+{
+  "name": "@gmr/cli",
+  "version": "0.1.0",
+  "description": "Attach judgment to recomputable observations",
+  "license": "MIT",
+  "bin": { "gmr": "bin/gmr.js" },
+  "files": ["bin/gmr.js"],
+  "optionalDependencies": {
+    "@gmr/cli-darwin-arm64": "0.1.0",
+    "@gmr/cli-darwin-x64": "0.1.0",
+    "@gmr/cli-linux-arm64": "0.1.0",
+    "@gmr/cli-linux-x64": "0.1.0"
+  }
+}
