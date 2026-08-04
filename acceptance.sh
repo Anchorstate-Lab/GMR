@@ -27,15 +27,15 @@ step() { echo; echo "── $1"; }
 # ── 发布侧：构建二进制与探针，打成 bundle ────────────────────────────────
 step "build the bundle (release side; needs cargo)"
 cargo build --quiet --release -p coding-anchor
-"$root/target/release/anchor" --repo "$root" probes build >/dev/null
+"$root/target/release/gmr" --repo "$root" probes build >/dev/null
 
 mkdir -p "$bundle/bin" "$bundle/probes"
-cp "$root/target/release/anchor" "$bundle/bin/anchor"
+cp "$root/target/release/gmr" "$bundle/bin/gmr"
 cp -R "$root/.anchor/probes/." "$bundle/probes/"
 cp "$root/.anchor/probes.toml" "$bundle/probes/probes.toml"
 [ -f "$bundle/probes/recipes.json" ] || fail "bundle 里没有 recipes.json —— 用户机器算不出配方版本"
 
-gmr="$bundle/bin/anchor"
+gmr="$bundle/bin/gmr"
 
 # ── 用户侧：一个普通 TS 仓库。没有 Rust 源码，没有 Cargo.toml ──────────────
 step "a stranger's TypeScript repo"

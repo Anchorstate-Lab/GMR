@@ -98,113 +98,116 @@ set?** Everything else is computed, recorded, and notified — never acted on.
 
 The substrate ships no binary. A **domain** is what assembles it: probes, anchor
 declarations, notes, and a CLI that picks a transport, a content provider, and a
-storage backend. This repo carries one such domain — `domains/coding`, which
-anchors this repository's own architecture — and its binary is called `anchor`.
+storage backend. This repo carries one such domain — `domains/coding` — and its
+binary is called `gmr`.
+
+Every command takes `--repo <path>` (default `.`) and `--json`. Declarations live
+in `<repo>/.anchor/`; notes stay outside it, where people and agents will see
+them. State lives in `<repo>/.anchor/state/`.
+
+### The path, in five steps
 
 ```sh
-cargo build --release            # binary: target/release/anchor
-sh gate.sh                       # fmt · clippy · tests · substrate boundary checks
+gmr init                    # create .anchor/, install probes, report what is readable
+                            # write a note naming the coordinate it is about
+gmr sync                    # open what the notes declare, and bind them
+gmr observe                 # has the world moved?  exit 1 if it has
+gmr pass --json             # what moved, and the notes bound to it
 ```
 
-Every command takes `--repo <path>` (default `.`) and `--json`. State lives in
-`<repo>/.anchor/memory.db`.
+`init` opens **no anchors**. What is worth anchoring is a judgment, and the tool
+does not have it.
 
-### 1. Declare anchors
+### 1. Write a note
 
-Anchors are data, in a TOML file (`.anchor/anchors.toml` by default):
+The note is the entry point. One line of frontmatter says what it is about:
+
+```markdown
+---
+about: src/auth.ts#createSession
+---
+
+# Sessions are only minted inside the service boundary
+```
+
+Everything else is derived: the probe from the file extension, the position from
+the `#` split, the transition table from the `roster` preset, and the anchor's key
+from the coordinate itself — so nobody has to invent a permanent identity on their
+first note.
+
+`sync` opens what the notes declare and binds them. It writes only when the
+relation actually changed. When a note drops a key and gains an unseen one it
+stops and reports, because that is either a rename or a typo and moving a binding
+is a judgment call.
+
+### 2. Declare an anchor directly (the explicit form)
+
+For anchors no single note owns, or coordinates the minimal form cannot express,
+`.anchor/anchors.toml`:
 
 ```toml
 [[anchor]]
 key   = "surface::gmr-core"
-probe = "batteries/probes/ast-map/target/release/ast-map crates/gmr-core"
+probe = "ast-map"                            # a recipe name, not a machine-local hash
+params = { root = "crates/gmr-core" }
 position = { kind = "function", vis = "pub" }
-rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
-]
+shape = "roster"                             # or spell out `rules = [...]`
 terminal = []
 ```
 
 | field | meaning |
 |---|---|
 | `key` | the anchor's name. Yours to choose; the substrate does not parse it |
-| `probe` | what to run. Hashed — the hash *is* the probe's version |
+| `probe` | a recipe declared in `.anchor/probes.toml`. Its version is the hash of that recipe's sources |
 | `position` | where the probe looks. Becomes `state.position`; the probe never returns it |
-| `rules` | the transition table, `guard => new state`, first match wins |
+| `shape` | a named transition preset, expanded into literal rules at sync time |
+| `rules` | the transition table written out, `guard => new state`, first match wins |
 | `terminal` | statuses after which the substrate refuses all further transitions |
 
-```sh
-anchor sync                      # open every declared anchor that doesn't exist yet
-anchor sync --dry-run
-```
-
 `sync` **only opens new anchors — it never edits criteria.** If a declaration no
-longer matches the anchor's live criteria, it says so and stops. Changing a probe
-or a rule table is a revision with a sealed reason (below), not a refactor.
-
-You can also open one directly:
-
-```sh
-anchor open surface::gmr-core \
-  --probe 'my-probe crates/gmr-core' \
-  --rule 'changed("shape") => { shape: obs.shape, status: "drifted" }' \
-  --terminal settled
-```
-
-### 2. Observe
-
-```sh
-anchor observe                   # observe every anchor
-anchor observe surface::gmr-core
-anchor pass                      # observe only what the queue says is due
-```
-
-Each anchor reports `settled` · `moved` · `still` · `unseen` · `closed`.
-Exit code is `1` when something moved — usable straight from CI.
+longer matches the anchor's live criteria, it says so and stops.
 
 ### 3. Read what moved
 
 ```sh
-anchor read                      # every anchor's current state
-anchor edges --since <seq>       # transitions / terminals / stalls since a journal point
-anchor edges --status drifted
-anchor health                    # per-anchor liveness
-anchor doctor                    # anchors that never got seen, or carry no notes
+gmr read                    # every anchor's current state
+gmr edges --since <seq>     # transitions / terminals / stalls since a journal point
+gmr health                  # per-anchor liveness
+gmr doctor                  # anchors never seen, or carrying no note
 ```
 
 `--since` is how a consumer asks "what changed since I last looked" cheaply. The
 substrate invents no severity, priority, or alerting on top of it.
 
-### 4. Bind notes
-
-A note is a Markdown file in this repo; the binding says *what it is about*:
-
-```sh
-anchor bind memories/gmr-core.md --anchors surface::gmr-core,modules::gmr-core
-anchor bind memories/gmr-core.md --detach
-```
-
-GMR stores the reference and the version it was bound at — never the content.
-The content stays with the provider (git, here) and is fetched back by version.
-
-### 5. Revise — every one of these needs a sealed reason
+### 4. Revise — every one of these needs a sealed reason
 
 When an anchor reports a transition, you either change the code or change the
 criteria. Changing the criteria is a judgment call, and it is recorded as one:
 
 ```sh
-anchor reprobe      <key> --probe '<new probe>'   --why '...'   # look somewhere else
-anchor retransition <key> --rule '<guard> => ...' --why '...'   # what counts as a change
-anchor reterminal   <key> --terminal a,b          --why '...'   # what is irreversible
-anchor restate      <key> --state '{...}'         --why '...'   # move the state directly
-anchor close        <key> --why '...'             # retire the anchor
+gmr reprobe      <key> --artifact <version>       --why '...'   # look somewhere else
+gmr retransition <key> --rule '<guard> => ...'    --why '...'   # what counts as a change
+gmr reterminal   <key> --terminal a,b             --why '...'   # what is irreversible
+gmr restate      <key> --state '{...}'            --why '...'   # move the state directly
+gmr close        <key> --why '...'                              # retire the anchor
 ```
 
 The journal is append-only; the substrate guarantees the reason is
 **tamper-proof**, not that it is **sound**. A rubber-stamp revision looks exactly
 like a real judgment in the data.
+
+### Building it here
+
+```sh
+cargo build --release        # binary: target/release/gmr
+gmr probes build             # build and install the probe recipes (developers only)
+sh gate.sh                   # fmt · clippy · tests · substrate boundary checks
+sh acceptance.sh             # the whole chain, from a bundle, in a fixture TS repo
+```
+
+Users never run `probes build`: probes are built at release time and ship
+prebuilt, with their recipe versions pinned in `recipes.json`. A user machine has
+the artifacts but not the sources, and so cannot earn those hashes itself.
 
 ---
 
@@ -299,14 +302,14 @@ stops being domain-agnostic, no matter how domain-free its vocabulary reads.
 
 ## Documentation
 
-- [`GMR.md`](GMR.md) — architecture SSOT
+- [`docs/GMR.md`](docs/GMR.md) — architecture SSOT
 - [`CLAUDE.md`](CLAUDE.md) — decisions, red cards, dead concepts
-- [`flow.svg`](flow.svg) — one observation end to end, and which layer owns each step
-- [`modules.svg`](modules.svg) — module map: responsibilities and dependency direction
+- [`docs/flow.svg`](docs/flow.svg) — one observation end to end, and which layer owns each step
+- [`docs/modules.svg`](docs/modules.svg) — module map: responsibilities and dependency direction
 - [`memories/`](memories/) — this repo's own notes, bound to its own anchors
 
-Note: `GMR.md`, `CLAUDE.md`, the CLI's output, and the inline comments are in
-Chinese.
+Note: `docs/GMR.md`, `CLAUDE.md` and the declaration files are in Chinese; the
+code and its comments are in English.
 
 ## License
 

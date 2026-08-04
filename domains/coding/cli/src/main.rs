@@ -46,7 +46,7 @@ async fn main() -> ExitCode {
     match run(cli).await {
         Ok(code) => ExitCode::from(code as u8),
         Err(e) => {
-            eprintln!("anchor: {e}");
+            eprintln!("gmr: {e}");
             ExitCode::from(2)
         }
     }
