@@ -1,5 +1,6 @@
 mod cli;
 mod error;
+mod memories;
 mod probes;
 mod render;
 mod rules;

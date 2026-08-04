@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use gmr::{
-    Anchor, AnchorKey, OpenRequest, ProbeRef, Retain, RunSettings, Runtime, State, Transitions,
+    Anchor, AnchorKey, OpenRequest, ProbeRef, Ref, Retain, RunSettings, Runtime, State, Transitions,
 };
 use serde::Deserialize;
 
@@ -129,14 +129,33 @@ pub async fn run(
         recipes: Recipes::load(root)?,
     };
 
+    let notes = crate::memories::scan(root, &ctx.recipes)?;
+
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
     let mut drifted_criteria = Vec::new();
     let mut resettled = Vec::new();
     let mut warnings = Vec::new();
 
+    // A note declaring an anchor is the same declaration as one in the toml;
+    // the toml wins a duplicate key because it is the more explicit statement.
+    let from_notes: Vec<&AnchorDecl> = notes
+        .iter()
+        .flat_map(|n| &n.wants)
+        .filter_map(|w| match w {
+            crate::memories::Want::Declared(d) => Some(d.as_ref()),
+            crate::memories::Want::Existing(_) => None,
+        })
+        .filter(|d| !declared.anchor.iter().any(|t| t.key == d.key))
+        .collect();
+
     let mut scheduled = 0;
-    for decl in &declared.anchor {
+    let mut seen: Vec<String> = Vec::new();
+    for decl in declared.anchor.iter().chain(from_notes.into_iter()) {
+        if seen.contains(&decl.key) {
+            continue;
+        }
+        seen.push(decl.key.clone());
         let key = AnchorKey::new(decl.key.clone());
         if !dry_run && rt.ensure_scheduled(&key).await? {
             scheduled += 1;
@@ -177,6 +196,8 @@ pub async fn run(
         opened.push(decl.key.clone());
     }
 
+    let (bound, renamed) = align_bindings(rt, &notes, dry_run).await?;
+
     if json {
         println!(
             "{}",
@@ -184,6 +205,7 @@ pub async fn run(
                 "opened": opened,
                 "criteria_drifted": drifted_criteria,
                 "resettled": resettled,
+                "bound": bound, "renamed": renamed,
                 "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
             })
         );
@@ -215,6 +237,31 @@ pub async fn run(
              Decide whether to accept it, then use revise so it leaves a sealed record."
         );
     }
+    if !bound.is_empty() {
+        println!(
+            "\n{} notes {} their anchors:",
+            bound.len(),
+            if dry_run {
+                "would be bound to"
+            } else {
+                "bound to"
+            }
+        );
+        for b in &bound {
+            println!("  + {b}");
+        }
+    }
+    if !renamed.is_empty() {
+        println!(
+            "\n{} notes dropped a key and gained an unseen one. That is either a\n\
+             rename or a mistake, and sync will not guess which:",
+            renamed.len()
+        );
+        for r in &renamed {
+            println!("  ? {r}");
+        }
+        println!("\nClose the old anchor with a reason, or put the old key back.");
+    }
     if !resettled.is_empty() {
         println!(
             "\n{} anchors {} a new retain/cadence from the declaration:",
@@ -226,6 +273,74 @@ pub async fn run(
         }
     }
     Ok(0)
+}
+
+/// Binding is append-only, so this writes only when the relation actually
+/// changed; otherwise every sync would add a row saying the same thing.
+async fn align_bindings(
+    rt: &Runtime,
+    notes: &[crate::memories::Note],
+    dry_run: bool,
+) -> Result<(Vec<String>, Vec<String>), CliError> {
+    let mut bound = Vec::new();
+    let mut renamed = Vec::new();
+
+    for note in notes {
+        let reference = Ref::new("git", note.path.clone());
+        let mut want: Vec<AnchorKey> = note
+            .wants
+            .iter()
+            .map(|w| AnchorKey::new(w.key().to_owned()))
+            .collect();
+        want.sort();
+        want.dedup();
+
+        let current = rt.memory().binding_of(&reference).await?;
+        if let Some(record) = &current {
+            let mut had = record.binding.anchors.clone();
+            had.sort();
+            let dropped: Vec<_> = had.iter().filter(|k| !want.contains(k)).collect();
+            let added: Vec<_> = want.iter().filter(|k| !had.contains(k)).collect();
+            if !dropped.is_empty() && !added.is_empty() {
+                renamed.push(format!(
+                    "{}: dropped {}, gained {}",
+                    note.path,
+                    dropped
+                        .iter()
+                        .map(|k| k.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    added
+                        .iter()
+                        .map(|k| k.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                continue;
+            }
+        }
+
+        let version = rt
+            .memory()
+            .current_version(&reference)
+            .await?
+            .ok_or_else(|| {
+                CliError(format!("no content provider could version `{}`", note.path))
+            })?;
+        let settled = current.is_some_and(|r| {
+            let mut had = r.binding.anchors.clone();
+            had.sort();
+            had == want && r.bound_version == version
+        });
+        if settled {
+            continue;
+        }
+        if !dry_run {
+            rt.bind(reference, want, version).await?;
+        }
+        bound.push(note.path.clone());
+    }
+    Ok((bound, renamed))
 }
 
 fn differs(anchor: &Anchor, decl: &AnchorDecl, ctx: &Context) -> Result<bool, CliError> {

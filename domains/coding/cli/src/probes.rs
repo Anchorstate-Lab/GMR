@@ -39,6 +39,10 @@ pub struct Recipe {
     pub env_from_host: Vec<String>,
     pub sources: Vec<String>,
     pub obs: Obs,
+    /// File extensions this probe can read. Routes `about:` to a probe without
+    /// the CLI knowing any language names. Outside the version, like `obs`.
+    #[serde(default)]
+    pub handles: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +95,13 @@ impl Recipes {
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Recipe)> {
         self.0.iter().map(|(k, v)| (k.as_str(), v))
+    }
+
+    pub fn for_extension(&self, ext: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(_, r)| r.handles.iter().any(|h| h == ext))
+            .map(|(name, _)| name.as_str())
     }
 }
 

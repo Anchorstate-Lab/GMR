@@ -25,6 +25,7 @@ toml = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tempfile.workspace = true
+serde_yaml_ng = "0.10.0"
 
 [lints]
 workspace = true
