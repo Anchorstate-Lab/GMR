@@ -4,6 +4,7 @@ pub mod cobound;
 pub mod doctor;
 pub mod edges;
 pub mod health;
+pub mod init;
 pub mod link;
 pub mod observe;
 pub mod open;

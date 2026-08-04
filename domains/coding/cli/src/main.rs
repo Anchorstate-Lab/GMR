@@ -21,7 +21,23 @@ use error::CliError;
 
 /// Probe artifact store: content-addressed and colocated with the journal.
 pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
-    root.join(".anchor").join("probes")
+    probes::store_dir(root)
+}
+
+/// The journal moved into state/. Never move it silently: starting on an empty
+/// database would erase history that nothing can rebuild.
+fn stale_journal_guard(root: &std::path::Path, state: &std::path::Path) -> Result<(), CliError> {
+    let old = probes::anchor_dir(root).join("memory.db");
+    if !old.is_file() || state.join("memory.db").is_file() {
+        return Ok(());
+    }
+    Err(CliError(format!(
+        "the journal now lives in {}, but a database is still at {}.\n\
+         Move it yourself, siblings included — the -wal file holds entries that are not in the .db yet:\n\
+         \n    mkdir -p {0} && mv {1}* {0}/\n",
+        state.display(),
+        old.display()
+    )))
 }
 
 #[tokio::main]
@@ -60,9 +76,15 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         };
     }
 
-    let dir = root.join(".anchor");
-    std::fs::create_dir_all(&dir).map_err(|e| CliError(format!("cannot create .anchor: {e}")))?;
-    let store = gmr::sqlite::open(dir.join("memory.db")).await?;
+    if let Command::Init = cli.command {
+        return verbs::init::run(&root, cli.json);
+    }
+
+    let state = probes::state_dir(&root);
+    stale_journal_guard(&root, &state)?;
+    std::fs::create_dir_all(&state)
+        .map_err(|e| CliError(format!("cannot create {state:?}: {e}")))?;
+    let store = gmr::sqlite::open(state.join("memory.db")).await?;
 
     let rt = Runtime::builder()
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
@@ -80,6 +102,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
+        Command::Init => unreachable!("init was handled above"),
         Command::Open(args) => verbs::open::run(&rt, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key } => verbs::read::run(&rt, key, json).await,

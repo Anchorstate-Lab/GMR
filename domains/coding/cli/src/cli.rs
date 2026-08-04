@@ -21,6 +21,9 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Create .anchor/, register bundled probes, and report what is readable.
+    Init,
+
     /// Build every declared probe recipe and install it for this machine.
     #[command(subcommand)]
     Probes(ProbesCmd),

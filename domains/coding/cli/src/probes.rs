@@ -273,6 +273,10 @@ pub fn store_dir(root: &Path) -> PathBuf {
     anchor_dir(root).join("probes")
 }
 
+pub fn state_dir(root: &Path) -> PathBuf {
+    anchor_dir(root).join("state")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
