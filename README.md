@@ -78,7 +78,7 @@ readable, diffable, revisable rule by rule.
 | | provides | form |
 |---|---|---|
 | **substrate** | state slot · transition bookkeeping · journal · sealing · terminal enforcement | code |
-| **probe** | observation → { position, state vector } | a content-addressed executable; version = hash |
+| **probe** | observation → { position, state vector } | any implementation a transport can reach; version = the hash of its semantic closure |
 | **anchor** | which directions it cares about · transition table · terminal set | data — readable, diffable |
 
 **Representation belongs to the probe; attention belongs to the anchor.** A probe
@@ -267,7 +267,7 @@ path may exist that produces neither an entry nor an edge.
 
 ## Design constraints
 
-- **Versions must be earned, not declared.** A probe's version is its content hash — a hash cannot lie, a hand-written version string can
+- **Versions must be earned, not declared.** A probe's version is the hash of its semantic closure — every input that can change the output, and nothing else. A hash cannot lie, a hand-written version string can. Hashing a binary's bytes is the other error: platform and compiler move it while the behaviour stands still, and that version can never be compared across two machines
 - **Append-only is enforced by storage, not by discipline.** The journal refuses updates and deletes
 - **The evaluation path touches no IO, enforced at the crate boundary.** Not by splitting traits — by the dependency list, which is mechanically checkable
 - **Irreversibility is enforced by the substrate.** An invariant that domains uphold voluntarily inside their own rules is not an invariant

@@ -649,7 +649,7 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
             declaration: gmr_core::ContentHash::new("d".repeat(64)),
             derivation: gmr_core::Derivation {
                 version: gmr_core::ProbeVersion::new("a".repeat(64)),
-                verifiability: gmr_core::Verifiability::ContentAddressed,
+                verifiability: gmr_core::Verifiability::Closed,
             },
             evaluator: "e".to_owned(),
         },

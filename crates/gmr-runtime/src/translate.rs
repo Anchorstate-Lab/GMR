@@ -159,7 +159,7 @@ mod tests {
                 declaration: gmr_core::ContentHash::new("d".repeat(64)),
                 derivation: gmr_core::Derivation {
                     version: ProbeVersion::new("a".repeat(64)),
-                    verifiability: gmr_core::Verifiability::ContentAddressed,
+                    verifiability: gmr_core::Verifiability::Closed,
                 },
                 evaluator: "eval-1".to_owned(),
             },

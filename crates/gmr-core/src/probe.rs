@@ -50,17 +50,17 @@ string_newtype! {
     FactAddress, crate::addr::check_sha256_hex
 }
 
-/// Whether the derivation rule's identity can be proven. Being unable to prove
-/// it is not a failure — it is the sentence that has to be said out loud.
+/// Whether [`Derivation::version`] closes over everything that can change the
+/// output. Being open is not a failure — it is the sentence that has to be said
+/// out loud.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
-    /// The transport verified the declaration's content closure byte for byte.
-    ContentAddressed,
-    /// Only a declaration to go on; what actually ran cannot be proven.
-    Declared,
-    /// Not even the declaration pins the result down.
-    Unverifiable,
+    /// Complete. What [`crate::ProbeName`] resolved to is what ran.
+    Closed,
+    /// Something outside the hash can change the answer — an interpreter, the
+    /// host environment, an implementation living somewhere else.
+    Open,
 }
 
 /// What actually derived this observation, handed over by the transport.

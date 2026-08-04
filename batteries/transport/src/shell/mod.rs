@@ -64,9 +64,8 @@ impl Transport for Shell {
         Some(Derivation {
             version: resolved.manifest.version(),
             verifiability: match resolved.manifest.env.is_empty() {
-                true => Verifiability::ContentAddressed,
-                // Host env in the closure: a rerun is not guaranteed to agree.
-                false => Verifiability::Declared,
+                true => Verifiability::Closed,
+                false => Verifiability::Open,
             },
         })
     }
@@ -268,7 +267,7 @@ mod tests {
         let v = w.publish("echo '{}'", &[]);
         let d = w.resolve().expect("a published artifact resolves");
         assert_eq!(d.version, v);
-        assert_eq!(d.verifiability, Verifiability::ContentAddressed);
+        assert_eq!(d.verifiability, Verifiability::Closed);
     }
 
     #[tokio::test]
@@ -484,17 +483,18 @@ mod tests {
         assert!(e.0.contains("v99"), "{}", e.0);
     }
 
-    /// With host env in the closure it cannot claim to be content-addressed.
+    /// Host env reaches the probe without entering the hash, so the closure is
+    /// open however exactly the artifact is pinned.
     #[test]
-    fn a_host_env_in_the_closure_downgrades_verifiability() {
+    fn host_env_opens_the_closure() {
         let w = World::new();
         w.publish("echo '{}'", &[]);
         assert_eq!(
             w.resolve().unwrap().verifiability,
-            Verifiability::ContentAddressed
+            Verifiability::Closed
         );
 
         w.publish_with_env("echo '{}'", &[("HOME", "/somewhere")]);
-        assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Declared);
+        assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Open);
     }
 }

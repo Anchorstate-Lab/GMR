@@ -331,7 +331,7 @@ mod tests {
             declaration: ContentHash::new("d".repeat(64)),
             derivation: Derivation {
                 version: ProbeVersion::new("a".repeat(64)),
-                verifiability: Verifiability::ContentAddressed,
+                verifiability: Verifiability::Closed,
             },
             evaluator: "eval-1".to_owned(),
         }
