@@ -63,7 +63,8 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
     Ok(if moved > 0 { 1 } else { 0 })
 }
 
-/// 动了却没有绑定的锚：要么该绑记忆，要么该关掉。
+/// An anchor that moved with nothing bound told no one. Either a note belongs
+/// on it, or it should be closed.
 pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {
     if unclaimed.is_empty() {
         return;

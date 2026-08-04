@@ -8,6 +8,7 @@ pub mod link;
 pub mod observe;
 pub mod open;
 pub mod pass;
+pub mod probes;
 pub mod publish;
 pub mod read;
 pub mod reaffirm;

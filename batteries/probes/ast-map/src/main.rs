@@ -53,7 +53,7 @@ fn visibility(
                 if n.kind() == *kind {
                     return (*label).to_owned();
                 }
-                // 只穿过把声明包起来的那几层，不要一路爬到根。
+                // Cross only the wrappers around this declaration, not up to the root.
                 if n.child_by_field_name("body").is_some() {
                     break;
                 }

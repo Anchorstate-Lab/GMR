@@ -1,5 +1,5 @@
-/// 可见性在各语言里住的地方不同：Rust 是子节点，TS 是把声明包起来的祖先，
-/// Go 靠名字首字母，Python 没有这个概念。
+/// Visibility lives somewhere different in each language: a child node in Rust,
+/// an enclosing ancestor in TS, the leading letter in Go, nowhere in Python.
 pub enum Vis {
     Child(&'static str),
     Ancestor {
@@ -16,7 +16,7 @@ pub struct Table {
     pub kinds: &'static [(&'static str, &'static str)],
     pub shape_fields: &'static [&'static str],
     pub vis: Vis,
-    /// 匿名节点（箭头函数等）从这些父节点借名字。
+    /// Anonymous nodes (arrow functions) borrow a name from these parents.
     pub name_from_parent: &'static [&'static str],
 }
 
@@ -82,7 +82,7 @@ pub const TYPESCRIPT: Table = Table {
     name_from_parent: TS_NAME_FROM_PARENT,
 };
 
-/// TSX 语法同时吃 JSX 和普通 JS，所以 .js/.jsx 都走这张表。
+/// The TSX grammar parses plain JS as well, so .js/.jsx ride this table.
 pub const TSX: Table = Table {
     ext: &["tsx", "jsx", "js", "mjs", "cjs"],
     language: || tree_sitter_typescript::LANGUAGE_TSX.into(),
@@ -92,7 +92,7 @@ pub const TSX: Table = Table {
     name_from_parent: TS_NAME_FROM_PARENT,
 };
 
-/// Python 没有可见性语法。下划线是约定不是语法，所以不映射成 vis。
+/// Python has no visibility syntax. Underscores are convention, not grammar.
 pub const PYTHON: Table = Table {
     ext: &["py", "pyi"],
     language: || tree_sitter_python::LANGUAGE.into(),
@@ -109,7 +109,7 @@ pub const PYTHON: Table = Table {
     name_from_parent: &[],
 };
 
-/// Go 的导出性写在名字首字母上，不是修饰符节点。
+/// Go writes exportedness in the leading letter, not a modifier node.
 pub const GO: Table = Table {
     ext: &["go"],
     language: || tree_sitter_go::LANGUAGE.into(),

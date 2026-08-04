@@ -21,6 +21,10 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Build every declared probe recipe and install it for this machine.
+    #[command(subcommand)]
+    Probes(ProbesCmd),
+
     Sync {
         #[arg(default_value = "anchors.toml")]
         file: String,
@@ -137,6 +141,17 @@ pub enum Command {
     Pass,
 
     Doctor,
+}
+
+#[derive(Subcommand)]
+pub enum ProbesCmd {
+    /// Build, publish and install every recipe. Users get these prebuilt.
+    Build,
+    /// What each probe is, and the obs vocabulary it emits.
+    List {
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 #[derive(clap::Args)]

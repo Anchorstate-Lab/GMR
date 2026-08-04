@@ -1,5 +1,6 @@
 mod cli;
 mod error;
+mod probes;
 mod render;
 mod rules;
 mod shapes;
@@ -50,6 +51,14 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         return verbs::publish::run(&root, from, entrypoint, args, env, cli.json);
     }
 
+    // Building probes does not touch the journal either.
+    if let Command::Probes(cmd) = cli.command {
+        return match cmd {
+            cli::ProbesCmd::Build => verbs::probes::build(&root, cli.json),
+            cli::ProbesCmd::List { verbose } => verbs::probes::list(&root, verbose, cli.json),
+        };
+    }
+
     let dir = root.join(".anchor");
     std::fs::create_dir_all(&dir).map_err(|e| CliError(format!("cannot create .anchor: {e}")))?;
     let store = gmr::sqlite::open(dir.join("memory.db")).await?;
@@ -69,6 +78,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     match cli.command {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
+        Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Open(args) => verbs::open::run(&rt, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key } => verbs::read::run(&rt, key, json).await,

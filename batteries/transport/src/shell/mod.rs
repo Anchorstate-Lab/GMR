@@ -160,13 +160,13 @@ impl Transport for Shell {
 
         Ok(Sighted {
             outcome,
-            // 声明可以是配方，跨平台通用；派生只能是实际跑的那个制品。
-            // 这两个合并过，GMR.md §5 说三者不许合并。
+            // The declaration may be a portable recipe; the derivation can only
+            // be the artifact that actually ran. GMR.md §5 forbids merging them.
             derivation: Derivation {
                 version: resolved.manifest.version(),
                 verifiability: match resolved.manifest.env.is_empty() {
                     true => Verifiability::ContentAddressed,
-                    // 闭包里带了宿主 env，重跑不保证得到同一答案。
+                    // Host env in the closure: a rerun is not guaranteed to agree.
                     false => Verifiability::Declared,
                 },
             },
@@ -429,7 +429,7 @@ mod tests {
         assert_eq!(a.derivation, b.derivation);
     }
 
-    /// 一个跨平台的声明（配方）指向本机装上的制品。日志里必须记后者。
+    /// A portable declaration points at a local artifact; the log records the latter.
     #[tokio::test]
     async fn the_derivation_is_the_installed_artifact_not_the_declaration() {
         let w = World::new();
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(Artifacts::new(&w.store).installed(&v).unwrap(), v);
     }
 
-    /// 同一配方重装就是覆盖：否则升级后这台机器永远继续跑旧二进制。
+    /// Otherwise an upgrade leaves this machine running the old binary forever.
     #[test]
     fn reinstalling_a_recipe_repoints_it() {
         let w = World::new();
@@ -478,7 +478,7 @@ mod tests {
         assert!(e.0.contains("v99"), "{}", e.0);
     }
 
-    /// 闭包里带宿主 env 时，重跑不保证同一答案，所以不能自称内容寻址。
+    /// With host env in the closure it cannot claim to be content-addressed.
     #[tokio::test]
     async fn a_host_env_in_the_closure_downgrades_verifiability() {
         let w = World::new();

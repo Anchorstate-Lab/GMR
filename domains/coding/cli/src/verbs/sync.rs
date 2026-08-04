@@ -6,7 +6,13 @@ use gmr::{
 use serde::Deserialize;
 
 use crate::error::CliError;
+use crate::probes::Recipes;
 use crate::rules;
+
+pub struct Context {
+    pub root: std::path::PathBuf,
+    pub recipes: Recipes,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Declared {
@@ -17,15 +23,19 @@ pub struct Declared {
 #[derive(Debug, Deserialize)]
 pub struct AnchorDecl {
     pub key: String,
-    /// Probe artifact version. It is earned, so rebuilding the probe changes
-    /// the version and becomes a criteria revision.
-    pub artifact: String,
+    /// A recipe name, portable across platforms. An artifact hash is not: it
+    /// carries the platform and the built binary's hash.
+    #[serde(default)]
+    pub probe: Option<String>,
+    /// Escape hatch pinning one artifact version. Exclusive with `probe`.
+    #[serde(default)]
+    pub artifact: Option<String>,
     #[serde(default)]
     pub params: serde_json::Value,
     #[serde(default)]
     pub position: Option<serde_json::Value>,
-    /// 具名转换表预设。与 rules 二选一；sync 时展开成字面规则存进锚，
-    /// 所以 declaration hash 仍然覆盖完整判据。
+    /// A named transition preset, exclusive with `rules`. Expanded into literal
+    /// rules at sync time, so the declaration hash still covers full criteria.
     #[serde(default)]
     pub shape: Option<String>,
     #[serde(default)]
@@ -41,8 +51,36 @@ pub struct AnchorDecl {
 }
 
 impl AnchorDecl {
-    fn to_probe(&self) -> Result<ProbeRef, CliError> {
-        rules::probe(&self.artifact, &self.params.to_string())
+    fn to_probe(&self, ctx: &Context) -> Result<ProbeRef, CliError> {
+        let params = self.params.to_string();
+        match (&self.probe, &self.artifact) {
+            (Some(_), Some(_)) | (None, None) => Err(CliError(format!(
+                "{}: declare either `probe` (a recipe name) or `artifact` (a version), not both",
+                self.key
+            ))),
+            (Some(name), None) => {
+                let recipe = ctx.recipes.get(name)?;
+                let version = recipe.version(name, &ctx.root)?;
+                rules::probe(version.as_str(), &params)
+            }
+            (None, Some(artifact)) => rules::probe(artifact, &params),
+        }
+    }
+
+    /// A pinned artifact has no recipe and therefore no vocabulary to check.
+    fn check_contract(&self, ctx: &Context) -> Result<(), CliError> {
+        let (Some(shape), Some(name)) = (&self.shape, &self.probe) else {
+            return Ok(());
+        };
+        let missing = crate::shapes::unmet(crate::shapes::get(shape)?, &ctx.recipes.get(name)?.obs);
+        match missing.is_empty() {
+            true => Ok(()),
+            false => Err(CliError(format!(
+                "{}: shape `{shape}` reads {}, which probe `{name}` does not emit",
+                self.key,
+                missing.join(" · ")
+            ))),
+        }
     }
 
     fn to_transitions(&self) -> Result<Transitions, CliError> {
@@ -86,6 +124,10 @@ pub async fn run(
     let text = std::fs::read_to_string(root.join(&file))
         .map_err(|e| CliError(format!("cannot read `{file}`: {e}")))?;
     let declared: Declared = toml::from_str(&text)?;
+    let ctx = Context {
+        root: root.to_path_buf(),
+        recipes: Recipes::load(root)?,
+    };
 
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
@@ -101,7 +143,7 @@ pub async fn run(
         }
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
-            if differs(&view.anchor, decl)? {
+            if differs(&view.anchor, decl, &ctx)? {
                 drifted_criteria.push(decl.key.clone());
             }
             // Retain and cadence are not criteria, so sync just applies them.
@@ -117,10 +159,11 @@ pub async fn run(
             opened.push(decl.key.clone());
             continue;
         }
+        decl.check_contract(&ctx)?;
         let result = rt
             .open(OpenRequest {
                 key: key.clone(),
-                probe: decl.to_probe()?,
+                probe: decl.to_probe(&ctx)?,
                 transitions: decl.to_transitions()?,
                 terminal: rules::terminal(&decl.terminal),
                 initial: decl.initial(),
@@ -185,8 +228,8 @@ pub async fn run(
     Ok(0)
 }
 
-fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
-    Ok(anchor.probe != decl.to_probe()?
+fn differs(anchor: &Anchor, decl: &AnchorDecl, ctx: &Context) -> Result<bool, CliError> {
+    Ok(anchor.probe != decl.to_probe(ctx)?
         || anchor.transitions != decl.to_transitions()?
         || anchor.terminal != rules::terminal(&decl.terminal))
 }
@@ -195,10 +238,10 @@ fn differs(anchor: &Anchor, decl: &AnchorDecl) -> Result<bool, CliError> {
 mod tests {
     use super::*;
 
-    const ROSTER_LITERAL: &str = r#"
-[[anchor]]
-key = "k"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
+    const ART: &str =
+        "artifact = \"d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62\"";
+
+    const RULES: &str = r#"
 rules = [
   'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
   'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
@@ -208,15 +251,9 @@ rules = [
 ]
 "#;
 
-    const ROSTER_SHAPE: &str = r#"
-[[anchor]]
-key = "k"
-artifact = "d9fe5d540d44ba9c97a351323396c3028d0281a213e21c69bb55b89da4f9ba62"
-shape = "roster"
-"#;
-
-    fn decl(text: &str) -> AnchorDecl {
-        toml::from_str::<Declared>(text)
+    fn decl(body: &str) -> AnchorDecl {
+        let text = format!("[[anchor]]\nkey = \"k\"\n{body}");
+        toml::from_str::<Declared>(&text)
             .unwrap()
             .anchor
             .into_iter()
@@ -224,26 +261,85 @@ shape = "roster"
             .unwrap()
     }
 
-    /// 迁移保证：把 anchors.toml 的字面规则换成 shape 不动判据。
+    /// Migration guarantee: swapping literal rules for a shape moves no criteria.
     #[test]
     fn a_shape_expands_to_the_table_it_replaces() {
         assert_eq!(
-            decl(ROSTER_SHAPE).to_transitions().unwrap(),
-            decl(ROSTER_LITERAL).to_transitions().unwrap()
+            decl(&format!("{ART}\nshape = \"roster\""))
+                .to_transitions()
+                .unwrap(),
+            decl(&format!("{ART}{RULES}")).to_transitions().unwrap()
         );
     }
 
     #[test]
     fn shape_and_rules_together_are_refused() {
-        let both = format!("{ROSTER_LITERAL}shape = \"roster\"\n");
-        let e = decl(&both).to_transitions().unwrap_err();
+        let e = decl(&format!("{ART}\nshape = \"roster\"{RULES}"))
+            .to_transitions()
+            .unwrap_err();
         assert!(e.to_string().contains("not both"), "{e}");
     }
 
     #[test]
     fn an_unknown_shape_names_the_anchor_that_asked_for_it() {
-        let text = ROSTER_SHAPE.replace("\"roster\"", "\"nope\"");
-        let e = decl(&text).to_transitions().unwrap_err();
+        let e = decl(&format!("{ART}\nshape = \"nope\""))
+            .to_transitions()
+            .unwrap_err();
         assert!(e.to_string().contains('k'), "{e}");
+    }
+
+    fn ctx(toml_body: &str) -> (tempfile::TempDir, Context) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".anchor")).unwrap();
+        std::fs::write(dir.path().join(".anchor/probes.toml"), toml_body).unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/probe.sh"), "echo '{}'").unwrap();
+        let recipes = Recipes::load(dir.path()).unwrap();
+        let root = dir.path().to_path_buf();
+        (dir, Context { root, recipes })
+    }
+
+    const AST_LIKE: &str = r#"
+[probe.ast-like]
+stage = { probe = "src/probe.sh" }
+entrypoint = "probe"
+sources = ["src"]
+obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "line"] }
+"#;
+
+    #[test]
+    fn a_probe_name_resolves_to_a_recipe_version() {
+        let (_d, c) = ctx(AST_LIKE);
+        let probe = decl("probe = \"ast-like\"\nshape = \"roster\"")
+            .to_probe(&c)
+            .unwrap();
+        assert_eq!(probe.artifact.as_str().len(), 64);
+    }
+
+    #[test]
+    fn naming_both_a_probe_and_an_artifact_is_refused() {
+        let (_d, c) = ctx(AST_LIKE);
+        let e = decl(&format!("probe = \"ast-like\"\n{ART}"))
+            .to_probe(&c)
+            .unwrap_err();
+        assert!(e.to_string().contains("not both"), "{e}");
+    }
+
+    /// A mismatch must be caught before opening, not after observation.
+    #[test]
+    fn a_shape_the_probe_cannot_feed_is_refused() {
+        let (_d, c) = ctx(AST_LIKE);
+        let e = decl("probe = \"ast-like\"\nshape = \"occurrence\"")
+            .check_contract(&c)
+            .unwrap_err();
+        assert!(e.to_string().contains("facts.occurrences"), "{e}");
+    }
+
+    #[test]
+    fn roster_rides_the_same_probe_happily() {
+        let (_d, c) = ctx(AST_LIKE);
+        decl("probe = \"ast-like\"\nshape = \"roster\"")
+            .check_contract(&c)
+            .unwrap();
     }
 }

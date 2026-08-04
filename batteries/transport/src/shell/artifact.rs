@@ -12,7 +12,8 @@ pub const INSTALL_FILE: &str = "installed.json";
 
 pub const INSTALL_SCHEMA: &str = "gmr.probe-install.v1";
 
-/// 声明的版本 → 本机为它装上的制品版本。声明可以跨平台，制品不能。
+/// Declared version -> the artifact installed for it here. Declarations travel
+/// across platforms; artifacts do not.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InstallIndex {
     schema: String,
@@ -74,8 +75,8 @@ impl Artifacts {
         Ok(index)
     }
 
-    /// 同一个声明重装就是覆盖：换了就是换了，日志里的 derivation 会如实
-    /// 记下实际跑的那一个。拒绝覆盖会让这台机器永远继续跑旧二进制。
+    /// Reinstalling a declaration overwrites it. Refusing would leave this
+    /// machine running the old binary forever; the journal records what ran.
     pub fn install(
         &self,
         declared: &ProbeVersion,
@@ -92,7 +93,8 @@ impl Artifacts {
             .map_err(|e| bad(format!("cannot write the install index: {e}")))
     }
 
-    /// 没有间接时返回声明本身，于是 `publish` 印出来的版本照样能直接用。
+    /// With no indirection a version stands for itself, so a version printed by
+    /// `publish` still works unchanged.
     pub fn installed(&self, declared: &ProbeVersion) -> Result<ProbeVersion, ArtifactError> {
         Ok(self
             .index()?
