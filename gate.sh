@@ -35,6 +35,7 @@ python3 - <<'FORBIDDEN' || exit 1
 import tomllib, subprocess, sys
 arch = tomllib.load(open("architecture.toml", "rb"))
 bad = []
+errs = []
 for m in arch["member"]:
     if m.get("kind") != "package":
         continue
@@ -43,13 +44,23 @@ for m in arch["member"]:
     banned = {n for k in keys for n in arch["libs"][k]}
     if not banned:
         continue
+    # `-p <name>` only resolves inside the workspace gate.sh happens to be
+    # run from; members that live in a *different* workspace (batteries/
+    # probes/ is its own) would silently and permanently pass. Go straight
+    # to the member's own manifest instead — that resolves regardless of
+    # which workspace it belongs to.
     r = subprocess.run(["cargo", "tree", "--edges", "normal,no-proc-macro",
-                        "-p", m["name"], "--prefix", "none"],
+                        "--manifest-path", f"{m['path']}/Cargo.toml", "--prefix", "none"],
                        capture_output=True, text=True)
     if r.returncode:
+        errs.append(f"{m['name']}: cannot resolve {m['path']}/Cargo.toml — "
+                     "architecture.toml's path is stale")
         continue
     deps = {l.split()[0] for l in r.stdout.splitlines()[1:] if l.strip()}
     bad += [f"{m['name']} -> {d}" for d in sorted(deps & banned)]
+if errs:
+    print("gate: 禁区检查够不到这些成员", *errs, sep="\n  ", file=sys.stderr)
+    sys.exit(1)
 if bad:
     print("gate: 依赖禁区被撞了", *bad, sep="\n  ", file=sys.stderr)
     sys.exit(1)
