@@ -102,7 +102,7 @@ fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
     coord::report(&extractor(), &want, coord::nth(pos), &cands)
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
     coord::emit(
         coord::params()
             .and_then(|params| Ok((coord::root(&params), coord::position()?)))

@@ -33,9 +33,9 @@ members = [
     # 电池 —— 可复用的具体实现，不属于任何单一域
     "batteries/transport-shell",
     "batteries/provider-git",
-    # 探针作者的共同约定。**探针二进制自己不在这个 workspace 里** ——
-    # 它们是 exec 的不是链接的，各自独立，按 path 依赖这一个库。
-    "batteries/probe-coord",
+    # 探针工件自成一个 workspace（batteries/probes/，含 coord 约定库）——
+    # 它们是 exec 的不是链接的，跟根 workspace 的依赖解析互不干扰，所以
+    # 不在这个 members 列表里。
     # 域 —— 装配 + 探针实现 + 判据 + 记忆
     "domains/coding/cli",
 ]

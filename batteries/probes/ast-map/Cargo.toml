@@ -1,0 +1,19 @@
+# 探针实现：GMR 不链接它，只通过 shell 传输 exec 它。member，跟
+# addr-map/name-map/prose-map/coord 共用 batteries/probes/ 这一个
+# workspace。tree-sitter 系依赖只有这一个 member 用，留在自己的清单里。
+
+[package]
+name = "ast-map"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+serde_json = { workspace = true }
+gmr-probe-coord = { workspace = true }
+
+[lints]
+workspace = true

@@ -519,15 +519,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gmr-probe-coord"
-version = "0.1.0"
-dependencies = [
- "gmr-probe",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "gmr-provider-git"
 version = "0.1.0"
 dependencies = [

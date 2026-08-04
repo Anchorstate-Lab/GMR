@@ -1,17 +1,10 @@
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-
-pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
 
 /// Names the shape `report()` emits, which anchors read as `obs.*`. Not
 /// enforced — it only gives a rename something to diff against.
 pub const COORD_REPORT_SCHEMA: &str = "gmr.probe-coord.v1";
-
-pub fn hash(s: &str) -> String {
-    format!("{:x}", Sha256::digest(s.as_bytes()))
-}
 
 pub struct Candidate {
     pub coord: BTreeMap<String, String>,
@@ -22,33 +15,6 @@ impl Candidate {
     pub fn new(coord: BTreeMap<String, String>, facts: Value) -> Self {
         Self { coord, facts }
     }
-}
-
-pub fn position() -> Result<Value, String> {
-    let raw = std::env::var(POSITION_ENV).unwrap_or_default();
-    if raw.trim().is_empty() {
-        return Ok(json!({}));
-    }
-    serde_json::from_str(&raw).map_err(|e| format!("{POSITION_ENV} is not JSON: {e}"))
-}
-
-pub fn params() -> Result<Value, String> {
-    let raw = std::env::var(PARAMS_ENV).unwrap_or_default();
-    if raw.trim().is_empty() {
-        return Ok(json!({}));
-    }
-    serde_json::from_str(&raw).map_err(|e| format!("{PARAMS_ENV} is not JSON: {e}"))
-}
-
-/// The portion the probe should inspect. This comes from params, not argv:
-/// params enter the declaration hash, argv is locked by the manifest, and
-/// neither is chosen by the probe at runtime.
-pub fn root(params: &Value) -> String {
-    params
-        .get("root")
-        .and_then(Value::as_str)
-        .unwrap_or(".")
-        .to_owned()
 }
 
 pub type Want = Vec<(String, String)>;
@@ -64,7 +30,8 @@ pub fn wanted(pos: &Value, items: &[&str]) -> Result<Want, String> {
         .collect();
     if want.is_empty() {
         return Err(format!(
-            "{POSITION_ENV} has no coordinate fields; this probe needs a position, so provide at least one of {}",
+            "{} has no coordinate fields; this probe needs a position, so provide at least one of {}",
+            crate::env::POSITION_ENV,
             items.join("/")
         ));
     }
@@ -145,19 +112,6 @@ pub fn report(
         ));
     }
     Ok(out)
-}
-
-pub fn emit(result: Result<Value, String>) -> ! {
-    match result {
-        Ok(v) => {
-            println!("{v}");
-            std::process::exit(0)
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1)
-        }
-    }
 }
 
 #[cfg(test)]
