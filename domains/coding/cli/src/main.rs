@@ -134,6 +134,6 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Health { key } => verbs::health::run(&rt, key, json).await,
         Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
         Command::Pass => verbs::pass::run(&rt, json).await,
-        Command::Doctor => verbs::doctor::run(&rt, json).await,
+        Command::Doctor => verbs::doctor::run(&rt, &root, json).await,
     }
 }

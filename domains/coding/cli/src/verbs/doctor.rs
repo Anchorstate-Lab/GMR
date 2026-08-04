@@ -1,8 +1,30 @@
+use std::path::Path;
+
 use gmr::Runtime;
+use gmr_transport::shell::Artifacts;
 
 use crate::error::CliError;
+use crate::probes::store_dir;
 
-pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
+/// Anchors whose probe cannot be resolved on this machine. This is the fresh
+/// clone failure: the declaration is portable, the artifact is not, and without
+/// this check it shows up as N identical Attempt entries instead of one answer.
+fn unresolvable(root: &Path, views: &[&gmr::AnchorView]) -> Vec<String> {
+    let artifacts = Artifacts::new(store_dir(root));
+    views
+        .iter()
+        .filter(|v| artifacts.resolve(&v.anchor.probe.artifact).is_err())
+        .map(|v| v.key.to_string())
+        .collect()
+}
+
+/// git is how notes are versioned here; outside a repository `bind` still works
+/// but fetching a note back at the version it was bound at does not.
+fn versioning_is_broken(root: &Path) -> bool {
+    !root.join(".git").exists()
+}
+
+pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError> {
     let views = rt.read_all().await?;
     let live: Vec<_> = views.iter().filter(|v| !v.closed).collect();
 
@@ -21,6 +43,8 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
     // could drift apart.
     let corpus = rt.corpus_health().await?;
     let barren: Vec<&str> = corpus.barren_anchors.iter().map(|k| k.as_str()).collect();
+    let stranded = unresolvable(root, &live);
+    let no_git = versioning_is_broken(root);
     let states: Vec<String> = live
         .iter()
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))
@@ -32,6 +56,7 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
             serde_json::json!({
                 "anchors": views.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
+                "stranded": stranded, "content_versioning": !no_git,
             })
         );
         return Ok(0);
@@ -64,5 +89,17 @@ pub async fn run(rt: &Runtime, json: bool) -> Result<i32, CliError> {
             barren.join(", ")
         );
     }
-    Ok(0)
+    if !stranded.is_empty() {
+        println!(
+            "stranded  {}\n          <- no artifact is installed for the declared probe; run `probes build`",
+            stranded.join(", ")
+        );
+    }
+    if no_git {
+        println!(
+            "provider  this is not a git repository\n          \
+             <- binding works, but fetching a note back at the version it was bound at does not"
+        );
+    }
+    Ok(if stranded.is_empty() { 0 } else { 1 })
 }
