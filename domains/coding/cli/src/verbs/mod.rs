@@ -18,7 +18,19 @@ pub mod reterminal;
 pub mod retransition;
 pub mod sync;
 
-use gmr::ContentHash;
+use gmr::{AnchorKey, ContentHash, Runtime};
+
+use crate::error::CliError;
+
+pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<String>, CliError> {
+    Ok(rt
+        .memory()
+        .bindings_on(key)
+        .await?
+        .into_iter()
+        .map(|b| b.binding.reference.external_id.into_inner())
+        .collect())
+}
 
 pub(crate) fn sealed(context: &ContentHash, rationale: &ContentHash) {
     println!(

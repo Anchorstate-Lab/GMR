@@ -13,7 +13,7 @@ use crate::scheduler::Scheduler;
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Passed {
     pub observed: usize,
-    pub moved: usize,
+    pub moved: Vec<AnchorKey>,
     pub unseen: usize,
     pub retired: usize,
 }
@@ -97,7 +97,7 @@ async fn pass(
             }
             other => {
                 if matches!(other, Observed::Transitioned { .. }) {
-                    out.moved += 1;
+                    out.moved.push(ticket.anchor.clone());
                 }
                 let sealed = matches!(other, Observed::Transitioned { to, .. }
                     if fold(&log.entries(&ticket.anchor, 0).await?)
