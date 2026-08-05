@@ -1,0 +1,13 @@
+[workspace]
+publish = true
+git_release_enable = false
+git_tag_enable = false
+git_tag_name = "v{{ version }}"
+changelog_update = true
+
+# 唯一实际产出二进制的包。它是这条判断规则唯一的例外：
+# 所有 crate 共享 version.workspace = true，只需要一个 tag。
+# create-release/publish-npm 的 tags: v* 触发器接的就是这个 tag。
+[[package]]
+name = "coding-anchor"
+git_tag_enable = true
