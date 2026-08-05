@@ -13,6 +13,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 mkdir -p "$outdir"
+outdir=$(cd "$outdir" && pwd)
 
 tar -xzf "$tarball" -C "$tmp"
 
@@ -31,6 +32,6 @@ cat > "$pkgdir/package.json" <<JSON
 JSON
 
 cd "$pkgdir"
-npm pack --pack-destination "$PWD/../$outdir"
+npm pack --pack-destination "$outdir"
 
 echo "Packed $pkgname @$version into $outdir"

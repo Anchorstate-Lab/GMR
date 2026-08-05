@@ -144,7 +144,7 @@ jobs:
         run: |
           set -eu
           mkdir -p packaged
-          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${GITHUB_REF#refs/tags/v}
           map_target() {
             case "$1" in
                 x86_64-unknown-linux-gnu) echo "@zongming_he/gmr-linux-x64" ;;
@@ -167,7 +167,7 @@ jobs:
         if: env.NPM_TOKEN != ''
         run: |
           set -eu
-          for tgz in packaged/*.tgz; do
+          for tgz in ./packaged/*.tgz; do
             echo "Publishing $tgz"
             npm publish "$tgz" --access public
           done
@@ -175,5 +175,17 @@ jobs:
       - name: Publish wrapper package
         if: env.NPM_TOKEN != ''
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+          set -eu
+          VERSION=${GITHUB_REF#refs/tags/v}
+          export VERSION
+          node -e '
+            const fs = require("fs");
+            const path = "dist/npm/package.json";
+            const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+            pkg.version = process.env.VERSION;
+            for (const dep of Object.keys(pkg.optionalDependencies || {})) {
+              pkg.optionalDependencies[dep] = process.env.VERSION;
+            }
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
+          '
           npm publish ./dist/npm --access public
