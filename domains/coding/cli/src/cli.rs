@@ -37,7 +37,12 @@ pub struct Cli {
 pub enum Command {
     /// Create .anchor/, register bundled probes, and report what is readable.
     #[command(display_order = 0)]
-    Init,
+    Init {
+        /// Write the bundled skill doc to ~/.claude/skills/gmr/ instead of
+        /// this project's .claude/skills/gmr/.
+        #[arg(long)]
+        global: bool,
+    },
 
     /// Build every declared probe recipe and install it for this machine.
     #[command(subcommand)]
@@ -144,6 +149,10 @@ pub enum Command {
         anchors: Vec<String>,
         #[arg(long)]
         detach: bool,
+        /// Which registered ContentProvider `path` is resolved through.
+        /// What's actually available depends on how this binary was built.
+        #[arg(long, default_value = "git")]
+        provider: String,
     },
 
     /// Re-stamp a binding's content version without changing which anchors it's about.

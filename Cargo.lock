@@ -554,6 +554,8 @@ dependencies = [
  "async-trait",
  "gmr-content",
  "gmr-core",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

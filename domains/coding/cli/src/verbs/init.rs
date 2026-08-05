@@ -77,7 +77,15 @@ fn extensions(at: &Path, out: &mut BTreeMap<String, usize>) {
     }
 }
 
-pub fn run(root: &Path, json: bool) -> Result<i32, CliError> {
+fn skill_target(root: &Path, global: bool) -> Result<PathBuf, CliError> {
+    if global {
+        return crate::skill::global_path()
+            .ok_or_else(|| CliError("cannot find the skill directory: $HOME is not set".into()));
+    }
+    Ok(root.join(crate::skill::PROJECT_PATH))
+}
+
+pub fn run(root: &Path, json: bool, global: bool) -> Result<i32, CliError> {
     for dir in [anchor_dir(root), state_dir(root), store_dir(root)] {
         std::fs::create_dir_all(&dir)
             .map_err(|e| CliError(format!("cannot create {dir:?}: {e}")))?;
@@ -85,6 +93,13 @@ pub fn run(root: &Path, json: bool) -> Result<i32, CliError> {
     std::fs::create_dir_all(root.join(NOTES_DIR))
         .map_err(|e| CliError(format!("cannot create {NOTES_DIR}: {e}")))?;
     write_new(&anchor_dir(root).join(".gitignore"), GITIGNORE)?;
+
+    let skill_target = skill_target(root, global)?;
+    if let Some(parent) = skill_target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CliError(format!("cannot create {parent:?}: {e}")))?;
+    }
+    let skill_written = write_new(&skill_target, crate::skill::SKILL_MD)?;
 
     let mut installed: Vec<String> = coding_extract::vocabularies()
         .map(|v| v.name.to_owned())
@@ -122,6 +137,7 @@ pub fn run(root: &Path, json: bool) -> Result<i32, CliError> {
                 "probes": installed,
                 "readable": readable.iter().map(|(e, n)| serde_json::json!({"ext": e, "files": n})).collect::<Vec<_>>(),
                 "opaque": opaque.iter().map(|(e, n)| serde_json::json!({"ext": e, "files": n})).collect::<Vec<_>>(),
+                "skill": { "path": skill_target.display().to_string(), "written": skill_written },
             })
         );
         return Ok(0);
@@ -151,6 +167,10 @@ pub fn run(root: &Path, json: bool) -> Result<i32, CliError> {
                 .collect::<Vec<_>>()
                 .join(" · ")
         );
+    }
+
+    if skill_written {
+        println!("\nskill doc written to {}", skill_target.display());
     }
 
     println!("\nNo anchors were opened. What is worth anchoring is yours to say —");

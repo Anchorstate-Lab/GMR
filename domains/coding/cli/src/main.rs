@@ -5,6 +5,7 @@ mod probes;
 mod render;
 mod rules;
 mod shapes;
+mod skill;
 mod verbs;
 
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use gmr::Runtime;
+use gmr_provider::claude_code::ClaudeMemory;
 use gmr_provider::git::Git;
 use gmr_transport::inproc::InProcess;
 use gmr_transport::script::Script;
@@ -82,8 +84,8 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         };
     }
 
-    if let Command::Init = cli.command {
-        return verbs::init::run(&root, cli.json);
+    if let Command::Init { global } = cli.command {
+        return verbs::init::run(&root, cli.json, global);
     }
 
     let state = probes::state_dir(&root);
@@ -104,7 +106,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     // Three transports, one router: the extractors are linked in, a user's own
     // script is a file in their repo, and an artifact is still exec'd.
     let catalog = probes::Catalog::load(&root)?;
-    let rt = Runtime::builder()
+    let mut builder = Runtime::builder()
         .transport(Arc::new(InProcess::new(&root, coding_extract::registry())))
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
@@ -114,15 +116,21 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))
-        .links(Arc::new(store.links()))
-        .build();
+        .links(Arc::new(store.links()));
+    // Read-only and additive: absence of Claude Code's own memory directory
+    // is normal outside a Claude Code session, not a reason to refuse to run.
+    match ClaudeMemory::new(&root) {
+        Ok(p) => builder = builder.provider(Arc::new(p)),
+        Err(e) => eprintln!("gmr: claude-code memory provider unavailable: {e}"),
+    }
+    let rt = builder.build();
 
     let json = cli.json;
     match cli.command {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
-        Command::Init => unreachable!("init was handled above"),
+        Command::Init { .. } => unreachable!("init was handled above"),
         Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
         Command::Read { key } => verbs::read::run(&rt, key, json).await,
@@ -146,7 +154,8 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
             path,
             anchors,
             detach,
-        } => verbs::bind::run(&rt, &root, path, anchors, detach, json).await,
+            provider,
+        } => verbs::bind::run(&rt, &root, path, anchors, detach, provider, json).await,
         Command::Reaffirm { path } => verbs::reaffirm::run(&rt, &root, path, json).await,
         Command::Cobound { path } => verbs::cobound::run(&rt, path, json).await,
         Command::Link { from, to, kind } => verbs::link::run(&rt, from, to, kind, json).await,

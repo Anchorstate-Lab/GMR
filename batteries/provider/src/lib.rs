@@ -4,3 +4,6 @@
 
 #[cfg(feature = "git")]
 pub mod git;
+
+#[cfg(feature = "claude-code")]
+pub mod claude_code;
