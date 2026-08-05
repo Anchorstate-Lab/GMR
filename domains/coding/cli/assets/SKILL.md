@@ -52,13 +52,14 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 ## Reading `gmr doctor --json`
 
 ```json
-{"anchors": N, "live": N, "absent": [...], "unseen": [...], "barren": [...], "stranded": [...], "content_versioning": bool}
+{"anchors": N, "live": N, "absent": [...], "unseen": [...], "barren": [...], "stranded": [...], "content_versioning": bool, "provider_warnings": [{"provider": "...", "message": "..."}]}
 ```
 
 - `barren` — anchors nobody has bound a note to yet.
 - `absent` — the probe ran and found nothing there. Normal when criteria were written before the code exists — don't read this as "it used to be there and now it's gone" without checking.
 - `unseen` — outstanding failed attempts; check the probe or its credentials.
 - `stranded` — the declared probe has no installed artifact on this machine (`gmr probes build`).
+- `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it will fail with "no content provider could version" until the underlying cause is fixed. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
 
 ## Binding non-git content
 

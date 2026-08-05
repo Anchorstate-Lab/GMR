@@ -4,7 +4,7 @@ use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer, Settings};
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
-use crate::memory::MemoryLens;
+use crate::memory::{MemoryLens, ProviderWarning};
 use crate::observer::Observer;
 use crate::policy::Policy;
 use crate::scheduler::Scheduler;
@@ -54,6 +54,7 @@ pub struct RuntimeBuilder {
     sealer: Option<Arc<dyn Sealer>>,
     links: Option<Arc<dyn LinkStore>>,
     providers: Vec<Arc<dyn ContentProvider>>,
+    provider_warnings: Vec<ProviderWarning>,
     queue: Option<Arc<dyn Queue>>,
     settings: Option<Arc<dyn Settings>>,
     policy: Option<Policy>,
@@ -90,6 +91,17 @@ impl RuntimeBuilder {
         self
     }
 
+    /// A provider the domain tried to construct but couldn't — recorded
+    /// instead of registered, so it's queryable (`gmr doctor`) rather than
+    /// only ever reaching stderr.
+    pub fn provider_warning(mut self, provider: impl Into<String>, message: impl Into<String>) -> Self {
+        self.provider_warnings.push(ProviderWarning {
+            provider: provider.into(),
+            message: message.into(),
+        });
+        self
+    }
+
     pub fn queue(mut self, q: Arc<dyn Queue>) -> Self {
         self.queue = Some(q);
         self
@@ -114,6 +126,7 @@ impl RuntimeBuilder {
                 self.sealer.expect("a Sealer is not optional"),
                 self.links.expect("a LinkStore is not optional"),
                 self.providers,
+                self.provider_warnings,
             ),
             scheduler: Scheduler::new(
                 self.queue,
@@ -121,5 +134,43 @@ impl RuntimeBuilder {
                 self.policy.unwrap_or_default(),
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
+
+    #[test]
+    fn a_provider_warning_reaches_the_built_runtime() {
+        let bindings = Arc::new(MemoryBindings::default());
+        let rt = Runtime::builder()
+            .journal(Arc::new(MemoryJournal::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings.clone())
+            .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
+            .provider_warning("claude-code", "$HOME is not set")
+            .build();
+
+        let warnings = rt.memory().provider_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].provider, "claude-code");
+        assert_eq!(warnings[0].message, "$HOME is not set");
+    }
+
+    #[test]
+    fn no_warnings_by_default() {
+        let bindings = Arc::new(MemoryBindings::default());
+        let rt = Runtime::builder()
+            .journal(Arc::new(MemoryJournal::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings.clone())
+            .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
+            .build();
+
+        assert!(rt.memory().provider_warnings().is_empty());
     }
 }

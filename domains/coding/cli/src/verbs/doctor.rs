@@ -45,6 +45,15 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     let barren: Vec<&str> = corpus.barren_anchors.iter().map(|k| k.as_str()).collect();
     let stranded = unresolvable(root, &live);
     let no_git = versioning_is_broken(root);
+    let provider_warnings = rt.memory().provider_warnings();
+    // stranded/provider_warnings mean something declared or expected isn't
+    // actually working, not just "worth noting" like absent/barren/unseen —
+    // that's the line between exit 1 and exit 0.
+    let exit_code = if stranded.is_empty() && provider_warnings.is_empty() {
+        0
+    } else {
+        1
+    };
     let states: Vec<String> = live
         .iter()
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))
@@ -57,9 +66,10 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
                 "anchors": views.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "content_versioning": !no_git,
+                "provider_warnings": provider_warnings,
             })
         );
-        return Ok(0);
+        return Ok(exit_code);
     }
 
     println!("anchors   {} (live {})", views.len(), live.len());
@@ -101,5 +111,12 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
              <- binding works, but fetching a note back at the version it was bound at does not"
         );
     }
-    Ok(if stranded.is_empty() { 0 } else { 1 })
+    for w in provider_warnings {
+        println!(
+            "provider  {} unavailable: {}\n          \
+             <- bindings through it will fail with \"no content provider could version\"",
+            w.provider, w.message
+        );
+    }
+    Ok(exit_code)
 }

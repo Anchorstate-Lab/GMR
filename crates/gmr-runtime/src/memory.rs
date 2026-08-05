@@ -2,11 +2,22 @@ use std::sync::Arc;
 
 use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Version, fold};
 use gmr_store::{BindingRecord, BindingStore, LinkStore, Sealer};
+use serde::Serialize;
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::read::MemoryView;
 use gmr_content::ContentProvider;
+
+/// A provider the assembler tried to register but couldn't — assembly-time,
+/// not per-operation, so it doesn't belong in `ContentError`. `provider` is
+/// whatever name the domain was trying to register under, not necessarily
+/// one that ever made it into `MemoryLens.providers`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderWarning {
+    pub provider: String,
+    pub message: String,
+}
 
 /// Bindings, seals, links, and the providers that fetch content. No journal,
 /// no transport, no queue.
@@ -15,6 +26,7 @@ pub struct MemoryLens {
     sealer: Arc<dyn Sealer>,
     links: Arc<dyn LinkStore>,
     providers: Vec<Arc<dyn ContentProvider>>,
+    provider_warnings: Vec<ProviderWarning>,
 }
 
 impl MemoryLens {
@@ -23,13 +35,22 @@ impl MemoryLens {
         sealer: Arc<dyn Sealer>,
         links: Arc<dyn LinkStore>,
         providers: Vec<Arc<dyn ContentProvider>>,
+        provider_warnings: Vec<ProviderWarning>,
     ) -> Self {
         Self {
             bindings,
             sealer,
             links,
             providers,
+            provider_warnings,
         }
+    }
+
+    /// Providers the assembler couldn't attach at startup — a battery failed
+    /// to construct, not a per-fetch failure. Surfaced so `--json` callers
+    /// have a way to learn this that isn't stderr.
+    pub fn provider_warnings(&self) -> &[ProviderWarning] {
+        &self.provider_warnings
     }
 
     /// Stamps the bound anchor's current head, so a later read can tell

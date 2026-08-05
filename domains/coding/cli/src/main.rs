@@ -119,9 +119,14 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .links(Arc::new(store.links()));
     // Read-only and additive: absence of Claude Code's own memory directory
     // is normal outside a Claude Code session, not a reason to refuse to run.
+    // Recorded on the builder (not just eprintln'd) so --json callers have a
+    // way to learn this too — see `gmr doctor`.
     match ClaudeMemory::new(&root) {
         Ok(p) => builder = builder.provider(Arc::new(p)),
-        Err(e) => eprintln!("gmr: claude-code memory provider unavailable: {e}"),
+        Err(e) => {
+            eprintln!("gmr: claude-code memory provider unavailable: {e}");
+            builder = builder.provider_warning("claude-code", e.to_string());
+        }
     }
     let rt = builder.build();
 
