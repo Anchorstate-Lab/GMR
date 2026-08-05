@@ -69,12 +69,9 @@ impl ContentProvider for ClaudeMemory {
     }
 
     async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
-        let path = self.root.join(id.as_str());
-        if !path.exists() {
+        let Some(bytes) = crate::local_file::read(&self.root, id)? else {
             return Ok(None);
-        }
-        let bytes = std::fs::read(&path)
-            .map_err(|e| ContentError::new(format!("cannot read `{}`: {e}", id.as_str())))?;
+        };
         let version = content_hash_of_bytes(&bytes);
         Ok(Some(Fetched {
             version: Version::new(version.into_inner()),
