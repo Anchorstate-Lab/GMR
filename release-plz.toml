@@ -1,5 +1,9 @@
 [workspace]
-publish = true
+# 分发已经是 GitHub Release tarball + npm + install.sh，三条路都不经过
+# crates.io。发 crates.io 唯一的价值是让人 cargo install，这里不需要 ——
+# 且 coding-anchor 会把依赖传递到全部 12 个 crate，没有"只发几个"这种
+# 中间地带，要么全发要么都不发。
+publish = false
 git_release_enable = false
 git_tag_enable = false
 git_tag_name = "v{{ version }}"
