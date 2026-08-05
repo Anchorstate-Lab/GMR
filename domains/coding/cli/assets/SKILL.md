@@ -56,8 +56,8 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 ```
 
 - `barren` — anchors nobody has bound a note to yet.
-- `absent` — the probe ran but couldn't find the position anymore.
-- `unseen` — attempted but never got a successful reading; check the probe or its credentials.
+- `absent` — the probe ran and found nothing there. Normal when criteria were written before the code exists — don't read this as "it used to be there and now it's gone" without checking.
+- `unseen` — outstanding failed attempts; check the probe or its credentials.
 - `stranded` — the declared probe has no installed artifact on this machine (`gmr probes build`).
 
 ## Binding non-git content

@@ -23,9 +23,12 @@ impl ClaudeMemory {
         })
     }
 
-    /// Bypasses the directory-naming guess entirely, for when it's wrong or
-    /// the memory directory has been relocated.
-    pub fn at(memory_dir: impl Into<PathBuf>) -> Self {
+    /// Test-only: points straight at a directory without going through
+    /// `memory_dir`'s guess. Production callers use `GMR_CLAUDE_MEMORY_DIR`
+    /// for the same purpose — that path is already covered by `new`, so this
+    /// constructor has no reason to be public.
+    #[cfg(test)]
+    fn at(memory_dir: impl Into<PathBuf>) -> Self {
         Self {
             root: memory_dir.into(),
             id: ProviderId::new("claude-code"),
@@ -35,8 +38,13 @@ impl ClaudeMemory {
 
 /// Claude Code's directory-naming convention for a project's data — the
 /// absolute path with every `/` replaced by `-` — is an internal convention,
-/// not a documented public contract. `GMR_CLAUDE_MEMORY_DIR` overrides it
-/// outright when the guess is wrong.
+/// not a documented public contract. Verified empirically against this
+/// machine's `~/.claude/projects/` (including a path whose own name already
+/// contains hyphens, e.g. `.../moltbook-001` → `-...-moltbook-001`, so the
+/// substitution isn't ambiguous going forward even though it isn't
+/// reversible). `GMR_CLAUDE_MEMORY_DIR` overrides it outright if a future
+/// Claude Code version changes the convention or the guess is otherwise
+/// wrong.
 fn memory_dir(project_root: &Path) -> Result<PathBuf, ContentError> {
     if let Ok(over) = std::env::var("GMR_CLAUDE_MEMORY_DIR") {
         return Ok(PathBuf::from(over));
