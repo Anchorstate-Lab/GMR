@@ -46,31 +46,14 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     let stranded = unresolvable(root, &live);
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
-
-    // Same fields `read` already computes per memory — rolled up here instead
-    // of re-derived, so this and `read --json` cannot disagree about what
-    // "broken" or "drifted" means.
-    let mut broken_memories: Vec<String> = Vec::new();
-    let mut drifted_memories: Vec<String> = Vec::new();
-    for v in &live {
-        for m in &v.memories {
-            if let Some(why) = &m.unavailable {
-                broken_memories.push(format!("{}: {} ({why})", v.key, m.reference.external_id));
-            } else if m.rewritten || m.stale == Some(true) {
-                drifted_memories.push(format!("{}: {}", v.key, m.reference.external_id));
-            }
-        }
-    }
-
-    // stranded/provider_warnings/broken_memories mean something declared or
-    // expected isn't actually working, not just "worth noting" like
-    // absent/barren/unseen/drifted — that's the line between exit 1 and 0.
-    let exit_code =
-        if stranded.is_empty() && provider_warnings.is_empty() && broken_memories.is_empty() {
-            0
-        } else {
-            1
-        };
+    // stranded/provider_warnings mean something declared or expected isn't
+    // actually working, not just "worth noting" like absent/barren/unseen —
+    // that's the line between exit 1 and exit 0.
+    let exit_code = if stranded.is_empty() && provider_warnings.is_empty() {
+        0
+    } else {
+        1
+    };
     let states: Vec<String> = live
         .iter()
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))
@@ -84,7 +67,6 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "content_versioning": !no_git,
                 "provider_warnings": provider_warnings,
-                "broken_memories": broken_memories, "drifted_memories": drifted_memories,
             })
         );
         return Ok(exit_code);
@@ -121,18 +103,6 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
         println!(
             "stranded  {}\n          <- no artifact is installed for the declared probe; run `probes build`",
             stranded.join(", ")
-        );
-    }
-    if !broken_memories.is_empty() {
-        println!(
-            "broken    {}\n          <- the provider can no longer fetch this memory; check the reference or provider config",
-            broken_memories.join(", ")
-        );
-    }
-    if !drifted_memories.is_empty() {
-        println!(
-            "drifted   {}\n          <- content changed since binding, or the anchor moved past where this was bound; worth a re-read",
-            drifted_memories.join(", ")
         );
     }
     if no_git {
