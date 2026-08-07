@@ -9,8 +9,6 @@ use crate::probe::{Derivation, FactAddress, Facts, Outcome, ProbeRef};
 
 pub type Seq = u64;
 
-/// The three identities behind one observation. **Never merge them:** they
-/// evolve independently and fail differently, so merging any two lies about one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Versions {
     /// The sentence written on the anchor.
@@ -74,13 +72,6 @@ pub enum ReasonClass {
     Unevaluable,
 }
 
-/// Why an observation did not land, at the granularity the failure was
-/// actually known — [`ReasonClass`] is what the substrate acts on, this is
-/// what a person needs to diagnose it.
-///
-/// Both halves of "our failure" are enumerated. A log that recorded seven
-/// kinds of probe failure and one kind of rule failure would be describing
-/// the tooling's history rather than the anchor's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureCode {
@@ -104,8 +95,6 @@ pub enum FailureCode {
 }
 
 impl FailureCode {
-    /// The class the substrate acts on. Derived rather than stored beside the
-    /// code, so the two cannot come to disagree.
     pub fn reason(self) -> ReasonClass {
         match self {
             Self::Unreachable | Self::TimedOut | Self::ProcessFailed => ReasonClass::Unreachable,
@@ -217,17 +206,10 @@ impl AnchorState {
     }
 }
 
-/// `closed` accumulates entry by entry and never clears: finishing is something
-/// that happened in the log, not a re-reading of the final state.
 pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
     scan(entries, |_, _, _| {})
 }
 
-/// Walk the log once, handing over the fold as it stood after each entry.
-///
-/// `fold` is just its last cell. Consumers that need to know what happened along
-/// the way come here and **do not write a second projection** — two projections
-/// drift apart sooner or later, and nothing will notice.
 pub fn scan(
     entries: &[(Seq, Entry)],
     mut each: impl FnMut(Seq, &Entry, &AnchorState),

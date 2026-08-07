@@ -115,14 +115,6 @@ pub enum Retain {
     Full,
 }
 
-/// How an anchor is *run*, as opposed to what it judges.
-///
-/// Deliberately not part of [`Anchor`]: neither field is an input to the
-/// transition function, and neither changes any conclusion drawn from the log
-/// — `retain` only decides how densely the same states are written down, and
-/// `cadence_secs` only decides how often they are looked for. Sealing them
-/// alongside the criteria would demand a rationale for changing something no
-/// judgement depends on, so they live in mutable storage instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunSettings {
     #[serde(default)]
@@ -138,8 +130,6 @@ impl RunSettings {
     }
 }
 
-/// Which finished anchor this one supersedes. Finishing is irreversible;
-/// correcting a bad criterion means opening a new generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Superseded {
     pub key: AnchorKey,

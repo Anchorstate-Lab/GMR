@@ -50,10 +50,6 @@ pub struct Link {
     pub kind: LinkKind,
 }
 
-/// `reference` is about which anchors, full stop. Anything about a
-/// particular write of that relation (what content version it saw, when it
-/// happened) is store-layer view metadata, not part of the relation itself
-/// -- see `BindingRecord` in `gmr-store`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Binding {
     pub reference: Ref,

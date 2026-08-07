@@ -50,9 +50,6 @@ string_newtype! {
     FactAddress, crate::addr::check_sha256_hex
 }
 
-/// Whether [`Derivation::version`] closes over everything that can change the
-/// output. Being open is not a failure — it is the sentence that has to be said
-/// out loud.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
@@ -65,19 +62,12 @@ pub enum Verifiability {
     Open,
 }
 
-/// What actually derived this observation, handed over by the transport.
-///
-/// `version` hashes every input that can change the output — sources, the
-/// versions of what they parse with, the output contract. Not a binary's bytes:
-/// those also move with platform and compiler, and a version that moves without
-/// the behaviour moving is noise nothing can filter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Derivation {
     pub version: ProbeVersion,
     pub verifiability: Verifiability,
 }
 
-/// What the anchor wrote down. This is *not* [`Derivation`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeRef {
     pub kind: Kind,
@@ -127,8 +117,6 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    /// "The world says there is nothing" is an answer too, so it gets an address:
-    /// otherwise swapping the derivation rule between two NotFounds compares equal.
     pub fn address(&self, derivation: &ProbeVersion) -> Result<FactAddress, CanonicalizeError> {
         let facts = match self {
             Self::Found { facts } => facts.as_value(),

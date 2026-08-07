@@ -2,9 +2,6 @@ use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 use std::io::{self, Write};
 
-/// Canonicalization can fail on its own terms (structure too deep, a number
-/// that can't round-trip) — distinct from `io::Error`, which only means the
-/// sink refused bytes.
 #[derive(Debug, thiserror::Error)]
 pub enum CanonicalizeError {
     #[error("JSON structure exceeds maximum canonicalization depth ({max})")]
@@ -15,9 +12,6 @@ pub enum CanonicalizeError {
     Io(#[from] io::Error),
 }
 
-/// A `string_newtype!`'s validator rejected a value. `type_name` is the
-/// newtype (`"AnchorKey"`, `"ContentHash"`, ...), so callers wrapping this in
-/// their own error type can tell which one without parsing `reason`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid {type_name}: {reason}")]
 pub struct NewtypeError {
