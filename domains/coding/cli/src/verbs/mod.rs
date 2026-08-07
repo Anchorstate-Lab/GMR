@@ -1,5 +1,7 @@
 pub mod accept;
+pub mod anchor;
 pub mod bind;
+pub mod check;
 pub mod close;
 pub mod cobound;
 pub mod doctor;
@@ -22,6 +24,7 @@ pub mod requeue;
 pub mod restate;
 pub mod reterminal;
 pub mod retransition;
+pub mod status;
 pub mod sync;
 
 use gmr::{AnchorKey, ContentHash, Runtime};

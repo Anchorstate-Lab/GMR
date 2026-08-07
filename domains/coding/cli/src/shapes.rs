@@ -117,6 +117,12 @@ pub fn rules_of(shape: &Shape) -> Vec<String> {
     }
 }
 
+pub fn name_of(transitions: &gmr::Transitions) -> Option<&'static str> {
+    ALL.iter()
+        .find(|s| crate::rules::transitions(&rules_of(s)).is_ok_and(|t| &t == transitions))
+        .map(|s| s.name)
+}
+
 pub fn watch_of(shape: &Shape) -> Option<&'static [&'static str]> {
     match shape.body {
         Body::Table(_) => None,

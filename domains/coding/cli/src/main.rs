@@ -135,6 +135,11 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
     let json = cli.json;
     match cli.command {
         Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
+        Command::Anchor { coordinate, memory } => {
+            verbs::anchor::run(&rt, &root, coordinate, memory, json).await
+        }
+        Command::Status { key } => verbs::status::run(&rt, &root, key, json).await,
+        Command::Check { key } => verbs::check::run(&rt, &root, key, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init { .. } => unreachable!("init was handled above"),

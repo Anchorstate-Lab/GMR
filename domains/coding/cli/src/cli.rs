@@ -6,21 +6,18 @@ use clap::{Parser, Subcommand};
     version,
     about = "Attach judgment to recomputable observations",
     long_about = "You write the memories; anchors are mechanical observations.\n\
-                  Probes say what to inspect, transition tables say what counts as change,\n\
-                  and this tool ships no built-in criteria.\n\
-                  \n\
-                  Start with `init`, write a note naming the coordinate it is about,\n\
-                  `sync` to open it, then `observe` to ask whether it still holds.",
-    after_help = "The path, in five steps:\n\
+                  Point at a coordinate, say what the code cannot say about itself,\n\
+                  and this tool tells you when that position moves under you.",
+    after_help = "The whole loop:\n\
                   \n  \
-                  gmr init                    create .anchor/, install probes\n  \
-                  <write a note>              ---\\nabout: src/x.ts#name\\n---\n  \
-                  gmr sync                    open what the notes declare, bind them\n  \
-                  gmr observe                 has the world moved?\n  \
-                  gmr pass --json             what moved, and the notes bound to it\n\
+                  gmr init                       install probes\n  \
+                  gmr anchor src/x.rs#name -m .. watch it, and write the memory\n  \
+                  gmr status                     what am I watching\n  \
+                  gmr check                      did anything I care about move?\n  \
+                  gmr accept <key> --why ..      I looked; take this as the new baseline\n\
                   \n\
-                  Commands are listed declare, observe, revise, relate. Every revise\n\
-                  verb takes --why and seals it: changing criteria is a judgment."
+                  Other verbs exist for hand-driving the parts — `gmr help <name>`\n\
+                  reaches them. Anything that changes criteria takes --why and seals it."
 )]
 pub struct Cli {
     #[arg(long, default_value = ".", global = true)]
@@ -44,13 +41,32 @@ pub enum Command {
         global: bool,
     },
 
+    /// Watch a coordinate and write the memory that goes with it. With no
+    /// coordinate, open everything the declarations and notes already ask for.
+    #[command(display_order = 1)]
+    Anchor {
+        /// `path` or `path#name`. The probe, shape and position follow from it.
+        coordinate: Option<String>,
+        /// The memory itself. Without it the note is left unwritten and said so.
+        #[arg(short = 'm', long = "memory")]
+        memory: Option<String>,
+    },
+
+    /// What is being watched, on which axes, with which memories. Reads only.
+    #[command(display_order = 2)]
+    Status { key: Option<String> },
+
+    /// Did anything move on an axis a memory asked about? Exit 1 if so.
+    #[command(display_order = 3)]
+    Check { key: Option<String> },
+
     /// Build every declared probe recipe and install it for this machine.
     #[command(subcommand)]
-    #[command(display_order = 1)]
+    #[command(hide = true)]
     Probes(ProbesCmd),
 
     /// Open what the declarations and notes ask for, and align bindings.
-    #[command(display_order = 2)]
+    #[command(hide = true)]
     Sync {
         #[arg(default_value = crate::verbs::sync::DEFAULT_FILE)]
         file: String,
@@ -59,15 +75,15 @@ pub enum Command {
     },
 
     /// Open one anchor directly, naming its probe and rules by hand.
-    #[command(display_order = 3)]
+    #[command(hide = true)]
     Open(OpenArgs),
 
     /// Ask every anchor whether the world still matches. Exit 1 if any moved.
-    #[command(display_order = 10)]
+    #[command(hide = true)]
     Observe { key: Option<String> },
 
     /// Each anchor's current state.
-    #[command(display_order = 12)]
+    #[command(hide = true)]
     Read { key: Option<String> },
 
     /// Accept what an anchor now shows: re-pin its baseline, or take the
@@ -86,7 +102,7 @@ pub enum Command {
     },
 
     /// Install a directory as a named probe artifact.
-    #[command(display_order = 34)]
+    #[command(hide = true)]
     Publish {
         from: String,
         /// The name anchors will write down.
@@ -102,7 +118,7 @@ pub enum Command {
     },
 
     /// Look somewhere else. Needs --why, and the reason is sealed.
-    #[command(display_order = 20)]
+    #[command(hide = true)]
     Reprobe {
         key: String,
         /// The probe to look with, by name.
@@ -115,7 +131,7 @@ pub enum Command {
     },
 
     /// Change what counts as a change. Needs --why, and the reason is sealed.
-    #[command(display_order = 21)]
+    #[command(hide = true)]
     Retransition {
         key: String,
         #[arg(long = "rule", value_name = "GUARD => NEW_STATE", required = true)]
@@ -125,7 +141,7 @@ pub enum Command {
     },
 
     /// Change what is irreversible. Needs --why, and the reason is sealed.
-    #[command(display_order = 22)]
+    #[command(hide = true)]
     Reterminal {
         key: String,
         #[arg(long = "terminal", value_delimiter = ',', required = true)]
@@ -136,7 +152,7 @@ pub enum Command {
 
     /// Recapture against the instrument this build has. Needs --why, and the
     /// reason is sealed.
-    #[command(display_order = 25)]
+    #[command(hide = true)]
     Rebase {
         keys: Vec<String>,
         /// Every anchor standing on a reading a different instrument took.
@@ -147,7 +163,7 @@ pub enum Command {
     },
 
     /// Move the state directly. Needs --why, and the reason is sealed.
-    #[command(display_order = 23)]
+    #[command(hide = true)]
     Restate {
         key: String,
         #[arg(long)]
@@ -157,7 +173,7 @@ pub enum Command {
     },
 
     /// Say by hand which anchors a note is about; notes usually say it themselves.
-    #[command(display_order = 30)]
+    #[command(hide = true)]
     Bind {
         path: String,
         #[arg(long, value_delimiter = ',', conflicts_with = "detach")]
@@ -171,16 +187,16 @@ pub enum Command {
     },
 
     /// Re-stamp a binding's content version without changing which anchors it's about.
-    #[command(display_order = 31)]
+    #[command(hide = true)]
     Reaffirm { path: String },
 
     /// Other references bound to any anchor `path` is also bound to.
-    #[command(display_order = 32)]
+    #[command(hide = true)]
     Cobound { path: String },
 
     /// Record that `from` relates to `to`. Independent of anchoring — linking
     /// two references says nothing about which anchors either is bound to.
-    #[command(display_order = 33)]
+    #[command(hide = true)]
     Link {
         from: String,
         to: String,
@@ -189,7 +205,7 @@ pub enum Command {
     },
 
     /// Retire an anchor. Closure is irreversible.
-    #[command(display_order = 24)]
+    #[command(display_order = 5)]
     Close {
         key: String,
         #[arg(long)]
@@ -197,7 +213,7 @@ pub enum Command {
     },
 
     /// Transitions, terminals and stalls since a point in the journal.
-    #[command(display_order = 13)]
+    #[command(hide = true)]
     Edges {
         #[arg(long, default_value = "0")]
         since: u64,
@@ -206,26 +222,26 @@ pub enum Command {
     },
 
     /// Per-anchor liveness: last seen, attempts, backoff.
-    #[command(display_order = 14)]
+    #[command(hide = true)]
     Health { key: Option<String> },
 
     /// Force `key` due now, clearing any backoff or parked state. Unlike
     /// `sync`, which only repairs a missing queue row, this always resets it.
-    #[command(display_order = 16)]
+    #[command(hide = true)]
     Requeue { key: String },
 
     /// Observe only what is due, and hand back the notes bound to whatever moved.
-    #[command(display_order = 11)]
+    #[command(hide = true)]
     Pass,
 
     /// Anchors that were never seen, or that carry no note.
-    #[command(display_order = 15)]
+    #[command(hide = true)]
     Doctor,
 
     /// Snapshot the journal, bindings, links and sealed rationale as JSONL,
     /// independent of this database's schema version. Run this with the old
     /// binary before upgrading — `import` on the new one replays it.
-    #[command(display_order = 40)]
+    #[command(hide = true)]
     Export {
         /// Where to write the JSONL. Defaults to stdout, so it can be piped.
         #[arg(long)]
@@ -234,7 +250,7 @@ pub enum Command {
 
     /// Replay a `gmr export` file into this repo's store. Refuses anything
     /// but a fresh store — this recreates history, it does not merge it.
-    #[command(display_order = 41)]
+    #[command(hide = true)]
     Import { file: String },
 }
 
