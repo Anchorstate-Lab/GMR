@@ -11,7 +11,7 @@ pub use gmr_store::sqlite;
 pub use gmr_content::{ContentError, ContentErrorCode, ContentProvider, Fetched};
 pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, CanonicalizeError, Change, ChangeKind, ContentHash,
-    Derivation, Entry, Expr, ExternalId, Facts, FailureCode, Kind, Link, LinkKind,
+    Derivation, Entry, Expr, ExternalId, Facts, FailureCode, Kind, Link, LinkKind, NewtypeError,
     OUTCOME_CONTRACT, Observation, Outcome, ProbeName, ProbeRef, ProbeVersion, ProviderId,
     ReasonClass, Ref, Retain, Rule, RunSettings, State, StatusId, Superseded, Transitions,
     Verifiability, Version, fold,

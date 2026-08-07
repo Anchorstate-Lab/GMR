@@ -15,6 +15,16 @@ pub enum CanonicalizeError {
     Io(#[from] io::Error),
 }
 
+/// A `string_newtype!`'s validator rejected a value. `type_name` is the
+/// newtype (`"AnchorKey"`, `"ContentHash"`, ...), so callers wrapping this in
+/// their own error type can tell which one without parsing `reason`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid {type_name}: {reason}")]
+pub struct NewtypeError {
+    pub type_name: &'static str,
+    pub reason: String,
+}
+
 pub fn check_sha256_hex(s: &str) -> Result<(), String> {
     if s.len() != 64 {
         return Err(format!("expected 64 hex chars, got {}", s.len()));
@@ -44,10 +54,13 @@ macro_rules! string_newtype {
                 Self(value.into())
             }
 
-            pub fn try_new(value: impl Into<String>) -> Result<Self, String> {
+            pub fn try_new(value: impl Into<String>) -> Result<Self, $crate::addr::NewtypeError> {
                 let s = value.into();
                 let check: fn(&str) -> Result<(), String> = $validate;
-                check(&s).map_err(|e| format!("invalid {}: {e}", stringify!($name)))?;
+                check(&s).map_err(|reason| $crate::addr::NewtypeError {
+                    type_name: stringify!($name),
+                    reason,
+                })?;
                 Ok(Self(s))
             }
 
@@ -73,7 +86,7 @@ macro_rules! string_newtype {
         }
 
         impl ::std::str::FromStr for $name {
-            type Err = String;
+            type Err = $crate::addr::NewtypeError;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 Self::try_new(s)
             }
@@ -320,6 +333,15 @@ mod tests {
         assert!(check_sha256_hex(&"a".repeat(63)).is_err());
         assert!(check_sha256_hex(&"A".repeat(64)).is_err());
         assert!(check_sha256_hex(&"g".repeat(64)).is_err());
+    }
+
+    // A newtype's try_new() error is a type, not prose: callers can match on
+    // which newtype failed without parsing the message.
+    #[test]
+    fn try_new_failure_names_the_newtype_it_came_from() {
+        let err = ContentHash::try_new("not a hash").unwrap_err();
+        assert_eq!(err.type_name, "ContentHash");
+        assert!(err.reason.contains("64 hex chars"));
     }
 
     fn nested_array(depth: usize) -> Value {

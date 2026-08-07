@@ -17,7 +17,7 @@ pub fn run(
     env: Vec<String>,
     json: bool,
 ) -> Result<i32, CliError> {
-    let name = ProbeName::try_new(&name).map_err(CliError)?;
+    let name = ProbeName::try_new(&name)?;
     let from = root.join(&from);
     // Declared env enters the manifest and therefore the version; it is part of
     // the derivation closure.
