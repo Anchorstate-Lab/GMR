@@ -42,7 +42,9 @@ pub(crate) async fn recapture(
 ) -> Result<Revised, CliError> {
     let view = rt.read(key).await?;
     let blank = State::new(serde_json::json!({ "position": view.state.position() }));
-    let revised = rt.revise(key, Change::Restate { state: blank }, why).await?;
+    let revised = rt
+        .revise(key, Change::Restate { state: blank }, why)
+        .await?;
     rt.observe(key).await?;
     Ok(revised)
 }

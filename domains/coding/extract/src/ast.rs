@@ -64,6 +64,31 @@ fn visibility(
     }
 }
 
+/// A type's contract is its members, and its implementation is whatever bodies
+/// those members carry. Split that way, `shape` moves when a field, variant or
+/// method signature moves — the thing that breaks every construction site and
+/// every match — while `body` moves only when an implementation does. Without
+/// the split a type has no signature at all (a struct has no `parameters` and
+/// no `return_type`), so adding a field reports as a changed implementation.
+fn members(node: tree_sitter::Node, src: &str) -> (String, String) {
+    let Some(body) = node.child_by_field_name("body") else {
+        return (String::new(), String::new());
+    };
+    let mut walk = body.walk();
+    let (mut declared, mut implemented) = (Vec::new(), Vec::new());
+    for m in body.named_children(&mut walk) {
+        let inner = m.child_by_field_name("body");
+        let head = inner.map_or(m.end_byte(), |b| b.start_byte());
+        if let Some(t) = src.get(m.start_byte()..head) {
+            declared.push(squeeze(t));
+        }
+        if let Some(t) = inner.and_then(|b| src.get(b.byte_range())) {
+            implemented.push(squeeze(t));
+        }
+    }
+    (declared.join("; "), implemented.join(" "))
+}
+
 fn naming(kind: &str) -> &'static str {
     match kind {
         "call" | "import" => "callee",
@@ -105,24 +130,42 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             .or_else(|| node.child_by_field_name("function").map(text))
             .or_else(|| named_by_parent(table, node).map(text))
             .unwrap_or_default();
-        let shape = table
-            .shape_fields
-            .iter()
-            .filter_map(|f| node.child_by_field_name(f).map(text))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let body = node
-            .child_by_field_name("body")
-            .map(text)
-            .unwrap_or_default();
+        let (declared, implemented) = match kind == "type" {
+            true => members(node, &src),
+            false => (String::new(), String::new()),
+        };
+        let mut sig = Vec::new();
+        let mut walk = node.walk();
+        sig.extend(
+            node.children(&mut walk)
+                .filter(|c| table.shape_kinds.contains(&c.kind()))
+                .map(text),
+        );
+        sig.extend(
+            table
+                .shape_fields
+                .iter()
+                .filter_map(|f| node.child_by_field_name(f).map(text)),
+        );
+        if !declared.is_empty() {
+            sig.push(declared);
+        }
+        let body = match kind == "type" {
+            true => implemented,
+            false => node
+                .child_by_field_name("body")
+                .map(text)
+                .unwrap_or_default(),
+        };
         let vis = visibility(table, node, &name, &text);
 
         let c: BTreeMap<String, String> = [
             ("file", rel.to_owned()),
             ("kind", kind.to_owned()),
+            ("form", node.kind().to_owned()),
             ("vis", vis),
             (naming(kind), name),
-            ("shape", shape),
+            ("shape", sig.join(" ")),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v))
@@ -413,5 +456,88 @@ mod tests {
             json!({"file": "a.go", "kind": "function", "name": "beta"}),
         );
         assert_eq!(v["at"]["vis"], "");
+    }
+
+    fn shape_of(tag: &str, src: &str, name: &str) -> String {
+        let d = fixture(&format!("shape-{tag}"), &[("a.rs", src)]);
+        at(&d, json!({"file": "a.rs", "name": name}))["at"]["shape"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    /// Each of these breaks every caller. Before they entered the shape they
+    /// left no trace at all: kind, vis, shape and body were byte-identical, so
+    /// no rule could have been written that would catch them.
+    #[test]
+    fn a_modifier_that_breaks_every_caller_is_part_of_the_signature() {
+        let plain = shape_of("plain", "pub fn f(x: u64) -> u64 { x }", "f");
+        for (tag, src) in [
+            ("async", "pub async fn f(x: u64) -> u64 { x }"),
+            ("unsafe", "pub unsafe fn f(x: u64) -> u64 { x }"),
+            ("const", "pub const fn f(x: u64) -> u64 { x }"),
+        ] {
+            assert_ne!(shape_of(tag, src, "f"), plain, "{src}");
+        }
+    }
+
+    #[test]
+    fn tightening_a_bound_is_part_of_the_signature() {
+        let loose = shape_of("loose", "pub fn f<T>(x: T) -> T { x }", "f");
+        let tight = shape_of("tight", "pub fn f<T: Clone>(x: T) -> T { x }", "f");
+        let tighter = shape_of("tighter", "pub fn f<T: Clone + Send>(x: T) -> T { x }", "f");
+        assert_ne!(loose, tight);
+        assert_ne!(tight, tighter);
+    }
+
+    /// A struct has no `parameters` and no `return_type`, so its shape used to
+    /// be the empty string and every anchor on a type ran with one dead axis.
+    #[test]
+    fn a_type_signs_its_members_and_implements_only_their_bodies() {
+        let one = shape_of("one", "pub struct X { a: u64 }", "X");
+        assert!(!one.is_empty(), "a type's signature cannot be empty");
+        assert_ne!(
+            shape_of("two", "pub struct X { a: u64, b: String }", "X"),
+            one
+        );
+        assert_ne!(shape_of("retyped", "pub struct X { a: u32 }", "X"), one);
+
+        let d = fixture("members", &[("a.rs", "pub struct X { a: u64 }")]);
+        let plain = at(&d, json!({"file": "a.rs", "name": "X"}));
+        let d = fixture("members2", &[("a.rs", "pub struct X { a: u64, b: u8 }")]);
+        let more = at(&d, json!({"file": "a.rs", "name": "X"}));
+        assert_eq!(
+            plain["facts"]["body"], more["facts"]["body"],
+            "a struct carries no implementation, so adding a field is not a logic change"
+        );
+    }
+
+    #[test]
+    fn a_trait_separates_what_it_declares_from_what_it_implements() {
+        let d = fixture(
+            "tr1",
+            &[("a.rs", "pub trait X { fn go(&self) { let a = 1; } }")],
+        );
+        let one = at(&d, json!({"file": "a.rs", "name": "X"}));
+        let d = fixture(
+            "tr2",
+            &[("a.rs", "pub trait X { fn go(&self) { let b = 2; } }")],
+        );
+        let two = at(&d, json!({"file": "a.rs", "name": "X"}));
+        assert_eq!(one["at"]["shape"], two["at"]["shape"]);
+        assert_ne!(one["facts"]["body"], two["facts"]["body"]);
+    }
+
+    /// `kind` normalizes struct, enum and trait to one word so a coordinate can
+    /// say "the type called X" without knowing which. That word therefore
+    /// cannot report the change from one to another; `form` is the native node.
+    #[test]
+    fn form_tells_a_struct_from_an_enum_where_kind_cannot() {
+        let d = fixture("form1", &[("a.rs", "pub struct X { a: u64 }")]);
+        let s = at(&d, json!({"file": "a.rs", "name": "X"}));
+        let d = fixture("form2", &[("a.rs", "pub enum X { A }")]);
+        let e = at(&d, json!({"file": "a.rs", "name": "X"}));
+        assert_eq!(s["at"]["kind"], e["at"]["kind"]);
+        assert_ne!(s["at"]["form"], e["at"]["form"]);
     }
 }

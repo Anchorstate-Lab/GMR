@@ -15,6 +15,12 @@ pub struct Table {
     pub language: fn() -> tree_sitter::Language,
     pub kinds: &'static [(&'static str, &'static str)],
     pub shape_fields: &'static [&'static str],
+    /// Child nodes that belong to the signature but are not fields, so
+    /// `child_by_field_name` cannot reach them: `async`, `unsafe`, `const`, a
+    /// where clause. Each of these breaks every caller, so leaving them out of
+    /// the shape leaves a breaking change with no signal at all. Matched on
+    /// node kind, which for an anonymous token is its own text.
+    pub shape_kinds: &'static [&'static str],
     pub vis: Vis,
     /// Anonymous nodes (arrow functions) borrow a name from these parents.
     pub name_from_parent: &'static [&'static str],
@@ -38,7 +44,8 @@ pub const RUST: Table = Table {
         ("call_expression", "call"),
         ("macro_invocation", "call"),
     ],
-    shape_fields: &["parameters", "return_type", "type"],
+    shape_fields: &["type_parameters", "parameters", "return_type", "type"],
+    shape_kinds: &["function_modifiers", "where_clause"],
     vis: Vis::Child("visibility_modifier"),
     name_from_parent: &[],
 };
@@ -64,7 +71,9 @@ const TS_KINDS: &[(&str, &str)] = &[
     ("new_expression", "call"),
 ];
 
-const TS_SHAPE: &[&str] = &["parameters", "return_type", "type"];
+const TS_SHAPE: &[&str] = &["type_parameters", "parameters", "return_type", "type"];
+
+const TS_SHAPE_KINDS: &[&str] = &["async", "abstract", "readonly"];
 
 const TS_NAME_FROM_PARENT: &[&str] = &["variable_declarator", "pair"];
 
@@ -78,6 +87,7 @@ pub const TYPESCRIPT: Table = Table {
     language: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
     kinds: TS_KINDS,
     shape_fields: TS_SHAPE,
+    shape_kinds: TS_SHAPE_KINDS,
     vis: TS_VIS,
     name_from_parent: TS_NAME_FROM_PARENT,
 };
@@ -88,6 +98,7 @@ pub const TSX: Table = Table {
     language: || tree_sitter_typescript::LANGUAGE_TSX.into(),
     kinds: TS_KINDS,
     shape_fields: TS_SHAPE,
+    shape_kinds: TS_SHAPE_KINDS,
     vis: TS_VIS,
     name_from_parent: TS_NAME_FROM_PARENT,
 };
@@ -104,7 +115,8 @@ pub const PYTHON: Table = Table {
         ("import_from_statement", "import"),
         ("call", "call"),
     ],
-    shape_fields: &["parameters", "return_type", "type"],
+    shape_fields: &["type_parameters", "parameters", "return_type", "type"],
+    shape_kinds: &["async"],
     vis: Vis::Absent,
     name_from_parent: &[],
 };
@@ -123,7 +135,8 @@ pub const GO: Table = Table {
         ("import_declaration", "import"),
         ("call_expression", "call"),
     ],
-    shape_fields: &["parameters", "result", "type"],
+    shape_fields: &["type_parameters", "parameters", "result", "type"],
+    shape_kinds: &[],
     vis: Vis::LeadingUpper("export"),
     name_from_parent: &[],
 };
