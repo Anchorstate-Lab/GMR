@@ -14,17 +14,27 @@ pub async fn run(
     let catalog = Catalog::load(root)?;
     let key = AnchorKey::new(args.key.clone());
 
-    let (probe_name, initial) = match &args.probe {
-        Some(p) => (p.clone(), None),
-        None => (
-            crate::memories::probe_for(&args.key, &catalog)?,
-            Some(State::new(serde_json::json!({
-                "position": crate::memories::position_of(&args.key)
-            }))),
+    let routed = match &args.probe {
+        Some(_) => None,
+        None => Some(
+            crate::coord::route(&args.key, args.shape.as_deref(), &catalog)
+                .map_err(|e| CliError(format!("{key}: {e}")))?,
         ),
     };
+    let probe_name = match (&args.probe, &routed) {
+        (Some(p), _) => p.clone(),
+        (None, Some(r)) => r.probe.clone(),
+        (None, None) => unreachable!("a routed coordinate always names a probe"),
+    };
+    let initial = routed
+        .as_ref()
+        .map(|r| State::new(serde_json::json!({ "position": r.position })));
 
-    let transitions = match (&args.shape, args.rules.is_empty()) {
+    let shape = routed
+        .as_ref()
+        .map(|r| r.shape.as_str())
+        .or(args.shape.as_deref());
+    let transitions = match (shape, args.rules.is_empty()) {
         (Some(name), true) => rules::transitions(&crate::shapes::rules_of(
             crate::shapes::get(name).map_err(|e| CliError(format!("{key}: {e}")))?,
         )),

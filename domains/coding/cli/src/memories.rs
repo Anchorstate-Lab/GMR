@@ -84,34 +84,14 @@ pub struct Note {
     pub watch: Option<Vec<String>>,
 }
 
-/// `src/auth.ts#createSession` -> the position a coord probe understands.
-/// Shared with `open`, which routes its own `path#name` shorthand the same way.
-pub(crate) fn position_of(about: &str) -> Value {
-    match about.split_once('#') {
-        Some((file, name)) => json!({ "file": file, "name": name }),
-        None => json!({ "file": about }),
-    }
-}
-
-pub(crate) fn probe_for(about: &str, catalog: &Catalog) -> Result<String, CliError> {
-    let file = about.split_once('#').map(|(f, _)| f).unwrap_or(about);
-    let ext = file.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
-    catalog.for_extension(ext).ok_or_else(|| {
-        CliError(format!(
-            "`about: {about}` needs a probe that reads `.{ext}`, and none does"
-        ))
-    })
-}
-
-/// The minimal form: the key is the coordinate itself, so nobody has to invent
-/// a permanent identity on their first note.
 fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<AnchorDecl, CliError> {
+    let routed = crate::coord::route(about, shape, catalog)?;
     Ok(AnchorDecl {
         key: about.to_owned(),
-        probe: probe_for(about, catalog)?,
+        probe: routed.probe,
         params: json!({ "root": "." }),
-        position: Some(position_of(about)),
-        shape: Some(shape.unwrap_or("roster").to_owned()),
+        position: Some(routed.position),
+        shape: Some(routed.shape),
         rules: Vec::new(),
         terminal: Vec::new(),
         retain_full: false,
@@ -251,7 +231,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         };
         assert_eq!(decl.key, "src/auth.ts#createSession");
         assert_eq!(decl.probe, "ast-map");
-        assert_eq!(decl.shape.as_deref(), Some("roster"));
+        assert_eq!(decl.shape.as_deref(), Some("contract"));
         assert_eq!(
             decl.position,
             Some(json!({"file": "src/auth.ts", "name": "createSession"}))
@@ -277,8 +257,8 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     }
 
     #[test]
-    fn a_note_that_names_no_shape_still_gets_the_default() {
-        let (d, r) = world(&[("memories/a.md", "---\nabout: src/a.ts#f\n---\n")]);
+    fn a_coordinate_with_no_part_watches_the_whole_files_roster() {
+        let (d, r) = world(&[("memories/a.md", "---\nabout: src/a.ts\n---\n")]);
         let notes = scan(d.path(), &r).unwrap();
         assert!(notes[0].watch.is_none());
 
@@ -286,6 +266,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             panic!("expected a declared anchor");
         };
         assert_eq!(decl.shape.as_deref(), Some("roster"));
+        assert_eq!(decl.position, Some(json!({ "file": "src/a.ts" })));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod cli;
+mod coord;
 mod delivery;
 mod error;
 mod memories;
