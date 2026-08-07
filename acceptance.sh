@@ -162,6 +162,73 @@ set -e
 echo "$out" | grep -q "memories/deploy.md" \
     || fail "锚住了源码里看不见的事实，但笔记没有回到手上" "$out"
 
+# ── 门面：一条坐标进去，一个向量出来 ─────────────────────────────────────
+step "the front door: anchor / status / check / accept"
+cat > "$repo/src/session.ts" <<'EOF'
+export function rotate(id: string): string { return id; }
+EOF
+(cd "$repo" && git add -A && git -c user.email=a@b -c user.name=t commit -qm session)
+
+key='src/session.ts#rotate'
+out=$("$gmr" --repo "$repo" anchor "$key" -m '轮换必须在写库之前完成')
+echo "$out" | grep -q 'missing · sig · logic · file · line' \
+    || fail "anchor 没有从坐标推出 contract 的五个轴" "$out"
+echo "$out" | grep -q 'memories/session-rotate.md' || fail "anchor 没有写出笔记" "$out"
+
+out=$("$gmr" --repo "$repo" status "$key")
+echo "$out" | grep -q 'contract' || fail "status 没有认出 shape" "$out"
+echo "$out" | grep -q 'memories/session-rotate.md' || fail "status 没有列出记忆" "$out"
+
+set +e
+out=$("$gmr" --repo "$repo" check "$key"); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "世界没动时 check 应当是 0，得到 $code" "$out"
+
+# 只移动行号。没人订阅 line，所以记忆不该回到手上，退出码不该是 1。
+cat > "$repo/src/session.ts" <<'EOF'
+// a
+// b
+export function rotate(id: string): string { return id; }
+EOF
+set +e
+out=$("$gmr" --repo "$repo" check "$key"); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "只有没被订阅的轴动了，check 不该报警，得到 $code" "$out"
+echo "$out" | grep -q 'memories/session-rotate.md' \
+    && fail "没被订阅的轴不该把记忆交出来" "$out"
+
+# 签名、实现、行号一起动。三个都要落地 —— 有序规则表只会报第一个，把另外两个吞掉。
+cat > "$repo/src/session.ts" <<'EOF'
+// a
+// b
+// c
+export function rotate(id: string, now: number): string {
+  const next = id + now;
+  return next;
+}
+EOF
+set +e
+out=$("$gmr" --repo "$repo" check "$key"); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "订阅的轴动了，check 应当是 1，得到 $code" "$out"
+echo "$out" | grep -q 'memories/session-rotate.md' || fail "check 没有把记忆交回来" "$out"
+
+out=$("$gmr" --repo "$repo" status "$key")
+echo "$out" | grep -qE 'sig 1' || fail "签名变了但 sig 位没置起来" "$out"
+echo "$out" | grep -qE 'logic 1' || fail "实现变了但 logic 位没置起来 —— 这正是旧表格会吞掉的那个" "$out"
+echo "$out" | grep -qE 'line 1' || fail "行号变了但 line 位没置起来" "$out"
+
+out=$("$gmr" --repo "$repo" accept "$key" --why '多传一个 now 不影响“轮换先于写库”这条')
+echo "$out" | grep -q 'rationale' || fail "accept 没有封存理由" "$out"
+
+out=$("$gmr" --repo "$repo" status "$key")
+echo "$out" | grep -q 'sig 0' || fail "accept 之后 sig 位应当归零" "$out"
+set +e
+out=$("$gmr" --repo "$repo" check "$key"); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "accept 之后 check 应当是 0，得到 $code" "$out"
+
+
 echo
 echo "验收通过：陌生仓库、无工具链、零下载探针。记忆与事实连上了，"
 echo "          源码里的和源码外的都算，且事实动时记忆回到手上。"

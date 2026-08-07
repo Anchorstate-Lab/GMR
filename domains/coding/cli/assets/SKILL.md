@@ -9,14 +9,15 @@ description: Use in any repository containing a `.anchor/` directory. GMR ground
 
 An anchor is a small state machine watching one coordinate in the codebase (a function, a file, a schema field — whatever a probe can read). A note is a subjective record — yours — bound to one or more anchors. `gmr` doesn't store the note's content; it stores that the note is *about* this anchor, and what the anchor looked like when the note was written. When the anchor's state moves, the note is no longer guaranteed current — `gmr` tells you that, it doesn't guess whether the note still holds.
 
+An anchor watching a named symbol keeps a **vector**, one bit per axis: `missing`, `sig`, `logic`, `file`, `line`. A bit is set against the baseline *you last confirmed*, not against the last observation, so it stays set until you `accept`. Several axes moving in one edit all land — no axis is swallowed by another. `status` names the highest set axis; `v` shows them all.
+
 ## Detection
 
 If `.anchor/anchors.toml` exists at the repo root, this repository is managed by `gmr`. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
 
 ```
-gmr doctor --json
-gmr read --json
-gmr observe --json
+gmr status --json
+gmr check --json
 ```
 
 ## The loop
@@ -24,16 +25,22 @@ gmr observe --json
 This is a loop you run yourself as part of normal work — not a human-only ritual you wait to be asked for:
 
 1. `gmr init` — creates `.anchor/`, installs bundled probes. Idempotent, safe to rerun.
-2. Write a note under `memories/<name>.md` naming what it's about:
-   ```
-   ---
-   about: src/auth.ts#createSession
-   ---
-   Sessions expire after 30 minutes because ...
-   ```
-3. `gmr sync` — opens anchors for every coordinate declared in `.anchor/anchors.toml` or named by a note under `memories/`, and binds the notes to them. This is automatic: naming a coordinate in a note is enough to open an anchor for it on the next `sync`. Use `gmr sync --dry-run` first if you want to preview what would open or bind before committing to it.
-4. `gmr observe` (or `gmr pass` for only what's due) — asks whether the world still matches. Exits 1 if anything moved.
-5. `gmr read --json` — each anchor's current state, for scripting.
+2. `gmr anchor src/auth.ts#createSession -m "sessions expire after 30 minutes because ..."` — routes the coordinate to a probe, a shape and a position, writes the note, opens the anchor and binds the memory. Say nothing but the coordinate and it all follows; the note is left for you to write and reported as `unwritten` until you do.
+3. `gmr check` — did anything move on an axis a memory asked about? Exits 1 if so, and hands you the memories to re-read.
+4. `gmr accept <key> --why "..."` — you looked, and what it shows is the new baseline. Clears the vector, seals the reason.
+5. `gmr status` — everything being watched, its axes, its memories. Reads only.
+
+`gmr anchor` with no coordinate opens whatever the declarations and notes already ask for — that is what a fresh clone needs, since the journal does not travel with the repository.
+
+A note may pick its own shape and say which axes should wake it:
+
+```
+---
+about: src/auth.ts#createSession
+shape: contract
+watch: [logic]
+---
+```
 
 ## What's worth anchoring — judgment, not a rule
 
@@ -47,7 +54,11 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 
 ## Verbs that seal a reason (`--why`)
 
-`reprobe`, `retransition`, `reterminal`, `rebase`, `restate`, and `close` all require `--why`, and it's sealed permanently into the journal. These are judgment calls being revised, not routine writes — give the real reason. It gets read later, by you or someone else, trying to reconstruct why the criteria changed. A terminal anchor cannot be un-terminaled; correcting a bad judgment means opening a new anchor with `--supersedes`, not fighting the old one.
+`accept`, `close`, and the hand-driving verbs behind them (`reprobe`, `retransition`, `reterminal`, `rebase`, `restate`) all require `--why`, and it's sealed permanently into the journal. These are judgment calls being revised, not routine writes — give the real reason. It gets read later, by you or someone else, trying to reconstruct why the criteria changed. A terminal anchor cannot be un-terminaled; correcting a bad judgment means opening a new anchor with `--supersedes`, not fighting the old one.
+
+## The verbs behind the front door
+
+`gmr --help` shows six. The rest still work and are reachable through `gmr help <name>`: `sync`, `open`, `observe`, `pass`, `read`, `doctor`, `health`, `edges`, `requeue`, `bind`, `reaffirm`, `cobound`, `link`, `probes`, `publish`, `export`, `import`, and the five revise verbs. Reach for them to drive one part by hand, not for ordinary work.
 
 ## Reading `gmr doctor --json`
 
@@ -58,7 +69,7 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 - `barren` — anchors nobody has bound a note to yet.
 - `absent` — the probe ran and found nothing there. Normal when criteria were written before the code exists — don't read this as "it used to be there and now it's gone" without checking.
 - `unseen` — outstanding failed attempts; check the probe or its credentials.
-- `stranded` — the declared probe has no installed artifact on this machine (`gmr probes build`).
+- `stranded` — no transport here can resolve the declared probe (`gmr probes build`).
 - `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it will fail with "no content provider could version" until the underlying cause is fixed. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
 
 ## Binding non-git content

@@ -173,13 +173,9 @@ pub fn run(root: &Path, json: bool, global: bool) -> Result<i32, CliError> {
         println!("\nskill doc written to {}", skill_target.display());
     }
 
-    println!("\nNo anchors were opened. What is worth anchoring is yours to say —");
-    println!("write a note and name the coordinate it is about:\n");
-    println!("  {NOTES_DIR}/<name>.md");
-    println!("  ---");
-    println!("  about: {}", example(&readable));
-    println!("  ---");
-    println!("\nthen `sync` to open it, and `observe` to ask whether it still holds.");
+    println!("\nNo anchors were opened. What is worth watching is yours to say:\n");
+    println!("  gmr anchor {} -m '...'", example(&readable));
+    println!("\nthen `gmr check` to ask whether it still holds.");
     Ok(0)
 }
 
