@@ -158,4 +158,83 @@ mod tests {
         assert_eq!(for_extension("ts"), Some("ast-map"));
         assert_eq!(for_extension("md"), None);
     }
+
+    /// `Vocabulary` lives in this file, outside the closure; the candidate map
+    /// is built inside it. The two can drift, and when they do a shape reads
+    /// `obs.at.<key>` no candidate carries — the rule faults, or the axis is
+    /// simply never able to move and nobody finds out. Every declared key has
+    /// to come back from a real run.
+    const FIXTURES: [(&str, &[(&str, &str)], &str); 4] = [
+        (
+            "ast-map",
+            &[(
+                "a.rs",
+                "use std::fmt;\npub struct X { pub a: u64 }\npub fn f() { g(); }\n",
+            )],
+            r#"{"file": "a.rs"}"#,
+        ),
+        ("addr-map", &[("a.rs", "anything")], r#"{"path": "a.rs"}"#),
+        (
+            "name-map",
+            &[("a.rs", "let needle = 1;\n")],
+            r#"{"name": "needle"}"#,
+        ),
+        (
+            "prose-map",
+            &[("a.md", "# Top\n\nbody\n")],
+            r#"{"file": "a.md"}"#,
+        ),
+    ];
+
+    #[test]
+    fn every_key_a_probe_declares_comes_back_from_a_real_run() {
+        let reg = registry();
+        for v in vocabularies() {
+            let (_, files, pos) = FIXTURES
+                .iter()
+                .find(|(n, _, _)| *n == v.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "`{}` has no fixture; then it can declare keys it never emits",
+                        v.name
+                    )
+                });
+
+            let dir = std::env::temp_dir().join(format!("gmr-vocab-{}", v.name));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            for (path, body) in *files {
+                std::fs::write(dir.join(path), body).unwrap();
+            }
+            let out = (reg[&ProbeName::new(v.name)].extract)(
+                &dir,
+                &serde_json::from_str(pos).unwrap(),
+                &serde_json::json!({}),
+            )
+            .unwrap_or_else(|e| panic!("`{}` on its own fixture: {e}", v.name));
+
+            let mut seen = std::collections::BTreeSet::new();
+            for m in out["matches"].as_array().into_iter().flatten() {
+                seen.extend(
+                    m["at"]
+                        .as_object()
+                        .into_iter()
+                        .flatten()
+                        .map(|(k, _)| k.clone()),
+                );
+            }
+            assert!(
+                !seen.is_empty(),
+                "`{}` matched nothing on its own fixture",
+                v.name
+            );
+            for key in v.at {
+                assert!(
+                    seen.contains(*key),
+                    "`{}` declares `at.{key}` but no candidate carries it; emitted {seen:?}",
+                    v.name
+                );
+            }
+        }
+    }
 }

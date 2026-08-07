@@ -434,6 +434,164 @@ mod tests {
         rules_of(get("contract").unwrap())
     }
 
+    /// One axis, one pair of sources that should move it and nothing else.
+    ///
+    /// `unmet` only asks whether the probe emits the path a rule reads. It
+    /// cannot ask whether that path can ever hold a different value, which is
+    /// how `file` survived three commits as an axis that could not fire. These
+    /// run the real extractor and the real generated rules, so an axis that
+    /// nothing can move fails here instead of waiting to be noticed by hand.
+    struct Shot {
+        axis: &'static str,
+        moves: &'static [&'static str],
+        name: &'static str,
+        before: &'static str,
+        after: &'static str,
+    }
+
+    const RANGE: &[Shot] = &[
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub fn f(x: u64, y: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub fn f(x: u64) -> u32 { x }",
+        },
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub async fn f(x: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub unsafe fn f(x: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "f",
+            before: "pub fn f<T>(x: T) -> T { x }",
+            after: "pub fn f<T: Clone>(x: T) -> T { x }",
+        },
+        Shot {
+            axis: "surface",
+            moves: &["surface"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "fn f(x: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "logic",
+            moves: &["logic"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { helper(x) }",
+            after: "pub fn f(x: u64) -> u64 { other(x) }",
+        },
+        Shot {
+            axis: "line",
+            moves: &["line"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "\n\npub fn f(x: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "missing",
+            moves: &["missing"],
+            name: "f",
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub fn gone(x: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "X",
+            before: "pub struct X { pub a: u64 }",
+            after: "pub struct X { pub a: u64, pub b: u8 }",
+        },
+        Shot {
+            axis: "sig",
+            moves: &["sig"],
+            name: "X",
+            before: "pub struct X { pub a: u64 }",
+            after: "pub struct X { pub a: u32 }",
+        },
+        Shot {
+            axis: "logic",
+            moves: &["logic"],
+            name: "X",
+            before: "pub trait X { fn go(&self) -> u8 { 1 } }",
+            after: "pub trait X { fn go(&self) -> u8 { 2 } }",
+        },
+        Shot {
+            axis: "kind",
+            moves: &["kind", "sig"],
+            name: "X",
+            before: "pub struct X { pub a: u64 }",
+            after: "pub enum X { A }",
+        },
+    ];
+
+    fn fired(shot: &Shot, at: usize) -> Vec<String> {
+        let dir = std::env::temp_dir().join(format!("gmr-range-{at}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.rs");
+        let probe = coding_extract::registry();
+        let probe = &probe
+            .get(&gmr::ProbeName::new("ast-map"))
+            .expect("ast-map is linked in")
+            .extract;
+        let pos = serde_json::json!({ "file": "a.rs", "name": shot.name });
+        let look = |src: &str| {
+            std::fs::write(&file, src).unwrap();
+            probe(&dir, &pos, &serde_json::json!({})).unwrap()
+        };
+
+        let rules = contract();
+        let opened = step(&rules, &look(shot.before), &Value::Null);
+        assert!(
+            set(&opened).is_empty(),
+            "shot {at} did not open clean: {opened}"
+        );
+        set(&step(&rules, &look(shot.after), &opened))
+    }
+
+    #[test]
+    fn every_axis_can_be_moved_and_moves_alone() {
+        for (at, shot) in RANGE.iter().enumerate() {
+            assert_eq!(
+                fired(shot, at),
+                shot.moves,
+                "shot {at}: `{}` -> `{}`",
+                shot.before,
+                shot.after
+            );
+        }
+    }
+
+    #[test]
+    fn no_axis_is_left_off_the_range() {
+        let axes = axes_of(get("contract").unwrap());
+        for axis in &axes {
+            assert!(
+                RANGE.iter().any(|s| s.axis == *axis),
+                "`{axis}` has no shot; an axis nothing is known to move is how a dead one hides"
+            );
+        }
+    }
+
     fn sighted(sig: &str, body: &str, file: &str, line: i64) -> Value {
         serde_json::json!({
             "schema": COORD_SCHEMA, "extractor": "ast-map", "found": true,
