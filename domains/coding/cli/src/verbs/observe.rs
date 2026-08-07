@@ -39,7 +39,7 @@ pub async fn run(
 
         let memories = match &observed {
             Observed::Transitioned { to, .. } => {
-                delivered(rt, &subs, key, to, &mut unclaimed).await?
+                delivered(rt, &subs, key, to, true, &mut unclaimed).await?
             }
             _ => Vec::new(),
         };
@@ -82,16 +82,19 @@ pub(crate) async fn delivered(
     subs: &Subscriptions,
     key: &AnchorKey,
     to: &State,
+    moved: bool,
     unclaimed: &mut Vec<AnchorKey>,
 ) -> Result<Vec<String>, CliError> {
     let bound = super::memories_on(rt, key).await?;
     if bound.is_empty() {
-        unclaimed.push(key.clone());
+        if moved {
+            unclaimed.push(key.clone());
+        }
         return Ok(Vec::new());
     }
     Ok(bound
         .into_iter()
-        .filter(|m| subs.delivers(key.as_str(), m, to))
+        .filter(|m| subs.delivers(key.as_str(), m, to, moved))
         .collect())
 }
 

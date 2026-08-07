@@ -24,21 +24,25 @@ pub async fn run(
     let mut quiet = 0;
 
     for key in &keys {
-        match rt.observe(key).await? {
-            Observed::Transitioned { to, .. } => {
-                let memories =
-                    super::observe::delivered(rt, &subs, key, &to, &mut unclaimed).await?;
-                let status = to.status().map(|s| s.to_string()).unwrap_or_default();
-                match memories.is_empty() {
-                    true => quiet += 1,
-                    false => handed.push((key.clone(), status, memories)),
-                }
-            }
+        let observed = rt.observe(key).await?;
+        let moved = match &observed {
             Observed::Attempt { code, message, .. } => {
-                unseen.push((key.clone(), format!("{code:?}: {message}")))
+                unseen.push((key.clone(), format!("{code:?}: {message}")));
+                continue;
             }
-            _ => {}
+            Observed::Closed => continue,
+            other => matches!(other, Observed::Transitioned { .. }),
+        };
+
+        let state = rt.read(key).await?.state;
+        let memories =
+            super::observe::delivered(rt, &subs, key, &state, moved, &mut unclaimed).await?;
+        if memories.is_empty() {
+            quiet += usize::from(moved);
+            continue;
         }
+        let status = state.status().map(|s| s.to_string()).unwrap_or_default();
+        handed.push((key.clone(), status, memories));
     }
 
     let wrong = !handed.is_empty() || !unclaimed.is_empty() || !unseen.is_empty();

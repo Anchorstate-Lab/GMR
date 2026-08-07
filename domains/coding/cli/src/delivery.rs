@@ -22,6 +22,7 @@ pub fn axes_set(state: &State) -> Option<Vec<String>> {
 pub struct Subscriptions {
     per_note: BTreeMap<String, Vec<String>>,
     per_anchor: BTreeMap<String, Vec<String>>,
+    settled: BTreeMap<String, &'static [&'static str]>,
 }
 
 impl Subscriptions {
@@ -30,10 +31,12 @@ impl Subscriptions {
         let declared = read_declared(root, DEFAULT_FILE)?;
 
         let mut per_anchor = BTreeMap::new();
+        let mut settled = BTreeMap::new();
         let mut axes_by_anchor: BTreeMap<&str, Vec<&'static str>> = BTreeMap::new();
         for decl in merged(&declared, &notes) {
             let Some(name) = &decl.shape else { continue };
             let shape = crate::shapes::get(name)?;
+            settled.insert(decl.key.clone(), crate::shapes::settled_of(shape));
             if let Some(watch) = crate::shapes::watch_of(shape) {
                 per_anchor.insert(
                     decl.key.clone(),
@@ -65,12 +68,16 @@ impl Subscriptions {
         Ok(Self {
             per_note,
             per_anchor,
+            settled,
         })
     }
 
-    pub fn delivers(&self, anchor: &str, note: &str, state: &State) -> bool {
+    pub fn delivers(&self, anchor: &str, note: &str, state: &State, moved: bool) -> bool {
         let Some(set) = axes_set(state) else {
-            return true;
+            return match self.settled.get(anchor) {
+                Some(ok) => !state.status().is_some_and(|s| ok.contains(&s.as_str())),
+                None => moved,
+            };
         };
         if set.is_empty() {
             return false;
@@ -104,6 +111,18 @@ mod tests {
                 "k".to_owned(),
                 anchor.iter().map(|s| (*s).to_owned()).collect(),
             )]),
+            settled: BTreeMap::new(),
+        }
+    }
+
+    fn table(status: &str) -> State {
+        State::new(serde_json::json!({ "position": {}, "n": 3, "status": status }))
+    }
+
+    fn with_settled(ok: &'static [&'static str]) -> Subscriptions {
+        Subscriptions {
+            settled: BTreeMap::from([("k".to_owned(), ok)]),
+            ..Default::default()
         }
     }
 
@@ -111,27 +130,20 @@ mod tests {
     fn an_unwatched_axis_moves_without_handing_back_the_memory() {
         let s = subs(&["logic"], &["missing", "sig", "logic"]);
         let moved_line = state(serde_json::json!({ "logic": false, "line": true }));
-        assert!(!s.delivers("k", "memories/a.md", &moved_line));
+        assert!(!s.delivers("k", "memories/a.md", &moved_line, true));
 
         let moved_logic = state(serde_json::json!({ "logic": true, "line": false }));
-        assert!(s.delivers("k", "memories/a.md", &moved_logic));
+        assert!(s.delivers("k", "memories/a.md", &moved_logic, true));
     }
 
     #[test]
     fn a_note_that_says_nothing_takes_its_shapes_default() {
         let s = subs(&[], &["missing", "sig"]);
         let moved_sig = state(serde_json::json!({ "sig": true, "line": false }));
-        assert!(s.delivers("k", "memories/b.md", &moved_sig));
+        assert!(s.delivers("k", "memories/b.md", &moved_sig, true));
 
         let moved_line = state(serde_json::json!({ "sig": false, "line": true }));
-        assert!(!s.delivers("k", "memories/b.md", &moved_line));
-    }
-
-    #[test]
-    fn a_shape_with_no_vector_delivers_on_any_transition() {
-        let s = Subscriptions::default();
-        let table = State::new(serde_json::json!({ "position": {}, "n": 3, "status": "moved" }));
-        assert!(s.delivers("k", "memories/a.md", &table));
+        assert!(!s.delivers("k", "memories/b.md", &moved_line, true));
     }
 
     #[test]
@@ -140,7 +152,31 @@ mod tests {
         assert!(!s.delivers(
             "k",
             "memories/a.md",
-            &state(serde_json::json!({ "sig": false }))
+            &state(serde_json::json!({ "sig": false })),
+            true
         ));
+    }
+
+    #[test]
+    fn a_set_bit_keeps_handing_the_memory_back_after_the_observation_that_set_it() {
+        let s = subs(&["sig"], &["missing", "sig"]);
+        let carried = state(serde_json::json!({ "sig": true }));
+        assert!(s.delivers("k", "memories/a.md", &carried, false));
+        assert!(s.delivers("k", "memories/b.md", &carried, false));
+    }
+
+    #[test]
+    fn a_table_shape_hands_back_until_its_status_is_one_the_shape_calls_settled() {
+        let s = with_settled(&["captured"]);
+        assert!(!s.delivers("k", "memories/a.md", &table("captured"), true));
+        assert!(s.delivers("k", "memories/a.md", &table("section-gone"), false));
+        assert!(s.delivers("k", "memories/a.md", &table("added"), false));
+    }
+
+    #[test]
+    fn a_shape_nobody_declared_falls_back_to_the_transition_edge() {
+        let s = Subscriptions::default();
+        assert!(s.delivers("k", "memories/a.md", &table("moved"), true));
+        assert!(!s.delivers("k", "memories/a.md", &table("moved"), false));
     }
 }

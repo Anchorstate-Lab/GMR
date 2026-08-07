@@ -15,7 +15,8 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     let mut handed = 0;
     for key in &p.moved {
         let state = rt.read(key).await?.state;
-        let memories = super::observe::delivered(rt, &subs, key, &state, &mut unclaimed).await?;
+        let memories =
+            super::observe::delivered(rt, &subs, key, &state, true, &mut unclaimed).await?;
         handed += memories.len();
         moved.push((key, memories));
     }

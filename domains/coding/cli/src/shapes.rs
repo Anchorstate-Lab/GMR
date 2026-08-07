@@ -10,7 +10,10 @@ pub struct Shape {
 
 #[derive(Debug)]
 enum Body {
-    Table(&'static [&'static str]),
+    Table {
+        rules: &'static [&'static str],
+        settled: &'static [&'static str],
+    },
     Vector {
         dims: &'static [Dim],
         watch: &'static [&'static str],
@@ -60,44 +63,56 @@ const CONTRACT: Shape = Shape {
 
 const ROSTER: Shape = Shape {
     name: "roster",
-    body: Body::Table(&[
-        r#"obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }"#,
-        r#"not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }"#,
-        r#"obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }"#,
-        r#"obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }"#,
-        r#"changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }"#,
-    ]),
+    body: Body::Table {
+        settled: &["captured"],
+        rules: &[
+            r#"obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }"#,
+            r#"not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }"#,
+            r#"obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }"#,
+            r#"obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }"#,
+            r#"changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }"#,
+        ],
+    },
 };
 
 const OCCURRENCE: Shape = Shape {
     name: "occurrence",
-    body: Body::Table(&[
-        r#"not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }"#,
-        r#"obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }"#,
-        r#"obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }"#,
-    ]),
+    body: Body::Table {
+        settled: &["captured"],
+        rules: &[
+            r#"not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }"#,
+            r#"obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }"#,
+            r#"obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }"#,
+        ],
+    },
 };
 
 const FINGERPRINT: Shape = Shape {
     name: "fingerprint",
-    body: Body::Table(&[
-        r#"not exists(state.fingerprint) and obs.exact => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }"#,
-        r#"not exists(state.fingerprint) => { position: state.position, status: "absent" }"#,
-        r#"obs.exact == false => { position: state.position, fingerprint: state.fingerprint, line: state.line, status: "section-gone" }"#,
-        r#"obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }"#,
-    ]),
+    body: Body::Table {
+        settled: &["captured"],
+        rules: &[
+            r#"not exists(state.fingerprint) and obs.exact => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }"#,
+            r#"not exists(state.fingerprint) => { position: state.position, status: "absent" }"#,
+            r#"obs.exact == false => { position: state.position, fingerprint: state.fingerprint, line: state.line, status: "section-gone" }"#,
+            r#"obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }"#,
+        ],
+    },
 };
 
 const SYMBOL: Shape = Shape {
     name: "symbol",
-    body: Body::Table(&[
-        r#"obs.found == false => { position: state.position, status: "missing" }"#,
-        r#"not exists(state.signature) => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, status: "captured" }"#,
-        r#"obs.at.shape != state.signature => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.signature, status: "signature-changed" }"#,
-        r#"obs.facts.body != state.body => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.body, status: "logic-changed" }"#,
-        r#"obs.at.file != state.file => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.file, status: "moved-file" }"#,
-        r#"obs.facts.line != state.line => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.line, status: "moved-line" }"#,
-    ]),
+    body: Body::Table {
+        settled: &["captured"],
+        rules: &[
+            r#"obs.found == false => { position: state.position, status: "missing" }"#,
+            r#"not exists(state.signature) => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, status: "captured" }"#,
+            r#"obs.at.shape != state.signature => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.signature, status: "signature-changed" }"#,
+            r#"obs.facts.body != state.body => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.body, status: "logic-changed" }"#,
+            r#"obs.at.file != state.file => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.file, status: "moved-file" }"#,
+            r#"obs.facts.line != state.line => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.line, status: "moved-line" }"#,
+        ],
+    },
 };
 
 pub const ALL: &[&Shape] = &[&CONTRACT, &ROSTER, &OCCURRENCE, &FINGERPRINT, &SYMBOL];
@@ -113,10 +128,19 @@ pub fn get(name: &str) -> Result<&'static Shape, CliError> {
 
 pub fn rules_of(shape: &Shape) -> Vec<String> {
     match shape.body {
-        Body::Table(rules) => rules.iter().map(|r| (*r).to_owned()).collect(),
+        Body::Table { rules, .. } => rules.iter().map(|r| (*r).to_owned()).collect(),
         Body::Vector { dims, .. } => expand(dims),
     }
 }
+
+pub fn settled_of(shape: &Shape) -> &'static [&'static str] {
+    match shape.body {
+        Body::Table { settled, .. } => settled,
+        Body::Vector { .. } => SETTLED_ONLY,
+    }
+}
+
+const SETTLED_ONLY: &[&str] = &[SETTLED];
 
 pub fn name_of(transitions: &gmr::Transitions) -> Option<&'static str> {
     ALL.iter()
@@ -126,14 +150,14 @@ pub fn name_of(transitions: &gmr::Transitions) -> Option<&'static str> {
 
 pub fn watch_of(shape: &Shape) -> Option<&'static [&'static str]> {
     match shape.body {
-        Body::Table(_) => None,
+        Body::Table { .. } => None,
         Body::Vector { watch, .. } => Some(watch),
     }
 }
 
 pub fn axes_of(shape: &Shape) -> Vec<&'static str> {
     match shape.body {
-        Body::Table(_) => Vec::new(),
+        Body::Table { .. } => Vec::new(),
         Body::Vector { dims, .. } => std::iter::once(MISSING)
             .chain(dims.iter().map(|d| d.name))
             .collect(),

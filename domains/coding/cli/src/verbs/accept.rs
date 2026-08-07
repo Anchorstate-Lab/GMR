@@ -18,17 +18,29 @@ pub enum What {
 pub struct Pending {
     pub axes: Vec<String>,
     pub missing: bool,
+    pub unsettled: Option<String>,
     pub facets: Vec<&'static str>,
 }
 
 impl Pending {
     fn baseline(&self) -> bool {
-        !self.axes.is_empty()
+        !self.axes.is_empty() || self.unsettled.is_some()
     }
 
     fn criteria(&self) -> bool {
         !self.facets.is_empty()
     }
+
+    fn standing(&self) -> String {
+        match (&self.unsettled, self.axes.is_empty()) {
+            (Some(status), _) => status.clone(),
+            (None, _) => self.axes.join(" · "),
+        }
+    }
+}
+
+fn recaptured(state: &State) -> State {
+    State::new(serde_json::json!({ "position": state.position() }))
 }
 
 fn repinned(state: &State) -> Result<State, CliError> {
@@ -36,13 +48,9 @@ fn repinned(state: &State) -> Result<State, CliError> {
         .as_value()
         .as_object()
         .ok_or_else(|| CliError("this anchor's state is not an object".into()))?;
-    let v = obj.get("v").and_then(Value::as_object).ok_or_else(|| {
-        CliError(
-            "this anchor's shape keeps no vector, so there is no baseline to re-pin: \
-             its state already advances on its own"
-                .into(),
-        )
-    })?;
+    let Some(v) = obj.get("v").and_then(Value::as_object) else {
+        return Ok(recaptured(state));
+    };
     let now = obj
         .get("now")
         .cloned()
@@ -61,6 +69,16 @@ fn repinned(state: &State) -> Result<State, CliError> {
     Ok(State::new(Value::Object(out)))
 }
 
+fn unsettled_status(view: &gmr::AnchorView) -> Option<String> {
+    let name = crate::shapes::name_of(&view.anchor.transitions)?;
+    let ok = crate::shapes::settled_of(crate::shapes::get(name).ok()?);
+    let status = view.state.status()?.to_string();
+    match ok.contains(&status.as_str()) {
+        true => None,
+        false => Some(status),
+    }
+}
+
 async fn pending(
     rt: &Runtime,
     root: &Path,
@@ -72,8 +90,13 @@ async fn pending(
             "{key} is closed; closure is irreversible"
         )));
     }
-    let axes = crate::delivery::axes_set(&view.state).unwrap_or_default();
+    let vector = crate::delivery::axes_set(&view.state);
+    let axes = vector.clone().unwrap_or_default();
     let missing = axes.iter().any(|k| k == crate::shapes::MISSING);
+    let unsettled = match vector {
+        Some(_) => None,
+        None => unsettled_status(&view),
+    };
 
     let ctx = Context {
         catalog: Catalog::load(root)?,
@@ -94,6 +117,7 @@ async fn pending(
         Pending {
             axes,
             missing,
+            unsettled,
             facets,
         },
         view.state,
@@ -119,7 +143,7 @@ fn choose(p: &Pending, asked: Option<What>) -> Result<What, CliError> {
                  \n    baseline  {} set\n    criteria  the declaration changed its {}\n\
                  \nAccept them one at a time, each with its own reason:\n\
                  \n    gmr accept <key> --baseline --why '...'\n    gmr accept <key> --criteria --why '...'",
-                p.axes.join(" · "),
+                p.standing(),
                 p.facets.join(" · ")
             ))),
         },
@@ -187,7 +211,7 @@ pub async fn run(
             serde_json::json!({
                 "anchor": key,
                 "accepted": match what { What::Baseline => "baseline", What::Criteria => "criteria" },
-                "axes": p.axes, "facets": p.facets,
+                "axes": p.axes, "unsettled": p.unsettled, "facets": p.facets,
                 "context": last.context, "rationale": last.rationale,
             })
         );
@@ -195,7 +219,12 @@ pub async fn run(
     }
 
     match what {
-        What::Baseline => println!("{key} re-pinned; {} cleared", p.axes.join(" · ")),
+        What::Baseline => match &p.unsettled {
+            Some(status) => println!(
+                "{key} re-captured from `{status}`; if the world still reads that way it says so again"
+            ),
+            None => println!("{key} re-pinned; {} cleared", p.axes.join(" · ")),
+        },
         What::Criteria => println!("{key} took the declaration's {}", p.facets.join(" · ")),
     }
     sealed(&last.context, &last.rationale);
@@ -220,7 +249,17 @@ mod tests {
         Pending {
             axes: axes.iter().map(|s| (*s).to_owned()).collect(),
             missing: axes.contains(&"missing"),
+            unsettled: None,
             facets: facets.to_vec(),
+        }
+    }
+
+    fn unsettled(status: &str) -> Pending {
+        Pending {
+            axes: Vec::new(),
+            missing: false,
+            unsettled: Some(status.to_owned()),
+            facets: Vec::new(),
         }
     }
 
@@ -241,10 +280,24 @@ mod tests {
     }
 
     #[test]
-    fn a_shape_without_a_vector_says_so_rather_than_inventing_one() {
-        let table = State::new(serde_json::json!({ "position": {}, "n": 3, "status": "moved" }));
-        let e = repinned(&table).unwrap_err();
-        assert!(e.to_string().contains("keeps no vector"), "{e}");
+    fn a_shape_without_a_vector_re_captures_instead_of_pinning_a_baseline_it_has_not_got() {
+        let table = State::new(
+            serde_json::json!({ "position": { "file": "a.md" }, "n": 3, "status": "moved" }),
+        );
+        let s = repinned(&table).unwrap();
+        assert_eq!(
+            s.as_value(),
+            &serde_json::json!({ "position": { "file": "a.md" } })
+        );
+    }
+
+    #[test]
+    fn a_table_shape_sitting_on_an_unsettled_status_has_something_to_accept() {
+        assert_eq!(
+            choose(&unsettled("section-gone"), None).unwrap(),
+            What::Baseline
+        );
+        assert!(choose(&unsettled("section-gone"), Some(What::Baseline)).is_ok());
     }
 
     #[test]
