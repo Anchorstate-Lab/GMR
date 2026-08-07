@@ -171,8 +171,8 @@ EOF
 
 key='src/session.ts#rotate'
 out=$("$gmr" --repo "$repo" anchor "$key" -m '轮换必须在写库之前完成')
-echo "$out" | grep -q 'missing · sig · logic · file · line' \
-    || fail "anchor 没有从坐标推出 contract 的五个轴" "$out"
+echo "$out" | grep -q 'missing · kind · sig · surface · logic · line' \
+    || fail "anchor 没有从坐标推出 contract 的六个轴" "$out"
 echo "$out" | grep -q 'memories/session-rotate.md' || fail "anchor 没有写出笔记" "$out"
 
 out=$("$gmr" --repo "$repo" status "$key")
@@ -184,7 +184,8 @@ out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 0 ] || fail "世界没动时 check 应当是 0，得到 $code" "$out"
 
-# 只移动行号。没人订阅 line，所以记忆不该回到手上，退出码不该是 1。
+# 只移动行号。位置是身份的主导者，所以搬家本身就要报出来 —— 搬得合不合理是
+# 作者的判断，工具的职责是把它摆到台面上。
 cat > "$repo/src/session.ts" <<'EOF'
 // a
 // b
@@ -193,9 +194,27 @@ EOF
 set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
-[ "$code" -eq 0 ] || fail "只有没被订阅的轴动了，check 不该报警，得到 $code" "$out"
+[ "$code" -eq 1 ] || fail "位置动了 check 应当是 1，得到 $code" "$out"
 echo "$out" | grep -q 'memories/session-rotate.md' \
-    && fail "没被订阅的轴不该把记忆交出来" "$out"
+    || fail "位置动了没有把记忆交回来" "$out"
+
+# 想安静就自己说。watch 是笔记级的，不是判据，改它不需要密封理由 ——
+# 而已经累积起来的 line 位仍然在 status 里看得见。
+note="$repo/memories/session-rotate.md"
+printf '%s\n' '---' "about: $key" 'watch: [sig, logic]' '---' '' '轮换必须在写库之前完成' > "$note"
+cat > "$repo/src/session.ts" <<'EOF'
+// a
+// b
+// bb
+export function rotate(id: string): string { return id; }
+EOF
+set +e
+out=$("$gmr" --repo "$repo" check "$key"); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "笔记只订了 sig/logic，位置动了不该报警，得到 $code" "$out"
+out=$("$gmr" --repo "$repo" status "$key")
+echo "$out" | grep -q 'line 1' || fail "不递记忆不等于不记账，line 位该还在" "$out"
+printf '%s\n' '---' "about: $key" '---' '' '轮换必须在写库之前完成' > "$note"
 
 # 签名、实现、行号一起动。三个都要落地 —— 有序规则表只会报第一个，把另外两个吞掉。
 cat > "$repo/src/session.ts" <<'EOF'

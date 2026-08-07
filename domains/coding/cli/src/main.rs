@@ -149,6 +149,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
             key,
             baseline,
             criteria,
+            all,
             why,
         } => {
             let asked = match (baseline, criteria) {
@@ -156,7 +157,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
                 (_, true) => Some(verbs::accept::What::Criteria),
                 _ => None,
             };
-            verbs::accept::run(&rt, &root, key, why, asked, json).await
+            verbs::accept::run(&rt, &root, key, why, asked, all, json).await
         }
         Command::Read { key } => verbs::read::run(&rt, key, json).await,
         Command::Reprobe {

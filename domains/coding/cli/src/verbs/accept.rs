@@ -118,16 +118,65 @@ fn choose(p: &Pending, asked: Option<What>) -> Result<What, CliError> {
     }
 }
 
+async fn declaration_drifted(rt: &Runtime, root: &Path) -> Result<Vec<AnchorKey>, CliError> {
+    let ctx = Context {
+        catalog: Catalog::load(root)?,
+    };
+    let declared = read_declared(root, DEFAULT_FILE)?;
+    let notes = crate::memories::scan(root, &ctx.catalog)?;
+    let decls = merged(&declared, &notes);
+
+    let mut out = Vec::new();
+    for view in rt.read_all().await? {
+        let Some(d) = decls.iter().find(|d| d.key == view.key.as_str()) else {
+            continue;
+        };
+        if !view.closed && !differs(&view.anchor, d, &ctx)?.is_empty() {
+            out.push(view.key.clone());
+        }
+    }
+    Ok(out)
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
-    key: String,
+    key: Option<String>,
     why: String,
+    asked: Option<What>,
+    all: bool,
+    json: bool,
+) -> Result<i32, CliError> {
+    if all {
+        let keys = declaration_drifted(rt, root).await?;
+        if keys.is_empty() {
+            println!("every anchor already carries the criteria its declaration names");
+            return Ok(0);
+        }
+        for key in &keys {
+            one(rt, root, key, &why, Some(What::Criteria), json).await?;
+        }
+        return Ok(0);
+    }
+    let key = AnchorKey::new(key.ok_or_else(|| {
+        CliError(
+            "name an anchor, or pass --all --criteria to take a declaration change \
+             across the whole repository"
+                .into(),
+        )
+    })?);
+    one(rt, root, &key, &why, asked, json).await
+}
+
+async fn one(
+    rt: &Runtime,
+    root: &Path,
+    key: &AnchorKey,
+    why: &str,
     asked: Option<What>,
     json: bool,
 ) -> Result<i32, CliError> {
-    let key = AnchorKey::new(key);
-    let (p, decl) = pending(rt, root, &key).await?;
+    let (p, decl) = pending(rt, root, key).await?;
     let what = choose(&p, asked)?;
 
     let revised = match what {
@@ -139,7 +188,7 @@ pub async fn run(
                      Point the anchor at where the target went, or close it with a reason."
                 )));
             }
-            vec![crate::verbs::recapture(rt, &key, why.as_bytes()).await?]
+            vec![crate::verbs::recapture(rt, key, why.as_bytes()).await?]
         }
         What::Criteria => {
             let ctx = Context {
@@ -163,7 +212,7 @@ pub async fn run(
                 .collect::<Result<_, CliError>>()?;
             let mut out = Vec::new();
             for change in changes {
-                out.push(rt.revise(&key, change, why.as_bytes()).await?);
+                out.push(rt.revise(key, change, why.as_bytes()).await?);
             }
             out
         }

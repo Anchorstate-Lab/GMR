@@ -90,13 +90,18 @@ pub enum Command {
     /// criteria its declaration changed. Needs --why, and the reason is sealed.
     #[command(display_order = 4)]
     Accept {
-        key: String,
-        /// Clear the vector and pin the current reading as the new baseline.
+        key: Option<String>,
+        /// Look again and pin what is there now as the new baseline.
         #[arg(long, conflicts_with = "criteria")]
         baseline: bool,
         /// Take the probe, rules or terminal the declaration now names.
         #[arg(long)]
         criteria: bool,
+        /// Every anchor whose declaration moved. Only with --criteria: one
+        /// declaration change is one decision, while every drifted baseline is
+        /// a separate judgment that deserves its own reason.
+        #[arg(long, requires = "criteria", conflicts_with = "key")]
+        all: bool,
         #[arg(long)]
         why: String,
     },

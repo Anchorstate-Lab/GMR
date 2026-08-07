@@ -33,10 +33,22 @@ const CONTRACT: Shape = Shape {
     body: Body::Vector {
         dims: &[
             Dim {
+                name: "kind",
+                status: "kind-changed",
+                field: "form",
+                obs: "obs.at.form",
+            },
+            Dim {
                 name: "sig",
                 status: "signature-changed",
                 field: "sig",
                 obs: "obs.at.shape",
+            },
+            Dim {
+                name: "surface",
+                status: "visibility-changed",
+                field: "vis",
+                obs: "obs.at.vis",
             },
             Dim {
                 name: "logic",
@@ -45,19 +57,13 @@ const CONTRACT: Shape = Shape {
                 obs: "obs.facts.body",
             },
             Dim {
-                name: "file",
-                status: "moved-file",
-                field: "file",
-                obs: "obs.at.file",
-            },
-            Dim {
                 name: "line",
                 status: "moved-line",
                 field: "line",
                 obs: "obs.facts.line",
             },
         ],
-        watch: &["missing", "sig", "logic"],
+        watch: &["missing", "kind", "sig", "surface", "logic", "line"],
     },
 };
 
@@ -351,7 +357,7 @@ mod tests {
 
         let ast_map = obs(
             COORD_SCHEMA,
-            &["file", "kind", "vis", "name", "shape"],
+            &["file", "kind", "form", "vis", "name", "shape"],
             &["body", "line"],
         );
         assert_eq!(
@@ -432,7 +438,10 @@ mod tests {
         serde_json::json!({
             "schema": COORD_SCHEMA, "extractor": "ast-map", "found": true,
             "matched": ["file", "name"], "missed": [],
-            "at": { "file": file, "kind": "function", "vis": "pub", "name": "f", "shape": sig },
+            "at": {
+                "file": file, "kind": "function", "form": "function_item",
+                "vis": "pub", "name": "f", "shape": sig,
+            },
             "facts": { "body": body, "line": line },
             "candidates": 1, "matches": [], "exact": true,
         })
@@ -476,9 +485,10 @@ mod tests {
         let statuses = [
             "absent",
             "missing",
+            "kind-changed",
             "signature-changed",
+            "visibility-changed",
             "logic-changed",
-            "moved-file",
             "moved-line",
             "settled",
         ];
@@ -498,7 +508,7 @@ mod tests {
         let reads = reads_of_shape(get("contract").unwrap());
         let ast_map = obs(
             COORD_SCHEMA,
-            &["file", "kind", "vis", "name", "shape"],
+            &["file", "kind", "form", "vis", "name", "shape"],
             &["body", "line"],
         );
         assert!(unmet(&reads, &ast_map).is_empty());
@@ -506,7 +516,7 @@ mod tests {
         let name_map = obs(COORD_SCHEMA, &["name", "scope"], &["occurrences"]);
         assert_eq!(
             unmet(&reads, &name_map),
-            ["at.file", "at.shape", "facts.body", "facts.line"]
+            ["at.form", "at.shape", "at.vis", "facts.body", "facts.line"]
         );
     }
 
@@ -522,6 +532,50 @@ mod tests {
         assert_eq!(s["status"], "signature-changed");
     }
 
+    fn tweak(mut sighting: Value, key: &str, to: &str) -> Value {
+        sighting["at"][key] = Value::String(to.to_owned());
+        sighting
+    }
+
+    #[test]
+    fn narrowing_the_public_surface_is_its_own_axis() {
+        let r = contract();
+        let seen = || sighted("(a) -> B", "body1", "a.rs", 1);
+        let s = step(&r, &seen(), &Value::Null);
+        let s = step(&r, &tweak(seen(), "vis", ""), &s);
+        assert_eq!(
+            set(&s),
+            ["surface"],
+            "pub -> private moves nothing else, and used to move nothing at all"
+        );
+        assert_eq!(s["status"], "visibility-changed");
+    }
+
+    /// `kind` normalizes struct, enum and trait to one word, so the axis that
+    /// answers "is this still the same sort of thing" has to read `form`.
+    #[test]
+    fn a_struct_that_becomes_an_enum_is_not_a_changed_implementation() {
+        let r = contract();
+        let was = tweak(sighted("a: u64", "", "a.rs", 1), "form", "struct_item");
+        let now = tweak(sighted("A; B", "", "a.rs", 1), "form", "enum_item");
+        let s = step(&r, &was, &Value::Null);
+        let s = step(&r, &now, &s);
+        assert_eq!(s["status"], "kind-changed");
+        assert_eq!(set(&s), ["kind", "sig"]);
+    }
+
+    #[test]
+    fn every_axis_hands_the_memory_back_unless_the_note_narrows_it() {
+        let shape = get("contract").unwrap();
+        let watch = watch_of(shape).expect("contract keeps a vector");
+        assert_eq!(
+            watch,
+            axes_of(shape),
+            "an axis worth accumulating is an axis worth reporting; a note that \
+             wants less says so itself"
+        );
+    }
+
     #[test]
     fn the_vector_is_ordered_by_priority() {
         let s = step(
@@ -530,7 +584,7 @@ mod tests {
             &Value::Null,
         );
         let axes: Vec<String> = bits(&s).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(axes, ["missing", "sig", "logic", "file", "line"]);
+        assert_eq!(axes, ["missing", "kind", "sig", "surface", "logic", "line"]);
     }
 
     #[test]
