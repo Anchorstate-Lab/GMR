@@ -38,7 +38,9 @@ watch: [sig, logic]
 见 [[ast-naming]]。所以 `路径#名字` 唯一，不会静默指错。
 
 `const` 锚不了：`const_item` 不在 `lang.rs` 的 kinds 表里。要锚就锚它所在的函数。
-`type` 的 `sig` 维恒空（struct 没有 parameters/return_type），字段和变体走 `logic`。
+`type` 的 `sig` 是它的成员（字段·变体·方法签名），`logic` 只剩成员的实现 ——
+所以 struct 加一个字段是 `signature-changed`，不是 `logic-changed`；
+而一个 struct 根本没有实现，`logic` 永不动。
 
 ## 逃生口
 
