@@ -40,10 +40,12 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     let stranded = unresolvable(rt, &live);
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
+    let notes = crate::memories::lint(root, &crate::probes::Catalog::load(root)?)?;
+    let (malformed, long_hand): (Vec<_>, Vec<_>) = notes.iter().partition(|l| l.breaks);
     // stranded/provider_warnings mean something declared or expected isn't
     // actually working, not just "worth noting" like absent/barren/unseen —
     // that's the line between exit 1 and exit 0.
-    let exit_code = if stranded.is_empty() && provider_warnings.is_empty() {
+    let exit_code = if stranded.is_empty() && provider_warnings.is_empty() && malformed.is_empty() {
         0
     } else {
         1
@@ -61,6 +63,9 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "content_versioning": !no_git,
                 "provider_warnings": provider_warnings,
+                "notes": notes.iter().map(|l| serde_json::json!({
+                    "note": l.note, "code": l.code, "detail": l.detail, "breaks": l.breaks,
+                })).collect::<Vec<_>>(),
             })
         );
         return Ok(exit_code);
@@ -91,6 +96,18 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
         println!(
             "barren    {}\n          <- observing a position where nobody has written a memory",
             barren.join(", ")
+        );
+    }
+    for l in &malformed {
+        println!(
+            "note      {}  {}\n          <- {}",
+            l.note, l.code, l.detail
+        );
+    }
+    for l in &long_hand {
+        println!(
+            "long-hand {}\n          <- {}; see memories/README.md",
+            l.note, l.detail
         );
     }
     if !stranded.is_empty() {

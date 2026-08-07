@@ -160,6 +160,78 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> Result<Option<Note>, Cl
     }
 }
 
+pub struct Lint {
+    pub note: String,
+    pub code: &'static str,
+    pub detail: String,
+    pub breaks: bool,
+}
+
+fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
+    if !spec.rules.is_empty() || !spec.terminal.is_empty() {
+        return false;
+    }
+    if spec
+        .params
+        .as_ref()
+        .is_some_and(|p| *p != json!({ "root": "." }))
+    {
+        return false;
+    }
+    let Ok(routed) = crate::coord::route(&spec.key, spec.shape.as_deref(), catalog) else {
+        return false;
+    };
+    routed.probe == spec.probe && spec.position.as_ref() == Some(&routed.position)
+}
+
+pub fn lint(root: &Path, catalog: &Catalog) -> Result<Vec<Lint>, CliError> {
+    let mut rels = Vec::new();
+    walk(root, &root.join(NOTES_DIR), &mut rels)?;
+    rels.sort();
+
+    let mut out = Vec::new();
+    for rel in rels {
+        let text = std::fs::read_to_string(root.join(&rel))
+            .map_err(|e| CliError(format!("cannot read `{rel}`: {e}")))?;
+        let Some(fm) = frontmatter_of(&text).map_err(|e| CliError(format!("{rel}: {e}")))? else {
+            out.push(Lint {
+                note: rel,
+                code: "unclaimed",
+                detail: "no frontmatter, so this note names no anchor and nothing observes \
+                         whether what it says still holds"
+                    .to_owned(),
+                breaks: true,
+            });
+            continue;
+        };
+        for entry in &fm.anchors {
+            match entry {
+                Entry::Existing(key) => out.push(Lint {
+                    note: rel.clone(),
+                    code: "bare-key",
+                    detail: format!(
+                        "`{key}` binds without declaring; nothing else in this repo declares \
+                         anchors, so this one exists only if something already opened it"
+                    ),
+                    breaks: true,
+                }),
+                Entry::Declared(spec) if superfluous(spec, catalog) => out.push(Lint {
+                    note: rel.clone(),
+                    code: "long-hand",
+                    detail: format!(
+                        "`{}` states exactly what the coordinate already routes to; \
+                         `about: {}` says the same thing",
+                        spec.key, spec.key
+                    ),
+                    breaks: false,
+                }),
+                Entry::Declared(_) => {}
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Vec<Note>, CliError> {
     let mut rels = Vec::new();
     walk(root, &root.join(NOTES_DIR), &mut rels)?;
@@ -315,6 +387,91 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         assert_eq!(
             decl.position,
             Some(json!({"file": "src/auth.ts", "kind": "function"}))
+        );
+    }
+
+    fn codes(d: &std::path::Path, r: &Catalog) -> Vec<(String, &'static str)> {
+        lint(d, r)
+            .unwrap()
+            .into_iter()
+            .map(|l| (l.note, l.code))
+            .collect()
+    }
+
+    #[test]
+    fn the_canonical_form_draws_no_complaint() {
+        let (d, r) = world(&[(
+            "memories/auth.md",
+            "---\nabout: src/auth.ts#createSession\nwatch: [logic]\n---\n\n# note\n",
+        )]);
+        assert!(codes(d.path(), &r).is_empty());
+    }
+
+    #[test]
+    fn a_note_that_deliberately_claims_nothing_is_left_alone() {
+        let (d, r) = world(&[("memories/README.md", "---\nanchors:\n---\n\n# how to\n")]);
+        assert!(codes(d.path(), &r).is_empty());
+    }
+
+    #[test]
+    fn a_note_with_no_frontmatter_names_no_anchor_and_is_caught() {
+        let (d, r) = world(&[("memories/loose.md", "# just prose\n")]);
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("memories/loose.md".to_owned(), "unclaimed")]
+        );
+        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+    }
+
+    #[test]
+    fn a_bare_key_binds_without_declaring_and_is_caught() {
+        let (d, r) = world(&[(
+            "memories/x.md",
+            "---\nanchors:\n  - some::key\n---\n\n# note\n",
+        )]);
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("memories/x.md".to_owned(), "bare-key")]
+        );
+        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+    }
+
+    #[test]
+    fn a_long_hand_entry_the_coordinate_already_routes_to_is_advice_not_breakage() {
+        let (d, r) = world(&[(
+            "memories/x.md",
+            "---\nanchors:\n  - key: src/auth.ts#createSession\n    probe: ast-map\n             \n    position: { file: src/auth.ts, name: createSession }\n    shape: contract\n---\n",
+        )]);
+        let found = lint(d.path(), &r).unwrap();
+        assert_eq!(
+            found.len(),
+            1,
+            "{found:?}",
+            found = found.iter().map(|l| l.code).collect::<Vec<_>>()
+        );
+        assert_eq!(found[0].code, "long-hand");
+        assert!(!found[0].breaks);
+        assert!(found[0].detail.contains("about: src/auth.ts#createSession"));
+    }
+
+    #[test]
+    fn a_long_hand_entry_that_earns_its_keep_is_not_complained_about() {
+        let (d, r) = world(&[(
+            "memories/x.md",
+            "---\nanchors:\n  - key: src/auth.ts#createSession\n    probe: ast-map\n             \n    position: { file: src/auth.ts, name: createSession, kind: function }\n             \n    shape: contract\n---\n",
+        )]);
+        assert!(
+            codes(d.path(), &r).is_empty(),
+            "an extra position key is a reason"
+        );
+
+        let (d, r) = world(&[(
+            "memories/y.md",
+            "---\nanchors:\n  - key: k\n    probe: ast-map\n    rules:\n             \n      - 'true => { status: \"x\" }'\n---\n",
+        )]);
+        assert!(
+            codes(d.path(), &r).is_empty(),
+            "hand-written rules are a reason"
         );
     }
 }
