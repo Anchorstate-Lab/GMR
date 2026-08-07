@@ -31,19 +31,6 @@ impl Pending {
     }
 }
 
-fn axes_set(state: &State) -> (Vec<String>, bool) {
-    let Some(v) = state.as_value().get("v").and_then(Value::as_object) else {
-        return (Vec::new(), false);
-    };
-    let set: Vec<String> = v
-        .iter()
-        .filter(|(_, on)| on.as_bool().unwrap_or(false))
-        .map(|(k, _)| k.clone())
-        .collect();
-    let missing = set.iter().any(|k| k == "missing");
-    (set, missing)
-}
-
 fn repinned(state: &State) -> Result<State, CliError> {
     let obj = state
         .as_value()
@@ -85,7 +72,8 @@ async fn pending(
             "{key} is closed; closure is irreversible"
         )));
     }
-    let (axes, missing) = axes_set(&view.state);
+    let axes = crate::delivery::axes_set(&view.state).unwrap_or_default();
+    let missing = axes.iter().any(|k| k == crate::shapes::MISSING);
 
     let ctx = Context {
         catalog: Catalog::load(root)?,

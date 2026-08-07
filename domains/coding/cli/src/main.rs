@@ -1,4 +1,5 @@
 mod cli;
+mod delivery;
 mod error;
 mod memories;
 mod probes;
@@ -137,7 +138,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init { .. } => unreachable!("init was handled above"),
         Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
-        Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
+        Command::Observe { key } => verbs::observe::run(&rt, &root, key, json).await,
         Command::Accept {
             key,
             baseline,
@@ -181,7 +182,7 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Edges { since, status } => verbs::edges::run(&rt, since, status, json).await,
         Command::Health { key } => verbs::health::run(&rt, key, json).await,
         Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
-        Command::Pass => verbs::pass::run(&rt, json).await,
+        Command::Pass => verbs::pass::run(&rt, &root, json).await,
         Command::Doctor => verbs::doctor::run(&rt, &root, json).await,
         Command::Export { .. } => unreachable!("export was handled above"),
         Command::Import { .. } => unreachable!("import was handled above"),

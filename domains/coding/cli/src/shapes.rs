@@ -11,7 +11,10 @@ pub struct Shape {
 #[derive(Debug)]
 enum Body {
     Table(&'static [&'static str]),
-    Vector(&'static [Dim]),
+    Vector {
+        dims: &'static [Dim],
+        watch: &'static [&'static str],
+    },
 }
 
 #[derive(Debug)]
@@ -24,32 +27,35 @@ pub struct Dim {
 
 const CONTRACT: Shape = Shape {
     name: "contract",
-    body: Body::Vector(&[
-        Dim {
-            name: "sig",
-            status: "signature-changed",
-            field: "sig",
-            obs: "obs.at.shape",
-        },
-        Dim {
-            name: "logic",
-            status: "logic-changed",
-            field: "body",
-            obs: "obs.facts.body",
-        },
-        Dim {
-            name: "file",
-            status: "moved-file",
-            field: "file",
-            obs: "obs.at.file",
-        },
-        Dim {
-            name: "line",
-            status: "moved-line",
-            field: "line",
-            obs: "obs.facts.line",
-        },
-    ]),
+    body: Body::Vector {
+        dims: &[
+            Dim {
+                name: "sig",
+                status: "signature-changed",
+                field: "sig",
+                obs: "obs.at.shape",
+            },
+            Dim {
+                name: "logic",
+                status: "logic-changed",
+                field: "body",
+                obs: "obs.facts.body",
+            },
+            Dim {
+                name: "file",
+                status: "moved-file",
+                field: "file",
+                obs: "obs.at.file",
+            },
+            Dim {
+                name: "line",
+                status: "moved-line",
+                field: "line",
+                obs: "obs.facts.line",
+            },
+        ],
+        watch: &["missing", "sig", "logic"],
+    },
 };
 
 const ROSTER: Shape = Shape {
@@ -107,9 +113,27 @@ pub fn get(name: &str) -> Result<&'static Shape, CliError> {
 pub fn rules_of(shape: &Shape) -> Vec<String> {
     match shape.body {
         Body::Table(rules) => rules.iter().map(|r| (*r).to_owned()).collect(),
-        Body::Vector(dims) => expand(dims),
+        Body::Vector { dims, .. } => expand(dims),
     }
 }
+
+pub fn watch_of(shape: &Shape) -> Option<&'static [&'static str]> {
+    match shape.body {
+        Body::Table(_) => None,
+        Body::Vector { watch, .. } => Some(watch),
+    }
+}
+
+pub fn axes_of(shape: &Shape) -> Vec<&'static str> {
+    match shape.body {
+        Body::Table(_) => Vec::new(),
+        Body::Vector { dims, .. } => std::iter::once(MISSING)
+            .chain(dims.iter().map(|d| d.name))
+            .collect(),
+    }
+}
+
+pub const MISSING: &str = "missing";
 
 fn object(fields: &[(String, String)]) -> String {
     let body: Vec<String> = fields.iter().map(|(k, v)| format!("{k}: {v}")).collect();

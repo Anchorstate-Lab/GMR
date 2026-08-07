@@ -55,6 +55,10 @@ struct Frontmatter {
     about: Option<OneOrMany>,
     #[serde(default)]
     anchors: Vec<Entry>,
+    #[serde(default)]
+    shape: Option<String>,
+    #[serde(default)]
+    watch: Option<Vec<String>>,
 }
 
 /// What a note says it is about.
@@ -77,6 +81,7 @@ impl Want {
 pub struct Note {
     pub path: String,
     pub wants: Vec<Want>,
+    pub watch: Option<Vec<String>>,
 }
 
 /// `src/auth.ts#createSession` -> the position a coord probe understands.
@@ -100,13 +105,13 @@ pub(crate) fn probe_for(about: &str, catalog: &Catalog) -> Result<String, CliErr
 
 /// The minimal form: the key is the coordinate itself, so nobody has to invent
 /// a permanent identity on their first note.
-fn from_about(about: &str, catalog: &Catalog) -> Result<AnchorDecl, CliError> {
+fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<AnchorDecl, CliError> {
     Ok(AnchorDecl {
         key: about.to_owned(),
         probe: probe_for(about, catalog)?,
         params: json!({ "root": "." }),
         position: Some(position_of(about)),
-        shape: Some("roster".to_owned()),
+        shape: Some(shape.unwrap_or("roster").to_owned()),
         rules: Vec::new(),
         terminal: Vec::new(),
         retain_full: false,
@@ -154,7 +159,8 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> Result<Option<Note>, Cl
 
     let mut wants = Vec::new();
     for about in fm.about.map(OneOrMany::into_vec).unwrap_or_default() {
-        let decl = from_about(&about, catalog).map_err(|e| CliError(format!("{rel}: {e}")))?;
+        let decl = from_about(&about, catalog, fm.shape.as_deref())
+            .map_err(|e| CliError(format!("{rel}: {e}")))?;
         wants.push(Want::Declared(Box::new(decl)));
     }
     for entry in fm.anchors {
@@ -169,6 +175,7 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> Result<Option<Note>, Cl
         false => Ok(Some(Note {
             path: rel.to_owned(),
             wants,
+            watch: fm.watch,
         })),
     }
 }
@@ -249,6 +256,36 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             decl.position,
             Some(json!({"file": "src/auth.ts", "name": "createSession"}))
         );
+    }
+
+    #[test]
+    fn a_note_picks_its_shape_and_what_it_wants_woken_for() {
+        let (d, r) = world(&[(
+            "memories/auth.md",
+            "---\nabout: src/auth.ts#createSession\nshape: contract\nwatch: [logic]\n---\n",
+        )]);
+        let notes = scan(d.path(), &r).unwrap();
+        assert_eq!(
+            notes[0].watch.as_deref(),
+            Some(["logic".to_owned()].as_ref())
+        );
+
+        let Want::Declared(decl) = &notes[0].wants[0] else {
+            panic!("expected a declared anchor");
+        };
+        assert_eq!(decl.shape.as_deref(), Some("contract"));
+    }
+
+    #[test]
+    fn a_note_that_names_no_shape_still_gets_the_default() {
+        let (d, r) = world(&[("memories/a.md", "---\nabout: src/a.ts#f\n---\n")]);
+        let notes = scan(d.path(), &r).unwrap();
+        assert!(notes[0].watch.is_none());
+
+        let Want::Declared(decl) = &notes[0].wants[0] else {
+            panic!("expected a declared anchor");
+        };
+        assert_eq!(decl.shape.as_deref(), Some("roster"));
     }
 
     #[test]

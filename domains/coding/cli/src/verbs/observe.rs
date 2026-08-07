@@ -1,14 +1,25 @@
-use gmr::{AnchorKey, Observed, Runtime};
+use std::path::Path;
 
+use gmr::{AnchorKey, Observed, Runtime, State};
+
+use crate::delivery::Subscriptions;
 use crate::error::CliError;
+use crate::probes::Catalog;
 
-pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, CliError> {
+pub async fn run(
+    rt: &Runtime,
+    root: &Path,
+    key: Option<String>,
+    json: bool,
+) -> Result<i32, CliError> {
     let keys = match key {
         Some(k) => vec![AnchorKey::new(k)],
         None => rt.anchors().await?,
     };
+    let subs = Subscriptions::load(root, &Catalog::load(root)?)?;
 
     let mut moved = 0;
+    let mut handed = 0;
     let mut unclaimed = Vec::new();
     let mut report = Vec::new();
     for key in &keys {
@@ -27,12 +38,12 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
         };
 
         let memories = match &observed {
-            Observed::Transitioned { .. } => super::memories_on(rt, key).await?,
+            Observed::Transitioned { to, .. } => {
+                delivered(rt, &subs, key, to, &mut unclaimed).await?
+            }
             _ => Vec::new(),
         };
-        if word == "moved" && memories.is_empty() {
-            unclaimed.push(key.clone());
-        }
+        handed += memories.len();
 
         if json {
             let state = match &observed {
@@ -57,14 +68,33 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("observed {} anchors, {moved} moved", keys.len());
+        println!(
+            "observed {} anchors, {moved} moved, {handed} handed back",
+            keys.len()
+        );
         report_unclaimed(&unclaimed);
     }
     Ok(if moved > 0 { 1 } else { 0 })
 }
 
-/// An anchor that moved with nothing bound told no one. Either a note belongs
-/// on it, or it should be closed.
+pub(crate) async fn delivered(
+    rt: &Runtime,
+    subs: &Subscriptions,
+    key: &AnchorKey,
+    to: &State,
+    unclaimed: &mut Vec<AnchorKey>,
+) -> Result<Vec<String>, CliError> {
+    let bound = super::memories_on(rt, key).await?;
+    if bound.is_empty() {
+        unclaimed.push(key.clone());
+        return Ok(Vec::new());
+    }
+    Ok(bound
+        .into_iter()
+        .filter(|m| subs.delivers(key.as_str(), m, to))
+        .collect())
+}
+
 pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {
     if unclaimed.is_empty() {
         return;
