@@ -1,19 +1,13 @@
 use std::path::Path;
 
 use gmr::Runtime;
-use gmr_transport::shell::Artifacts;
 
 use crate::error::CliError;
-use crate::probes::store_dir;
 
-/// Anchors whose probe is not installed on this machine. This is the fresh
-/// clone failure: the declaration travels, the artifact does not, and without
-/// this check it shows up as N identical Attempt entries instead of one answer.
-fn unresolvable(root: &Path, views: &[&gmr::AnchorView]) -> Vec<String> {
-    let artifacts = Artifacts::new(store_dir(root));
+fn unresolvable(rt: &Runtime, views: &[&gmr::AnchorView]) -> Vec<String> {
     views
         .iter()
-        .filter(|v| artifacts.resolve(&v.anchor.probe.name).is_err())
+        .filter(|v| rt.instrument(&v.anchor.probe).is_err())
         .map(|v| v.key.to_string())
         .collect()
 }
@@ -43,7 +37,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     // could drift apart.
     let corpus = rt.corpus_health().await?;
     let barren: Vec<&str> = corpus.barren_anchors.iter().map(|k| k.as_str()).collect();
-    let stranded = unresolvable(root, &live);
+    let stranded = unresolvable(rt, &live);
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
     // stranded/provider_warnings mean something declared or expected isn't
@@ -101,7 +95,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     }
     if !stranded.is_empty() {
         println!(
-            "stranded  {}\n          <- no artifact is installed for the declared probe; run `probes build`",
+            "stranded  {}\n          <- no transport here can resolve the declared probe; run `probes build`",
             stranded.join(", ")
         );
     }
