@@ -234,8 +234,6 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
             return Ok(s);
         }
 
-        // serde_json::Number (without arbitrary_precision) is always PosInt, NegInt,
-        // or Float, and as_f64() is total over all three — this arm is unreachable.
         unreachable!("serde_json::Number::as_f64 is total without arbitrary_precision")
     }
 }
@@ -329,8 +327,6 @@ mod tests {
         assert!(check_sha256_hex(&"g".repeat(64)).is_err());
     }
 
-    // A newtype's try_new() error is a type, not prose: callers can match on
-    // which newtype failed without parsing the message.
     #[test]
     fn try_new_failure_names_the_newtype_it_came_from() {
         let err = ContentHash::try_new("not a hash").unwrap_err();
@@ -364,9 +360,6 @@ mod tests {
         ));
     }
 
-    // Pins the exact bytes and hash a fixed value canonicalizes to. A silent
-    // change in serde_json's or ryu's formatting would otherwise change every
-    // ContentHash in existence without any test failing.
     #[test]
     fn canonical_form_is_pinned_against_library_drift() {
         let value = json!({"b": 1, "a": [1, 2.5, -0.0, "héllo"], "z": true, "n": null});

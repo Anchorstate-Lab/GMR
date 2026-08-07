@@ -17,3 +17,14 @@ declaration 变；求值器升级 → 只有 evaluator 变。任何一次「状�
 有人想把三个压成一个「version」→ 问他：探针改了和锚改了，你打算怎么区分？
 Phase B 的多探针会把 declaration 和 derivation 下沉到每份读数，evaluator
 留在观测级 —— 那是拆得更细，不是合并。
+
+## 三个字段各是什么
+
+```
+declaration   锚上写的那句话
+derivation    真正导出这些事实的东西，以及那个身份可不可证
+evaluator     当时在跑的求值器
+```
+
+第二个自己还带着 `Verifiability`（见 [[probe-Verifiability]]）——
+「导出它的东西是什么」和「那个说法可不可信」也是两件事，也没有合并。

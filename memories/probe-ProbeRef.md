@@ -16,3 +16,9 @@ about: crates/gmr-core/src/probe.rs#ProbeRef
 
 任何把这两个合起来、或者用其中一个去推另一个的代码 → 它假设了「写下的就是跑的」。
 在新克隆和换机器这两个场景下这个假设是假的。
+
+## `ProbeName` 是名字，不是哈希
+
+它必须**扛过一次引擎升级不变**。声明写的是名字，这台机器解析出什么是 derivation
+的事（见 [[probe-Derivation]]）。名字长得像版本会被当场拒绝，
+判据在 [[probe-check_probe_name]]。

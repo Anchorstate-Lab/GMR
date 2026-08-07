@@ -11,11 +11,8 @@ pub type Seq = u64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Versions {
-    /// The sentence written on the anchor.
     pub declaration: ContentHash,
-    /// What actually derived these facts, and whether that identity is provable.
     pub derivation: Derivation,
-    /// The evaluator in force at the time.
     pub evaluator: String,
 }
 
@@ -127,7 +124,6 @@ pub enum Entry {
     },
     Attempt {
         reason: ReasonClass,
-        /// Absent only in entries written before codes were recorded.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<FailureCode>,
         message: String,
@@ -667,8 +663,6 @@ mod tests {
 
     #[test]
     fn an_attempt_written_before_codes_existed_still_reads() {
-        // The log is append-only, so entries already on disk have no `code`
-        // and never will. They have to keep folding, not become unreadable.
         let old = json!({
             "entry": "attempt",
             "reason": "unreachable",

@@ -16,3 +16,17 @@ about: crates/gmr-core/src/probe.rs#Derivation
 version 的输入里加了任何跟「输出会不会变」无关的东西（构建时间、机器名、
 target triple）→ 它在制造那种噪声。反过来，有能改变输出的输入没进哈希 →
 探针换了而没人知道，比噪声严重得多。
+
+## `version` 曾经叫 `artifact`
+
+那个槽位在只装版本的年代叫 `artifact`。当时写下的条目仍然说着 `artifact`，
+而且要按原样读回来 —— 日志只增不改，改名不能让旧条目失效。
+
+## 什么挣得一个版本，是传输层的事
+
+`Derivation` 只负责**携带**版本和它的可证性。怎么算出这个版本 ——
+哈希哪些源文件、锁定哪些依赖版本 —— 由具体传输决定，
+`coding-extract` 的 `build.rs` 是一个例子。基底不规定算法，只规定它必须闭合输入。
+
+发布一次新版探针：derivation 动，declaration 不动。这两个必须能分开看，
+所以它们在 [[journal-Versions]] 里是两个字段。

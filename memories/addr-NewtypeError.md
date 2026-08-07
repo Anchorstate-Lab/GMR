@@ -14,3 +14,6 @@ about: crates/gmr-core/src/addr.rs#NewtypeError
 
 `reason` 有没有开始被程序读？如果有代码在 match `reason` 的内容，说明这里缺一个
 真正的枚举，字段该升格。
+
+测试 `try_new_failure_names_the_newtype_it_came_from` 钉的就是这一条：
+调用方能 match 出**是哪个 newtype 失败**，不用去解析那句人话。

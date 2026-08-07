@@ -16,3 +16,13 @@ about: crates/gmr-core/src/journal.rs#FailureCode
 
 新增的 code 属于哪一半？如果只往「探针失败」那半加，停下来看看规则失败那半
 是不是也该细化。不对称本身就是信号。
+
+## `code` 为什么是 `Option`
+
+`Entry::Attempt.code` 可以缺席，**只**因为在记 code 之前就写进磁盘的条目没有它，
+而且永远不会有 —— 日志只增不改。那些条目必须继续能 fold，不能变成读不出来的东西。
+
+所以 `#[serde(default)]` 在这里不是图省事，是**append-only 的直接后果**。
+`reason` 没有这个待遇，因为它从第一天就在。
+
+任何新增字段都要问同一句：已经躺在磁盘上的条目没有它，还读得回来吗？

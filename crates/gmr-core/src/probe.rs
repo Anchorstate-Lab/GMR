@@ -30,7 +30,6 @@ fn check_probe_name(s: &str) -> Result<(), String> {
     {
         return Err("expected lowercase ASCII letters, digits or `-`".to_owned());
     }
-    // Nobody names a probe with 64 hex digits; someone pasted a version here.
     if crate::addr::check_sha256_hex(s).is_ok() {
         return Err("that is a version, not a name".to_owned());
     }
@@ -38,7 +37,6 @@ fn check_probe_name(s: &str) -> Result<(), String> {
 }
 
 string_newtype! {
-    /// A name, not a hash: it must survive an engine upgrade unchanged.
     ProbeName, check_probe_name
 }
 
@@ -53,11 +51,8 @@ string_newtype! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
-    /// Complete. What [`crate::ProbeName`] resolved to is what ran.
     #[serde(alias = "content_addressed")]
     Closed,
-    /// Something outside the hash can change the answer — an interpreter, the
-    /// host environment, an implementation living somewhere else.
     #[serde(alias = "declared", alias = "unverifiable")]
     Open,
 }
@@ -71,10 +66,6 @@ pub struct Derivation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeRef {
     pub kind: Kind,
-    /// `artifact` is what this slot was called while it held a version. Entries
-    /// written then still say a version, and they are read back saying it: the
-    /// log records what was written down, and rewriting it to the name someone
-    /// later chose would be inventing a declaration nobody made.
     #[serde(alias = "artifact")]
     pub name: ProbeName,
     #[serde(default)]
@@ -136,8 +127,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // What earns a version is a transport's concern; these only need two
-    // distinct opaque ones.
     fn version(sha: &str) -> ProbeVersion {
         ProbeVersion::new(sha.repeat(64))
     }
@@ -181,7 +170,6 @@ mod tests {
             json!({ "root": "." }),
         );
         let before = probe.declaration_hash().unwrap();
-        // A release changes the extractor: the derivation moves, nothing else.
         let old = Outcome::Found {
             facts: Facts::new(json!({ "candidates": 3 })),
         };
