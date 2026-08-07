@@ -94,7 +94,11 @@ impl RuntimeBuilder {
     /// A provider the domain tried to construct but couldn't — recorded
     /// instead of registered, so it's queryable (`gmr doctor`) rather than
     /// only ever reaching stderr.
-    pub fn provider_warning(mut self, provider: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn provider_warning(
+        mut self,
+        provider: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         self.provider_warnings.push(ProviderWarning {
             provider: provider.into(),
             message: message.into(),

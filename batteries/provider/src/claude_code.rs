@@ -52,9 +52,9 @@ fn memory_dir(project_root: &Path) -> Result<PathBuf, ContentError> {
     let home = std::env::var("HOME").map_err(|_| {
         ContentError::new("cannot find the claude-code memory directory: $HOME is not set")
     })?;
-    let absolute = project_root
-        .canonicalize()
-        .map_err(|e| ContentError::new(format!("cannot resolve `{}`: {e}", project_root.display())))?;
+    let absolute = project_root.canonicalize().map_err(|e| {
+        ContentError::new(format!("cannot resolve `{}`: {e}", project_root.display()))
+    })?;
     let mangled = absolute.display().to_string().replace('/', "-");
     Ok(PathBuf::from(home)
         .join(".claude/projects")
