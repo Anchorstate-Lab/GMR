@@ -45,7 +45,7 @@ async fn revise(
     let mut context = seal_context::base(&s);
     context["closed"] = serde_json::json!(s.closed);
     context["latest"] = serde_json::json!(s.latest);
-    context["probe_declaration"] = serde_json::json!(s.anchor.probe.declaration_hash());
+    context["probe_declaration"] = serde_json::json!(s.anchor.probe.declaration_hash()?);
     context["evaluator_version"] = serde_json::json!(gmr_expr::EVALUATOR_VERSION);
     let context = memory
         .seal(&serde_json::to_vec(&context).expect("the context always serialises"))

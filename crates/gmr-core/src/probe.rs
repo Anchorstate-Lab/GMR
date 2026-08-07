@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::addr::{ContentHash, content_hash_of};
+use crate::addr::{CanonicalizeError, ContentHash, content_hash_of};
 use crate::string_newtype;
 
 pub const OUTCOME_CONTRACT: &str = "gmr.outcome.v1";
@@ -96,7 +96,7 @@ impl ProbeRef {
         Self { kind, name, params }
     }
 
-    pub fn declaration_hash(&self) -> ContentHash {
+    pub fn declaration_hash(&self) -> Result<ContentHash, CanonicalizeError> {
         content_hash_of(&serde_json::json!({
             "kind": &self.kind,
             "name": &self.name,
@@ -129,7 +129,7 @@ pub enum Outcome {
 impl Outcome {
     /// "The world says there is nothing" is an answer too, so it gets an address:
     /// otherwise swapping the derivation rule between two NotFounds compares equal.
-    pub fn address(&self, derivation: &ProbeVersion) -> FactAddress {
+    pub fn address(&self, derivation: &ProbeVersion) -> Result<FactAddress, CanonicalizeError> {
         let facts = match self {
             Self::Found { facts } => facts.as_value(),
             Self::NotFound => &Value::Null,
@@ -138,8 +138,8 @@ impl Outcome {
             "derivation": derivation,
             "found": matches!(self, Self::Found { .. }),
             "facts": facts,
-        }));
-        FactAddress::new(h.into_inner())
+        }))?;
+        Ok(FactAddress::new(h.into_inner()))
     }
 }
 
@@ -167,8 +167,8 @@ mod tests {
             json!({ "kind": "function" }),
         );
         assert_ne!(
-            a.declaration_hash(),
-            b.declaration_hash(),
+            a.declaration_hash().unwrap(),
+            b.declaration_hash().unwrap(),
             "naming a different probe is a different declaration"
         );
     }
@@ -182,7 +182,7 @@ mod tests {
             json!({ "kind": "function" }),
         );
         let b = ProbeRef::new(Kind::new("builtin"), n, json!({ "kind": "module" }));
-        assert_ne!(a.declaration_hash(), b.declaration_hash());
+        assert_ne!(a.declaration_hash().unwrap(), b.declaration_hash().unwrap());
     }
 
     #[test]
@@ -192,13 +192,16 @@ mod tests {
             ProbeName::new("ast-map"),
             json!({ "root": "." }),
         );
-        let before = probe.declaration_hash();
+        let before = probe.declaration_hash().unwrap();
         // A release changes the extractor: the derivation moves, nothing else.
         let old = Outcome::Found {
             facts: Facts::new(json!({ "candidates": 3 })),
         };
-        assert_ne!(old.address(&version("a")), old.address(&version("b")));
-        assert_eq!(before, probe.declaration_hash());
+        assert_ne!(
+            old.address(&version("a")).unwrap(),
+            old.address(&version("b")).unwrap()
+        );
+        assert_eq!(before, probe.declaration_hash().unwrap());
     }
 
     #[test]
@@ -221,13 +224,17 @@ mod tests {
             facts: Facts::new(json!({ "x": 2 })),
         };
 
-        assert_eq!(f.address(&v1), f.address(&v1));
+        assert_eq!(f.address(&v1).unwrap(), f.address(&v1).unwrap());
         assert_ne!(
-            f.address(&v1),
-            f.address(&v2),
+            f.address(&v1).unwrap(),
+            f.address(&v2).unwrap(),
             "new probe = new derivation rule"
         );
-        assert_ne!(f.address(&v1), g.address(&v1), "new content = new fact");
+        assert_ne!(
+            f.address(&v1).unwrap(),
+            g.address(&v1).unwrap(),
+            "new content = new fact"
+        );
     }
 
     #[test]
@@ -235,8 +242,8 @@ mod tests {
         let v1 = version("a");
         let v2 = version("b");
         assert_ne!(
-            Outcome::NotFound.address(&v1),
-            Outcome::NotFound.address(&v2),
+            Outcome::NotFound.address(&v1).unwrap(),
+            Outcome::NotFound.address(&v2).unwrap(),
             "still not found, but by a different rule — that is another rule's absence"
         );
     }
@@ -247,7 +254,10 @@ mod tests {
         let empty = Outcome::Found {
             facts: Facts::new(Value::Null),
         };
-        assert_ne!(Outcome::NotFound.address(&v), empty.address(&v));
+        assert_ne!(
+            Outcome::NotFound.address(&v).unwrap(),
+            empty.address(&v).unwrap()
+        );
     }
 
     #[test]

@@ -156,7 +156,7 @@ impl Recipe {
         let value = serde_json::to_value(&record)
             .map_err(|e| CliError(format!("cannot canonicalise the recipe for {name}: {e}")))?;
         Ok(ProbeVersion::new(
-            gmr::core::content_hash_of(&value).into_inner(),
+            gmr::core::content_hash_of(&value)?.into_inner(),
         ))
     }
 

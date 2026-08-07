@@ -41,6 +41,9 @@ pub enum RuntimeError {
 
     #[error(transparent)]
     Content(#[from] gmr_content::ContentError),
+
+    #[error(transparent)]
+    Canonicalize(#[from] gmr_core::CanonicalizeError),
 }
 
 impl RuntimeError {
@@ -56,6 +59,7 @@ impl RuntimeError {
             Self::Leased { .. } => "leased",
             Self::Store(e) => e.code(),
             Self::Content(e) => e.code(),
+            Self::Canonicalize(_) => "canonicalize_failed",
         }
     }
 }

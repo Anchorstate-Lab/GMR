@@ -49,7 +49,9 @@ impl Expr {
     pub fn text(source: impl Into<String>) -> Self {
         let source = source.into();
         // Hashed as a JSON string, so the identity is what it always was.
-        let hash = content_hash_of(&Value::String(source.clone()));
+        // A string scalar never recurses, so canonicalization cannot fail here.
+        let hash = content_hash_of(&Value::String(source.clone()))
+            .expect("Value::String never exceeds canonicalization limits");
         Self { source, hash }
     }
 }

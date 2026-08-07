@@ -54,7 +54,11 @@ impl Manifest {
     /// Where it lives and what it must hash to. Local by design.
     pub fn address(&self) -> ProbeVersion {
         let value = serde_json::to_value(self).expect("a manifest always serialises");
-        ProbeVersion::new(content_hash_of(&value).into_inner())
+        // Manifest's shape is fixed by its type, not by data — its nesting depth
+        // is bounded regardless of how many files/args/env entries it holds.
+        let hash =
+            content_hash_of(&value).expect("a Manifest never exceeds canonicalization limits");
+        ProbeVersion::new(hash.into_inner())
     }
 
     pub fn entry(&self) -> Option<&FileEntry> {

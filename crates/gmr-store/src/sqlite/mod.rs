@@ -19,10 +19,11 @@ pub use portable::{EXPORT_SCHEMA, PortableSummary};
 pub use queue::SqliteQueue;
 
 pub(crate) fn ref_key(r: &Ref) -> String {
-    String::from_utf8(canonicalize(
-        &serde_json::to_value(r).expect("a Ref always serialises"),
-    ))
-    .expect("canonical JSON is always UTF-8")
+    // Ref is two flat string fields — its nesting depth is fixed by the type,
+    // so canonicalization cannot hit the depth guard here.
+    let bytes = canonicalize(&serde_json::to_value(r).expect("a Ref always serialises"))
+        .expect("a Ref never exceeds canonicalization limits");
+    String::from_utf8(bytes).expect("canonical JSON is always UTF-8")
 }
 
 pub(crate) fn db_err(e: sqlx::Error) -> StoreError {

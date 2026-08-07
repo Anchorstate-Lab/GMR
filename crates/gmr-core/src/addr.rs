@@ -2,6 +2,19 @@ use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 use std::io::{self, Write};
 
+/// Canonicalization can fail on its own terms (structure too deep, a number
+/// that can't round-trip) — distinct from `io::Error`, which only means the
+/// sink refused bytes.
+#[derive(Debug, thiserror::Error)]
+pub enum CanonicalizeError {
+    #[error("JSON structure exceeds maximum canonicalization depth ({max})")]
+    DepthExceeded { max: usize },
+    #[error("JSON numbers must be finite")]
+    NonFiniteNumber,
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
 pub fn check_sha256_hex(s: &str) -> Result<(), String> {
     if s.len() != 64 {
         return Err(format!("expected 64 hex chars, got {}", s.len()));
@@ -74,22 +87,22 @@ string_newtype! {
     ContentHash, check_sha256_hex
 }
 
-pub fn canonicalize(value: &Value) -> Vec<u8> {
+pub fn canonicalize(value: &Value) -> Result<Vec<u8>, CanonicalizeError> {
     let mut out = Vec::new();
-    canonical_write(&mut out, value).expect("canonical_write on Vec cannot fail");
-    out
+    canonical_write(&mut out, value)?;
+    Ok(out)
 }
 
-pub fn canonical_write<W: Write>(out: &mut W, value: &Value) -> io::Result<()> {
+pub fn canonical_write<W: Write>(out: &mut W, value: &Value) -> Result<(), CanonicalizeError> {
     let mut canonicalizer = Canonicalizer::new(out);
     canonicalizer.write(value)
 }
 
-pub fn content_hash_of(value: &Value) -> ContentHash {
+pub fn content_hash_of(value: &Value) -> Result<ContentHash, CanonicalizeError> {
     let mut hasher = Sha256::new();
-    canonical_write(&mut hasher, value).expect("canonical_write into hasher cannot fail");
+    canonical_write(&mut hasher, value)?;
     let digest = hasher.finalize();
-    ContentHash::new(format!("{digest:x}"))
+    Ok(ContentHash::new(format!("{digest:x}")))
 }
 
 pub fn content_hash_of_bytes(bytes: &[u8]) -> ContentHash {
@@ -107,16 +120,15 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
         Self { out, depth: 0 }
     }
 
-    fn write(&mut self, value: &Value) -> io::Result<()> {
+    fn write(&mut self, value: &Value) -> Result<(), CanonicalizeError> {
         self.write_value(value)
     }
 
-    fn write_value(&mut self, value: &Value) -> io::Result<()> {
+    fn write_value(&mut self, value: &Value) -> Result<(), CanonicalizeError> {
         if self.depth > MAX_CANONICAL_DEPTH {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "JSON structure exceeds maximum canonicalization depth",
-            ));
+            return Err(CanonicalizeError::DepthExceeded {
+                max: MAX_CANONICAL_DEPTH,
+            });
         }
 
         match value {
@@ -127,17 +139,19 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
         }
     }
 
-    fn write_json_scalar(&mut self, value: &Value) -> io::Result<()> {
+    fn write_json_scalar(&mut self, value: &Value) -> Result<(), CanonicalizeError> {
         let bytes = serde_json::to_vec(value).expect("scalar serialisation cannot fail");
-        self.out.write_all(&bytes)
+        self.out.write_all(&bytes)?;
+        Ok(())
     }
 
-    fn write_number(&mut self, number: &Number) -> io::Result<()> {
+    fn write_number(&mut self, number: &Number) -> Result<(), CanonicalizeError> {
         let text = Self::canonical_number_string(number)?;
-        self.out.write_all(text.as_bytes())
+        self.out.write_all(text.as_bytes())?;
+        Ok(())
     }
 
-    fn write_array(&mut self, items: &[Value]) -> io::Result<()> {
+    fn write_array(&mut self, items: &[Value]) -> Result<(), CanonicalizeError> {
         self.depth += 1;
         let result = (|| {
             self.out.write_all(b"[")?;
@@ -147,13 +161,14 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
                 }
                 self.write_value(item)?;
             }
-            self.out.write_all(b"]")
+            self.out.write_all(b"]")?;
+            Ok(())
         })();
         self.depth -= 1;
         result
     }
 
-    fn write_object(&mut self, map: &Map<String, Value>) -> io::Result<()> {
+    fn write_object(&mut self, map: &Map<String, Value>) -> Result<(), CanonicalizeError> {
         self.depth += 1;
         let result = (|| {
             let mut entries: Vec<(&String, &Value)> = map.iter().collect();
@@ -169,13 +184,14 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
                 self.out.write_all(b":")?;
                 self.write_value(v)?;
             }
-            self.out.write_all(b"}")
+            self.out.write_all(b"}")?;
+            Ok(())
         })();
         self.depth -= 1;
         result
     }
 
-    fn canonical_number_string(number: &Number) -> io::Result<String> {
+    fn canonical_number_string(number: &Number) -> Result<String, CanonicalizeError> {
         if number.is_i64() {
             return Ok(number.as_i64().unwrap().to_string());
         }
@@ -186,10 +202,7 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
 
         if let Some(f) = number.as_f64() {
             if !f.is_finite() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "JSON numbers must be finite",
-                ));
+                return Err(CanonicalizeError::NonFiniteNumber);
             }
 
             let mut s = ryu::Buffer::new().format(f).to_owned();
@@ -214,10 +227,9 @@ impl<'a, W: Write> Canonicalizer<'a, W> {
             return Ok(s);
         }
 
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "unsupported JSON number type",
-        ))
+        // serde_json::Number (without arbitrary_precision) is always PosInt, NegInt,
+        // or Float, and as_f64() is total over all three — this arm is unreachable.
+        unreachable!("serde_json::Number::as_f64 is total without arbitrary_precision")
     }
 }
 
@@ -230,13 +242,13 @@ mod tests {
     fn key_order_does_not_affect_output() {
         let a = json!({"b": 1, "a": 2, "c": 3});
         let b = json!({"c": 3, "a": 2, "b": 1});
-        assert_eq!(canonicalize(&a), canonicalize(&b));
+        assert_eq!(canonicalize(&a).unwrap(), canonicalize(&b).unwrap());
     }
 
     #[test]
     fn nested_keys_sorted() {
         let value = json!({ "outer": {"z": 1, "a": 2}, "list": [{"y": 1, "x": 2}] });
-        let rendered = String::from_utf8(canonicalize(&value)).unwrap();
+        let rendered = String::from_utf8(canonicalize(&value).unwrap()).unwrap();
         assert_eq!(
             rendered,
             r#"{"list":[{"x":2,"y":1}],"outer":{"a":2,"z":1}}"#
@@ -246,8 +258,8 @@ mod tests {
     #[test]
     fn array_order_preserved() {
         assert_ne!(
-            canonicalize(&json!([3, 1, 2])),
-            canonicalize(&json!([1, 2, 3]))
+            canonicalize(&json!([3, 1, 2])).unwrap(),
+            canonicalize(&json!([1, 2, 3])).unwrap()
         );
     }
 
@@ -255,29 +267,29 @@ mod tests {
     fn whitespace_in_source_does_not_matter() {
         let a: Value = serde_json::from_str(r#"{ "a": 1, "b": 2 }"#).unwrap();
         let b: Value = serde_json::from_str(r#"{"b":2,"a":1}"#).unwrap();
-        assert_eq!(canonicalize(&a), canonicalize(&b));
+        assert_eq!(canonicalize(&a).unwrap(), canonicalize(&b).unwrap());
     }
 
     #[test]
     fn empty_object_and_array() {
-        assert_eq!(canonicalize(&json!({})), b"{}");
-        assert_eq!(canonicalize(&json!([])), b"[]");
+        assert_eq!(canonicalize(&json!({})).unwrap(), b"{}");
+        assert_eq!(canonicalize(&json!([])).unwrap(), b"[]");
     }
 
     #[test]
     fn content_hash_is_key_order_independent() {
         let a = json!({"x": 1, "y": [1, 2]});
         let b = json!({"y": [1, 2], "x": 1});
-        assert_eq!(content_hash_of(&a), content_hash_of(&b));
+        assert_eq!(content_hash_of(&a).unwrap(), content_hash_of(&b).unwrap());
         assert_ne!(
-            content_hash_of(&a),
-            content_hash_of(&json!({"x": 2, "y": [1, 2]}))
+            content_hash_of(&a).unwrap(),
+            content_hash_of(&json!({"x": 2, "y": [1, 2]})).unwrap()
         );
     }
 
     #[test]
     fn content_hash_validates_as_sha256_hex() {
-        let h = content_hash_of(&json!({"k": "v"}));
+        let h = content_hash_of(&json!({"k": "v"})).unwrap();
         assert!(ContentHash::try_new(h.as_str()).is_ok());
     }
 
@@ -308,5 +320,48 @@ mod tests {
         assert!(check_sha256_hex(&"a".repeat(63)).is_err());
         assert!(check_sha256_hex(&"A".repeat(64)).is_err());
         assert!(check_sha256_hex(&"g".repeat(64)).is_err());
+    }
+
+    fn nested_array(depth: usize) -> Value {
+        let mut v = json!([]);
+        for _ in 0..depth {
+            v = json!([v]);
+        }
+        v
+    }
+
+    #[test]
+    fn depth_within_the_limit_still_canonicalizes() {
+        assert!(canonicalize(&nested_array(MAX_CANONICAL_DEPTH)).is_ok());
+    }
+
+    #[test]
+    fn depth_over_the_limit_is_a_typed_error_not_a_panic() {
+        let value = nested_array(MAX_CANONICAL_DEPTH + 1);
+        assert!(matches!(
+            canonicalize(&value),
+            Err(CanonicalizeError::DepthExceeded { max }) if max == MAX_CANONICAL_DEPTH
+        ));
+        assert!(matches!(
+            content_hash_of(&value),
+            Err(CanonicalizeError::DepthExceeded { .. })
+        ));
+    }
+
+    // Pins the exact bytes and hash a fixed value canonicalizes to. A silent
+    // change in serde_json's or ryu's formatting would otherwise change every
+    // ContentHash in existence without any test failing.
+    #[test]
+    fn canonical_form_is_pinned_against_library_drift() {
+        let value = json!({"b": 1, "a": [1, 2.5, -0.0, "héllo"], "z": true, "n": null});
+        let bytes = canonicalize(&value).unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            r#"{"a":[1,2.5,0,"héllo"],"b":1,"n":null,"z":true}"#
+        );
+        assert_eq!(
+            content_hash_of(&value).unwrap().as_str(),
+            "e33b884a2b4ae7c112a63950164e2b781a8ad08c6a5dea3c7e8848cfb32dcf25"
+        );
     }
 }

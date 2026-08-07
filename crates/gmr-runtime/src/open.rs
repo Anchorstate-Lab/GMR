@@ -93,7 +93,7 @@ async fn open(
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
     let at = Utc::now();
-    let observation = crate::observe::observe_into(&anchor, outcome, derivation);
+    let observation = crate::observe::observe_into(&anchor, outcome, derivation)?;
     let mut warnings = bind_warnings(&anchor, &observation);
     warnings.extend(accumulator_warning(scheduler, &anchor));
 

@@ -112,7 +112,7 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let observation = observe_into(&s.anchor, outcome, derivation);
+    let observation = observe_into(&s.anchor, outcome, derivation)?;
     let entered_at = s.entered_at.unwrap_or(at);
 
     let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
@@ -196,17 +196,17 @@ pub(crate) fn observe_into(
     anchor: &Anchor,
     outcome: gmr_core::Outcome,
     derivation: gmr_core::Derivation,
-) -> Observation {
+) -> Result<Observation, RuntimeError> {
     // The address is fixed by **the rule that actually derived it**, not by the
     // declaration on the anchor. NotFound is addressed too — absence is an answer.
-    let fact_address = outcome.address(&derivation.version);
-    Observation {
+    let fact_address = outcome.address(&derivation.version)?;
+    Ok(Observation {
         outcome,
         fact_address,
         versions: Versions {
-            declaration: anchor.probe.declaration_hash(),
+            declaration: anchor.probe.declaration_hash()?,
             derivation,
             evaluator: EVALUATOR_VERSION.to_owned(),
         },
-    }
+    })
 }

@@ -4,7 +4,9 @@ pub mod journal;
 pub mod memory;
 pub mod probe;
 
-pub use addr::{ContentHash, canonicalize, content_hash_of, content_hash_of_bytes};
+pub use addr::{
+    CanonicalizeError, ContentHash, canonicalize, content_hash_of, content_hash_of_bytes,
+};
 pub use anchor::{
     Anchor, AnchorKey, Expr, POSITION, Retain, Rule, RunSettings, STATUS, State, StatusId,
     Superseded, Transitions,

@@ -18,6 +18,7 @@ macro_rules! from_display {
 from_display!(
     gmr::RuntimeError,
     gmr::StoreError,
+    gmr::CanonicalizeError,
     serde_json::Error,
     toml::de::Error,
     std::io::Error,
