@@ -81,8 +81,9 @@ const OCCURRENCE: Shape = Shape {
 const FINGERPRINT: Shape = Shape {
     name: "fingerprint",
     body: Body::Table(&[
-        r#"not exists(state.fingerprint) => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }"#,
-        r#"obs.found == false => { position: state.position, fingerprint: state.fingerprint, status: "section-gone" }"#,
+        r#"not exists(state.fingerprint) and obs.exact => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }"#,
+        r#"not exists(state.fingerprint) => { position: state.position, status: "absent" }"#,
+        r#"obs.exact == false => { position: state.position, fingerprint: state.fingerprint, line: state.line, status: "section-gone" }"#,
         r#"obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }"#,
     ]),
 };
@@ -610,5 +611,65 @@ mod tests {
         let reads = reads_of(&transitions).unwrap();
         let script_probe = obs("gmr.probe.v1", &[], &["pending"]);
         assert!(unmet(&reads, &script_probe).is_empty());
+    }
+
+    fn fingerprint() -> Vec<String> {
+        rules_of(get("fingerprint").unwrap())
+    }
+
+    fn section(heading: &str, print: &str, line: i64, exact: bool) -> Value {
+        serde_json::json!({
+            "schema": COORD_SCHEMA, "extractor": "prose-map", "found": true,
+            "matched": if exact { vec!["file", "heading"] } else { vec!["file"] },
+            "missed": if exact { vec![] } else { vec!["heading"] },
+            "at": { "file": "CLAUDE.md", "heading": heading, "fingerprint": print },
+            "facts": { "line": line, "lines": 12 },
+            "candidates": 1, "matches": [], "exact": exact,
+        })
+    }
+
+    /// The bug this rule order was written against, found live in this repo's
+    /// own anchors: `doctrine::red-cards` pointed at a heading that had been
+    /// deleted from CLAUDE.md. `file` still matched, so the probe fell back to
+    /// the file's first heading and reported `found: true, exact: false` — and
+    /// the capture rule, which read neither, pinned that wrong section as the
+    /// baseline and called it `captured`. It watched the wrong section, said
+    /// nothing was wrong, and no later rule could ever fire.
+    #[test]
+    fn a_fingerprint_never_captures_a_section_it_did_not_actually_match() {
+        let r = fingerprint();
+        let fell_back = section("一、这十三条", "bac58fed", 7, false);
+
+        let first = step(&r, &fell_back, &Value::Null);
+        assert_eq!(first["status"], "absent", "a miss is not a baseline");
+        assert!(
+            first.get("fingerprint").is_none(),
+            "nothing may be pinned from a fallback: {first}"
+        );
+
+        assert_eq!(
+            step(&r, &fell_back, &first),
+            first,
+            "and it stays absent rather than settling into the wrong section"
+        );
+    }
+
+    #[test]
+    fn a_fingerprint_that_matched_captures_and_still_notices_the_heading_leaving() {
+        let r = fingerprint();
+        let captured = step(&r, &section("四、红牌", "aaa", 40, true), &Value::Null);
+        assert_eq!(captured["status"], "captured");
+        assert_eq!(captured["fingerprint"], "aaa");
+
+        let after = step(
+            &r,
+            &section("一、这十三条", "bac58fed", 7, false),
+            &captured,
+        );
+        assert_eq!(after["status"], "section-gone");
+        assert_eq!(
+            after["fingerprint"], "aaa",
+            "the baseline survives; the fallback must not overwrite it"
+        );
     }
 }
