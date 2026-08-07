@@ -138,6 +138,19 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         Command::Init { .. } => unreachable!("init was handled above"),
         Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, key, json).await,
+        Command::Accept {
+            key,
+            baseline,
+            criteria,
+            why,
+        } => {
+            let asked = match (baseline, criteria) {
+                (true, _) => Some(verbs::accept::What::Baseline),
+                (_, true) => Some(verbs::accept::What::Criteria),
+                _ => None,
+            };
+            verbs::accept::run(&rt, &root, key, why, asked, json).await
+        }
         Command::Read { key } => verbs::read::run(&rt, key, json).await,
         Command::Reprobe {
             key,

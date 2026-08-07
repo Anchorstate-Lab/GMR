@@ -80,14 +80,15 @@ pub struct Note {
 }
 
 /// `src/auth.ts#createSession` -> the position a coord probe understands.
-fn position_of(about: &str) -> Value {
+/// Shared with `open`, which routes its own `path#name` shorthand the same way.
+pub(crate) fn position_of(about: &str) -> Value {
     match about.split_once('#') {
         Some((file, name)) => json!({ "file": file, "name": name }),
         None => json!({ "file": about }),
     }
 }
 
-fn probe_for(about: &str, catalog: &Catalog) -> Result<String, CliError> {
+pub(crate) fn probe_for(about: &str, catalog: &Catalog) -> Result<String, CliError> {
     let file = about.split_once('#').map(|(f, _)| f).unwrap_or(about);
     let ext = file.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
     catalog.for_extension(ext).ok_or_else(|| {

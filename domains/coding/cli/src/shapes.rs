@@ -152,13 +152,13 @@ fn expand(dims: &[Dim]) -> Vec<String> {
     let mut out = Vec::with_capacity(dims.len() + 4);
 
     out.push(format!(
-        "not exists(state.baseline) and obs.found => {}",
+        "not exists(state.baseline) and obs.exact => {}",
         object(&[
             ("position".into(), "state.position".into()),
             ("baseline".into(), reading(dims)),
             ("now".into(), reading(dims)),
             ("v".into(), vector(dims, "false", |_| "false".into())),
-            ("status".into(), "\"captured\"".into()),
+            ("status".into(), format!("\"{SETTLED}\"")),
         ])
     ));
 
@@ -172,7 +172,7 @@ fn expand(dims: &[Dim]) -> Vec<String> {
     ));
 
     out.push(format!(
-        "obs.found == false => {}",
+        "obs.exact == false => {}",
         object(&[
             ("position".into(), "state.position".into()),
             ("baseline".into(), "state.baseline".into()),
@@ -419,7 +419,6 @@ mod tests {
     fn every_generated_rule_is_a_program_the_evaluator_accepts() {
         let rules = contract();
         let statuses = [
-            "captured",
             "absent",
             "missing",
             "signature-changed",
@@ -428,7 +427,7 @@ mod tests {
             "moved-line",
             "settled",
         ];
-        assert_eq!(rules.len(), statuses.len());
+        assert_eq!(rules.len(), statuses.len() + 1);
         for s in statuses {
             assert!(
                 rules.iter().any(|r| r.contains(&format!("\"{s}\""))),
@@ -460,7 +459,7 @@ mod tests {
     fn three_changes_at_once_all_land() {
         let r = contract();
         let s = step(&r, &sighted("(a) -> B", "body1", "a.rs", 1), &Value::Null);
-        assert_eq!(s["status"], "captured");
+        assert_eq!(s["status"], "settled");
         assert!(set(&s).is_empty(), "a first sighting drifts from nothing");
 
         let s = step(&r, &sighted("(a, b) -> B", "body2", "a.rs", 9), &s);
@@ -529,14 +528,47 @@ mod tests {
         assert_eq!(s["status"], "absent");
         assert!(
             s.get("baseline").is_none(),
-            "writing a null baseline would make `captured` unreachable, got {s}"
+            "writing a null baseline would strand this anchor in `absent`, got {s}"
         );
 
         let s = step(&r, &sighted("(a) -> B", "body1", "a.rs", 1), &s);
-        assert_eq!(s["status"], "captured");
+        assert_eq!(s["status"], "settled");
+        assert_eq!(s["baseline"], s["now"]);
         assert!(
             set(&s).is_empty(),
             "the first real sighting is the baseline"
+        );
+    }
+
+    #[test]
+    fn a_near_miss_is_not_the_target() {
+        let r = contract();
+        let s = step(&r, &sighted("(a) -> B", "body1", "a.rs", 1), &Value::Null);
+
+        let mut renamed = sighted("(z) -> Q", "otherbody", "a.rs", 40);
+        renamed["exact"] = Value::Bool(false);
+        renamed["matched"] = serde_json::json!(["file"]);
+        renamed["missed"] = serde_json::json!(["name"]);
+        renamed["at"]["name"] = Value::String("g".into());
+
+        let s = step(&r, &renamed, &s);
+        assert_eq!(s["status"], "missing");
+        assert_eq!(set(&s), ["missing"]);
+        assert_eq!(
+            s["now"]["sig"], "(a) -> B",
+            "another object's reading must not become this anchor's"
+        );
+    }
+
+    #[test]
+    fn a_first_sighting_settles_rather_than_announcing_itself() {
+        let r = contract();
+        let first = step(&r, &sighted("(a) -> B", "body1", "a.rs", 1), &Value::Null);
+        let again = step(&r, &sighted("(a) -> B", "body1", "a.rs", 1), &first);
+        assert_eq!(
+            first, again,
+            "a distinct opening status would transition into settled on the very next \
+             observation, handing back the memory for a change nobody made"
         );
     }
 

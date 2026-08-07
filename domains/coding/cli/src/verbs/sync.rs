@@ -24,7 +24,7 @@ pub struct Declared {
     pub anchor: Vec<AnchorDecl>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AnchorDecl {
     pub key: String,
     /// A name. A declaration has to survive an engine upgrade unchanged.
@@ -50,7 +50,7 @@ pub struct AnchorDecl {
 }
 
 impl AnchorDecl {
-    fn to_probe(&self, ctx: &Context) -> Result<ProbeRef, CliError> {
+    pub fn to_probe(&self, ctx: &Context) -> Result<ProbeRef, CliError> {
         rules::probe(
             ctx.catalog.kind_of(&self.probe),
             &self.probe,
@@ -76,7 +76,7 @@ impl AnchorDecl {
         }
     }
 
-    fn to_transitions(&self) -> Result<Transitions, CliError> {
+    pub fn to_transitions(&self) -> Result<Transitions, CliError> {
         match (&self.shape, self.rules.is_empty()) {
             (Some(_), false) => Err(CliError(format!(
                 "{}: declare either `shape` or `rules`, not both",
@@ -107,6 +107,40 @@ impl AnchorDecl {
     }
 }
 
+pub fn read_declared(root: &Path, file: &str) -> Result<Declared, CliError> {
+    let path = root.join(file);
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(toml::from_str(&text)?),
+        Err(_) if !path.exists() && file == DEFAULT_FILE => Ok(Declared::default()),
+        Err(e) => Err(CliError(format!("cannot read `{file}`: {e}"))),
+    }
+}
+
+pub fn merged<'a>(
+    declared: &'a Declared,
+    notes: &'a [crate::memories::Note],
+) -> Vec<&'a AnchorDecl> {
+    let from_notes = notes
+        .iter()
+        .flat_map(|n| &n.wants)
+        .filter_map(|w| match w {
+            crate::memories::Want::Declared(d) => Some(d.as_ref()),
+            crate::memories::Want::Existing(_) => None,
+        })
+        .filter(|d| !declared.anchor.iter().any(|t| t.key == d.key));
+
+    let mut seen: Vec<&str> = Vec::new();
+    let mut out = Vec::new();
+    for decl in declared.anchor.iter().chain(from_notes) {
+        if seen.contains(&decl.key.as_str()) {
+            continue;
+        }
+        seen.push(&decl.key);
+        out.push(decl);
+    }
+    out
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
@@ -114,12 +148,7 @@ pub async fn run(
     dry_run: bool,
     json: bool,
 ) -> Result<i32, CliError> {
-    let path = root.join(&file);
-    let declared: Declared = match std::fs::read_to_string(&path) {
-        Ok(text) => toml::from_str(&text)?,
-        Err(_) if !path.exists() && file == DEFAULT_FILE => Declared::default(),
-        Err(e) => return Err(CliError(format!("cannot read `{file}`: {e}"))),
-    };
+    let declared = read_declared(root, &file)?;
     let ctx = Context {
         catalog: Catalog::load(root)?,
     };
@@ -133,25 +162,8 @@ pub async fn run(
     let mut resettled = Vec::new();
     let mut warnings = Vec::new();
 
-    // A note declaring an anchor is the same declaration as one in the toml;
-    // the toml wins a duplicate key because it is the more explicit statement.
-    let from_notes: Vec<&AnchorDecl> = notes
-        .iter()
-        .flat_map(|n| &n.wants)
-        .filter_map(|w| match w {
-            crate::memories::Want::Declared(d) => Some(d.as_ref()),
-            crate::memories::Want::Existing(_) => None,
-        })
-        .filter(|d| !declared.anchor.iter().any(|t| t.key == d.key))
-        .collect();
-
     let mut scheduled = 0;
-    let mut seen: Vec<String> = Vec::new();
-    for decl in declared.anchor.iter().chain(from_notes) {
-        if seen.contains(&decl.key) {
-            continue;
-        }
-        seen.push(decl.key.clone());
+    for decl in merged(&declared, &notes) {
         let key = AnchorKey::new(decl.key.clone());
         if !dry_run && rt.ensure_scheduled(&key).await? {
             scheduled += 1;
@@ -371,7 +383,7 @@ async fn align_bindings(
 /// Naming the facet matters: "the probe was renamed" and "the transition table
 /// was rewritten" are different judgments, and the sealed reason should say
 /// which one it is.
-fn differs(
+pub fn differs(
     anchor: &Anchor,
     decl: &AnchorDecl,
     ctx: &Context,

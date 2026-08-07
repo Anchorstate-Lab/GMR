@@ -70,6 +70,21 @@ pub enum Command {
     #[command(display_order = 12)]
     Read { key: Option<String> },
 
+    /// Accept what an anchor now shows: re-pin its baseline, or take the
+    /// criteria its declaration changed. Needs --why, and the reason is sealed.
+    #[command(display_order = 4)]
+    Accept {
+        key: String,
+        /// Clear the vector and pin the current reading as the new baseline.
+        #[arg(long, conflicts_with = "criteria")]
+        baseline: bool,
+        /// Take the probe, rules or terminal the declaration now names.
+        #[arg(long)]
+        criteria: bool,
+        #[arg(long)]
+        why: String,
+    },
+
     /// Install a directory as a named probe artifact.
     #[command(display_order = 34)]
     Publish {
@@ -241,12 +256,16 @@ pub enum ProbesCmd {
 
 #[derive(clap::Args)]
 pub struct OpenArgs {
+    /// A key, or a `path#name` coordinate when `--probe` is omitted.
     pub key: String,
-    /// The probe to look with, by name. `probes list` prints what this build knows.
+    /// The probe to look with, by name. Omit it to route `key` as `path#name`.
     #[arg(long)]
-    pub probe: String,
+    pub probe: Option<String>,
     #[arg(long, default_value = "{}")]
     pub params: String,
+    /// A named transition preset, exclusive with `--rule`.
+    #[arg(long, conflicts_with = "rules")]
+    pub shape: Option<String>,
     #[arg(long = "rule", value_name = "GUARD => NEW_STATE")]
     pub rules: Vec<String>,
     #[arg(long = "terminal", value_delimiter = ',')]
