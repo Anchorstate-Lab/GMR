@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 const VERSION: &str = env!("GMR_EXTRACTOR_AST");
 
-const ITEMS: [&str; 5] = ["file", "kind", "vis", "name", "shape"];
+const ITEMS: [&str; 7] = ["file", "kind", "vis", "name", "callee", "member", "shape"];
 
 fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -64,6 +64,14 @@ fn visibility(
     }
 }
 
+fn naming(kind: &str) -> &'static str {
+    match kind {
+        "call" | "import" => "callee",
+        "field" => "member",
+        _ => "name",
+    }
+}
+
 fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
     let Some(table) = lang::for_path(rel) else {
         return Ok(());
@@ -113,7 +121,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             ("file", rel.to_owned()),
             ("kind", kind.to_owned()),
             ("vis", vis),
-            ("name", name),
+            (naming(kind), name),
             ("shape", shape),
         ]
         .into_iter()
@@ -212,6 +220,42 @@ mod tests {
     }
 
     #[test]
+    fn a_call_site_does_not_tie_with_the_definition_it_points_at() {
+        let d = fixture(
+            "mentions",
+            &[(
+                "a.rs",
+                "pub fn alpha() -> u8 { 1 }\npub fn beta() -> u8 { alpha() }\n",
+            )],
+        );
+        let v = at(&d, json!({"file": "a.rs", "name": "alpha"}));
+        assert_eq!(v["candidates"], 1);
+        assert_eq!(v["at"]["kind"], "function");
+
+        let calls = at(&d, json!({"file": "a.rs", "callee": "alpha"}));
+        assert_eq!(calls["candidates"], 1);
+        assert_eq!(calls["at"]["kind"], "call");
+    }
+
+    #[test]
+    fn a_field_does_not_tie_with_a_function_of_the_same_name() {
+        let d = fixture(
+            "member",
+            &[(
+                "a.rs",
+                "pub struct S { pub reason: u8 }\nimpl S { pub fn reason(&self) -> u8 { 0 } }\n",
+            )],
+        );
+        let v = at(&d, json!({"file": "a.rs", "name": "reason"}));
+        assert_eq!(v["candidates"], 1);
+        assert_eq!(v["at"]["kind"], "function");
+        assert_eq!(
+            at(&d, json!({"file": "a.rs", "member": "reason"}))["at"]["kind"],
+            "field"
+        );
+    }
+
+    #[test]
     fn a_deletion_is_told_apart_from_a_rename_by_how_many_candidates_tied() {
         let d = fixture("deleted", &[("a.rs", ONE)]);
         let v = at(
@@ -266,7 +310,7 @@ mod tests {
             json!([])
         );
         assert_eq!(
-            at(&d, json!({"kind": "field", "name": "n"}))["missed"],
+            at(&d, json!({"kind": "field", "member": "n"}))["missed"],
             json!([])
         );
     }

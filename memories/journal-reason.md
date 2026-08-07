@@ -1,9 +1,5 @@
 ---
-anchors:
-  - key: crates/gmr-core/src/journal.rs#reason
-    probe: ast-map
-    position: { file: crates/gmr-core/src/journal.rs, name: reason, kind: function }
-    shape: contract
+about: crates/gmr-core/src/journal.rs#reason
 ---
 
 # 派生，不是并排存

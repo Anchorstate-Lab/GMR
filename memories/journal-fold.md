@@ -1,9 +1,5 @@
 ---
-anchors:
-  - key: crates/gmr-core/src/journal.rs#fold
-    probe: ast-map
-    position: { file: crates/gmr-core/src/journal.rs, name: fold, kind: function }
-    shape: contract
+about: crates/gmr-core/src/journal.rs#fold
 ---
 
 # closed 只累积，不重读

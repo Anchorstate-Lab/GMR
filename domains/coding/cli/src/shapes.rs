@@ -628,13 +628,6 @@ mod tests {
         })
     }
 
-    /// The bug this rule order was written against, found live in this repo's
-    /// own anchors: `doctrine::red-cards` pointed at a heading that had been
-    /// deleted from CLAUDE.md. `file` still matched, so the probe fell back to
-    /// the file's first heading and reported `found: true, exact: false` — and
-    /// the capture rule, which read neither, pinned that wrong section as the
-    /// baseline and called it `captured`. It watched the wrong section, said
-    /// nothing was wrong, and no later rule could ever fire.
     #[test]
     fn a_fingerprint_never_captures_a_section_it_did_not_actually_match() {
         let r = fingerprint();

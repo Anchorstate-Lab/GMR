@@ -39,7 +39,7 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
         Vocabulary {
             name: "ast-map",
             schema: SCHEMA,
-            at: &["file", "kind", "vis", "name", "shape"],
+            at: &["file", "kind", "vis", "name", "callee", "member", "shape"],
             facts: &["body", "line"],
             // Only ast-map: `about: f#name` yields {file, name}, and no other
             // probe's vocabulary matches that. prose-map wants a heading, so it

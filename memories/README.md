@@ -6,53 +6,69 @@ anchors:
 
 一份记忆挂在锚上。锚机械地观测，记忆写的是**观测约束、但决定不了的那件事**。
 
-```
-front-matter   about: <坐标>   一行式，探针/形状/位置由坐标推出来。`gmr anchor` 生成的就是它
-               anchors: [...]  完整式，坐标有歧义、或者探针不吃 `路径#名字` 时手写
-               watch: [...]    只有这些维动了才把这份记忆递回来（可选）
-正文           这些维动了，该重新问什么
-```
+## 正规形式 —— 只有这一种
 
-**声明住在这里，不在 `.anchor/anchors.toml`。** 那个文件已经删了 —— 它是可选的，
-`gmr init` 也不创建它。裸键形式（`anchors: - some::key`）只**绑定**不**声明**，
-用它就得把声明另放一处；完整式两件事一起做，所以这里只用完整式或一行式。
+```yaml
+---
+about: crates/gmr-core/src/addr.rs#write_array
+watch: [sig, logic]
+---
 
-## 颗粒度：一个锚一段代码，一份记忆代替那段代码的注释
+# 一句话说清这段代码在守什么
 
-坐标写成 `路径#名字`，指向文件内部一个具体的定义：
-
-```
-crates/gmr-core/src/addr.rs#write_array
-crates/gmr-core/src/journal.rs#Versions
+正文：这些维动了，该重新问什么。
 ```
 
-这一层用 `contract` 形状，向量是 `missing · sig · logic · file · line`，
-默认订阅 `missing, sig, logic` —— 行号漂移不打扰人，签名和实现变了才打扰。
-位是累积的：置 1 之后一直留着，直到 `gmr accept <坐标> --why "..."`。
+| 字段 | 说什么 | 缺省 |
+|---|---|---|
+| `about` | 坐标 `路径` 或 `路径#名字`。**锚的 key 就是这个字符串** | 必填 |
+| `watch` | 订阅哪几维，只影响递不递记忆和退出码 | shape 的内置订阅 |
+| `shape` | 覆盖推断出来的形状 | 由坐标推 |
 
-**代码里不写这些记忆已经说过的话。** 注释和记忆各存一份，两份会分家，
-而且没有任何东西会发现。要说的话说在这里，代码里只留必要的英文短注释。
+`about` 可以是一个列表 —— 一份记忆挂多个锚。
 
-## 正交的那一层
+**`gmr anchor <坐标> -m "…"` 生成的就是这个形式。** 手写要跟它长一样。
 
+## 坐标
+
+`路径` → 整份名册（roster）。`路径#名字` → 那一个定义（contract）。
+
+`名字` 指的是**能被单独指名的东西**：function · module · type。
+不是它的调用点（那些在 `callee`），也不是类型的字段（那些在 `member`）——
+见 [[ast-naming]]。所以 `路径#名字` 唯一，不会静默指错。
+
+`const` 锚不了：`const_item` 不在 `lang.rs` 的 kinds 表里。要锚就锚它所在的函数。
+`type` 的 `sig` 维恒空（struct 没有 parameters/return_type），字段和变体走 `logic`。
+
+## 逃生口
+
+只有这几种情况用 `anchors:` 完整式，别的一律用上面那个：
+
+- 要写 `rules` / `terminal`（手写规则表，第 7 条那个逃生口）
+- 要写 `params`（探针要看的不是仓库根）
+- 探针不吃 `路径#名字`（name-map · addr-map · 脚本探针）
+- position 要写坐标语法表达不出来的键（`kind` · `member` · `nth`）
+
+```yaml
+anchors:
+  - key: doctrine::decisions
+    probe: prose-map
+    position: { file: CLAUDE.md, heading: "…" }
+    shape: fingerprint
 ```
-doctrine::   CLAUDE.md 某一节的内容指纹（fingerprint 形状）
-```
 
-`crates/` 底下的锚盯的是某段代码有没有动；`doctrine::` 盯的是「判断那段代码
-该不该动」的依据有没有动。前者变了要看代码，后者变了要重读全部记忆。
+裸键形式（`anchors: - some::key`）只**绑定**不**声明**，用它就得把声明另放一处。
+本仓库不用它 —— `.anchor/anchors.toml` 已经删了，声明和记忆住在同一个文件里。
 
 ## 两条纪律
 
+**代码里不写注释，一条都不写。** 要说的话写在这里，锚到那段代码上。注释和记忆
+各存一份必然分家，而记忆有锚盯着、注释没有。
+
 **不写代码里有的东西。** 名单、公开面、依赖清单由锚实时吐出来，`gmr status` 看得到。
-手册抄一份只会跟代码分家。
+机械可查的约束是 `gate.sh` 里可执行的检查。记忆写的是**为什么**，不是**是什么**。
 
-**不写不变量清单。** 机械可查的约束是 `gate.sh` 里可执行的检查，不是文档里打勾的条目。
-记忆写的是**为什么**，不是**是什么**。
+## 还没兑现的
 
-## 已知的坑
-
-裸坐标 `文件#名字` 在细颗粒度下会撞上调用点和字段声明 —— `ast-map` 把
-`call_expression`、`field_declaration` 也当成同级候选。`journal.rs#fold` 裸着写
-会锚到一个调用点（8 个候选），`journal.rs#reason` 会锚到同名字段。
-这三个坐标用 `anchors:` 完整式写死了 `kind: function`。
+规范目前靠人遵守 —— 没有 lint 检查笔记是不是正规形式，`gmr doctor` 也不报。
+在补上之前，这一节就是唯一的判据。

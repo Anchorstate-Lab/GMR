@@ -1,9 +1,5 @@
 ---
-anchors:
-  - key: crates/gmr-core/src/journal.rs#scan
-    probe: ast-map
-    position: { file: crates/gmr-core/src/journal.rs, name: scan, kind: function }
-    shape: contract
+about: crates/gmr-core/src/journal.rs#scan
 ---
 
 # 只有一份投影
