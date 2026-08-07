@@ -27,9 +27,25 @@ pub mod retransition;
 pub mod status;
 pub mod sync;
 
-use gmr::{AnchorKey, ContentHash, Runtime};
+use gmr::{AnchorKey, Change, ContentHash, Revised, Runtime, State};
 
 use crate::error::CliError;
+
+/// Clear the state back to the position alone, then look. The shape's own
+/// capture rule writes the baseline, so what gets pinned is a reading taken
+/// now — not whatever the last pass happened to leave in the state. If the
+/// target is no longer there the capture rule says so instead of pinning it.
+pub(crate) async fn recapture(
+    rt: &Runtime,
+    key: &AnchorKey,
+    why: &[u8],
+) -> Result<Revised, CliError> {
+    let view = rt.read(key).await?;
+    let blank = State::new(serde_json::json!({ "position": view.state.position() }));
+    let revised = rt.revise(key, Change::Restate { state: blank }, why).await?;
+    rt.observe(key).await?;
+    Ok(revised)
+}
 
 pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<String>, CliError> {
     Ok(rt

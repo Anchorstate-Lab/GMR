@@ -228,6 +228,21 @@ out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 0 ] || fail "accept 之后 check 应当是 0，得到 $code" "$out"
 
+# accept 钉的必须是此刻的事实，不是上一次观测留在 state 里的读数。人先 check
+# 看见红的，再把改动撤回，然后 accept —— 如果 accept 拿的是那份过期读数，
+# 它会把坏的钉成基线，好代码反倒永远报"变了"。
+step "accept 重新看一眼，而不是钉上一次的读数"
+sed -i.bak 's/const next = id + now;/const next = id;/' "$repo/src/session.ts" && rm -f "$repo/src/session.ts.bak"
+set +e
+"$gmr" --repo "$repo" check "$key" >/dev/null; code=$?
+set -e
+[ "$code" -eq 1 ] || fail "改坏了 check 应当是 1，得到 $code"
+sed -i.bak 's/const next = id;/const next = id + now;/' "$repo/src/session.ts" && rm -f "$repo/src/session.ts.bak"
+out=$("$gmr" --repo "$repo" accept "$key" --why '看过了，撤回了')
+set +e
+out=$("$gmr" --repo "$repo" check "$key"); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "撤回改动后 accept，check 应当是 0；accept 钉了过期读数" "$out"
 
 echo
 echo "验收通过：陌生仓库、无工具链、零下载探针。记忆与事实连上了，"

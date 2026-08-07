@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Change, Runtime, State};
+use gmr::{AnchorKey, Runtime};
 
 use crate::error::CliError;
 use crate::verbs::sealed;
@@ -26,15 +26,10 @@ pub async fn run(
 
     let mut done = Vec::new();
     for key in &keys {
-        let view = rt.read(key).await?;
-        // Exactly what `open` seeds, so this is a replay of opening, not a new
-        // path the rules have never been down.
-        let blank = State::new(serde_json::json!({ "position": view.state.position() }));
-        let revised = rt
-            .revise(key, Change::Restate { state: blank }, why.as_bytes())
-            .await?;
-        rt.observe(key).await?;
-        done.push((key.clone(), revised));
+        done.push((
+            key.clone(),
+            crate::verbs::recapture(rt, key, why.as_bytes()).await?,
+        ));
     }
 
     if json {

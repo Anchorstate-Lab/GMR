@@ -1,7 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, Change, Runtime, State};
-use serde_json::Value;
+use gmr::{AnchorKey, Change, Runtime};
 
 use crate::error::CliError;
 use crate::probes::Catalog;
@@ -39,36 +38,6 @@ impl Pending {
     }
 }
 
-fn recaptured(state: &State) -> State {
-    State::new(serde_json::json!({ "position": state.position() }))
-}
-
-fn repinned(state: &State) -> Result<State, CliError> {
-    let obj = state
-        .as_value()
-        .as_object()
-        .ok_or_else(|| CliError("this anchor's state is not an object".into()))?;
-    let Some(v) = obj.get("v").and_then(Value::as_object) else {
-        return Ok(recaptured(state));
-    };
-    let now = obj
-        .get("now")
-        .cloned()
-        .ok_or_else(|| CliError("this anchor's state carries no reading to pin".into()))?;
-
-    let mut out = obj.clone();
-    out.insert("baseline".to_owned(), now);
-    out.insert(
-        "v".to_owned(),
-        Value::Object(v.keys().map(|k| (k.clone(), Value::Bool(false))).collect()),
-    );
-    out.insert(
-        "status".to_owned(),
-        Value::String(crate::shapes::SETTLED.to_owned()),
-    );
-    Ok(State::new(Value::Object(out)))
-}
-
 fn unsettled_status(view: &gmr::AnchorView) -> Option<String> {
     let name = crate::shapes::name_of(&view.anchor.transitions)?;
     let ok = crate::shapes::settled_of(crate::shapes::get(name).ok()?);
@@ -83,7 +52,7 @@ async fn pending(
     rt: &Runtime,
     root: &Path,
     key: &AnchorKey,
-) -> Result<(Pending, State, Option<AnchorDecl>), CliError> {
+) -> Result<(Pending, Option<AnchorDecl>), CliError> {
     let view = rt.read(key).await?;
     if view.closed {
         return Err(CliError(format!(
@@ -120,7 +89,6 @@ async fn pending(
             unsettled,
             facets,
         },
-        view.state,
         decl,
     ))
 }
@@ -159,10 +127,10 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let key = AnchorKey::new(key);
-    let (p, state, decl) = pending(rt, root, &key).await?;
+    let (p, decl) = pending(rt, root, &key).await?;
     let what = choose(&p, asked)?;
 
-    let changes: Vec<Change> = match what {
+    let revised = match what {
         What::Baseline => {
             if p.missing {
                 return Err(CliError(format!(
@@ -171,16 +139,15 @@ pub async fn run(
                      Point the anchor at where the target went, or close it with a reason."
                 )));
             }
-            vec![Change::Restate {
-                state: repinned(&state)?,
-            }]
+            vec![crate::verbs::recapture(rt, &key, why.as_bytes()).await?]
         }
         What::Criteria => {
             let ctx = Context {
                 catalog: Catalog::load(root)?,
             };
             let decl = decl.expect("a criteria facet can only differ against a declaration");
-            p.facets
+            let changes: Vec<Change> = p
+                .facets
                 .iter()
                 .map(|facet| match *facet {
                     "probe" => Ok(Change::Reprobe {
@@ -193,14 +160,14 @@ pub async fn run(
                         terminal: rules::terminal(&decl.terminal),
                     }),
                 })
-                .collect::<Result<_, CliError>>()?
+                .collect::<Result<_, CliError>>()?;
+            let mut out = Vec::new();
+            for change in changes {
+                out.push(rt.revise(&key, change, why.as_bytes()).await?);
+            }
+            out
         }
     };
-
-    let mut revised = Vec::new();
-    for change in changes {
-        revised.push(rt.revise(&key, change, why.as_bytes()).await?);
-    }
     let last = revised
         .last()
         .expect("a chosen judgment always has at least one change");
@@ -223,7 +190,10 @@ pub async fn run(
             Some(status) => println!(
                 "{key} re-captured from `{status}`; if the world still reads that way it says so again"
             ),
-            None => println!("{key} re-pinned; {} cleared", p.axes.join(" · ")),
+            None => println!(
+                "{key} re-captured from a fresh reading; {} cleared",
+                p.axes.join(" · ")
+            ),
         },
         What::Criteria => println!("{key} took the declaration's {}", p.facets.join(" · ")),
     }
@@ -234,16 +204,6 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn state(v: serde_json::Value) -> State {
-        State::new(serde_json::json!({
-            "position": { "file": "a.rs", "name": "f" },
-            "baseline": { "sig": "(a)", "body": "b1" },
-            "now": { "sig": "(a, b)", "body": "b2" },
-            "v": v,
-            "status": "signature-changed",
-        }))
-    }
 
     fn pending(axes: &[&str], facets: &[&'static str]) -> Pending {
         Pending {
@@ -261,34 +221,6 @@ mod tests {
             unsettled: Some(status.to_owned()),
             facets: Vec::new(),
         }
-    }
-
-    #[test]
-    fn re_pinning_takes_the_reading_as_the_new_baseline() {
-        let s = repinned(&state(
-            serde_json::json!({ "missing": false, "sig": true, "logic": true }),
-        ))
-        .unwrap();
-        let v = s.as_value();
-        assert_eq!(v["baseline"], v["now"]);
-        assert_eq!(
-            v["v"],
-            serde_json::json!({ "missing": false, "sig": false, "logic": false })
-        );
-        assert_eq!(v["status"], "settled");
-        assert_eq!(v["position"]["name"], "f");
-    }
-
-    #[test]
-    fn a_shape_without_a_vector_re_captures_instead_of_pinning_a_baseline_it_has_not_got() {
-        let table = State::new(
-            serde_json::json!({ "position": { "file": "a.md" }, "n": 3, "status": "moved" }),
-        );
-        let s = repinned(&table).unwrap();
-        assert_eq!(
-            s.as_value(),
-            &serde_json::json!({ "position": { "file": "a.md" } })
-        );
     }
 
     #[test]
