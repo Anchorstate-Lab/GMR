@@ -75,9 +75,6 @@ pub fn eval(node: &Node, ctx: Ctx<'_>) -> Evaluated {
     }
 }
 
-/// The obs side of `changed(x)` gets the same treatment as `obs.x`: if the probe
-/// reported an object without that item, it is a typo and must be loud. The state
-/// side stays lenient — the first time a direction is seen it is of course absent.
 fn changed(name: &str, ctx: Ctx<'_>) -> Evaluated {
     let now = match ctx.obs {
         Value::Null => None,
@@ -448,9 +445,6 @@ mod tests {
         );
     }
 
-    // The obs side of changed(x) must match obs.x: a typo has to be loud.
-    // Otherwise the same typo is caught by bind as a path but silently false here.
-
     #[test]
     fn a_direction_the_probe_does_not_report_is_a_typo_not_a_verdict() {
         let (obs, state) = (json!({ "signature": "x" }), json!({}));
@@ -474,7 +468,6 @@ mod tests {
 
     #[test]
     fn a_world_that_is_not_there_is_still_an_answer_not_a_typo() {
-        // On NotFound obs is null: the world says nothing is there, not our mistake.
         let (obs, state) = (Value::Null, json!({ "shape": "(a)->c" }));
         assert_eq!(
             eval(
@@ -511,7 +504,6 @@ mod tests {
 
     #[test]
     fn the_state_side_stays_lenient() {
-        // The first time the domain sees a direction the state has nothing — fine.
         let (obs, state) = (json!({ "shape": "(a)->c" }), json!({}));
         assert_eq!(
             eval(

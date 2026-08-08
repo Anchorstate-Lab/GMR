@@ -111,10 +111,6 @@ pub enum Node {
 }
 
 impl Node {
-    /// Whether this expression reads the previous state.
-    ///
-    /// Walks the AST rather than matching rendered text: `{ note: "state.x" }`
-    /// is a literal, not a read, and text cannot tell the two apart.
     pub fn reads_state(&self) -> bool {
         match self {
             Self::Path(p) => p.root == Root::State,
@@ -126,10 +122,6 @@ impl Node {
         }
     }
 
-    /// Every obs path this expression reads, as dotted field names without the
-    /// `obs.` root. An index ends a path — it names no field to check.
-    ///
-    /// `changed("x")` faults exactly where `obs.x` faults, so it is one of these.
     pub fn reads_obs(&self) -> BTreeSet<String> {
         let mut out = BTreeSet::new();
         self.collect_obs(&mut out);
@@ -216,19 +208,16 @@ mod tests {
         assert_eq!(obs_of("obs.x == obs.y"), ["x", "y"]);
     }
 
-    /// It faults exactly where the same path would, so it is the same read.
     #[test]
     fn changed_is_a_read_of_obs() {
         assert_eq!(obs_of(r#"changed("matches")"#), ["matches"]);
     }
 
-    /// Text cannot tell a literal from a path; the tree can.
     #[test]
     fn a_string_that_looks_like_a_path_is_not_a_read() {
         assert!(obs_of(r#"{ note: "obs.x" }"#).is_empty());
     }
 
-    /// An index names no field, so there is nothing further to check.
     #[test]
     fn an_index_ends_the_path() {
         assert_eq!(obs_of("obs.matches[0]"), ["matches"]);

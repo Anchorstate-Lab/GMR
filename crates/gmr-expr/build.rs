@@ -2,14 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// The evaluator version has to be earned, same as a probe: a hand-written
-/// version string can lie — change the comparison semantics, forget the constant,
-/// and the log claims it was the same evaluator.
-///
-/// Own source is not the whole of that. What `Value`s compare equal is decided
-/// by serde_json, so the resolved versions of the runtime dependency closure
-/// are hashed too. Build-dependencies are excluded: they cannot reach a
-/// comparison.
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<PathBuf> = std::fs::read_dir(root.join("src"))
@@ -44,8 +36,6 @@ fn main() {
     writeln!(f, "pub const EVALUATOR_VERSION: &str = \"{digest}\";").unwrap();
 }
 
-/// Refuses rather than degrading: a version that quietly stopped covering the
-/// dependencies claims a guarantee it is no longer making.
 fn lockfile(root: &Path) -> PathBuf {
     let mut dir = Some(root);
     while let Some(d) = dir {
@@ -59,7 +49,6 @@ fn lockfile(root: &Path) -> PathBuf {
     panic!("no Cargo.lock above {root:?}: the evaluator cannot earn a version it cannot compute");
 }
 
-/// The runtime dependency closure, name and resolved version.
 fn closure(manifest: &Path, lock: &Path) -> BTreeSet<(String, String)> {
     let manifest: toml::Value =
         toml::from_str(&std::fs::read_to_string(manifest).expect("unreadable manifest"))
