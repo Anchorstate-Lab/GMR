@@ -69,6 +69,7 @@ pub async fn open_in_memory() -> Result<SqliteStore, StoreError> {
 }
 
 async fn connect(options: SqliteConnectOptions) -> Result<SqliteStore, StoreError> {
+    let options = options.busy_timeout(std::time::Duration::from_secs(5));
     let pool = SqlitePoolOptions::new()
         .max_connections(4)
         .connect_with(options)
