@@ -7,9 +7,20 @@ watch: [sig, logic]
 
 # state 里只能住参与判据的字段
 
-顶层永远是这五个：`position` · `baseline` · `now` · `v` · `status`。
+捕获成功之后，顶层就是这五个：`position` · `baseline` · `now` · `v` · `status`。
 `baseline` 和 `now` 的字段集合恒等于全部 `Since` 维的 `field`，
 `v` 的键集合恒等于全部维名。多一个都不行。
+
+**`absent` 是唯一的例外，而那个例外本身是判据。** 没捕获到的状态只有
+`position` · `v` · `status` 三个键 —— 不是省略，是**不许有** `baseline`：
+`baseline` 的意思是「你确认过的那个读数」，坐标没命中时根本不存在这样一个读数，
+凭空写一个就是钉一个谎（见 [[shapes-expand]]）。所以「多一个都不行」和
+「absent 少两个」是同一条纪律的两面：state 里只住得下真的参与过判据的东西。
+
+活证据在这个仓库里：`gmr read 'doctrine::red-cards' --json` 的 state 顶层就是
+那三个键。注意钉这一条的那个测试只走了捕获成功那条路
+（`settled_state()` 喂的是 `obs.exact = true`），absent 分支没有断言看着，
+这段话是这一侧唯一的记载。
 
 理由在基底那边：`should_still` 比的是**整个 State 相等**
 （`crates/gmr-core/src/journal.rs`）。所以一个不参与任何守卫比较的字段，
