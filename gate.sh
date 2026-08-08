@@ -156,8 +156,9 @@ python3 - <<'COMMENTS' || exit 1
 import pathlib, subprocess, sys
 
 CLEAN = ["crates/gmr-core", "crates/gmr-content", "crates/gmr", "crates/gmr-probe",
-         "crates/gmr-expr", "crates/gmr-store", "batteries/survey",
-         "batteries/provider", "batteries/transport", "domains/coding/extract"]
+         "crates/gmr-expr", "crates/gmr-store", "crates/gmr-runtime",
+         "batteries/survey", "batteries/provider", "batteries/transport",
+         "domains/coding/extract"]
 EXEMPT = ["domains/coding/cli/src/cli.rs"]
 
 files = subprocess.run(["git", "ls-files", "*.rs"],

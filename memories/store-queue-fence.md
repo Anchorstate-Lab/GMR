@@ -4,6 +4,8 @@ about:
   - crates/gmr-store/src/queue.rs#lease
   - crates/gmr-store/src/sqlite/queue.rs#settle
   - crates/gmr-store/tests/conformance.rs#queue_contract
+  - crates/gmr-runtime/src/observe.rs#observe_with
+  - crates/gmr-runtime/tests/operations.rs#a_hand_run_observation_takes_the_lease_instead_of_slipping_past_it
 watch: [sig, logic]
 ---
 
@@ -24,6 +26,13 @@ manual trigger could only write past the current token — which is exactly
 the second-writer situation the lease mechanism exists to prevent. Not
 getting the lease here means someone else already holds it, and the right
 response is to let them write, not to retry around them.
+
+On the caller side, `gmr-runtime`'s hand-triggered `observe` path (which
+threads its `Fence` into `observe_with`, and from there into
+`AnchorLog::append`) takes the anchor's lease before writing for the same
+reason: writing past the current token from a manual trigger would be
+exactly the second writer the lease exists to prevent, and not getting the
+lease means someone else already holds it and should be left to write.
 
 `SqliteQueue::settle`'s `Disposition::Retire` arm is where the invariant
 actually gets kept: it parks the row (`parked = 1`) instead of deleting it,

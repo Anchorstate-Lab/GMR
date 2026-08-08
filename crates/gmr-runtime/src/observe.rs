@@ -19,7 +19,6 @@ pub enum Observed {
         from: State,
         to: State,
     },
-    /// A full entry was written, but no rule matched and the state held still.
     Unchanged {
         state: State,
     },
@@ -28,16 +27,12 @@ pub enum Observed {
         reason: ReasonClass,
         code: FailureCode,
         message: String,
-        /// The streak length after this attempt.
         attempts: u32,
     },
     Closed,
 }
 
 impl Runtime {
-    /// What the probe a declaration names would be derived by, right now, with
-    /// nothing run. Comparing it against an anchor's last derivation is how a
-    /// swapped instrument is noticed before it is mistaken for a moved world.
     pub fn instrument(
         &self,
         probe: &gmr_core::ProbeRef,
@@ -45,11 +40,6 @@ impl Runtime {
         self.observer.resolve(probe)
     }
 
-    /// Observe one anchor by hand.
-    ///
-    /// In a queued deployment this takes the anchor's lease before writing —
-    /// writing past the token is precisely the second writer the lease prevents.
-    /// If someone else holds it, let them write.
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
         observe(&self.log, &self.observer, &self.scheduler, key).await
     }
@@ -197,8 +187,6 @@ pub(crate) fn observe_into(
     outcome: gmr_core::Outcome,
     derivation: gmr_core::Derivation,
 ) -> Result<Observation, RuntimeError> {
-    // The address is fixed by **the rule that actually derived it**, not by the
-    // declaration on the anchor. NotFound is addressed too — absence is an answer.
     let fact_address = outcome.address(&derivation.version)?;
     Ok(Observation {
         outcome,

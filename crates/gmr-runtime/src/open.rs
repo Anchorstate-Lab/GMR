@@ -22,7 +22,6 @@ pub struct Opened {
     pub supersedes: Option<AnchorKey>,
 }
 
-/// The rationale is mandatory: superseding is a change of heart about criteria.
 pub struct Supersede {
     pub key: AnchorKey,
     pub rationale: Vec<u8>,
@@ -34,8 +33,6 @@ pub struct OpenRequest {
     pub transitions: Transitions,
     pub terminal: BTreeSet<StatusId>,
     pub initial: Option<State>,
-    /// How it is run. Not sealed into the anchor, and changeable afterwards
-    /// without a rationale — see [`gmr_core::RunSettings`].
     pub settings: RunSettings,
     pub supersedes: Option<Supersede>,
 }
@@ -81,8 +78,6 @@ async fn open(
 
     let initial = request.initial.unwrap_or_default();
 
-    // A name nothing provides is a typo; saying so beats opening an anchor that
-    // can only ever produce identical failures.
     let derivation = observer
         .resolve(&anchor.probe)
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
@@ -97,10 +92,6 @@ async fn open(
     let mut warnings = bind_warnings(&anchor, &observation);
     warnings.extend(accumulator_warning(scheduler, &anchor));
 
-    // Failing to compute the first state is no reason to refuse: an anchor may
-    // precede its target, and then the rules naturally resolve to nothing. A
-    // typo and "not grown yet" look identical at this moment; both surface at
-    // the first real observation — and there it is loud.
     let state = match transition(&anchor, &observation, &initial, at, at) {
         Transitioned::To(next) => next,
         Transitioned::Unchanged => initial,
@@ -122,9 +113,6 @@ async fn open(
     )
     .await?;
 
-    // Same recoverable side branch as enqueueing below: the settings are
-    // mutable, so a failure here costs the deployment default until someone
-    // sets them again, not the anchor.
     if let Err(e) = scheduler.set_settings(&key, &request.settings).await {
         warnings.push(format!(
             "the anchor opened but its retain/cadence could not be stored ({e}); \
@@ -132,11 +120,6 @@ async fn open(
         ));
     }
 
-    // Journal and queue are two stores with no shared transaction, so be clear
-    // about who decides: **the anchor is that log entry**, and once it lands the
-    // anchor exists. Enqueueing is a recoverable side branch; failing it must
-    // not misreport "already open" as "failed to open" — that makes the caller
-    // retry, hit AlreadyOpen, and still leave the real gap unrepaired.
     if let Err(e) = scheduler.ensure_enqueued(&key, at).await {
         warnings.push(format!(
             "the anchor opened but could not be enqueued ({e}); it will not be \
@@ -152,8 +135,6 @@ async fn open(
     })
 }
 
-/// The old one must really have finished — two generations alive at once is a
-/// bypass around finishing.
 async fn seal_supersede(
     log: &AnchorLog,
     memory: &MemoryLens,

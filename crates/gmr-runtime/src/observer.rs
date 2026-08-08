@@ -3,7 +3,6 @@ use std::sync::Arc;
 use gmr_core::{Anchor, Derivation, Outcome, ProbeRef};
 use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 
-/// The transports this deployment wired up. No journal, no bindings, no queue.
 pub struct Observer {
     transports: Vec<Arc<dyn Transport>>,
 }
@@ -23,8 +22,6 @@ impl Observer {
             })
     }
 
-    /// Unusable, not unreachable: an observation nobody can attribute is worse
-    /// than a missing one, so a name we cannot resolve is not run.
     pub(crate) fn resolve(&self, probe: &ProbeRef) -> Result<Derivation, ProbeError> {
         let transport = self.transport(probe)?;
         transport.resolve(&probe.name).ok_or_else(|| {

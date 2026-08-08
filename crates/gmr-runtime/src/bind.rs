@@ -25,11 +25,6 @@ impl Runtime {
         self.memory.bindings_on(anchor).await
     }
 
-    /// Re-stamps the content version on an existing binding without touching
-    /// which anchors it's about. For the common case where content moved
-    /// (a wording fix, a rebase) but the relation itself didn't: `bind`
-    /// would force the caller to also re-supply `anchors`, conflating "I'm
-    /// changing what this is about" with "I've just seen the new bytes."
     pub async fn reaffirm(
         &self,
         reference: &Ref,

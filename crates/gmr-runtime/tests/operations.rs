@@ -8,8 +8,6 @@ use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes and installs a real artifact. Otherwise "earned
-/// versions" would hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     gmr_transport::shell::testkit::install_script(root.join(".probes"), "cat", "cat world.json")
 }
@@ -439,7 +437,6 @@ async fn a_terminal_transition_reports_itself_as_self_sealed_exactly_once() {
         "entered the terminal set once and was self-sealed"
     );
 
-    // Ask again: an already delivered edge is not emitted again.
     let again = w.runtime.changed_since(u64::MAX - 1, None).await.unwrap();
     assert!(
         !again
@@ -502,8 +499,6 @@ async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
         "already-read events are not delivered twice"
     );
 
-    // Staleness is a standing condition, not a journal event. The cursor does
-    // not apply, so it should be reported every time.
     let stale = World::polled(Policy {
         stalled_staleness_secs: -1,
         ..Default::default()
@@ -586,8 +581,6 @@ async fn the_world_being_out_of_reach_still_waits_for_the_streak() {
         .await
         .unwrap();
 
-    // Unreachable is about the world, not a rule bug. It is worth retrying, so
-    // it only becomes loud after the configured streak.
     std::fs::remove_file(w.dir.path().join("world.json")).unwrap();
     let seen = w.runtime.observe(&key()).await.unwrap();
     assert!(matches!(
@@ -619,11 +612,8 @@ async fn a_hand_run_observation_takes_the_lease_instead_of_slipping_past_it() {
         .await
         .unwrap();
 
-    // Let polling write once; this anchor is now lease-managed.
     w.runtime.pass().await.unwrap();
 
-    // Manual observation still works because it takes the lease instead of
-    // bypassing the token.
     w.write(r#"{"x":2}"#);
     w.runtime.observe(&key()).await.unwrap();
     assert_eq!(
@@ -644,8 +634,6 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
         .unwrap();
     w.runtime.pass().await.unwrap();
 
-    // Push an observation directly through the storage layer; this is the
-    // second writer the lease exists to prevent.
     let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
     let (_, sighting) = entries
         .iter()

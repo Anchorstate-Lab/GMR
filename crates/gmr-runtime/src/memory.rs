@@ -9,18 +9,12 @@ use crate::log::AnchorLog;
 use crate::read::MemoryView;
 use gmr_content::ContentProvider;
 
-/// A provider the assembler tried to register but couldn't — assembly-time,
-/// not per-operation, so it doesn't belong in `ContentError`. `provider` is
-/// whatever name the domain was trying to register under, not necessarily
-/// one that ever made it into `MemoryLens.providers`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderWarning {
     pub provider: String,
     pub message: String,
 }
 
-/// Bindings, seals, links, and the providers that fetch content. No journal,
-/// no transport, no queue.
 pub struct MemoryLens {
     bindings: Arc<dyn BindingStore>,
     sealer: Arc<dyn Sealer>,
@@ -46,15 +40,10 @@ impl MemoryLens {
         }
     }
 
-    /// Providers the assembler couldn't attach at startup — a battery failed
-    /// to construct, not a per-fetch failure. Surfaced so `--json` callers
-    /// have a way to learn this that isn't stderr.
     pub fn provider_warnings(&self) -> &[ProviderWarning] {
         &self.provider_warnings
     }
 
-    /// Stamps the bound anchor's current head, so a later read can tell
-    /// whether the anchor moved since. `None` unless exactly one anchor.
     pub async fn bind(
         &self,
         log: &AnchorLog,
@@ -111,8 +100,6 @@ impl MemoryLens {
             .find(|p| p.provider() == &reference.provider)
     }
 
-    /// The one path for "what counts as the current version", so version
-    /// stamping cannot disagree with what `read`/`edges` report.
     pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
         let Some(provider) = self.provider_for(reference) else {
             return Ok(None);
@@ -187,12 +174,6 @@ impl MemoryLens {
         Ok(view)
     }
 
-    /// Carry unanchored records along the links, marked ungrounded.
-    ///
-    /// **Grounding does not propagate along links**: what is carried along gets no
-    /// guarantee, so it has to be visible as carried. One hop only — deeper needs
-    /// cycle handling, and "is that distant one still about this anchor" is the
-    /// domain's judgement, not something the substrate can answer for it.
     pub(crate) async fn carry_linked(
         &self,
         memories: &mut Vec<MemoryView>,

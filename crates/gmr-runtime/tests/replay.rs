@@ -8,8 +8,6 @@ use gmr_store::Journal;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes a real artifact. Otherwise "earned versions" would
-/// hold on the production path while tests bypass it.
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,

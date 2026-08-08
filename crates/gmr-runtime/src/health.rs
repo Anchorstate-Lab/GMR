@@ -81,7 +81,6 @@ async fn health(
     })
     .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
-    // Async I/O, so a separate pass — but only over what the scan identified.
     let mut rationale_sizes = Vec::new();
     for rationale in &rationale_hashes {
         if let Some(bytes) = memory.sealed(rationale).await? {

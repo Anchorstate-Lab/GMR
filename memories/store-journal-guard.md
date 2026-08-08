@@ -2,6 +2,7 @@
 about:
   - crates/gmr-store/src/journal.rs#guard
   - crates/gmr-store/tests/conformance.rs#journal_refuses_a_stale_fencing_token
+  - crates/gmr-runtime/tests/operations.rs#an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder
 watch: [sig, logic]
 ---
 

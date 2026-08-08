@@ -10,9 +10,6 @@ use crate::policy::Policy;
 use crate::scheduler::Scheduler;
 use gmr_content::ContentProvider;
 
-/// A facade over four services, split by what each may touch. Verb modules
-/// take only the services they need, so a new verb inherits no capability by
-/// default.
 pub struct Runtime {
     pub(crate) log: AnchorLog,
     pub(crate) observer: Observer,
@@ -91,9 +88,6 @@ impl RuntimeBuilder {
         self
     }
 
-    /// A provider the domain tried to construct but couldn't — recorded
-    /// instead of registered, so it's queryable (`gmr doctor`) rather than
-    /// only ever reaching stderr.
     pub fn provider_warning(
         mut self,
         provider: impl Into<String>,

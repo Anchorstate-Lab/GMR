@@ -6,8 +6,6 @@ use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_store::{Journal, Sealer};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes and installs a real artifact. Otherwise "earned
-/// versions" would hold on the production path while tests bypass it.
 fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     gmr_transport::shell::testkit::install_script(root.join(".probes"), "cat", "cat world.json")
 }

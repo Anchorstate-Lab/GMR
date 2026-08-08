@@ -1,0 +1,26 @@
+---
+about: crates/gmr-runtime/src/memory.rs#carry_linked
+watch: [sig, logic]
+---
+
+# Grounding does not propagate along links, and a link is only followed one hop
+
+`carry_linked` pulls in memories that are linked from an already-fetched
+memory but are not themselves bound to any anchor — and marks every one of
+them `grounded: false`. That flag has to stay visible on the carried-in
+record: a link is not a promise that the far end is still about the anchor
+the near end is about, so a carried memory gets no guarantee, and hiding
+that would let an unanchored record masquerade as a grounded one just
+because something linked to it.
+
+The walk stops at one hop on purpose. Following further would require
+cycle handling, and — more importantly — deciding "is that distant memory
+still meaningfully about this anchor" is a judgment call about relevance
+that the substrate has no basis to make; it belongs to the domain, not to
+this function.
+
+## When this changes, ask
+
+Does the new code let `carry_linked` recurse into a second hop, or does it
+ever mark a linked-in record `grounded: true`? Either one hands the
+substrate a judgment it is not positioned to make correctly.

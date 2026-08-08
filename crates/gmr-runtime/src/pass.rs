@@ -31,7 +31,6 @@ impl Runtime {
         self.scheduler.settings_for(key).await
     }
 
-    /// No sealed rationale: these are not criteria.
     pub async fn set_settings(
         &self,
         key: &AnchorKey,
@@ -81,9 +80,6 @@ async fn pass(
                 out.retired += 1;
                 Disposition::Retire
             }
-            // Our failures and the world's do not share a backoff: a blown
-            // expression blows up just the same sooner or later, and rushing to
-            // retry only spams the log.
             Observed::Attempt {
                 reason, attempts, ..
             } => {

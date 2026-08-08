@@ -5,7 +5,6 @@ use gmr_store::{Fence, Journal};
 
 use crate::error::RuntimeError;
 
-/// The append-only anchor log. No probe, no bindings, no queue.
 pub struct AnchorLog {
     journal: Arc<dyn Journal>,
 }

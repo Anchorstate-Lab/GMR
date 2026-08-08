@@ -9,8 +9,6 @@ pub(crate) enum Transitioned {
     Unevaluable(FailureCode, String),
 }
 
-/// gmr-expr is a pure root and cannot name the log's vocabulary, so the
-/// translation lives here, where both are already in view.
 fn code_of(fault: Fault) -> FailureCode {
     match fault {
         Fault::NoSuchField => FailureCode::NoSuchField,
@@ -247,8 +245,6 @@ mod tests {
         let cases = [
             ("obs.n", "{ x: 1 }", FailureCode::GuardNotBoolean),
             ("true", "42", FailureCode::NewStateNotAnObject),
-            // obs is strict, so a missing field there faults; state is lenient,
-            // so a body that is only `state.missing` resolves to nothing at all.
             ("true", "{ x: obs.missing }", FailureCode::NoSuchField),
             ("true", "state.missing", FailureCode::NewStateAbsent),
             ("true", "{ x: 1 / 0 }", FailureCode::DividedByZero),

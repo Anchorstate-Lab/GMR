@@ -4,8 +4,6 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 
 impl Runtime {
-    /// Records that `from` relates to `to`. Independent of anchoring: linking
-    /// two references says nothing about which anchors either is bound to.
     pub async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), RuntimeError> {
         self.memory.link(from, to, kind).await
     }

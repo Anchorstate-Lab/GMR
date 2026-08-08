@@ -3,6 +3,7 @@ about:
   - crates/gmr-store/src/settings.rs#Settings
   - crates/gmr-store/src/settings.rs#get
   - crates/gmr-store/tests/durable.rs#run_settings_are_meant_to_be_overwritten
+  - crates/gmr-runtime/src/pass.rs#set_settings
 watch: [sig, logic]
 ---
 
@@ -26,6 +27,10 @@ tests around it (`sealed_records_refuse_to_be_rewritten`, the append-only
 journal test): where those prove a blocked write, this one proves the
 opposite — a second `put` for the same anchor must succeed and simply
 replace the first, with no trigger standing in the way.
+
+`Runtime::set_settings` (in `gmr-runtime`) is the public wrapper over this
+same guarantee: no sealed rationale is required to call it, because
+`retain`/`cadence_secs` are not criteria.
 
 ## When this changes, ask
 

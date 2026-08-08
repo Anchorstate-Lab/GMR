@@ -34,15 +34,6 @@ pub enum Edge {
     },
 }
 
-/// A **condition** that holds right now, not something that happened.
-///
-/// These do not come from the log: staleness compares the current clock against
-/// the last sighting, and a rewrite asks the provider which version it holds now.
-/// A log cursor therefore cannot express "I have seen this one" — forcing them
-/// into edges just re-reports the same thing on every poll, and the consumer has
-/// no way to tell.
-///
-/// So they sit in their own slot: **deduplicate by content, not by cursor.**
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "standing", rename_all = "snake_case")]
 pub enum Standing {
@@ -61,10 +52,7 @@ pub enum Standing {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Edges {
-    /// What actually happened in the log after the cursor. Handed over once.
     pub edges: Vec<Edge>,
-    /// Conditions as of now — see [`Standing`]. `None` means not computed
-    /// (a `status` filter was asked for), which is not the same as empty.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub standing: Option<Vec<Standing>>,
     pub cursor: Seq,
@@ -153,11 +141,6 @@ async fn changed_since(
     })
 }
 
-/// Edges are derived from **the same fold**, never a second projection.
-///
-/// The cost of a hand-written second copy is not duplication but drift: once the
-/// two disagree on what counts as closed, nothing notices — and edges are the
-/// only thing the consumer ever sees.
 fn walk(
     key: &AnchorKey,
     entries: &[(Seq, Entry)],
@@ -185,17 +168,12 @@ fn walk(
         if fresh && now.closed && !was_closed {
             out.push(Edge::Closed {
                 anchor: key.clone(),
-                // Walked into the terminal set, or closed by the author — these
-                // two are handled differently downstream.
                 self_sealed: !matches!(entry, Entry::Close { .. }),
                 seq,
                 at: entry.at(),
             });
         }
 
-        // A broken rule will not get better after ten thousand retries: it has to
-        // be loud the first time, and must not share a counter with "the world is
-        // out of reach right now".
         if fresh
             && let Entry::Attempt { reason, .. } = entry
             && (*reason == ReasonClass::Unevaluable || now.attempts == policy.stalled_attempts)

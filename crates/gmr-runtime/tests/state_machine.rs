@@ -8,8 +8,6 @@ use gmr_runtime::{Observed, OpenRequest, Runtime, Sighting};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
-/// Every test publishes and installs a real artifact. Otherwise "earned
-/// versions" would hold on the production path while tests bypass it.
 fn script_probe(root: &std::path::Path, name: &str, body: &str) -> gmr_core::ProbeRef {
     gmr_transport::shell::testkit::install_script(root.join(".probes"), name, body)
 }
@@ -105,9 +103,6 @@ fn moved(o: &Observed) -> bool {
 
 #[tokio::test]
 async fn an_anchor_that_declares_no_rule_still_records_that_the_world_moved() {
-    // An empty rule table is a legal form, not an omission to be filled in:
-    // it says "keep the record, interpret nothing". The substrate must not
-    // supply a status vocabulary of its own to fill the gap.
     let w = World::new();
     w.write(r#"{"shape":"(a)->c"}"#);
     w.open(&[], &[]).await;
@@ -553,12 +548,6 @@ async fn every_still_in_a_run_points_at_the_record_it_was_compared_against() {
     );
 }
 
-// -- Closure is structure, not the current interpretation --------------------
-//
-// If irreversibility is only computed at the end of fold from the final state,
-// it is a view, not a fact. Any action that moves state out of the terminal set
-// would silently resurrect it.
-
 #[tokio::test]
 async fn restate_cannot_resurrect_a_finished_anchor() {
     let w = World::new();
@@ -627,8 +616,6 @@ async fn an_author_sealed_close_is_equally_final() {
 
 #[tokio::test]
 async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
-    // Feed the journal directly to verify stickiness lives in fold, not in the
-    // revise guard.
     use gmr_core::{Entry, Observation, Outcome, Versions, fold};
 
     let anchor = gmr_core::Anchor {
@@ -693,8 +680,6 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
     );
 }
 
-// -- The only correction path is a new generation ----------------------------
-
 #[tokio::test]
 async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
     use gmr_runtime::Supersede;
@@ -727,7 +712,6 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
 
     assert_eq!(opened.supersedes.as_ref(), Some(&key()));
 
-    // The rationale is retrievable through the same sealed chain as revise/close.
     let cited = w.rt.read(&heir).await.unwrap().anchor.supersedes.unwrap();
     assert_eq!(cited.key, key());
     assert_eq!(
@@ -735,7 +719,6 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
         Some("threshold was wrong; 10 was too low".as_bytes().to_vec()),
     );
 
-    // The old generation remains closed; superseding is not resurrection.
     assert!(w.rt.read(&key()).await.unwrap().closed);
 }
 
@@ -768,8 +751,6 @@ async fn an_anchor_still_running_cannot_be_superseded() {
     assert_eq!(e.code(), "not_closed_yet");
 }
 
-// -- Anchors may precede their target ----------------------------------------
-
 #[tokio::test]
 async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
     let w = World::new();
@@ -793,7 +774,6 @@ async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
         opened.warnings
     );
 
-    // Once it appears, it transitions normally.
     w.write(r#"{"shape":"(a)->c"}"#);
     assert!(moved(&w.observe().await));
     assert_eq!(w.state().await.as_value()["shape"], "(a)->c");

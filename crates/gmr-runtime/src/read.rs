@@ -28,8 +28,6 @@ pub struct AnchorView {
     pub entered_at: Option<DateTime<Utc>>,
     pub last_sighting: Option<DateTime<Utc>>,
     pub sightings: u64,
-    /// What derived the reading this state stands on. Compare it against what
-    /// the probe resolves to now and you know whether the instrument changed.
     pub derivation: Option<Derivation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub facts: Option<Facts>,
@@ -49,10 +47,7 @@ pub struct MemoryView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unavailable: Option<String>,
     pub links: Vec<Link>,
-    /// The bound anchor's head at bind time; `None` unless exactly one anchor.
     pub bound_at_seq: Option<Seq>,
-    /// Whether the anchor moved since `bound_at_seq`. `None` when there is
-    /// nothing to compare against, including records carried in via a link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale: Option<bool>,
 }
@@ -88,7 +83,6 @@ async fn read(
     let mut memories = Vec::new();
     for binding in memory.bindings_on(key).await? {
         let mut view = memory.fetch_memory(binding).await?;
-        // Relative to this anchor's head; linked records are left None below.
         view.stale = view.bound_at_seq.map(|seq| seq < s.head);
         memories.push(view);
     }
