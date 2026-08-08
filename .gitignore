@@ -3,5 +3,7 @@ target/
 # codegraph tool index (local, rebuildable)
 .codegraph/
 
+__pycache__/
+
 # macOS
 .DS_Store
