@@ -32,3 +32,7 @@ status、shape 或字段，坐标一动没动 —— `gmr check` 干干净净，
 
 `nothing_is_both_retired_and_shipping` 守着名单不跟词表打架：一个词同时在两边，
 会让一篇正确的记忆被报成过期。
+
+`vocabulary()` 是 `#[cfg(test)]` 的 —— 「这个 build 有哪些词」这个问题只有那一条断言
+在问，生产路径上没有人需要它。做成 `pub` 会多一个没有调用方的公开面，
+而 gate 的 `-D warnings` 当场就会说。
