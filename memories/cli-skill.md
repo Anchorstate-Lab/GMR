@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/skill.rs
+about: domains/coding/cli/src/skill.rs#SKILL_MD
 watch: [sig]
 ---
 

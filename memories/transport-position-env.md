@@ -1,5 +1,5 @@
 ---
-about: crates/gmr-probe/src/lib.rs
+about: crates/gmr-probe/src/lib.rs#POSITION_ENV
 watch: [sig]
 ---
 
