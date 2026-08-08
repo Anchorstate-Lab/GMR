@@ -71,17 +71,18 @@ fn sections(rel: &str, src: &str, out: &mut Vec<coord::Candidate>) {
     flush(&mut open, &mut body);
 }
 
-pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
+fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+    if rel.ends_with(".md")
+        && let Ok(src) = std::fs::read_to_string(path)
+    {
+        sections(rel, &src, out);
+    }
+    Ok(())
+}
+
+pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
-    let mut cands = Vec::new();
-    coord::visit(root, &mut |p, rel| {
-        if rel.ends_with(".md")
-            && let Ok(src) = std::fs::read_to_string(p)
-        {
-            sections(rel, &src, &mut cands);
-        }
-        Ok(())
-    })?;
+    let cands = coord::visit_cached(root, cache, "prose-map", collect)?;
     if cands.is_empty() {
         return Err(format!(
             "{} contains no Markdown sections; the probe is likely pointed at the wrong directory",
@@ -110,7 +111,7 @@ mod tests {
         "# Top\nOpening\n\n## Red Flag\nDo not do this\n\n## Dead Concept\nDo not revive\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos).unwrap()
+        probe(dir, &pos, &coord::Cache::disabled()).unwrap()
     }
 
     fn fp(dir: &Path, file: &str, heading: &str) -> String {
@@ -181,13 +182,13 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.md", DOC)]);
-        assert!(probe(&d, &json!({})).is_err());
+        assert!(probe(&d, &json!({}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]
     fn a_tree_with_no_markdown_is_our_failure_too() {
         let d = fixture("bare", &[("a.rs", "fn main() {}")]);
-        assert!(probe(&d, &json!({"heading": "x"})).is_err());
+        assert!(probe(&d, &json!({"heading": "x"}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]

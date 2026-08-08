@@ -101,7 +101,10 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
 
     let catalog = probes::Catalog::load(&root)?;
     let mut builder = Runtime::builder()
-        .transport(Arc::new(InProcess::new(&root, coding_extract::registry())))
+        .transport(Arc::new(InProcess::new(
+            &root,
+            coding_extract::registry(Some(&state)),
+        )))
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .provider(Arc::new(Git::new(&root)))

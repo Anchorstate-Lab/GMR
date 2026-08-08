@@ -16,6 +16,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gmr_core::{ProbeName, ProbeVersion};
+use gmr_survey::Cache;
 use gmr_transport::inproc::Registered;
 use serde_json::Value;
 
@@ -27,7 +28,7 @@ pub struct Vocabulary {
     pub handles: &'static [&'static str],
 }
 
-type Probe = fn(&Path, &Value) -> Result<Value, String>;
+type Probe = fn(&Path, &Value, &Cache) -> Result<Value, String>;
 
 const PROBES: [(Vocabulary, Probe, &str); 4] = [
     (
@@ -97,16 +98,23 @@ fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
     cwd.join(params.get("root").and_then(Value::as_str).unwrap_or("."))
 }
 
-pub fn registry() -> BTreeMap<ProbeName, Registered> {
+pub fn registry(state_dir: Option<&Path>) -> BTreeMap<ProbeName, Registered> {
+    let cache = Arc::new(match state_dir {
+        Some(dir) => Cache::load(&dir.join("extract-cache.json")),
+        None => Cache::disabled(),
+    });
     PROBES
         .iter()
         .map(|(v, probe, version)| {
             let probe = *probe;
+            let cache = Arc::clone(&cache);
             (
                 ProbeName::new(v.name),
                 Registered {
                     version: ProbeVersion::new(*version),
-                    extract: Arc::new(move |cwd, pos, params| probe(&root_of(cwd, params), pos)),
+                    extract: Arc::new(move |cwd, pos, params| {
+                        probe(&root_of(cwd, params), pos, &cache)
+                    }),
                 },
             )
         })
@@ -137,7 +145,7 @@ mod tests {
 
     #[test]
     fn a_name_is_a_name_and_registers_under_it() {
-        let reg = registry();
+        let reg = registry(None);
         for v in vocabularies() {
             assert!(reg.contains_key(&ProbeName::new(v.name)), "{}", v.name);
         }
@@ -213,7 +221,7 @@ mod tests {
 
     #[test]
     fn every_key_a_probe_declares_comes_back_from_a_real_run() {
-        let reg = registry();
+        let reg = registry(None);
         for v in vocabularies() {
             let f = FIXTURES
                 .iter()

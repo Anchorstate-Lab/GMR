@@ -18,6 +18,7 @@ pub const REPORT: &[&str] = &[
 
 pub const PER_CANDIDATE: &[&str] = &["at", "facts"];
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Candidate {
     pub coord: BTreeMap<String, String>,
     pub facts: Value,

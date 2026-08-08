@@ -8,9 +8,9 @@ const VERSION: &str = env!("GMR_EXTRACTOR_ADDR");
 
 pub(crate) const ITEMS: [&str; 3] = ["path", "name", "fingerprint"];
 
-fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
+fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
     let Ok(bytes) = std::fs::read(path) else {
-        return;
+        return Ok(());
     };
     let name = path
         .file_name()
@@ -29,15 +29,12 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
         c,
         json!({ "bytes": bytes.len() }),
     ));
+    Ok(())
 }
 
-pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
+pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
-    let mut cands = Vec::new();
-    coord::visit(root, &mut |p, rel| {
-        collect(p, rel, &mut cands);
-        Ok(())
-    })?;
+    let cands = coord::visit_cached(root, cache, "addr-map", collect)?;
     if cands.is_empty() {
         return Err(format!(
             "{} contains no files; the probe is likely pointed at the wrong directory",
@@ -63,7 +60,7 @@ mod tests {
     }
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos).unwrap()
+        probe(dir, &pos, &coord::Cache::disabled()).unwrap()
     }
 
     const BODY: &str = "Anchoring is an output of design work\n";
@@ -129,13 +126,13 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.md", BODY)]);
-        assert!(probe(&d, &json!({})).is_err());
+        assert!(probe(&d, &json!({}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]
     fn an_empty_tree_is_our_failure_too() {
         let d = fixture("bare", &[]);
-        assert!(probe(&d, &json!({"path": "a.md"})).is_err());
+        assert!(probe(&d, &json!({"path": "a.md"}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]

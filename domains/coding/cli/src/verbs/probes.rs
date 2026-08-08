@@ -43,7 +43,7 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
         rows.push(serde_json::json!({
             "probe": v.name,
             "kind": "builtin",
-            "version": coding_extract::registry()[&gmr::ProbeName::new(v.name)].version,
+            "version": coding_extract::registry(None)[&gmr::ProbeName::new(v.name)].version,
             "handles": v.handles,
             "obs": { "schema": v.schema, "at": v.at, "facts": v.facts },
         }));

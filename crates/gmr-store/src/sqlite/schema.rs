@@ -2,6 +2,7 @@ pub const SCHEMA_VERSION: i64 = 6;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
+PRAGMA busy_timeout = 5000;
 PRAGMA foreign_keys = ON;
 
 -- ── Anchor journal: append-only ─────────────────────────────

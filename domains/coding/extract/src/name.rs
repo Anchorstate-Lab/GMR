@@ -50,7 +50,7 @@ fn collect(path: &Path, rel: &str, out: &mut BTreeMap<(String, String), Seen>) {
     }
 }
 
-pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
+pub fn probe(root: &Path, pos: &Value, _cache: &coord::Cache) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
     let mut seen = BTreeMap::new();
     coord::visit(root, &mut |p, rel| {
@@ -101,7 +101,7 @@ mod tests {
     }
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos).unwrap()
+        probe(dir, &pos, &coord::Cache::disabled()).unwrap()
     }
 
     #[test]
@@ -158,13 +158,13 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.rs", "fn f(){}")]);
-        assert!(probe(&d, &json!({})).is_err());
+        assert!(probe(&d, &json!({}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]
     fn an_unreadable_tree_is_our_failure_too() {
         let d = fixture("bare", &[]);
-        assert!(probe(&d, &json!({"name": "x"})).is_err());
+        assert!(probe(&d, &json!({"name": "x"}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]

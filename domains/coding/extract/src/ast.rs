@@ -224,10 +224,9 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
     Ok(())
 }
 
-pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
+pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, String> {
     let want = coord::wanted(pos, &ITEMS)?;
-    let mut cands = Vec::new();
-    coord::visit(root, &mut |p, rel| collect(p, rel, &mut cands))?;
+    let cands = coord::visit_cached(root, cache, "ast-map", collect)?;
     if cands.is_empty() {
         return Err(format!(
             "{} contains no parseable nodes; the probe is likely pointed at the wrong directory",
@@ -256,7 +255,7 @@ mod tests {
         "pub fn alpha(x: u8) -> u8 { x }\npub fn beta(s: &str) -> usize { s.len() }\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos).unwrap()
+        probe(dir, &pos, &coord::Cache::disabled()).unwrap()
     }
 
     #[test]
@@ -369,13 +368,13 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.rs", ONE)]);
-        assert!(probe(&d, &json!({})).is_err());
+        assert!(probe(&d, &json!({}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]
     fn a_directory_with_nothing_parseable_is_our_failure_too() {
         let d = fixture("bare", &[("readme.txt", "not code")]);
-        assert!(probe(&d, &json!({"name": "alpha"})).is_err());
+        assert!(probe(&d, &json!({"name": "alpha"}), &coord::Cache::disabled()).is_err());
     }
 
     #[test]
