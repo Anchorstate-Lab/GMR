@@ -67,10 +67,10 @@ const CONTRACT: Shape = Shape {
             },
             Dim {
                 name: "surface",
-                status: "visibility-changed",
+                status: "surface-changed",
                 reads: Reads::Since {
-                    field: "vis",
-                    obs: "obs.at.vis",
+                    field: "surface",
+                    obs: "obs.at.surface",
                 },
             },
             Dim {
@@ -82,15 +82,15 @@ const CONTRACT: Shape = Shape {
                 },
             },
             Dim {
-                name: "line",
-                status: "moved-line",
+                name: "place",
+                status: "moved",
                 reads: Reads::Since {
-                    field: "line",
-                    obs: "obs.facts.line",
+                    field: "after",
+                    obs: "obs.at.after",
                 },
             },
         ],
-        watch: &["missing", "kind", "sig", "surface", "logic", "line"],
+        watch: &["missing", "kind", "sig", "surface", "logic", "place"],
     },
 };
 
@@ -405,7 +405,9 @@ mod tests {
 
         let ast_map = obs(
             COORD_SCHEMA,
-            &["file", "kind", "form", "vis", "name", "shape"],
+            &[
+                "file", "kind", "form", "vis", "surface", "after", "name", "shape",
+            ],
             &["body", "line"],
         );
         assert_eq!(
@@ -541,11 +543,18 @@ mod tests {
             after: "pub fn f(x: u64) -> u64 { other(x) }",
         },
         Shot {
-            axis: "line",
-            moves: &["line"],
+            axis: "place",
+            moves: &["place"],
+            name: "f",
+            before: "pub fn a() {}\npub fn f(x: u64) -> u64 { x }",
+            after: "pub fn a() {}\npub fn b() {}\npub fn f(x: u64) -> u64 { x }",
+        },
+        Shot {
+            axis: "surface",
+            moves: &["surface"],
             name: "f",
             before: "pub fn f(x: u64) -> u64 { x }",
-            after: "\n\npub fn f(x: u64) -> u64 { x }",
+            after: "#[deprecated]\npub fn f(x: u64) -> u64 { x }",
         },
         Shot {
             axis: "missing",
@@ -663,7 +672,7 @@ mod tests {
             "matched": ["file", "name"], "missed": [],
             "at": {
                 "file": file, "kind": "function", "form": "function_item",
-                "vis": "pub", "name": "f", "shape": sig,
+                "vis": "pub", "surface": "pub", "after": "", "name": "f", "shape": sig,
             },
             "facts": { "body": body, "line": line },
             "candidates": 1, "matches": [], "exact": true,
@@ -710,9 +719,9 @@ mod tests {
             "missing",
             "kind-changed",
             "signature-changed",
-            "visibility-changed",
+            "surface-changed",
             "logic-changed",
-            "moved-line",
+            "moved",
             "settled",
         ];
         assert_eq!(rules.len(), statuses.len() + 1);
@@ -731,7 +740,9 @@ mod tests {
         let reads = reads_of_shape(get("contract").unwrap());
         let ast_map = obs(
             COORD_SCHEMA,
-            &["file", "kind", "form", "vis", "name", "shape"],
+            &[
+                "file", "kind", "form", "vis", "surface", "after", "name", "shape",
+            ],
             &["body", "line"],
         );
         assert!(unmet(&reads, &ast_map).is_empty());
@@ -739,7 +750,13 @@ mod tests {
         let name_map = obs(COORD_SCHEMA, &["name", "scope"], &["occurrences"]);
         assert_eq!(
             unmet(&reads, &name_map),
-            ["at.form", "at.shape", "at.vis", "facts.body", "facts.line"]
+            [
+                "at.after",
+                "at.form",
+                "at.shape",
+                "at.surface",
+                "facts.body"
+            ]
         );
     }
 
@@ -751,7 +768,7 @@ mod tests {
         assert!(set(&s).is_empty(), "a first sighting drifts from nothing");
 
         let s = step(&r, &sighted("(a, b) -> B", "body2", "a.rs", 9), &s);
-        assert_eq!(set(&s), ["sig", "logic", "line"]);
+        assert_eq!(set(&s), ["sig", "logic"]);
         assert_eq!(s["status"], "signature-changed");
     }
 
@@ -765,13 +782,13 @@ mod tests {
         let r = contract();
         let seen = || sighted("(a) -> B", "body1", "a.rs", 1);
         let s = step(&r, &seen(), &Value::Null);
-        let s = step(&r, &tweak(seen(), "vis", ""), &s);
+        let s = step(&r, &tweak(seen(), "surface", ""), &s);
         assert_eq!(
             set(&s),
             ["surface"],
             "pub -> private moves nothing else, and used to move nothing at all"
         );
-        assert_eq!(s["status"], "visibility-changed");
+        assert_eq!(s["status"], "surface-changed");
     }
 
     #[test]
@@ -805,7 +822,10 @@ mod tests {
             &Value::Null,
         );
         let axes: Vec<String> = bits(&s).into_iter().map(|(k, _)| k).collect();
-        assert_eq!(axes, ["missing", "kind", "sig", "surface", "logic", "line"]);
+        assert_eq!(
+            axes,
+            ["missing", "kind", "sig", "surface", "logic", "place"]
+        );
     }
 
     #[test]

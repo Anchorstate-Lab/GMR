@@ -40,7 +40,8 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
             name: "ast-map",
             schema: SCHEMA,
             at: &[
-                "file", "kind", "form", "vis", "name", "callee", "member", "shape",
+                "file", "kind", "form", "vis", "surface", "after", "name", "callee", "member",
+                "shape",
             ],
             facts: &["body", "line"],
             // Only ast-map: `about: f#name` yields {file, name}, and no other

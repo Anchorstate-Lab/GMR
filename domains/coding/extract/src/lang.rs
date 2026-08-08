@@ -1,5 +1,3 @@
-/// Visibility lives somewhere different in each language: a child node in Rust,
-/// an enclosing ancestor in TS, the leading letter in Go, nowhere in Python.
 pub enum Vis {
     Child(&'static str),
     Ancestor {
@@ -10,19 +8,23 @@ pub enum Vis {
     Absent,
 }
 
+pub enum Attrs {
+    Before(&'static str),
+    Absent,
+}
+
+pub const NOISE: &[&str] = &[
+    "allow", "warn", "deny", "expect", "inline", "cold", "doc", "rustfmt", "clippy",
+];
+
 pub struct Table {
     pub ext: &'static [&'static str],
     pub language: fn() -> tree_sitter::Language,
     pub kinds: &'static [(&'static str, &'static str)],
     pub shape_fields: &'static [&'static str],
-    /// Child nodes that belong to the signature but are not fields, so
-    /// `child_by_field_name` cannot reach them: `async`, `unsafe`, `const`, a
-    /// where clause. Each of these breaks every caller, so leaving them out of
-    /// the shape leaves a breaking change with no signal at all. Matched on
-    /// node kind, which for an anonymous token is its own text.
     pub shape_kinds: &'static [&'static str],
+    pub attrs: Attrs,
     pub vis: Vis,
-    /// Anonymous nodes (arrow functions) borrow a name from these parents.
     pub name_from_parent: &'static [&'static str],
 }
 
@@ -46,6 +48,7 @@ pub const RUST: Table = Table {
     ],
     shape_fields: &["type_parameters", "parameters", "return_type", "type"],
     shape_kinds: &["function_modifiers", "where_clause"],
+    attrs: Attrs::Before("attribute_item"),
     vis: Vis::Child("visibility_modifier"),
     name_from_parent: &[],
 };
@@ -88,22 +91,22 @@ pub const TYPESCRIPT: Table = Table {
     kinds: TS_KINDS,
     shape_fields: TS_SHAPE,
     shape_kinds: TS_SHAPE_KINDS,
+    attrs: Attrs::Before("decorator"),
     vis: TS_VIS,
     name_from_parent: TS_NAME_FROM_PARENT,
 };
 
-/// The TSX grammar parses plain JS as well, so .js/.jsx ride this table.
 pub const TSX: Table = Table {
     ext: &["tsx", "jsx", "js", "mjs", "cjs"],
     language: || tree_sitter_typescript::LANGUAGE_TSX.into(),
     kinds: TS_KINDS,
     shape_fields: TS_SHAPE,
     shape_kinds: TS_SHAPE_KINDS,
+    attrs: Attrs::Before("decorator"),
     vis: TS_VIS,
     name_from_parent: TS_NAME_FROM_PARENT,
 };
 
-/// Python has no visibility syntax. Underscores are convention, not grammar.
 pub const PYTHON: Table = Table {
     ext: &["py", "pyi"],
     language: || tree_sitter_python::LANGUAGE.into(),
@@ -117,11 +120,11 @@ pub const PYTHON: Table = Table {
     ],
     shape_fields: &["type_parameters", "parameters", "return_type", "type"],
     shape_kinds: &["async"],
+    attrs: Attrs::Before("decorator"),
     vis: Vis::Absent,
     name_from_parent: &[],
 };
 
-/// Go writes exportedness in the leading letter, not a modifier node.
 pub const GO: Table = Table {
     ext: &["go"],
     language: || tree_sitter_go::LANGUAGE.into(),
@@ -137,6 +140,7 @@ pub const GO: Table = Table {
     ],
     shape_fields: &["type_parameters", "parameters", "result", "type"],
     shape_kinds: &[],
+    attrs: Attrs::Absent,
     vis: Vis::LeadingUpper("export"),
     name_from_parent: &[],
 };

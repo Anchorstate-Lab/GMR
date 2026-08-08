@@ -47,7 +47,6 @@ fn visibility(
                 if n.kind() == *kind {
                     return (*label).to_owned();
                 }
-                // Cross only the wrappers around this declaration, not up to the root.
                 if n.child_by_field_name("body").is_some() {
                     break;
                 }
@@ -64,12 +63,6 @@ fn visibility(
     }
 }
 
-/// A type's contract is its members, and its implementation is whatever bodies
-/// those members carry. Split that way, `shape` moves when a field, variant or
-/// method signature moves — the thing that breaks every construction site and
-/// every match — while `body` moves only when an implementation does. Without
-/// the split a type has no signature at all (a struct has no `parameters` and
-/// no `return_type`), so adding a field reports as a changed implementation.
 fn members(node: tree_sitter::Node, src: &str) -> (String, String) {
     let Some(body) = node.child_by_field_name("body") else {
         return (String::new(), String::new());
@@ -87,6 +80,36 @@ fn members(node: tree_sitter::Node, src: &str) -> (String, String) {
         }
     }
     (declared.join("; "), implemented.join(" "))
+}
+
+fn attr_head(text: &str) -> &str {
+    let rest = text.trim_start_matches(['#', '!', '[', '@']);
+    let end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
+fn attributes(table: &lang::Table, node: tree_sitter::Node, src: &str) -> Vec<String> {
+    let lang::Attrs::Before(kind) = table.attrs else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut at = node.prev_named_sibling();
+    while let Some(n) = at {
+        if n.kind() != kind {
+            break;
+        }
+        if let Some(t) = src.get(n.byte_range()) {
+            let t = squeeze(t);
+            if !lang::NOISE.contains(&attr_head(&t)) {
+                out.push(t);
+            }
+        }
+        at = n.prev_named_sibling();
+    }
+    out.reverse();
+    out
 }
 
 fn naming(kind: &str) -> &'static str {
@@ -116,6 +139,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
 
     let mut cursor = tree.walk();
     let mut stack = vec![tree.root_node()];
+    let mut here: Vec<(usize, coord::Candidate)> = Vec::new();
     while let Some(node) = stack.pop() {
         for c in node.named_children(&mut cursor) {
             stack.push(c);
@@ -158,12 +182,17 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
                 .unwrap_or_default(),
         };
         let vis = visibility(table, node, &name, &text);
+        let mut surface = attributes(table, node, &src);
+        if !vis.is_empty() {
+            surface.insert(0, vis.clone());
+        }
 
         let c: BTreeMap<String, String> = [
             ("file", rel.to_owned()),
             ("kind", kind.to_owned()),
             ("form", node.kind().to_owned()),
             ("vis", vis),
+            ("surface", surface.join(" ")),
             (naming(kind), name),
             ("shape", sig.join(" ")),
         ]
@@ -171,8 +200,23 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
         .map(|(k, v)| (k.to_owned(), v))
         .collect();
         let facts = json!({ "body": coord::hash(&body), "line": node.start_position().row + 1 });
-        out.push(coord::Candidate::new(c, facts));
+        here.push((node.start_byte(), coord::Candidate::new(c, facts)));
     }
+
+    let mut named: Vec<(usize, String)> = here
+        .iter()
+        .filter_map(|(at, c)| c.coord.get("name").map(|n| (*at, n.clone())))
+        .collect();
+    named.sort();
+    for (at, c) in &mut here {
+        let before = named.partition_point(|(s, _)| s < at);
+        let after = match before {
+            0 => String::new(),
+            n => named[n - 1].1.clone(),
+        };
+        c.coord.insert("after".to_owned(), after);
+    }
+    out.extend(here.into_iter().map(|(_, c)| c));
     Ok(())
 }
 
@@ -466,9 +510,6 @@ mod tests {
             .to_owned()
     }
 
-    /// Each of these breaks every caller. Before they entered the shape they
-    /// left no trace at all: kind, vis, shape and body were byte-identical, so
-    /// no rule could have been written that would catch them.
     #[test]
     fn a_modifier_that_breaks_every_caller_is_part_of_the_signature() {
         let plain = shape_of("plain", "pub fn f(x: u64) -> u64 { x }", "f");
@@ -490,8 +531,6 @@ mod tests {
         assert_ne!(tight, tighter);
     }
 
-    /// A struct has no `parameters` and no `return_type`, so its shape used to
-    /// be the empty string and every anchor on a type ran with one dead axis.
     #[test]
     fn a_type_signs_its_members_and_implements_only_their_bodies() {
         let one = shape_of("one", "pub struct X { a: u64 }", "X");
@@ -528,9 +567,6 @@ mod tests {
         assert_ne!(one["facts"]["body"], two["facts"]["body"]);
     }
 
-    /// `kind` normalizes struct, enum and trait to one word so a coordinate can
-    /// say "the type called X" without knowing which. That word therefore
-    /// cannot report the change from one to another; `form` is the native node.
     #[test]
     fn form_tells_a_struct_from_an_enum_where_kind_cannot() {
         let d = fixture("form1", &[("a.rs", "pub struct X { a: u64 }")]);
