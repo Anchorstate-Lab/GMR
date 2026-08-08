@@ -91,7 +91,8 @@ pub fn visit_cached(
     probe: &str,
     mut collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
 ) -> Result<Arc<Vec<Candidate>>, String> {
-    if let Some(cands) = cache.scanned(probe) {
+    let scope = format!("{probe}@{}", root.display());
+    if let Some(cands) = cache.scanned(&scope) {
         return Ok(cands);
     }
     let mut cands = Vec::new();
@@ -100,18 +101,18 @@ pub fn visit_cached(
             return Ok(());
         };
         let file_hash = hash(&String::from_utf8_lossy(&bytes));
-        if let Some(cached) = cache.get(probe, rel, &file_hash) {
+        if let Some(cached) = cache.get(&scope, rel, &file_hash) {
             cands.extend(cached);
             return Ok(());
         }
         let mut fragment = Vec::new();
         collect(p, rel, &mut fragment)?;
-        cache.put(probe, rel, &file_hash, &fragment);
+        cache.put(&scope, rel, &file_hash, &fragment);
         cands.extend(fragment);
         Ok(())
     })?;
     let cands = Arc::new(cands);
-    cache.scan_done(probe, Arc::clone(&cands));
+    cache.scan_done(&scope, Arc::clone(&cands));
     Ok(cands)
 }
 
@@ -205,6 +206,26 @@ mod tests {
         visit_cached(d.path(), &cache, "addr-map", counting_collect(&calls)).unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_same_probe_at_two_different_roots_does_not_cross_contaminate() {
+        let a = tree(&[("lib.rs", "one")]);
+        let b = tree(&[("lib.rs", "two")]);
+        let cache = Cache::disabled();
+        let calls = AtomicUsize::new(0);
+
+        let from_a = visit_cached(a.path(), &cache, "ast-map", counting_collect(&calls)).unwrap();
+        let from_b = visit_cached(b.path(), &cache, "ast-map", counting_collect(&calls)).unwrap();
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "a narrower root (e.g. a layer:: anchor's params.root) must not be served \
+             the other root's cached scan just because the probe name matches"
+        );
+        assert_eq!(from_a.len(), 1);
+        assert_eq!(from_b.len(), 1);
     }
 
     #[test]
