@@ -20,11 +20,6 @@ const GITIGNORE: &str = "\
 !probes.toml
 ";
 
-/// Bundled probes ship next to the binary; users never build them.
-///
-/// The path is canonicalised first: every package manager puts a symlink in
-/// bin/ pointing at the real install, and current_exe() may hand back the
-/// symlink. Resolving it is what makes `probes/` findable after install.
 fn bundled() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);

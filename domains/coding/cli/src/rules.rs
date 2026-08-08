@@ -4,7 +4,6 @@ use gmr::{Expr, Kind, ProbeName, ProbeRef, Rule, StatusId, Transitions};
 
 use crate::error::CliError;
 
-/// A name, never a version: upgrading the tool is not a change of mind.
 pub fn probe(kind: Kind, name: &str, params: &str) -> Result<ProbeRef, CliError> {
     let name = ProbeName::try_new(name).map_err(|e| {
         CliError(format!(

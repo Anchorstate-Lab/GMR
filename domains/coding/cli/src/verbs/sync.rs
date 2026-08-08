@@ -9,9 +9,6 @@ use crate::error::CliError;
 use crate::probes::Catalog;
 use crate::rules;
 
-/// init writes no anchors, so a repo whose anchors all come from notes has no
-/// such file. Missing at the default path means "none declared here"; missing
-/// at a path the user named is a typo worth stopping for.
 pub const DEFAULT_FILE: &str = ".anchor/anchors.toml";
 
 pub struct Context {
@@ -27,24 +24,19 @@ pub struct Declared {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnchorDecl {
     pub key: String,
-    /// A name. A declaration has to survive an engine upgrade unchanged.
     pub probe: String,
     #[serde(default)]
     pub params: serde_json::Value,
     #[serde(default)]
     pub position: Option<serde_json::Value>,
-    /// A named transition preset, exclusive with `rules`. Expanded into literal
-    /// rules at sync time, so the declaration hash still covers full criteria.
     #[serde(default)]
     pub shape: Option<String>,
     #[serde(default)]
     pub rules: Vec<String>,
     #[serde(default)]
     pub terminal: Vec<String>,
-    /// Keep a full record when the world did not move, instead of only noting another sighting.
     #[serde(default)]
     pub retain_full: bool,
-    /// This anchor's observation cadence; omit it to use the deployment default.
     #[serde(default)]
     pub cadence_secs: Option<u64>,
 }
@@ -58,9 +50,6 @@ impl AnchorDecl {
         )
     }
 
-    /// Whether a named shape or hand-written rules — an agent's rules get
-    /// exactly the check a shape gets, because `reads_of` walks whatever
-    /// `to_transitions` produced rather than a preset's own declared list.
     fn check_contract(&self, ctx: &Context) -> Result<(), CliError> {
         let reads = crate::contract::reads_of(&self.to_transitions()?)
             .map_err(|e| CliError(format!("{}: {e}", self.key)))?;
@@ -174,15 +163,11 @@ pub async fn run(
             if !facets.is_empty() {
                 drifted_criteria.push(format!("{} ({})", decl.key, facets.join(" · ")));
             }
-            // The declaration can be identical and the instrument still be a
-            // different one. That is not drift; it is a baseline taken with
-            // another ruler, and only a person can say whether it still counts.
             if let (Some(was), Ok(now)) = (&view.derivation, rt.instrument(&view.anchor.probe))
                 && was.version != now.version
             {
                 swapped.push(decl.key.clone());
             }
-            // Retain and cadence are not criteria, so sync just applies them.
             if rt.settings_for(&key).await? != decl.settings() {
                 if !dry_run {
                     rt.set_settings(&key, &decl.settings()).await?;
@@ -191,8 +176,6 @@ pub async fn run(
             }
             continue;
         }
-        // Checked before the dry-run branch: a rule reading a field its probe
-        // never emits is refused whether or not this run actually opens anything.
         decl.check_contract(&ctx)?;
         if dry_run {
             opened.push(decl.key.clone());
@@ -312,8 +295,6 @@ pub async fn run(
     Ok(0)
 }
 
-/// Binding is append-only, so this writes only when the relation actually
-/// changed; otherwise every sync would add a row saying the same thing.
 async fn align_bindings(
     rt: &Runtime,
     notes: &[crate::memories::Note],
@@ -380,9 +361,6 @@ async fn align_bindings(
     Ok((bound, renamed))
 }
 
-/// Naming the facet matters: "the probe was renamed" and "the transition table
-/// was rewritten" are different judgments, and the sealed reason should say
-/// which one it is.
 pub fn differs(
     anchor: &Anchor,
     decl: &AnchorDecl,
@@ -426,9 +404,6 @@ rules = [
             .unwrap()
     }
 
-    /// Naming a shape and writing rules by hand are the same kind of thing to
-    /// the substrate: both arrive as a rule table. The escape hatch is that a
-    /// note may write its own, not that it gets a lesser sort of anchor.
     #[test]
     fn hand_written_rules_and_a_named_shape_both_become_transitions() {
         assert!(
@@ -497,7 +472,6 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         assert!(e.to_string().contains("probe name"), "{e}");
     }
 
-    /// A mismatch must be caught before opening, not after observation.
     #[test]
     fn a_shape_the_probe_cannot_feed_is_refused() {
         let (_d, c) = ctx(AST_LIKE);
@@ -515,8 +489,6 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             .unwrap();
     }
 
-    /// The gap named shapes never had: hand-written rules — what an agent
-    /// writes by default — get the identical check.
     #[test]
     fn hand_written_rules_get_the_same_check_a_shape_gets() {
         let (_d, c) = ctx(AST_LIKE);
@@ -534,6 +506,6 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         let e = decl("probe = \"ast-like\"\nrules = ['obs.facts. => { status: \"x\" }']")
             .check_contract(&c)
             .unwrap_err();
-        assert!(e.to_string().starts_with("k:"), "{e}"); // tagged with the anchor key
+        assert!(e.to_string().starts_with("k:"), "{e}");
     }
 }

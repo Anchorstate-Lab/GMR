@@ -16,16 +16,10 @@ pub async fn run(
     if anchors.is_empty() && !detach {
         return Err(CliError("provide either --anchors or --detach".into()));
     }
-    // The repo-tree existence check only means something for the git
-    // provider; other providers resolve `path` against their own root and
-    // report absence themselves via `current_version` returning `None`.
     if provider == "git" && !root.join(&path).exists() {
         return Err(CliError(format!("`{path}` is not in this repository")));
     }
     let reference = Ref::new(provider, path.clone());
-    // Goes through the same registered ContentProvider that read/edges use to
-    // decide "current version" — not a second, separate call to the git
-    // backend, which could silently drift from what the provider reports.
     let version = rt
         .memory()
         .current_version(&reference)

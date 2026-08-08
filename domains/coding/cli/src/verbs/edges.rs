@@ -45,11 +45,6 @@ pub async fn run(
         }
     }
 
-    // Standing conditions do not come from the journal, so "after cursor" does
-    // not apply to them. Print and label them separately. `None` means a
-    // `--status` filter was given, so standing was not computed at all —
-    // distinct from `Some(vec![])`, which means it was computed and nothing
-    // is currently stale or rewritten.
     match &out.standing {
         None => println!("\n(standing conditions are not computed when --status filters edges)"),
         Some(standing) if standing.is_empty() => {}

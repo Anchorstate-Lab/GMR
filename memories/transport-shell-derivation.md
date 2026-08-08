@@ -3,6 +3,7 @@ about:
   - batteries/transport/src/shell/mod.rs#Published
   - batteries/transport/src/shell/mod.rs#the_version_is_the_rule_not_the_bytes_that_implement_it
   - batteries/transport/src/shell/mod.rs#host_env_opens_the_closure
+  - domains/coding/cli/src/verbs/probes.rs#list
 watch: [sig, logic]
 ---
 

@@ -12,7 +12,6 @@ pub async fn run(store: &SqliteStore, out: Option<String>, json: bool) -> Result
         None => store.export_jsonl(&mut std::io::stdout().lock()).await?,
     };
 
-    // stdout may be the export payload itself; status always goes to stderr.
     if json {
         eprintln!("{}", serde_json::to_string(&summary)?);
     } else {

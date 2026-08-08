@@ -6,8 +6,6 @@ use gmr_transport::shell::{Artifacts, publish};
 
 use crate::error::CliError;
 
-/// Install a directory as the probe called `name`. An artifact nothing can name
-/// is unreachable, so publishing and naming are one step.
 pub fn run(
     root: &Path,
     from: String,
@@ -19,8 +17,6 @@ pub fn run(
 ) -> Result<i32, CliError> {
     let name = ProbeName::try_new(&name)?;
     let from = root.join(&from);
-    // Declared env enters the manifest and therefore the version; it is part of
-    // the derivation closure.
     let env = env
         .iter()
         .map(|kv| {

@@ -28,7 +28,6 @@ impl OneOrMany {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Entry {
-    /// A bare key names an anchor that must already exist.
     Existing(String),
     Declared(Box<Spec>),
 }
@@ -61,7 +60,6 @@ struct Frontmatter {
     watch: Option<Vec<String>>,
 }
 
-/// What a note says it is about.
 #[derive(Debug)]
 pub enum Want {
     Existing(String),

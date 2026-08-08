@@ -11,8 +11,6 @@ pub const RECIPES_FILE: &str = "probes.toml";
 
 pub const RECIPE_SCHEMA: &str = "gmr.probe-recipe.v1";
 
-/// The obs vocabulary a probe emits. Deliberately outside the recipe version:
-/// it does not change the derivation rule, only which shapes fit.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Obs {
     pub schema: String,
@@ -24,29 +22,22 @@ pub struct Obs {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Recipe {
-    /// A script probe has no build step; staging is enough.
     #[serde(default)]
     pub build: Vec<String>,
-    /// Artifact-relative path -> repo-relative source path.
     pub stage: BTreeMap<String, String>,
     pub entrypoint: String,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
-    /// Host variables pulled into the closure; using any downgrades verifiability.
     #[serde(default)]
     pub env_from_host: Vec<String>,
     pub sources: Vec<String>,
     pub obs: Obs,
-    /// File extensions this probe can read. Routes `about:` to a probe without
-    /// the CLI knowing any language names. Outside the version, like `obs`.
     #[serde(default)]
     pub handles: Vec<String>,
 }
 
-/// A probe that is just a file in this repository. `run` is the path; its
-/// content is the identity, computed when it is called.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScriptDecl {
     pub run: String,
@@ -68,8 +59,6 @@ pub struct Recipes {
     declared: BTreeMap<String, Recipe>,
 }
 
-/// What the recipe version hashes. Deliberately excludes platform, built-binary
-/// hashes and captured host env: those are what make artifact versions local.
 #[derive(Serialize)]
 struct Record<'a> {
     schema: &'a str,
@@ -139,7 +128,6 @@ fn read_scripts(root: &Path) -> Result<BTreeMap<String, ScriptDecl>, CliError> {
 }
 
 impl Recipe {
-    /// Earned from tracked source bytes, so it is the same on every platform.
     pub fn version(&self, name: &str, root: &Path) -> Result<ProbeVersion, CliError> {
         let record = Record {
             schema: RECIPE_SCHEMA,
@@ -160,8 +148,6 @@ impl Recipe {
         ))
     }
 
-    /// A missing declared source is fatal: silently hashing a smaller closure
-    /// would let a real criteria change slip past the revision gate.
     fn source_hashes(&self, root: &Path) -> Result<Vec<(String, String)>, CliError> {
         let mut out = Vec::new();
         for declared in &self.sources {
@@ -202,7 +188,6 @@ pub struct Installed {
     pub artifact: ProbeVersion,
 }
 
-/// The developer path. Users get artifacts built at release time instead.
 pub fn build_all(root: &Path, store: &Path) -> Result<Vec<Installed>, CliError> {
     let recipes = Recipes::load(root)?;
     let artifacts = Artifacts::new(store);
@@ -261,9 +246,6 @@ pub fn build_one(
         env.insert(key.clone(), value);
     }
 
-    // The recipe hash is already a semantic closure: it covers the sources, the
-    // entrypoint, the args, the env and the contract, and deliberately excludes
-    // the platform and the built bytes. That is exactly the derivation.
     let artifact = publish(
         artifacts,
         staging.path(),
@@ -302,10 +284,6 @@ fn copy_mode(_src: &Path, _dst: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Every probe this build can reach: the ones linked in, and the ones declared
-/// as recipes. `kind` is how a declaration reaches the right transport, and it
-/// is decided here rather than written by hand — a name is either linked in or
-/// it is not.
 pub struct Catalog {
     recipes: Recipes,
     scripts: BTreeMap<String, ScriptDecl>,

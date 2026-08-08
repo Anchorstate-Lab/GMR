@@ -12,8 +12,6 @@ fn unresolvable(rt: &Runtime, views: &[&gmr::AnchorView]) -> Vec<String> {
         .collect()
 }
 
-/// git is how notes are versioned here; outside a repository `bind` still works
-/// but fetching a note back at the version it was bound at does not.
 fn versioning_is_broken(root: &Path) -> bool {
     !root.join(".git").exists()
 }
@@ -32,9 +30,6 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
         .filter(|v| v.sighting == gmr::Sighting::Absent)
         .map(|v| v.key.as_str())
         .collect();
-    // Barren comes from corpus_health, not a second `memories.is_empty()` scan
-    // of these same views — one definition of "unbound" instead of two that
-    // could drift apart.
     let corpus = rt.corpus_health().await?;
     let barren: Vec<&str> = corpus.barren_anchors.iter().map(|k| k.as_str()).collect();
     let stranded = unresolvable(rt, &live);
@@ -42,9 +37,6 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     let provider_warnings = rt.memory().provider_warnings();
     let notes = crate::memories::lint(root, &crate::probes::Catalog::load(root)?)?;
     let (malformed, advisory): (Vec<_>, Vec<_>) = notes.iter().partition(|l| l.breaks);
-    // stranded/provider_warnings mean something declared or expected isn't
-    // actually working, not just "worth noting" like absent/barren/unseen —
-    // that's the line between exit 1 and exit 0.
     let exit_code = if stranded.is_empty() && provider_warnings.is_empty() && malformed.is_empty() {
         0
     } else {

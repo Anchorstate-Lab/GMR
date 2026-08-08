@@ -3,11 +3,6 @@ use gmr::Runtime;
 use crate::error::CliError;
 use crate::verbs::sealed;
 
-/// Recapture against the instrument that is in the build now.
-///
-/// A swapped derivation makes the stored baseline incomparable, and that is a
-/// change of criteria — the substrate will not make it silently. One rationale
-/// covers the whole batch, because one upgrade is one decision.
 pub async fn run(
     rt: &Runtime,
     keys: Vec<String>,

@@ -26,13 +26,10 @@ use gmr_transport::shell::Shell;
 use cli::{Cli, Command};
 use error::CliError;
 
-/// Probe artifact store: content-addressed and colocated with the journal.
 pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
     probes::store_dir(root)
 }
 
-/// The journal moved into state/. Never move it silently: starting on an empty
-/// database would erase history that nothing can rebuild.
 fn stale_journal_guard(root: &std::path::Path, state: &std::path::Path) -> Result<(), CliError> {
     let old = probes::anchor_dir(root).join("memory.db");
     if !old.is_file() || state.join("memory.db").is_file() {
@@ -64,7 +61,6 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .canonicalize()
         .map_err(|e| CliError(format!("cannot find repository `{}`: {e}", cli.repo)))?;
 
-    // Publishing a probe does not touch the journal; it happens before any log exists.
     if let Command::Publish {
         from,
         name,
@@ -76,7 +72,6 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         return verbs::publish::run(&root, from, name, entrypoint, args, env, cli.json);
     }
 
-    // Building probes does not touch the journal either.
     if let Command::Probes(cmd) = cli.command {
         return match cmd {
             cli::ProbesCmd::Build => verbs::probes::build(&root, cli.json),
@@ -97,8 +92,6 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .map_err(|e| CliError(format!("cannot create {state:?}: {e}")))?;
     let store = gmr::sqlite::open(state.join("memory.db")).await?;
 
-    // Export and import work on the raw store, not the Runtime — a version
-    // gap is exactly the case where building a Runtime is the wrong move.
     if let Command::Export { out } = cli.command {
         return verbs::export::run(&store, out, cli.json).await;
     }
@@ -106,8 +99,6 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         return verbs::import::run(&store, file, cli.json).await;
     }
 
-    // Three transports, one router: the extractors are linked in, a user's own
-    // script is a file in their repo, and an artifact is still exec'd.
     let catalog = probes::Catalog::load(&root)?;
     let mut builder = Runtime::builder()
         .transport(Arc::new(InProcess::new(&root, coding_extract::registry())))
@@ -120,10 +111,6 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))
         .links(Arc::new(store.links()));
-    // Read-only and additive: absence of Claude Code's own memory directory
-    // is normal outside a Claude Code session, not a reason to refuse to run.
-    // Recorded on the builder (not just eprintln'd) so --json callers have a
-    // way to learn this too — see `gmr doctor`.
     match ClaudeMemory::new(&root) {
         Ok(p) => builder = builder.provider(Arc::new(p)),
         Err(e) => {

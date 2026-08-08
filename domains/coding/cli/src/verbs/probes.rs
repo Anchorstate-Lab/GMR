@@ -67,7 +67,6 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
         rows.push(serde_json::json!({
             "probe": name,
             "kind": "shell",
-            // The rule, not where it lives: that is what the journal records.
             "version": shell.resolve(&probe).map(|d| d.version.as_str().to_owned()),
             "address": artifacts.installed(&probe).map_err(|e| CliError(e.0))?,
             "handles": recipe.handles,
@@ -110,11 +109,6 @@ fn join(v: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-/// Assemble a tarball's `probes/`: the declarations, and only the artifacts
-/// currently installed for them. The store accumulates every artifact ever built
-/// here; a tarball should carry none of that history.
-///
-/// The bundled extractors are not here — they are in the binary.
 pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
     let recipes = Recipes::load(root)?;
     let artifacts = Artifacts::new(store_dir(root));
@@ -164,8 +158,6 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
     Ok(0)
 }
 
-/// Rewritten rather than copied: the working store keeps entries for probes that
-/// are no longer declared, and a release should not carry them.
 fn write_install_index(probes: &Path, shipped: &[(String, String)]) -> Result<(), CliError> {
     let index: serde_json::Map<String, serde_json::Value> = shipped
         .iter()

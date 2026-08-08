@@ -111,9 +111,6 @@ mod tests {
         assert!(s.delivers(contract(), "memories/a.md", &moved_logic, true));
     }
 
-    /// The default comes from the shape itself, not from a second copy of it
-    /// kept beside the declaration — those two can disagree while criteria
-    /// drift is outstanding.
     #[test]
     fn a_note_that_says_nothing_takes_its_shapes_default() {
         let s = narrowed(&["logic"]);
@@ -143,9 +140,6 @@ mod tests {
         assert!(s.delivers(contract(), "memories/b.md", &carried, false));
     }
 
-    /// Hand-written rules are the escape hatch, and an anchor using it has no
-    /// axes to subscribe to. Falling back to the transition edge is a known
-    /// downgrade, not an oversight.
     #[test]
     fn an_anchor_with_no_shape_falls_back_to_the_transition_edge() {
         let s = Subscriptions::default();

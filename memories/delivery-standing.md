@@ -1,6 +1,8 @@
 ---
 about:
   - domains/coding/cli/src/delivery.rs#delivers
+  - domains/coding/cli/src/delivery.rs#a_note_that_says_nothing_takes_its_shapes_default
+  - domains/coding/cli/src/delivery.rs#an_anchor_with_no_shape_falls_back_to_the_transition_edge
 watch: [sig, logic]
 ---
 
