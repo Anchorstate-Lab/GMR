@@ -207,7 +207,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "coding-anchor"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "coding-extract"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "gmr-core",
  "gmr-survey",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "gmr"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "gmr-content",
  "gmr-core",
@@ -509,7 +509,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-content"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "gmr-core",
@@ -518,7 +518,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "ryu",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-expr"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-probe"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "gmr-core",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-provider"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "gmr-content",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-runtime"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-store"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-survey"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-transport"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "gmr-core",

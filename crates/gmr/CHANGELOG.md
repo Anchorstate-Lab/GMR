@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/Zongming-He/GMR/compare/v0.2.2...v0.2.3) - 2026-08-08
+
+### Added
+
+- *(runtime)* [**breaking**] 事件和状况分开摆 —— 游标只对日志里发生过的事有意义
+- *(core,probe,shell,domain)* [**breaking**] 探针版本挣出来 —— artifact 内容寻址，声明与派生分家
+
+### Fixed
+
+- *(core,runtime)* 终结是日志里发生过的事，不是对最后一个状态的解释
+
+### Other
+
+- release v0.2.1 ([#2](https://github.com/Zongming-He/GMR/pull/2))
+- give string_newtype!'s try_new a structured error, not String
+- make canonicalization honestly fallible instead of panicking
+- the declaration slot holds a name; the transport answers what it stands for
+- Move retain/cadence out of the sealed Anchor into a settings store
+- extract gmr-content so a battery stops depending on the orchestrator
+- count revisions by a ChangeKind enum, not by a bare string
+- Phase 5 (A2): move Manifest/FileEntry/Platform out of gmr-core
+- Phase 4 (B3/B5/C2/C3/C7/D4/D7): behavior fixes on the new service boundary
+- Split LinkStore out of Binding (RFC A3)
+- Split Sealer out of BindingStore (RFC A1)
+- Update English output
+- first commit
+
 ## [0.2.2](https://github.com/Zongming-He/GMR/compare/v0.2.1...v0.2.2) - 2026-08-08
 
 ### Added
