@@ -215,6 +215,7 @@ dependencies = [
  "coding-extract",
  "gmr",
  "gmr-provider",
+ "gmr-survey",
  "gmr-transport",
  "serde",
  "serde_json",

@@ -11,7 +11,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Module -> the crates whose version decides how its source behaves.
 const CLOSURE: [(&str, &[&str]); 4] = [
     (
         "ast",
@@ -28,7 +27,6 @@ const CLOSURE: [(&str, &[&str]); 4] = [
     ("prose", &[]),
 ];
 
-/// Read by every extractor: the match, the report shape, the walk's skip rules.
 const SHARED: [&str; 2] = [
     "batteries/survey/src/matching.rs",
     "batteries/survey/src/walk.rs",
@@ -82,8 +80,6 @@ fn main() {
     }
 }
 
-/// Kept in step with `gmr_core::OUTCOME_CONTRACT` by the test in lib.rs; a build
-/// script cannot link the crate it is building for.
 fn gmr_outcome_contract() -> &'static str {
     "gmr.outcome.v1"
 }
@@ -100,8 +96,6 @@ fn workspace_root(from: &Path) -> PathBuf {
         .to_path_buf()
 }
 
-/// `[[package]] name/version` pairs. Hand-parsed so the closure does not itself
-/// depend on a TOML parser's version.
 fn locked_versions(lock: &Path) -> BTreeMap<String, String> {
     let text = read(lock);
     let mut out = BTreeMap::new();

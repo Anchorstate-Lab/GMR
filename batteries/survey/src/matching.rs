@@ -2,9 +2,21 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-/// Names the shape `report()` emits, which anchors read as `obs.*`. Not
-/// enforced — it only gives a rename something to diff against.
 pub const COORD_REPORT_SCHEMA: &str = "gmr.probe-coord.v1";
+
+pub const REPORT: &[&str] = &[
+    "schema",
+    "extractor",
+    "found",
+    "matched",
+    "missed",
+    "candidates",
+    "roll",
+    "exact",
+    "priority",
+];
+
+pub const PER_CANDIDATE: &[&str] = &["at", "facts"];
 
 pub struct Candidate {
     pub coord: BTreeMap<String, String>,
@@ -22,11 +34,6 @@ impl Candidate {
     }
 }
 
-/// Who is in the tied set, one identity per line, sorted. A roster compares
-/// this instead of the full reports: it says which things are here without
-/// saying anything about what any of them look like, so a body edit cannot
-/// move it. Duplicates are kept, so `roll.lines().count() == candidates` — a
-/// candidate the extractor could not name would otherwise vanish silently.
 fn roll(tied: &[&Candidate]) -> String {
     let mut ids: Vec<&str> = tied.iter().map(|c| c.id.as_str()).collect();
     ids.sort_unstable();
@@ -59,16 +66,6 @@ pub fn nth(pos: &Value) -> usize {
 
 pub const MAX_BYTES: usize = 900_000;
 
-/// Picks the closest candidate and reports which coordinate fields matched.
-///
-/// Candidate ordering is lexicographic: the order of coordinate items is their
-/// priority. This is not an implementation detail. With `[name, file]`, a
-/// candidate that only matches `name` outranks one that only matches `file`.
-/// The probe author's `items` order declares which field best preserves
-/// identity.
-///
-/// An out-of-range `nth` is an error, not a clamp. Silently choosing another
-/// candidate would make the anchor watch something else without anyone knowing.
 pub fn report(
     extractor: &str,
     want: &Want,
@@ -89,7 +86,8 @@ pub fn report(
             "extractor": extractor, "found": false,
             "matched": [], "missed": names(),
             "at": Value::Null, "facts": Value::Null,
-            "candidates": 0, "matches": [], "exact": false,
+            "candidates": 0, "roll": "", "exact": false,
+            "priority": names(),
         }));
     };
     let tied: Vec<&Candidate> = candidates.iter().filter(|c| vector(c) == best).collect();
@@ -112,18 +110,14 @@ pub fn report(
         "candidates": tied.len(),
         "roll": roll(&tied),
         "exact": best.iter().all(|hit| *hit),
-        // Coordinate item order is priority; report it instead of hiding it in arguments.
         "priority": names(),
-        "matches": tied.iter()
-            .map(|c| json!({ "at": c.coord, "facts": c.facts }))
-            .collect::<Vec<_>>(),
     });
 
     let size = out.to_string().len();
     if size > MAX_BYTES {
         return Err(format!(
-            "coordinate is too broad: {} matches produce a {size}-byte report, above the {MAX_BYTES} limit.\n\
-             Refusing to truncate: a truncated roster can hide which item disappeared. Tighten the coordinate.",
+            "coordinate is too broad: {} equally good candidates produce a {size}-byte report, above the {MAX_BYTES} limit.\n\
+             Refusing to truncate: a truncated roll can hide which item disappeared. Tighten the coordinate.",
             tied.len()
         ));
     }
@@ -246,7 +240,6 @@ mod tests {
 
     #[test]
     fn the_order_of_the_items_is_the_priority_and_it_is_reported() {
-        // The candidate matching only name beats the one matching only file because name comes first.
         let w = want(&[("name", "assess"), ("file", "a.rs")]);
         let out = report(
             "x",
@@ -280,17 +273,11 @@ mod tests {
         ];
         let r = report("x", &w, 0, &all).unwrap();
         assert_eq!(r["candidates"], 2);
-        let names: Vec<&str> = r["matches"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|m| m["at"]["name"].as_str().unwrap())
-            .collect();
-        assert_eq!(names, vec!["alpha", "beta"]);
+        assert_eq!(r["roll"], "alpha\nbeta");
         let one = want(&[("kind", "function"), ("name", "alpha")]);
         let r = report("x", &one, 0, &all).unwrap();
         assert_eq!(r["candidates"], 1);
-        assert_eq!(r["matches"].as_array().unwrap().len(), 1);
+        assert_eq!(r["roll"], "alpha");
     }
 
     #[test]
@@ -304,9 +291,6 @@ mod tests {
         assert_eq!(r["missed"], json!(["kind"]));
     }
 
-    /// A candidate the extractor could not name would collapse into another
-    /// blank line and the roster would under-count without saying so. Keeping
-    /// duplicates makes that impossible to hide.
     #[test]
     fn the_roll_has_one_line_per_candidate() {
         let all = vec![
@@ -328,14 +312,12 @@ mod tests {
         let w = want(&[("kind", "function")]);
         let many: Vec<Candidate> = (0..20_000)
             .map(|i| {
+                let name = format!("f{i}_padded_out_to_take_up_some_room_in_the_roll");
                 Candidate::new(
-                    format!("f{i}"),
+                    name.clone(),
                     [
                         ("kind".to_owned(), "function".to_owned()),
-                        (
-                            "name".to_owned(),
-                            format!("f{i}_padded_out_to_take_some_room"),
-                        ),
+                        ("name".to_owned(), name),
                     ]
                     .into(),
                     json!({ "body": "0".repeat(64) }),
@@ -359,6 +341,37 @@ mod tests {
         assert_eq!(
             report("x", &want(&[("a", "1")]), 0, &[]).unwrap()["found"],
             false
+        );
+    }
+
+    fn keys(v: &Value) -> Vec<String> {
+        let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+        k.sort();
+        k
+    }
+
+    #[test]
+    fn both_branches_report_the_same_keys_and_they_are_the_declared_ones() {
+        let w = want(&[("kind", "function")]);
+        let hit = report("x", &w, 0, &[cand(&[("kind", "function")])]).unwrap();
+        let miss = report("x", &w, 0, &[cand(&[("kind", "type")])]).unwrap();
+        assert_eq!(
+            miss["found"], false,
+            "the second call must take found:false"
+        );
+
+        let mut declared: Vec<String> = REPORT
+            .iter()
+            .chain(PER_CANDIDATE)
+            .map(|s| (*s).to_owned())
+            .collect();
+        declared.sort();
+        assert_eq!(keys(&hit), declared);
+        assert_eq!(
+            keys(&miss),
+            declared,
+            "a key only one branch emits is Absent to any rule that reads it, \
+             and which branch ran is exactly what such a rule is asking about"
         );
     }
 }

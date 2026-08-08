@@ -19,16 +19,11 @@ use gmr_core::{ProbeName, ProbeVersion};
 use gmr_transport::inproc::Registered;
 use serde_json::Value;
 
-/// What each probe can be asked about, and which coordinate items it answers.
-/// Outside the version deliberately: it constrains which shapes fit, not what
-/// the probe derives.
 pub struct Vocabulary {
     pub name: &'static str,
     pub schema: &'static str,
     pub at: &'static [&'static str],
     pub facts: &'static [&'static str],
-    /// File extensions this probe reads, so `about:` routes without the CLI
-    /// knowing any language names. Empty means it is not reached that way.
     pub handles: &'static [&'static str],
 }
 
@@ -44,10 +39,6 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
                 "shape",
             ],
             facts: &["body", "line"],
-            // Only ast-map: `about: f#name` yields {file, name}, and no other
-            // probe's vocabulary matches that. prose-map wants a heading, so it
-            // is named explicitly or `wanted` drops `name` and the anchor
-            // silently watches the whole file.
             handles: &[
                 "rs", "ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "py", "pyi", "go",
             ],
@@ -102,8 +93,6 @@ pub fn for_extension(ext: &str) -> Option<&'static str> {
         .map(|v| v.name)
 }
 
-/// The portion to inspect comes from params, not from the process: params enter
-/// the declaration hash, so the anchor says what it meant.
 fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
     cwd.join(params.get("root").and_then(Value::as_str).unwrap_or("."))
 }
@@ -160,11 +149,6 @@ mod tests {
         assert_eq!(for_extension("md"), None);
     }
 
-    /// `Vocabulary` lives in this file, outside the closure; the candidate map
-    /// is built inside it. The two can drift, and when they do a shape reads
-    /// `obs.at.<key>` no candidate carries — the rule faults, or the axis is
-    /// simply never able to move and nobody finds out. Every declared key has
-    /// to come back from a real run.
     struct Fixture {
         probe: &'static str,
         file: &'static str,
@@ -199,11 +183,6 @@ mod tests {
         },
     ];
 
-    /// `at` has two tiers and only one of them is `ITEMS`. A key in `ITEMS`
-    /// is matchable: it decides which candidate a coordinate picks, so it
-    /// lives inside the semantic closure. A key in `at` but not `ITEMS` is
-    /// observable and nothing more. Declaring a matchable key the probe never
-    /// emits would make every position naming it silently unmatchable.
     #[test]
     fn every_matchable_key_is_one_the_probe_declares() {
         for (v, items) in [
@@ -250,17 +229,18 @@ mod tests {
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join(f.file), f.body).unwrap();
-            let out = (reg[&ProbeName::new(v.name)].extract)(
-                &dir,
-                &serde_json::from_str(f.pos).unwrap(),
-                &serde_json::json!({}),
-            )
-            .unwrap_or_else(|e| panic!("`{}` on its own fixture: {e}", v.name));
+            let look = |nth: usize| {
+                let mut pos: Value = serde_json::from_str(f.pos).unwrap();
+                pos["nth"] = nth.into();
+                (reg[&ProbeName::new(v.name)].extract)(&dir, &pos, &serde_json::json!({}))
+                    .unwrap_or_else(|e| panic!("`{}` on its own fixture: {e}", v.name))
+            };
 
+            let tied = look(0)["candidates"].as_u64().unwrap() as usize;
             let mut seen = std::collections::BTreeSet::new();
-            for m in out["matches"].as_array().into_iter().flatten() {
+            for nth in 0..tied {
                 seen.extend(
-                    m["at"]
+                    look(nth)["at"]
                         .as_object()
                         .into_iter()
                         .flatten()

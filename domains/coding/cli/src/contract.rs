@@ -2,20 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::error::CliError;
 
-const COORD_REPORT_FIELDS: &[&str] = &[
-    "schema",
-    "extractor",
-    "found",
-    "matched",
-    "missed",
-    "candidates",
-    "roll",
-    "exact",
-    "matches",
-    "priority",
-];
-
-pub const COORD_SCHEMA: &str = "gmr.probe-coord.v1";
+pub use gmr_survey::matching::{COORD_REPORT_SCHEMA as COORD_SCHEMA, REPORT};
 
 pub fn reads_of(transitions: &gmr::Transitions) -> Result<BTreeSet<String>, CliError> {
     let mut out = BTreeSet::new();
@@ -31,10 +18,7 @@ pub fn reads_of(transitions: &gmr::Transitions) -> Result<BTreeSet<String>, CliE
 
 fn known(obs: &crate::probes::Obs) -> BTreeSet<String> {
     if obs.schema == COORD_SCHEMA {
-        let mut out: BTreeSet<String> = COORD_REPORT_FIELDS
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect();
+        let mut out: BTreeSet<String> = REPORT.iter().map(|s| (*s).to_owned()).collect();
         out.extend(obs.at.iter().map(|k| format!("at.{k}")));
         out.extend(obs.facts.iter().map(|k| format!("facts.{k}")));
         out

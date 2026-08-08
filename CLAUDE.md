@@ -47,7 +47,7 @@ GMR 是领域无关的 grounded memory runtime。
 - `//!` 模块头 —— 说的是「这个文件是什么」，不是「为什么这么写」
 - `cli.rs` 里 clap 的 `///` —— 那是 `--help` 的正文，是给用户看的字符串，只是碰巧用了注释语法。删掉等于删掉帮助
 
-这条规矩住在 `gate.sh` 的「清区里零注释」，不住在这段话里 —— 散文只在有人读到时生效，而注释回潮的那一刻没有任何锚会动。清区名单只增不减：清完一个包就往 `CLEAN` 加一行。今天的清区是 `crates/gmr-core`（16 篇记忆代替了 50 行注释）、`crates/gmr-content`、`crates/gmr`。
+这条规矩住在 `gate.sh` 的「清区里零注释」，不住在这段话里 —— 散文只在有人读到时生效，而注释回潮的那一刻没有任何锚会动。清区名单只增不减：清完一个包就往 `CLEAN` 加一行。今天的清区是 `crates/gmr-core`（16 篇记忆代替了 50 行注释）、`crates/gmr-content`、`crates/gmr`、`batteries/survey`、`domains/coding/extract`。
 
 修改 memories/ 或 .anchor/probes.toml = 修改本仓库作为 GMR 用户时的判据或记录；通常需要 owner 判断。
 修改 crates/ = 修改 GMR 工具本体；必须遵守 crate 边界。

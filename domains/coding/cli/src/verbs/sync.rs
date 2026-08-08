@@ -409,11 +409,10 @@ mod tests {
 
     const RULES: &str = r#"
 rules = [
-  'obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }',
-  'not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }',
-  'obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }',
-  'obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }',
-  'changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }',
+  'obs.exact == false => { position: state.position, n: 0, status: "coordinate-missed" }',
+  'not exists(state.n) => { position: state.position, n: obs.candidates, status: "counted" }',
+  'obs.candidates != state.n => { position: state.position, n: obs.candidates, status: "recounted" }',
+  'true => { position: state.position, n: state.n, status: "settled" }',
 ]
 "#;
 

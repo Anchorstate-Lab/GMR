@@ -6,11 +6,6 @@ pub fn hash(s: &str) -> String {
     format!("{:x}", Sha256::digest(s.as_bytes()))
 }
 
-/// Every file under `root`, in sorted order, as (absolute path, path relative
-/// to root). Sorted so that two runs over an unchanged tree agree.
-///
-/// Skips dotfiles, `target` and `node_modules`: an extractor that walked into
-/// them would report build output as if it were the repository.
 pub fn visit(
     root: &Path,
     each: &mut impl FnMut(&Path, &str) -> Result<(), String>,
