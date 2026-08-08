@@ -3,20 +3,24 @@ about: batteries/survey/src/matching.rs#roll
 watch: [sig, logic]
 ---
 
-# 名册比的是谁在场，不是他们长什么样
+# A roster compares who is present, not what they look like
 
-`roll` 是并列集合的身份表：一行一个，排过序。roster 拿它跟基线比，而不是比
-全部候选的完整报告 —— 于是**改一个函数体不会让名册动**，因为身份没变。
-这一维叫 `swapped`：有进有出而总数不变，只有它会亮（见 [[layers]]）。
+`roll` is the identity list of the tied set: one per line, sorted. A roster
+compares that against its baseline rather than the full report of every candidate
+— so **changing a function body does not move the roster**, because no identity
+changed. This axis is called `swapped`: it is the only one that lights up when
+members come and go while the total stays the same (see [[layers]]).
 
-**重复项保留**，所以 `roll.lines().count() == candidates` 恒成立。
-去重会让「抽取器叫不出名字的候选」塌成同一个空行，名册就少数了而且不说话。
-这不是假想：`layer::gmr` 的公开面全是 `pub use`，而 `use_declaration` 没有
-`name` 字段，那五个候选一度全是空串（见 [[ast-signature]]）。
+**Duplicates are kept**, so `roll.lines().count() == candidates` always holds.
+Deduplicating would collapse every candidate the extractor cannot name into the
+same empty line, and the roster would undercount while saying nothing about it.
+This is not hypothetical: `layer::gmr`'s public surface is all `pub use`, and
+`use_declaration` has no `name` field, so those five candidates were all empty
+strings for a while (see [[ast-signature]]).
 
-那次的修法是**给它们真名字**（`argument` 字段，也就是导入路径本身），
-不是发明一个 `kind:@字节偏移` 兜底。字节偏移在它上方任何一次编辑后都会变，
-那就是把 hair-trigger 换个地方重现一遍。
+The fix that time was **to give them real names** (the `argument` field, i.e. the
+import path itself), not to invent a `kind:@byte-offset` fallback. A byte offset
+changes on any edit above it, which is just relocating the hair-trigger.
 
-**一个在无关编辑下不稳定的 id，比丢掉这个候选更糟。两个都不是答案；
-补上表示层的缺口才是。**
+**An id that is unstable under unrelated edits is worse than dropping the
+candidate. Neither is the answer; filling the gap in the representation is.**

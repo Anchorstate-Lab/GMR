@@ -2,29 +2,33 @@
 about: crates/gmr-core/src/journal.rs#Versions
 ---
 
-# 一次观测背后的三重身份，永远不许合并
+# The three identities behind one observation, never to be merged
 
-`declaration`（锚上写的那句话）、`derivation`（真正导出这些事实的东西）、
-`evaluator`（当时的求值器）—— 三个各自独立演化、各自以不同方式失败。
-合并任意两个，就是在对第三个撒谎。
+`declaration` (what the anchor wrote down), `derivation` (what actually derived
+these facts), `evaluator` (the evaluator at the time) — three things that evolve
+independently and fail in different ways. Merge any two and you are lying about
+the third.
 
-具体地：探针脚本改了但锚没动 → 只有 derivation 变；锚换了探针名 → 只有
-declaration 变；求值器升级 → 只有 evaluator 变。任何一次「状态动了」的解读，
-都要先排掉这三个里哪个动了。合并之后就排不掉了。
+Concretely: the probe script changed but the anchor did not → only derivation
+moved. The anchor named a different probe → only declaration moved. The evaluator
+was upgraded → only evaluator moved. Every reading of "the state moved" starts by
+ruling out which of these three moved. Merged, you cannot rule anything out.
 
-## 变了要问什么
+## When this changes, ask
 
-有人想把三个压成一个「version」→ 问他：探针改了和锚改了，你打算怎么区分？
-Phase B 的多探针会把 declaration 和 derivation 下沉到每份读数，evaluator
-留在观测级 —— 那是拆得更细，不是合并。
+Someone wants to squash the three into one "version" → ask them: the probe changed
+and the anchor changed, how do you plan to tell those apart? Phase B's multi-probe
+work pushes declaration and derivation down into each reading and leaves evaluator
+at the observation level — that is splitting finer, not merging.
 
-## 三个字段各是什么
+## What each of the three is
 
 ```
-declaration   锚上写的那句话
-derivation    真正导出这些事实的东西，以及那个身份可不可证
-evaluator     当时在跑的求值器
+declaration   what the anchor wrote down
+derivation    what actually derived these facts, and whether that identity is provable
+evaluator     the evaluator that was running at the time
 ```
 
-第二个自己还带着 `Verifiability`（见 [[probe-Verifiability]]）——
-「导出它的东西是什么」和「那个说法可不可信」也是两件事，也没有合并。
+The second one carries a `Verifiability` of its own (see [[probe-Verifiability]])
+— "what derived it" and "how much that claim can be trusted" are two things too,
+and they were not merged either.

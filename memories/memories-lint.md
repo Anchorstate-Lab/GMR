@@ -3,33 +3,41 @@ about: domains/coding/cli/src/memories.rs#superfluous
 watch: [sig, logic]
 ---
 
-# 逃生口该不该用，靠走一遍路由来判，不靠约定
+# Whether the escape hatch was warranted is decided by walking the routing, not by convention
 
-笔记的正规形式是 `about: <坐标>`；完整式 `anchors: - key/probe/position/shape`
-是逃生口。问题是「什么时候算真的需要逃生口」如果写成文档里的约定，
-就只能靠人自觉 —— 而这正是 owner 说的「不应该靠个人去维护」。
+A note's normal form is `about: <coordinate>`; the long-hand
+`anchors: - key/probe/position/shape` is the escape hatch. The problem is that "when
+is the escape hatch really needed", written as a convention in a document, can only be
+upheld by people remembering — and that is exactly what the owner called "should not
+depend on an individual to maintain".
 
-所以判据是可执行的：**把 `key` 当坐标扔进 `coord::route`，看推出来的东西
-跟手写的一不一样。** 一样，且没有 `rules` / `terminal` / 非默认 `params`，
-那这份完整式什么也没多说，`about:` 一行就够。
+So the criterion is executable: **throw the `key` into `coord::route` as a coordinate
+and see whether what comes out matches what was written by hand.** If it matches, and
+there are no `rules` / `terminal` / non-default `params`, then the long-hand form said
+nothing extra and one `about:` line is enough.
 
-这样「逃生口的四个理由」不是列表，是这个函数的四个分支，跟 README 里那四条一一对上：
+That makes the "four reasons for the escape hatch" not a list but this function's four
+branches, mapping one-to-one onto README's four:
 
 ```
-① 手写了 rules 或 terminal          两个理由共用一条 early return
-② 非默认 params                     early return
-③ coord::route 直接 Err             早退——探针根本不吃这个坐标
-④ 路由推出来了，但探针或 position 跟手写的不一样   末尾那个布尔式
+① rules or terminal written by hand      two reasons sharing one early return
+② non-default params                     early return
+③ coord::route returns Err               early — no probe eats this coordinate at all
+④ routing produced something, but the probe or position differs from what was written
+                                         the trailing boolean
 ```
 
-前三条是 early return，第四条是函数末尾的返回值 —— **不是四个 early return**。
-分支数跟理由数对得上是有意的：文档里那份列表是从这个函数抄下来的，不是反过来。
+The first three are early returns; the fourth is the function's return value —
+**not four early returns**. The branch count matching the reason count is deliberate:
+the list in the document was copied down from this function, not the other way round.
 
-## 变了要问什么
+## When this changes, ask
 
-`coord::route` 变得更能干（比如坐标语法支持 `kind` 或 `member`）→ 这个函数
-自动会把更多完整式判成多余，`gmr doctor` 会开始报 `long-hand`。**那是对的**，
-不要为了让报告安静而给这里加豁免。要豁免就说出理由，理由必须是一个分支。
+`coord::route` gets more capable (the coordinate syntax gains `kind` or `member`, say)
+→ this function will automatically judge more long-hand forms superfluous, and
+`gmr doctor` will start reporting `long-hand`. **That is correct.** Do not add an
+exemption here to quiet the report. If you want an exemption, state the reason, and the
+reason has to be a branch.
 
-判 `false` 的分支只会让 lint 少报，不会让它误报 —— 所以宁可漏，不可错杀。
-新增分支时按这条来。
+A branch judging `false` can only make the lint under-report, never misfire — so it
+would rather miss than convict wrongly. Add new branches by that rule.

@@ -2,17 +2,20 @@
 about: crates/gmr-core/src/journal.rs#scan
 ---
 
-# 只有一份投影
+# There is only one projection
 
-`scan` 走一遍日志，每条之后把当时的 fold 交出去。`fold` 就是它的最后一格。
+`scan` walks the log once and hands out the fold as it stood after each entry.
+`fold` is simply its last cell.
 
-需要知道「沿途发生了什么」的消费者到这里来，**不要再写第二份投影**。
-两份投影迟早会漂开，而且不会有任何东西发现 —— 因为两边各自都是自洽的，
-只有拿同一份日志同时喂给两边才看得出来，而没人会那么做。
+Consumers that need to know "what happened along the way" come here. **Do not
+write a second projection.** Two projections drift apart sooner or later, and
+nothing will notice — because each is self-consistent on its own, and the only way
+to see it is to feed the same log to both, which nobody does.
 
-这条是第一性的：当前状态只能来自日志投影，那么投影就只能有一份。
+This one is first-principles: current state can only come from a projection of the
+log, so there can only be one projection.
 
-## 变了要问什么
+## When this changes, ask
 
-出现了第二个遍历 `entries` 并重建状态的函数 → 不管它叫什么，它就是第二份投影。
-问它为什么不能是 `scan` 的一个 callback。
+A second function appears that walks `entries` and rebuilds state → whatever it is
+called, it is a second projection. Ask it why it cannot be a callback of `scan`.

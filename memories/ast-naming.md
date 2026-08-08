@@ -3,29 +3,36 @@ about: domains/coding/extract/src/ast.rs#naming
 watch: [sig, logic]
 ---
 
-# `name` 只给能被单独指名的那些 kind
+# `name` is only for the kinds that can be pointed at on their own
 
-`路径#名字` 这个坐标，人的意思永远是「这个文件里叫这个名字的那**一个**东西」。
-所以 `name` 只留给能被单独指名的候选 —— function · module · type。另外两类各有自己的键：
+When a person writes the coordinate `path#name`, they always mean "the **one**
+thing in this file called that". So `name` is reserved for the candidates that can
+be pointed at on their own — function · module · type. The other two classes each
+get their own key:
 
-- `callee`：**提到**一个名字而不是引入它 —— `call` · `import`
-- `member`：是某个类型的一部分，身份要带上属主 —— `field`。
-  `reason` 这个字段的身份是 `Attempt::reason`，不是 `reason`
+- `callee`: **mentions** a name rather than introducing it — `call` · `import`
+- `member`: is part of some type, and its identity has to carry the owner —
+  `field`. The identity of the field `reason` is `Attempt::reason`, not `reason`
 
-不这么切的后果是实测出来的。`crates/gmr-core/src/journal.rs#fold` 当时是 **8 个候选**，
-锚到了一个调用点；`#reason` 锚到了同名的 struct 字段而不是 `fn reason`。
-两个都报 `exact=true`，`contract` 的 missing 规则挡不住，`status` 一路显示正常。
-`nth=0` 挑中谁取决于**遍历顺序** —— 也就是说锚在盯什么，取决于 tree-sitter 怎么走树。
+What happens without that split was measured. `crates/gmr-core/src/journal.rs#fold`
+had **8 candidates** at the time and anchored onto a call site; `#reason` anchored
+onto the struct field of that name instead of `fn reason`. Both reported
+`exact=true`, `contract`'s missing rule could not catch it, and `status` showed
+normal the whole way. Which one `nth=0` picks depends on **traversal order** — that
+is, what the anchor watches depends on how tree-sitter walks the tree.
 
-**没有丢掉任何东西。** `{file, kind: "call"}` 照样列得出全部调用点，
-`{file, member: "reason"}` 照样指得到那个字段。只是它们不再能跟定义打平手。
+**Nothing was lost.** `{file, kind: "call"}` still lists every call site,
+`{file, member: "reason"}` still points at that field. They simply no longer get
+to tie with definitions.
 
-## 变了要问什么
+## When this changes, ask
 
-这个 match 加了新分支 → 问的不是「它像不像定义」，而是这一句：
-**能不能在文件里用一个名字单独指到它？** 能 → `name`；
-只是提到别处的名字 → `callee`；要带属主才能指到 → `member`。
+A new arm is added to this match → the question is not "does it look like a
+definition", it is this one: **can it be pointed at, on its own, by one name in the
+file?** Yes → `name`. Only mentions a name defined elsewhere → `callee`. Needs the
+owner to be pointed at → `member`.
 
-这个函数动了会换探针版本（`ast.rs` 在 `build.rs` 的语义闭包里），
-全部 ast-map 锚会报 instrument swapped —— 那是对的，输出确实变了。
-`Vocabulary.at` 不在闭包里，往词表里加键本身不换版本。
+Touching this function swaps the probe version (`ast.rs` is inside `build.rs`'s
+semantic closure), so every ast-map anchor reports that the instrument was swapped
+— which is correct, the output really did change. `Vocabulary.at` is not in the
+closure, so adding a key to the vocabulary does not by itself swap the version.

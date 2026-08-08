@@ -4,45 +4,58 @@ about:
 watch: [sig, logic]
 ---
 
-# 交付问的是「还有没有没处理的」，不是「这次动了吗」
+# Delivery asks "is anything still unhandled", not "did it move this time"
 
-`check` 曾经只认 `Observed::Transitioned`。第二次观测状态没动就是 `Still`，
-不报、退出码 0 —— **累积位只喂给了 `status`，没喂给交付**。
-第 1 条决定「一旦置 1 保持到人重新确认」在显示层兑现了，交付层没有。
+`check` used to recognise only `Observed::Transitioned`. A second observation where
+the state had not moved was `Still` — nothing reported, exit code 0. **The
+accumulated bits were fed to `status` and not to delivery.** Decision 1's "once set,
+stays set until the person re-confirms" was honoured in the display layer and not in
+the delivery layer.
 
-后果是实测的：本仓库的 `doctrine::red-cards` 坏着（盯的章节不存在），
-`doctor` 印 `section-gonex1`，而 `check` exit 0 —— **CI 是绿的**。
-改签名之后连跑两次 check，第二次也是 "nothing moved"，而 `status` 里 `v.sig` 还挂着。
+The consequence was measured: this repository's `doctrine::red-cards` was broken (the
+section it watched did not exist), `doctor` printed `section-gonex1`, and `check`
+exited 0 — **CI was green**. After a signature change, running check twice gave
+"nothing moved" the second time while `status` still had `v.sig` raised.
 
-现在两条路，**按这个锚有没有 shape 分，不是按 state 长什么样猜**：
+There are two paths now, **divided by whether the anchor has a shape, not by guessing
+from what the state looks like**:
 
-| | 判据 | 谁定 |
+| | criterion | who decides |
 |---|---|---|
-| 有 shape | 订阅的位里有没有 1 | 位是累积的，`accept` 清 |
-| 手写 rules（`of()` 返回 `None`） | 退回边沿：这次转换了才递 | —— |
+| has a shape | is any subscribed bit set | bits accumulate; `accept` clears them |
+| hand-written rules (`of()` returns `None`) | fall back to the edge: hand it back only if it transitioned this time | — |
 
-第二条必须留着。手写规则表没人声明过什么算安定，对它做电平就等于「永远不绿」。
-退回边沿是**已知的降级**，不是遗漏。
+The second has to stay. A hand-written rule table has nobody declaring what counts as
+settled, so level triggering on it would mean "never green". Falling back to the edge
+is a **known downgrade**, not an oversight.
 
-曾经有第三条 —— table shape 靠一张手写的 `settled` 白名单。那是双轨的产物：
-同一个问题（这个状态还要不要人动手）有两套答案，而白名单那套没有订阅。
-所有内置 shape 向量化之后它消失了：安定就是**全部位落下**，推出来的，不是列出来的。
+There was once a third — table shapes leaned on a hand-written `settled` allowlist.
+That was a product of the dual track: two answers to one question (does this state
+still need a human), and the allowlist one had no subscriptions. Once every built-in
+shape was vectorized it disappeared: settled means **every bit down**, derived rather
+than listed.
 
-**问的是声明，不是数据。** `delivers` 收一个 `Option<&Shape>`，不再拿
-`state` 里有没有 `v` 去反推 shape 的种类 —— 那是结构性类型判断，而且手写规则的锚
-和 table shape 在那种判断下不可区分。
+**It asks the declaration, not the data.** `delivers` takes an `Option<&Shape>` and no
+longer infers the kind of shape from whether the `state` has a `v` — that is
+structural typing, and under it a hand-written-rules anchor and a table shape are
+indistinguishable.
 
-## 变了要问什么
+## When this changes, ask
 
-加一维 → 问：**人看完这一位亮着之后，还需要做什么吗？** 需要做的事跟别的维一样
-→ 合成一维（判据见 [[shapes-Dim]]）。不需要做任何事 → 它根本不该是一维，
-因为安定就是全部位落下，一个永远不需要人动手的位会让锚永远不安定。
+Adding an axis → ask: **after a person has seen this bit lit, is there anything left
+for them to do?** If what they do matches an existing axis → merge them (criterion in
+[[shapes-Dim]]). If there is nothing at all for them to do → it should not be an axis,
+because settled means every bit down, and a bit that never needs a human keeps the
+anchor unsettled forever.
 
-这里曾经有一份 `settled` 白名单，列举哪些 status 算安定。它跟位向量是同一个问题的
-两套答案，而白名单那套没有订阅 —— 一个 status 加进词表却忘了加进白名单，锚就永久
-handed back；忘了从白名单删，锚就永久静默。**两套答案里总有一套会被忘掉，所以只留
-推出来的那套。**
+There used to be a `settled` allowlist here, enumerating which statuses counted as
+settled. It and the bit vector were two answers to one question, and the allowlist one
+had no subscriptions — add a status to the vocabulary and forget the allowlist and the
+anchor is handed back forever; forget to remove one and the anchor goes silent
+forever. **One of two answers always gets forgotten, so keep only the derived one.**
 
-第三条路被删掉（比如「不认识就当安定」）→ 手写 rules 的锚会永久静默。
-反过来「不认识就当未安定」→ 它们永远 exit 1。两个都是错的，所以这里必须是三分支。
-而「不认识」现在还有第二个意思 —— 判据漂了，见 [[check-drift]]。
+The third path gets deleted (say, "if we do not recognise it, call it settled") →
+hand-written-rules anchors go silent forever. The reverse, "if we do not recognise it,
+call it unsettled" → they exit 1 forever. Both are wrong, so this has to be three
+branches. And "do not recognise" now has a second meaning — the criteria drifted; see
+[[check-drift]].

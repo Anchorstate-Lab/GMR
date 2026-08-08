@@ -2,26 +2,31 @@
 about: crates/gmr-core/src/probe.rs#Derivation
 ---
 
-# 挣来的哈希，不是二进制的字节
+# An earned hash, not the bytes of a binary
 
-`version` 哈希的是**每一个能改变输出的输入** —— 源文件、解析它们所用东西的版本、
-输出契约。第 5 条。
+`version` hashes **every input that can change the output** — the source files,
+the versions of whatever parses them, the output contract. Decision 5.
 
-**不是二进制的字节。** 字节还会跟着平台和编译器动，而一个「行为没动、版本却动了」
-的标识是噪声，没有任何东西能把它过滤掉 —— 每次换台机器，全仓库的锚都会报
-「探针换了」，于是所有人学会忽略这个信号。
+**Not the bytes of a binary.** Bytes move with the platform and the compiler, and
+an identity that says "the version moved although the behaviour did not" is noise
+that nothing can filter out — every time someone changes machine, every anchor in
+the repository reports "the probe changed", and everyone learns to ignore the
+signal.
 
-## 变了要问什么
+## When this changes, ask
 
-version 的输入里加了任何跟「输出会不会变」无关的东西（构建时间、机器名、
-target triple）→ 它在制造那种噪声。反过来，有能改变输出的输入没进哈希 →
-探针换了而没人知道，比噪声严重得多。
+Anything unrelated to "can the output change" got added to the version's inputs
+(build time, machine name, target triple) → it is manufacturing that noise.
+Conversely, an input that can change the output is missing from the hash → the
+probe changed and nobody knows, which is far worse than noise.
 
-## 什么挣得一个版本，是传输层的事
+## What earns a version is the transport's business
 
-`Derivation` 只负责**携带**版本和它的可证性。怎么算出这个版本 ——
-哈希哪些源文件、锁定哪些依赖版本 —— 由具体传输决定，
-`coding-extract` 的 `build.rs` 是一个例子。基底不规定算法，只规定它必须闭合输入。
+`Derivation` is only responsible for **carrying** the version and its
+provability. How that version is computed — which source files are hashed, which
+dependency versions are pinned — is decided by the concrete transport;
+`coding-extract`'s `build.rs` is one example. The substrate does not dictate the
+algorithm, only that it must close over its inputs.
 
-发布一次新版探针：derivation 动，declaration 不动。这两个必须能分开看，
-所以它们在 [[journal-Versions]] 里是两个字段。
+Shipping a new probe version: derivation moves, declaration does not. Those two
+have to be separable, which is why they are two fields in [[journal-Versions]].

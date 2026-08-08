@@ -2,21 +2,25 @@
 about: crates/gmr-core/src/anchor.rs#RunSettings
 ---
 
-# 怎么跑，不是判什么
+# How it runs, not what it judges
 
-`RunSettings` 刻意**不在** `Anchor` 里。两个字段都不是转换函数的输入，也不改变
-从日志里得出的任何结论：`retain` 只决定同样的状态写得多密，`cadence_secs`
-只决定多久去看一次。
+`RunSettings` is deliberately **not** inside `Anchor`. Neither field is an input
+to the transition function, and neither changes any conclusion drawn from the
+log: `retain` only decides how densely the same state gets written down,
+`cadence_secs` only decides how often we go and look.
 
-把它们跟判据封在一起，就等于要求「改一个没有任何判断依赖的东西」也得给密封理由。
-所以它们住在可变存储里，不进日志。
+Sealing them together with the criteria would mean that changing something no
+judgment depends on still demands a sealed rationale. So they live in mutable
+storage and never enter the log.
 
-## 变了要问什么
+## When this changes, ask
 
-新增的字段能不能改变任何一次转换的结果？只要能，它就不属于这里 —— 它是判据，
-得进 `Anchor` 并接受密封。这是这个结构唯一的入场判据。
+Can the new field change the result of any transition? If it can, it is not one
+of these — it is a criterion, it belongs in `Anchor`, and it has to accept
+sealing. That is the only entry test this struct has.
 
-## `cadence_secs` 为 `None`
+## `cadence_secs` being `None`
 
-`None` 不是「不观测」，是「用部署的默认节奏」。节奏是节流阀，不是判据 ——
-所以它可以缺席、可以随时改、不需要密封理由。
+`None` does not mean "do not observe". It means "use the deployment's default
+pace". Pace is a throttle, not a criterion — so it may be absent, may be changed
+at any time, and needs no sealed rationale.

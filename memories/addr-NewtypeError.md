@@ -2,18 +2,22 @@
 about: crates/gmr-core/src/addr.rs#NewtypeError
 ---
 
-# 校验失败要说出是哪个 newtype
+# A validation failure has to name which newtype it came from
 
-`string_newtype!` 的校验器拒了一个值。带 `type_name` 是为了让**包装它的调用方**
-能分辨是哪一个 newtype 出的错，而不用去解析 `reason` 那句人话。
+A `string_newtype!` validator rejected a value. `type_name` is there so the
+**caller wrapping it** can tell which newtype failed without parsing the prose in
+`reason`.
 
-这条是 15472be 那次提交换来的：原来 `try_new` 返回 `String`，调用方要么整串透传，
-要么写字符串匹配。结构化错误的全部意义就是别让上层去 parse 下层的散文。
+This was bought by commit 15472be: `try_new` used to return `String`, so callers
+either passed the whole sentence through or matched on substrings. The entire
+point of a structured error is to stop the layer above from parsing the layer
+below's prose.
 
-## 变了要问什么
+## When this changes, ask
 
-`reason` 有没有开始被程序读？如果有代码在 match `reason` 的内容，说明这里缺一个
-真正的枚举，字段该升格。
+Has anything started reading `reason` programmatically? If code is matching on
+its contents, what is missing here is a real enum and the field should be
+promoted.
 
-测试 `try_new_failure_names_the_newtype_it_came_from` 钉的就是这一条：
-调用方能 match 出**是哪个 newtype 失败**，不用去解析那句人话。
+The test `try_new_failure_names_the_newtype_it_came_from` pins exactly this: a
+caller can match out **which newtype failed** without parsing the sentence.

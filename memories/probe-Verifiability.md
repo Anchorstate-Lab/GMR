@@ -2,25 +2,30 @@
 about: crates/gmr-core/src/probe.rs#Verifiability
 ---
 
-# 开放不是失败，是必须说出口的那句话
+# Open is not a failure, it is the sentence that has to be said out loud
 
-`Verifiability` 说的是 `Derivation::version` 有没有闭合掉所有能改变输出的东西。
+`Verifiability` says whether `Derivation::version` has closed over everything that
+can change the output.
 
-**开放不是缺陷。** shell 出去问 cargo、读 `$HOME` 的探针天然闭不上 —— 它报告的是
-关于宿主的事实。问题从来不是「有开放的探针」，而是「有开放的探针，但没人知道」。
-所以这个枚举存在的全部意义，就是逼这句话被说出来并进日志。
+**Open is not a defect.** A probe that shells out to ask cargo, or reads `$HOME`,
+cannot close — it is reporting facts about the host. The problem was never "there
+are open probes", it is "there are open probes and nobody knows". The entire
+reason this enum exists is to force that sentence to be said and to enter the log.
 
-## 变了要问什么
+## When this changes, ask
 
-有人想给开放的探针加个「其实也算闭合」的旁路 → 那是把这句话吞掉。
-真要闭合，就去消掉那个外部输入，不是改标签。
+Someone wants to add a "counts as closed really" bypass for an open probe → that
+swallows the sentence. If you genuinely want it closed, go and eliminate the
+external input; do not change the label.
 
-## 两个变体分别在说什么
+## What each variant is saying
 
 ```
-Closed   完整。ProbeName 解析出来的那个，就是真正跑的那个
-Open     哈希之外还有东西能改答案 —— 解释器、宿主环境、住在别处的实现
+Closed   complete. What ProbeName resolves to is what actually runs
+Open     something outside the hash can change the answer — an interpreter,
+         the host environment, an implementation living somewhere else
 ```
 
-`Open` 不是「还没做好」，是一句必须说出口的事实。shell 出去读 `$HOME`、
-调 cargo 的探针天生是 Open，传输层会把它降级成 Open，那正是它应得的。
+`Open` is not "not done yet", it is a fact that has to be stated. Probes that
+shell out to read `$HOME` or call cargo are born Open, and the transport layer
+downgrades them to Open, which is what they deserve.

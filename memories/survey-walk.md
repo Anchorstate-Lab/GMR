@@ -3,12 +3,14 @@ about: batteries/survey/src/walk.rs#visit
 watch: [sig, logic]
 ---
 
-# 走目录必须排序，而且不能走进构建产物
+# Walking a directory must sort, and must not walk into build output
 
-排序不是为了好看：两次扫同一棵没动过的树，候选顺序必须一致。不一致的话
-`report()` 里那个「命中向量取最大」在并列时会挑到不同的候选，锚就换了对象 ——
-而 `nth` 明明是 0，没人改过任何东西。
+Sorting is not cosmetic: scan the same untouched tree twice and the candidate
+order has to be identical. If it is not, the "take the greatest hit vector" in
+`report()` picks a different candidate on ties, and the anchor has changed subject
+— while `nth` is still 0 and nobody changed anything.
 
-跳过点开头的目录、`target`、`node_modules`：走进去的抽取器会把构建产物
-当成仓库本身来报。名册会突然涨几千个候选，`MAX_BYTES` 拦下来，
-而报出的错说的是「坐标太宽」—— 一句指向错误方向的话。
+Skipping dot-directories, `target` and `node_modules`: an extractor that walks in
+starts reporting build output as if it were the repository. The roster suddenly
+grows by thousands of candidates, `MAX_BYTES` catches it, and the error reported
+says "this coordinate is too wide" — a sentence pointing in the wrong direction.

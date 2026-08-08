@@ -3,47 +3,60 @@ about: batteries/survey/src/matching.rs#report
 watch: [sig, logic]
 ---
 
-# 报告的字段集合是契约，两个分支必须一样
+# The report's field set is a contract, and both branches must agree
 
-`report()` 吐的东西分两层，分界线是**它是关于谁的**：
+What `report()` emits comes in two layers, divided by **who it is about**:
 
-- `REPORT` 里那九个是**报告级** —— 关于这次挑选本身，不属于任何一个候选
-- `PER_CANDIDATE`（`at` · `facts`）是**被选中那一个**的坐标和事实，规则读作 `obs.at.x` / `obs.facts.x`
+- the nine in `REPORT` are **report-level** — about this act of selection, and not
+  about any one candidate
+- `PER_CANDIDATE` (`at` · `facts`) is the coordinate and the facts of **the one
+  that was selected**; rules read them as `obs.at.x` / `obs.facts.x`
 
-`REPORT` 只有这一份。`domains/coding/cli/src/contract.rs` 从这里 `pub use` 出去，
-`unmet()` 拿它判「规则读的字段探针吐不吐」。**曾经是两份手写清单**，一份在这里、
-一份抄在 contract.rs 里，而这里的注释亲笔写着 "Not enforced"。删掉第二份比检查两份强 ——
-没有两份就没有分家。
+There is only one copy of `REPORT`. `domains/coding/cli/src/contract.rs`
+`pub use`s it from here, and `unmet()` uses it to judge "does the probe emit the
+field this rule reads". **It used to be two hand-written lists**, one here and one
+copied into contract.rs, with a comment here that said in so many words "Not
+enforced". Deleting the second beats checking both — with no second copy there is
+nothing to drift apart.
 
-## 两个分支的键集必须相等
+## The two branches must have equal key sets
 
-`found: false` 那条早退路径和正常路径吐的键**必须一模一样**，
-`both_branches_report_the_same_keys_and_they_are_the_declared_ones` 盯着这条。
+The early-exit path for `found: false` and the normal path have to emit **exactly
+the same keys**;
+`both_branches_report_the_same_keys_and_they_are_the_declared_ones` watches this.
 
-理由不是整洁：一个只有某个分支才吐的键，对读它的规则来说是 `Absent` —— 而
-「哪个分支跑了」恰恰就是那条规则在问的事。`roll` 和 `priority` 曾经只在
-`found: true` 里出现，没炸纯粹是因为规则顺序把 `obs.exact == false` 排在所有
-`Since` 规则前面，`obs.roll` 永远没机会被求值。**那是靠顺序侥幸正确，不是靠契约。**
+The reason is not tidiness. A key that only one branch emits is `Absent` to any
+rule reading it — and "which branch ran" is precisely what that rule is asking.
+`roll` and `priority` once appeared only inside `found: true`, and the only reason
+nothing blew up is that rule ordering puts `obs.exact == false` ahead of every
+`Since` rule, so `obs.roll` never got a chance to be evaluated. **That is being
+right by ordering, not by contract.**
 
-## 优先级顺序不是实现细节
+## Priority order is not an implementation detail
 
-候选按命中向量做字典序比大小，所以**坐标项的顺序就是优先级**。
-`[name, file]` 之下，只命中 `name` 的候选压过只命中 `file` 的。
-探针作者写 `ITEMS` 的顺序，声明的是「哪个字段最能保住身份」。
-`priority` 把这个顺序报出来，而不是藏在参数里。
+Candidates are compared by taking their hit vectors lexicographically, so **the
+order of the coordinate items is the priority**. Under `[name, file]`, a candidate
+that matches only `name` beats one that matches only `file`. The order a probe
+author writes `ITEMS` in declares "which field best preserves identity".
+`priority` reports that order out instead of hiding it in a parameter.
 
-`nth` 越界是错误，不是夹取。悄悄换一个候选，等于让锚去盯另一个东西而没人知道。
+An out-of-range `nth` is an error, not a clamp. Quietly substituting another
+candidate means pointing the anchor at a different thing with nobody knowing.
 
-## matches 为什么没了
+## Why `matches` is gone
 
-原来还有一个 `matches`，装全部并列候选的 `{at, facts}`。它的身份职责被
-[[survey-roll]] 接管之后就只剩体积：本仓库 `layer::gmr-core` 一次转换的
-facts 共 35,430 字节，其中 34,892 字节是它 —— 98%，而没有任何判据读它。
-剩下那部分（其他并列成员的函数体哈希）对锚本来也没有意义：锚盯的是**一个**东西。
+There used to be a `matches` as well, holding the `{at, facts}` of every tied
+candidate. Once [[survey-roll]] took over its identity duties, all that was left
+was bulk: one transition of `layer::gmr-core` came to 35,430 bytes of facts, of
+which 34,892 were that field — 98%, and no criterion read it. The rest of it
+(body hashes of the other tied members) was meaningless to the anchor anyway: an
+anchor watches **one** thing.
 
-`MAX_BYTES` 那个上限当初就是为拦它设的。它走了以后同样宽的坐标只产出二十分之一，
-上限还留着，但守的已经是 `roll` 了。
+The `MAX_BYTES` ceiling was originally set to catch that field. With it gone, an
+equally wide coordinate produces a twentieth of the output; the ceiling stays, but
+what it now guards is `roll`.
 
-一处代价：`extract` 里那个「声明的 `at` 键必须从真实运行里回得来」的测试，
-原来靠 `matches` 一次拿到全部候选，现在按 `nth` 逐个跑。**测试付这个成本，
-生产不付** —— 这正是该有的分法。
+One cost: the test in `extract` that says "every declared `at` key must come back
+from a real run" used to get every candidate at once from `matches`, and now runs
+them one at a time by `nth`. **The test pays that cost, production does not** —
+which is exactly the right place for the split.

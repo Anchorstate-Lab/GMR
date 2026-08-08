@@ -3,17 +3,21 @@ about: crates/gmr-core/src/probe.rs#check_probe_name
 watch: [sig, logic]
 ---
 
-# 探针名不许长得像版本
+# A probe name is not allowed to look like a version
 
-`ProbeName` 是**名字**，`ProbeVersion` 是**挣来的哈希**，两者在锚的三重身份里
-是不同的东西（见 [[journal-Versions]]）。名字必须能扛过一次引擎升级不变，
-版本必须跟着输入变。
+`ProbeName` is a **name**; `ProbeVersion` is an **earned hash**. In an anchor's
+three identities they are different things (see [[journal-Versions]]). The name has
+to survive an engine upgrade unchanged; the version has to move with its inputs.
 
-所以这里除了字符集检查，还多一条：**64 位十六进制直接拒绝**。
-没有人会给探针起一个 64 位 hex 的名字 —— 那形状只可能是有人把版本粘到了名字位上。
-不拦的话，锚会声明一个永远解析不出来的探针名，而错误信息只会说「找不到这个探针」。
+So beyond the character-set check there is one more rule here: **64 hex chars are
+rejected outright**. Nobody names a probe with 64 hex characters — that shape can
+only mean someone pasted a version into the name slot. Without the check, an
+anchor would declare a probe name that can never be resolved, and the error would
+only say "no such probe".
 
-## 变了要问什么
+## When this changes, ask
 
-放宽字符集 → 想清楚这个名字要进 `declaration_hash`、要当文件名、要进 shell 命令行。
-去掉那条 hex 拒绝 → 问：粘错了版本的那个人，现在从哪条错误信息里看得出来？
+Loosening the character set → think it through: this name goes into
+`declaration_hash`, becomes a filename, and ends up on a shell command line.
+Removing the hex rejection → ask: the person who pasted the wrong thing, which
+error message do they now see it from?

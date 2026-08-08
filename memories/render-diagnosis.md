@@ -5,39 +5,47 @@ about:
 watch: [sig, logic]
 ---
 
-# 「为什么 missing」的答案一直躺在日志里，只是没人渲染
+# The answer to "why missing" has been sitting in the log all along, just never rendered
 
-位向量说的是**哪一维动了**，说不出**为什么**。而 `missing` 亮起来的时候，
-人真正要问的是「文件没了，还是名字没了」。
+The bit vector says **which axis moved**; it cannot say **why**. And when `missing`
+lights up, what the person actually wants to ask is "did the file go, or did the name
+go".
 
-那个答案在探针的报告里，每次观测都在，只是从来没被打印出来：
+That answer is in the probe's report, present at every observation, and simply never
+printed:
 
 ```
-found      = true          文件在
-exact      = false         但不是精确命中
+found      = true          the file is there
+exact      = false         but it is not an exact hit
 matched    = ["file"]
 missed     = ["heading"]
-candidates = 7             那文件里有 7 个并列的 heading
+candidates = 7             there are 7 tied headings in that file
 ```
 
-`doctrine::red-cards` 就是这样躺了一整段历史。`gmr check` 打的是
-`doctrine::red-cards   absent` 一行，人拿着这行什么也做不了；现在多打一行
-「file matched, heading did not — this reading is about whichever of 7 others was closest」，
-问题当场就清楚了。
+`doctrine::red-cards` lay like that for a whole stretch of history. `gmr check` printed
+the single line `doctrine::red-cards   absent`, and there is nothing a person can do
+with that line; now it prints one more —
+"file matched, heading did not — this reading is about whichever of 7 others was
+closest" — and the problem is clear on the spot.
 
-## 为什么走 `AnchorView.facts` 而不是 `Observed`
+## Why it goes through `AnchorView.facts` rather than `Observed`
 
-`Observed` 是「这一次观测发生了什么」，`AnchorView` 是「这个锚现在什么样」。
-诊断要回答的是后者 —— 打开 `gmr status` 的人没有刚跑过一次观测。
-`read()` 早就从 `latest` 里取过 `sighting` 和 `derivation` 了，`facts` 是同一个对象上
-第三件不需要解释就能给出去的东西。
+`Observed` is "what happened in this one observation"; `AnchorView` is "what this
+anchor looks like now". The diagnosis answers the latter — whoever opens `gmr status`
+has not just run an observation. `read()` already took `sighting` and `derivation` out
+of `latest`, and `facts` is a third thing on the same object that can be handed over
+without explanation.
 
-**基底不解释它**。`Facts` 原样传出来，怎么念是域的事 —— `diagnosis` 认
-`gmr.probe-coord.v1` 这个 schema，别的探针（脚本探针）它一句话都不说，
-返回 `None`。这跟第 3、11 条是一回事：基底能取字段，不解释字段含义。
+**The substrate does not interpret it.** `Facts` is passed through as-is and how to read
+it is the domain's business — `diagnosis` recognises the schema `gmr.probe-coord.v1`,
+and for any other probe (the script probes) it says nothing at all and returns `None`.
+This is the same as decisions 3 and 11: the substrate can fetch a field, it does not
+interpret what the field means.
 
-## 为什么不是把这些塞进 state
+## Why these are not stuffed into the state
 
-试过这个念头，被 [[state-schema]] 挡回来了：state 里多一个不参与判据的字段，
-`should_still` 就会把每次读数都判成不同，写一条没有任何位亮的转换。
-**渲染的缺口用渲染补。** 观测已经进日志了，取出来念给人听不需要状态帮忙。
+The thought was tried and turned back by [[state-schema]]: one more field in the state
+that takes part in no criterion and `should_still` judges every reading different,
+writing a transition with no bit lit at all. **Fill a rendering gap with rendering.** The
+observation is already in the log; taking it back out and reading it to a person needs
+no help from the state.

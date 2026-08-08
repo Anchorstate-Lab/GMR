@@ -3,26 +3,34 @@ about: crates/gmr-core/src/addr.rs#canonical_number_string
 watch: [sig, logic]
 ---
 
-# 数字的写法就是哈希的一部分
+# How a number is written is part of the hash
 
-同一个数值有很多写法：`1.50` `1.5` `1.5e0` `-0`。规范化必须把它们收敛成一种，
-否则「内容相同」的两份 JSON 会哈希成两个地址，`ContentHash` 就不再是内容的地址。
+One value has many spellings: `1.50` `1.5` `1.5e0` `-0`. Canonicalization has to
+collapse them into one, or two JSON documents with the same content hash to two
+different addresses and `ContentHash` stops being the address of the content.
 
-这里定死的四条：整数走 `to_string()` 不走浮点路径；`-0` 和 `-0.0` 一律写成 `0`；
-小数尾部的 `0` 和孤零零的 `.` 去掉；`E` 一律小写成 `e`。
+Four rules are nailed down here: integers go through `to_string()` and never
+touch the float path; `-0` and `-0.0` are both written `0`; trailing `0`s after a
+decimal point and a lone trailing `.` are dropped; `E` is always lowercased to
+`e`.
 
-浮点用 ryu 格式化。**ryu 或 serde_json 悄悄改了格式，这个仓库全部历史哈希就对不上了** ——
-测试 `canonical_form_is_pinned_against_library_drift` 把一个固定值的字节和哈希钉死，
-就是为了让那种漂移在升级依赖时当场炸，而不是在某天比对旧日志时才发现。
+Floats are formatted with ryu. **If ryu or serde_json quietly changes its format,
+every historical hash in this repository stops matching** — the test
+`canonical_form_is_pinned_against_library_drift` pins the bytes and the hash of
+one fixed value so that kind of drift explodes when the dependency is upgraded,
+not on the day someone compares against an old log.
 
-结尾那个 `unreachable!` 不是偷懒：不开 `arbitrary_precision` 时
-`serde_json::Number` 只有 PosInt / NegInt / Float 三种，`as_f64()` 对三种都是全函数。
-开了那个 feature 这里就真的能走到，所以它是一条**依赖 feature 的不变量**。
+That `unreachable!` at the end is not laziness: without `arbitrary_precision`,
+`serde_json::Number` has only PosInt / NegInt / Float, and `as_f64()` is total on
+all three. Turn that feature on and this line really is reachable — so it is an
+invariant **that depends on a feature**.
 
-## 变了要问什么
+## When this changes, ask
 
-任何一条格式规则改了 → 全部历史 `ContentHash` 失效，日志比不回去。这不是「改进」，
-是破坏性变更，得跟换探针版本一样对待。
+Any of the four format rules changed → every historical `ContentHash` is void and
+logs cannot be compared backwards. That is not an "improvement", it is a breaking
+change, and it has to be treated like swapping a probe version.
 
-`arbitrary_precision` 被某个依赖间接打开 → `unreachable!` 会 panic。
-先问它为什么被打开，再决定是关掉还是给这里加一条真实分支。
+`arbitrary_precision` gets turned on indirectly by some dependency → the
+`unreachable!` becomes a panic. Ask why it was turned on before deciding whether
+to turn it off or to give this a real branch.

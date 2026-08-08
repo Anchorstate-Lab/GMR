@@ -2,27 +2,35 @@
 about: crates/gmr-core/src/journal.rs#FailureCode
 ---
 
-# 「我们的失败」两半都要枚举齐
+# Both halves of "our failure" have to be enumerated as fully as each other
 
-`ReasonClass` 是基底拿去动作的粒度，`FailureCode` 是人拿去诊断的粒度。
-两个都留着，是因为它们服务的对象不同。
+`ReasonClass` is the grain the substrate acts on. `FailureCode` is the grain a
+human diagnoses with. Both are kept because they serve different readers.
 
-**两半必须对称。** 一份日志如果记了七种探针失败、一种规则失败，它描述的是
-工具的开发史，不是锚的历史 —— 哪一半被认真对待过，从枚举的长短就看得出来。
+**The two halves have to be symmetric.** A log that records seven kinds of probe
+failure and one kind of rule failure is describing the tool's development history,
+not the anchor's history — which half was taken seriously is legible from the
+length of the enum.
 
-`reason()` 是从 code 推出来的，不是并排存的，这样两者不可能各说各话。
+`reason()` is derived from the code rather than stored alongside it, so the two
+cannot disagree.
 
-## 变了要问什么
+## When this changes, ask
 
-新增的 code 属于哪一半？如果只往「探针失败」那半加，停下来看看规则失败那半
-是不是也该细化。不对称本身就是信号。
+Which half does the new code belong to? If it only ever grows the "probe failed"
+half, stop and look at whether the rule-failure half should be getting finer too.
+The asymmetry is itself the signal.
 
-## `code` 为什么是 `Option`
+## Why `code` is an `Option`
 
-`Entry::Attempt.code` 可以缺席，**只**因为在记 code 之前就写进磁盘的条目没有它，
-而且永远不会有 —— 日志只增不改。那些条目必须继续能 fold，不能变成读不出来的东西。
+`Entry::Attempt.code` may be absent for **one** reason only: entries written to
+disk before codes existed do not have it, and never will — the log is
+append-only. Those entries have to keep folding, they cannot turn into something
+unreadable.
 
-所以 `#[serde(default)]` 在这里不是图省事，是**append-only 的直接后果**。
-`reason` 没有这个待遇，因为它从第一天就在。
+So `#[serde(default)]` here is not convenience, it is **a direct consequence of
+append-only**. `reason` gets no such treatment, because it has been there since
+day one.
 
-任何新增字段都要问同一句：已经躺在磁盘上的条目没有它，还读得回来吗？
+Every new field has to answer the same question: entries already lying on disk do
+not have it — can they still be read back?

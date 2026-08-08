@@ -5,23 +5,27 @@ about:
 watch: [sig, logic]
 ---
 
-# 扩展名路由和「看哪一段」，两件都不能从进程里拿
+# Extension routing and "which part to look at" — neither may come from the process
 
-## `handles` 让 `about:` 路由，而 CLI 不认识任何语言名
+## `handles` is what lets `about:` route, and the CLI knows no language names
 
-`coord::route` 拿坐标的扩展名去问 `for_extension`，探针自己声明认哪些。
-所以 CLI 里没有一处写着 "rust"、"typescript"。空的 `handles` 表示这个探针
-不走这条路 —— 得在完整式里点名。
+`coord::route` takes the coordinate's extension and asks `for_extension`; the
+probes declare for themselves which ones they answer to. So nowhere in the CLI
+does the word "rust" or "typescript" appear. An empty `handles` means this probe
+does not travel that road — it has to be named explicitly in long-hand form.
 
-只有 ast-map 能吃 `路径#名字`：那个坐标形状产出 `{file, name}`，别的探针的词表
-都不匹配。prose-map 要的是 `heading`，所以要么点名，要么 `wanted` 把 `name` 丢掉，
-锚就静默地盯了整个文件。
+Only ast-map can eat `path#name`: that coordinate shape produces `{file, name}`,
+and no other probe's vocabulary matches. prose-map wants a `heading`, so either
+name it explicitly, or `wanted` drops the `name` and the anchor silently ends up
+watching the whole file.
 
-## 要看的那一段来自 params，不来自进程
+## The part to look at comes from params, not from the process
 
-`root_of` 从 params 取 `root`，不从当前工作目录推。params 进声明哈希，
-所以**锚说得出自己当初的意思**；而进程的 cwd 谁跑谁不一样，同一个锚在两台机器上
-会观测两棵不同的树，日志对不上，而且没有任何地方记着这个差别。
+`root_of` takes `root` out of params rather than deriving it from the current
+working directory. params enter the declaration hash, so **an anchor can state what
+it originally meant**; a process's cwd differs with whoever runs it, the same
+anchor would observe two different trees on two machines, the logs would not line
+up, and nothing anywhere would record the difference.
 
-`layer::*` 那六个锚就是靠 `params: {root: crates/X}` 把范围收到一个包上的
-（见 [[layers]]）。
+Those six `layer::*` anchors narrow their scope to a single package exactly this
+way, with `params: {root: crates/X}` (see [[layers]]).

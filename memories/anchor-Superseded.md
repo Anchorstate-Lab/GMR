@@ -2,14 +2,17 @@
 about: crates/gmr-core/src/anchor.rs#Superseded
 ---
 
-# 终结不可逆，所以纠错要开新一代
+# Closure is irreversible, so a correction opens a new generation
 
-`supersedes` 指向被这个锚取代的那个**已终结**的锚。终结是不可逆的（第 8 条），
-所以判据写错了不能回去改 —— 只能开一代新的，并把旧的指出来。
+`supersedes` points at the **already-closed** anchor this one replaces. Closure is
+irreversible (decision 8), so a criterion written wrong cannot be gone back and
+edited — the only move is to open a new generation and name the old one.
 
-这样日志里留下的是「当时按那个判据判的，后来换了」，而不是「一直都是这个判据」。
-后者是在伪造历史。
+What the log then holds is "at the time it was judged by that criterion, and later
+it was changed", not "it was always this criterion". The latter is forging
+history.
 
-## 变了要问什么
+## When this changes, ask
 
-出现了任何「重新打开一个已关闭的锚」的路径 → 直接违反第 8 条，问 owner。
+Any path appears that **reopens a closed anchor** → that violates decision 8
+directly. Ask the owner.

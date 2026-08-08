@@ -4,118 +4,149 @@ about:
   - domains/coding/cli/src/shapes.rs#Reads
 ---
 
-# 一维是一个「该去做什么」的分叉，不是一种分类
+# An axis is a fork in what you should go and do, not a kind of thing
 
-第 6 条把系统切成两层：探针吐什么方向是**表示**，锚看哪些方向是**注意力**。
-`Dim` 是注意力那一侧的全部内容 —— 所以「该有几维」这个问题，答案不能是
-「代码能变的种类有几种」，那是分类学，会一路细分下去。
+Decision 6 cuts the system in two: which directions a probe emits is
+**representation**, which directions an anchor watches is **attention**. `Dim` is
+the whole of the attention side — so the answer to "how many axes should there be"
+cannot be "how many kinds of change code can undergo". That is taxonomy, and it
+subdivides forever.
 
-判据只有一条：**两个变化如果会让人做同样的动作，就合成一维；做不同动作，
-就必须分开。** 位亮起来的意义是「你现在该去做这件事」。
+There is one criterion: **if two changes would make a person do the same thing,
+they are one axis; if they lead to different actions, they must be separate.** A
+bit lighting up means "here is what you should now go and do".
 
-`contract` 的六维就是这么来的：
-
-```
-missing   锚改指别处，或者关掉它
-kind      这已经不是同一种东西了，记忆整篇重写
-sig       去看所有调用方
-surface   公开面变了，问谁在用
-logic     重读这段实现，问契约还成不成立
-place     确认这次搬家是有意的
-```
-
-顺序就是优先级（第 10 条，第一条匹配即生效），只决定 `status` 印哪个名字；
-位是全的，`gmr status` 一个不少。
-
-## 第二个属性：这一维在回答哪种问题
-
-`Dim` 说这一维**该不该存在**，`Reads` 说它**回答的是哪种问题** —— 而那同时决定
-了它的位什么时候落下来。这两件事必须分开声明，因为它们不是同一个判断。
+`contract`'s six come from that:
 
 ```
-Now    「现在是不是这样」     每次观测从读数重算 —— missing
-Since  「跟你确认时比变了吗」  已经发生过的事，累积到 accept —— 其余五维
+missing   the anchor points elsewhere now, or should be closed
+kind      this is no longer the same sort of thing; rewrite the memory entirely
+sig       go look at every caller
+surface   the public surface changed; ask who is using it
+logic     re-read this implementation, ask whether the contract still holds
+place     confirm this move was intentional
 ```
 
-**`Now` 可以随观测归零，`Since` 不行。** 差别不在「要不要人确认」，在信号会不会丢：
-一个持续成立的条件每次观测都会重新宣告自己，落了也会立刻亮回来；而「变过了」
-是过去式，谁先观测谁就把它消费掉 —— 部署里 `pass` 按节奏跑，会在人跑 `check`
-之前吃掉它。那是一条静默失败路径。
+The order is the priority (decision 10, first match wins) and decides only which
+name `status` prints; the vector is complete, and `gmr status` shows every one.
 
-这条判据是补写的。原来 `missing` 是唯一的非累积维，但它非累积**是个意外** ——
-生成器里手写了一个 `false`，不是从任何声明推出来的。`what_an_axis_answers_decides_when_its_bit_falls`
-钉的就是这一条：`Now` 的位表达式不许出现 `state.v.<自己>`，`Since` 的必须出现。
+## The second property: what kind of question this axis answers
 
-**一个 `Now` 维成立时说的是「这份读数不是关于我的目标的」**，所以它的规则保留
-上一次好读数、把全部 `Since` 位原样带过去，并且排在所有 `Since` 规则之前。
-顺序是判据不是风格，理由见 [[shapes-expand]]。
+`Dim` says whether an axis **should exist**; `Reads` says **what kind of question it
+answers** — and that in turn decides when its bit falls. These have to be declared
+separately, because they are not the same judgment.
 
-## 同一个测量，两个问题
+```
+Now    "is it this way right now"        recomputed from the reading each observation — missing
+Since  "has it changed since you confirmed"   already happened, accumulates until accept — the other five
+```
 
-`Reads::Since` 带一个比较算子，因为 roster 的 `grew` 和 `shrank` 都读 `count`
-这一个槽位，只是问的方向相反 —— 「多出来的属于这一层吗」和「谁还在依赖走掉的」
-是两个不同的动作，按上面那条判据就必须是两维。所以一个字段可以被多维读，
-`reading()` 按字段去重。
+**`Now` may clear on any observation, `Since` may not.** The difference is not
+"does a human need to confirm it", it is whether the signal can be lost: a
+condition that still holds re-announces itself on every observation, and even if
+it drops it lights straight back up. But "it changed" is past tense — whoever
+observes first consumes it, and in a deployment `pass` runs on a cadence and will
+eat it before a human runs `check`. That is a silent failure path.
 
-算子只有 `!=` `>` `<` 三个，没有更多的理由：`>` 和 `<` 只在计数上有意义，
-而计数是 obs 里唯一一个有序的量。
+This criterion was written down after the fact. `missing` used to be the only
+non-accumulating axis, but its non-accumulation was **an accident** — a hand-written
+`false` in the generator, not derived from any declaration.
+`what_an_axis_answers_decides_when_its_bit_falls` pins exactly this: a `Now` axis's
+bit expression may not mention `state.v.<itself>`, and a `Since` axis's must.
 
-## Table 与 Vector 曾经是两套
+**A `Now` axis holding says "this reading is not about my target"**, so its rule
+keeps the last good reading, carries every `Since` bit through untouched, and comes
+before all the `Since` rules. The ordering is a criterion, not a style; the reason
+is in [[shapes-expand]].
 
-`Body::Table` 是 Phase A 的过渡装置 —— 加向量 shape 的同时不打断四个老 shape。
-它没被拆掉，于是后面每加一个能力（订阅 · 电平触发 · accept · Reads）都要在两边
-各想一次，而想漏的那一边就是**静默失能**：`layers.md` 想说「只告诉我名单变了」，
-但 roster 是 Table，`watch` 对它无效，说不出来。
+## One measurement, two questions
 
-**所谓 Table shape 不是另一种 shape，是有人手写了规则。** 而手写规则是**锚级**的
-逃生口（第 7 条），不是 shape 的一个种类。把这两件事塞进一个 enum 才造出了双轨。
-拆开之后：内置 shape 一律是维的集合；手写规则的锚没有 shape，`of()` 返回 `None`，
-它的交付退回边沿触发 —— 那是**已知的降级**，写在 [[delivery-standing]] 里。
+`Reads::Since` carries a comparison operator, because a roster's `grew` and
+`shrank` both read the one `count` slot and only differ in direction — "does the
+new thing belong to this layer" and "who still depends on what left" are two
+different actions, so by the criterion above they must be two axes. So one field
+may be read by several axes, and `reading()` deduplicates by field.
 
-## 这条判据实际否掉过什么
+There are only three operators, `!=` `>` `<`, and no more for a reason: `>` and `<`
+mean something only on counts, and the count is the one ordered quantity in obs.
 
-**「参数变了」和「返回类型变了」不该分成两维。** 两个的动作都是「去看所有调用方」，
-同一个分叉。分开会让向量变长而读者的动作不变。当时 `sig` 塌成一位被当成缺陷报过，
-是错的 —— 真正的缺陷在表示层：`async` / `unsafe` / 泛型 bound 同样导致
-「去看所有调用方」，却根本没进 `shape`。**修表示，不是加维。**
+## Table and Vector used to be two systems
 
-**`file` 因此被删掉。** ast-map 的 `ITEMS` 把 `file` 排在 `name` 前面，
-那是在声明「一个定义的身份是『这个文件里叫这个名字的东西』」。这个身份下，
-函数搬到别的文件就是 `missing`，`moved-file` 这个事件不可能发生。
-一个永远点不亮的维不是「还没实现」，是向量里有一位在撒谎。
+`Body::Table` was Phase A's transitional apparatus — a way to add vector shapes
+without breaking the four old ones. It never got dismantled, so every capability
+added afterwards (subscription · level triggering · accept · Reads) had to be
+thought through twice, and whichever side was overlooked became **silently
+disabled**: `layers.md` wanted to say "only tell me when the roster changed", but
+roster was a Table, `watch` had no effect on it, and it could not say so.
 
-**`place` 量的是「排在谁后面」，不是绝对行号。** 曾经是行号，后果实测过：在
-`probe.rs` 顶上加一行 `use`，四篇记忆回到手上，而那四个定义一个都没动。绝对行号
-不是「这个定义搬家了」的度量，是「它上面有东西变长了」的度量。前驱定义才是：
-加 import 不改任何人的前驱；真挪走一个函数改两个（它自己和原来跟在它后面那个），
-两个都确实受影响。
+**What was called a Table shape is not another kind of shape, it is somebody's
+hand-written rules.** And hand-written rules are an **anchor-level** escape hatch
+(decision 7), not one of the kinds of shape. Cramming those two things into one
+enum is what created the dual track. Split apart: a built-in shape is always a set
+of axes; an anchor with hand-written rules has no shape, `of()` returns `None`, and
+its delivery falls back to edge triggering — a **known downgrade**, written down in
+[[delivery-standing]].
 
-**`logic` 至今混着一个已知假阳性**：改局部变量名读成实现变了。
+## What this criterion has actually ruled out
 
-这是**决定，不是欠账**。按行动判据它该拆（改名不需要任何动作），但安全实现要真
-作用域分析，而搞错遮蔽或闭包的近似会把最响那一维的假阳性换成**假阴性** ——
-「改了逻辑但没报」。方向上它也跟 `place` 那条一致：宁可多报，合不合理由作者判断。
-代价是偶尔重读一遍记忆，那比漏报便宜得多。
+**"Parameters changed" and "return type changed" should not be two axes.** Both
+actions are "go look at every caller" — the same fork. Splitting them makes the
+vector longer without changing what the reader does. `sig` collapsing into one bit
+was once reported as a defect, and that was wrong — the real defect was in the
+representation: `async` / `unsafe` / generic bounds equally mean "go look at every
+caller", and they were not in `shape` at all. **Fix the representation, do not add
+an axis.**
 
-要推翻它，先回答：拆出来的归一化在遮蔽、闭包、宏体三种情况下各怎么处理，
-以及处理不了时退回哪里。退回**今天的行为**（原文哈希）才是安全的，退回
-「当作没变」就是那条假阴性。
+**`file` was deleted for this reason.** ast-map's `ITEMS` puts `file` ahead of
+`name`, which declares that "a definition's identity is the thing called this in
+this file". Under that identity, a function moving to another file is `missing`,
+and the event `moved-file` cannot happen. An axis that can never light up is not
+"not implemented yet", it is a bit in the vector telling a lie.
 
-## 变了要问什么
+**`place` measures "who it sits after", not an absolute line number.** It used to be
+the line number, and the consequence was measured: adding one `use` at the top of
+`probe.rs` handed back four memories, and not one of those four definitions had
+moved. An absolute line number is not a measure of "this definition moved", it is a
+measure of "something above it got longer". The predecessor definition is: adding an
+import changes nobody's predecessor; genuinely moving a function changes two (its
+own, and that of whatever used to follow it), and both really are affected.
 
-新增一维 → 先问：**它亮起来的时候，人要做的事跟已有六个里的哪一个不同？**
-说不出不同 → 它属于某个已有维，缺的是那一维的**表示**，去改探针。
+**`logic` still carries one known false positive**: renaming a local variable reads
+as the implementation having changed.
 
-删掉一维 → 问：那件事现在谁报？「另一维会顺带亮」不算，顺带亮的位没有名字，
-`status` 印出来的是别的意思。
+This is **a decision, not a debt**. By the action criterion it should be split (a
+rename requires no action), but a safe implementation needs real scope analysis, and
+an approximation that gets shadowing or closures wrong trades the loudest axis's
+false positive for a **false negative** — "the logic changed and nothing reported
+it". Directionally it also agrees with the `place` decision: over-report, and let
+the author judge whether it is reasonable. The price is occasionally re-reading a
+memory, which is far cheaper than a miss.
 
-改了这个结构（加字段、换 `obs` 的写法）→ `expand` 生成的规则全变，
-全部 contract 锚一次判据漂移。走 `accept --all --criteria`：
-一次 shape 改动是一个决定，一份理由覆盖整批。见 [[shapes-expand]]。
+To overturn it, first answer: how does the extracted normalization handle shadowing,
+closures and macro bodies, and where does it fall back to when it cannot. Falling
+back to **today's behaviour** (hashing the source text) is the safe answer; falling
+back to "treat it as unchanged" is that false negative.
 
-## 默认订阅为什么是全部
+## When this changes, ask
 
-`watch` 只决定递不递记忆和退出码，不决定记不记账。既然一维的入场判据
-就是「亮了要做点什么」，那么每一维默认都该报 —— 想少要的笔记自己写
-`watch: [...]`。反过来（默认少报、要的自己加）等于让判据在两处各说一遍。
-交付那两条路在 [[delivery-standing]]。
+Adding an axis → first: **when it lights up, what does the person have to do that is
+different from all six existing ones?** If you cannot say → it belongs to an existing
+axis, and what is missing is that axis's **representation**; go change the probe.
+
+Removing an axis → ask: who reports that thing now? "Another axis will light up
+incidentally" does not count — an incidentally lit bit has no name, and what `status`
+prints then means something else.
+
+Changing this structure (adding a field, changing how `obs` is written) → every rule
+`expand` generates changes, and every contract anchor drifts on criteria at once. Go
+through `accept --all --criteria`: one shape change is one decision, and one
+rationale covers the batch. See [[shapes-expand]].
+
+## Why the default subscription is everything
+
+`watch` only decides whether a memory is handed back and what the exit code is; it
+does not decide what gets recorded. Given that an axis's entry test is already "if it
+lights up, you have to do something", every axis should report by default — a note
+that wants less writes its own `watch: [...]`. The other way round (report little by
+default, add what you want) makes the criterion say itself twice, in two places. The
+two delivery paths are in [[delivery-standing]].

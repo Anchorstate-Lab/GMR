@@ -5,68 +5,88 @@ about:
 watch: [sig, logic]
 ---
 
-# check 得说出自己什么时候不作数
+# check has to say when it does not hold itself
 
-有两种情况会让 check 上面那些结论失效，成因不同、补救也不同，所以是两段报告：
-`drifted` 说**判据**不作数，`swapped` 说**读数**不可比。两个都印在最后，
-各带各的补救动词。
+Two things can void the conclusions check printed above, with different causes and
+different remedies, so they are two reports: `drifted` says the **criteria** do not
+hold; `swapped` says the **readings** are not comparable. Both print last, each
+carrying its own remedy verb.
 
-# 判据漂着的时候，check 上面说的话都不作数
+# When the criteria are drifting, nothing check said above counts
 
-`shapes::of()` 要求 `Transitions` 完全相等才认得出一个 shape。所以**任何一次
-shape 改动之后、`accept --criteria` 之前**，全仓这个 shape 的锚都认不出来 ——
-`delivers` 收到 `None`，直接退回边沿触发，笔记的 `watch:` 整个失效。
+`shapes::of()` requires `Transitions` to be exactly equal before it recognises a
+shape. So **after any shape change and before `accept --criteria`**, every anchor in
+the repository using that shape goes unrecognised — `delivers` receives `None`, falls
+straight back to edge triggering, and the note's `watch:` stops applying entirely.
 
-`gmr status` 一直会报这件事。`gmr check` 以前一个字不说，而 check 才是天天跑的那个。
+`gmr status` has always reported this. `gmr check` used to say nothing, and check is
+the one that gets run daily.
 
-这跟 `Body::Table`/`Vector` 双轨是同一类病：**一个判据在某种状态下静默停止生效**。
-双轨拆掉之后，二义性没死，只是从枚举挪进了 `Option` —— `None` 同时意味着
-「这个锚用手写规则」（该退回边沿触发）和「这个锚的判据漂了」（该报出来）。
-check 报出漂移，`None` 在这条路上就只剩前一个意思了。
+This is the same illness as the `Body::Table`/`Vector` dual track: **a criterion
+silently stops applying in some state**. Pulling the dual track apart did not kill the
+ambiguity, it only moved it from an enum into an `Option` — `None` means both "this
+anchor uses hand-written rules" (fall back to the edge) and "this anchor's criteria
+drifted" (report it). With check reporting drift, `None` on that path is left meaning
+only the first.
 
-所以它印在最后，而且明说上面的结论不可信。放在前面会被后面那句
-「n of N handed a memory back」盖过去，而那句在漂移期间恰恰是错的。
+So it prints last, and says outright that the conclusions above cannot be trusted.
+Printed earlier it would be buried by the "n of N handed a memory back" line that
+follows — and during a drift that line is precisely the wrong one.
 
-# 换了仪器的读数，跟基线不可比
+# A reading taken by a different instrument is not comparable to the baseline
 
-`swapped` 比的是**这个锚站着的那次读数是谁取的**（`view.derivation`）和
-**这个 build 现在解析出什么**（`rt.instrument`）。不等，就说明基线是另一台仪器量的。
+`swapped` compares **who took the reading this anchor stands on**
+(`view.derivation`) against **what this build resolves to now** (`rt.instrument`).
+Unequal means the baseline was measured by a different instrument.
 
-不报的后果实测过：往 `batteries/survey/src/matching.rs` 加一个常量再重编，
-四个抽取器全换版本（ast-map `1e1ac5ee`→`48db5084`，其余三个同理），
-全仓 56 个锚的基线一次性变得不可比 —— 而 `check` 干干净净退出 0，
-`status` · `doctor` · `health` 也都一个字不说。当时唯一知情的是 `rebase --all`
-自己的选择器，**那是个选择器，不是报告**：它只在你已经决定要 rebase 的时候才开口。
+The consequence of not reporting it was measured: add one constant to
+`batteries/survey/src/matching.rs` and rebuild, and all four extractors swap versions
+(ast-map `1e1ac5ee`→`48db5084`, and the other three likewise). Every one of the
+repository's 56 anchor baselines became incomparable at a stroke — and `check` exited
+0 spotlessly, with `status` · `doctor` · `health` all saying nothing either. The only
+thing that knew was `rebase --all`'s own selector, and **a selector is not a report**:
+it speaks only once you have already decided to rebase.
 
-这一维两头都可能骗人：输出没变时全仓静默（版本动了行为没动），输出变了时
-每个锚都报 `signature-changed`（看起来像有人改了代码）。所以这段话不说「变了」，
-说的是**这一轮分不出是哪一种**。
+This dimension can mislead in both directions: when the output did not change, the
+whole repository is silent (the version moved, the behaviour did not); when the output
+did change, every anchor reports `signature-changed` (which looks like somebody edited
+the code). So this passage does not say "it changed", it says **this run cannot tell
+the two apart**.
 
-## 为什么算在 check 里，而不是让 rebase 自己喊
+## Why it counts as check's job rather than something rebase shouts about
 
-`rebase` 要 `--why` 并且封存理由，它是**动手**的动词。「站在不可比的基线上」这件事
-得在人动手之前就知道，而天天跑的是 `check`。这跟上一节同一条：
-判据/读数失效是**要人看的信号**，不是构建失败，所以它进 check 不进 `gate.sh`。
+`rebase` demands a `--why` and seals the rationale; it is the verb that **acts**.
+"Standing on an incomparable baseline" has to be known before a person acts, and the
+thing run daily is `check`. Same as the section above: criteria or readings going
+invalid is **a signal for a human to look at**, not a build failure, so it goes into
+check and not into `gate.sh`.
 
-一份实现，两个调用方 —— `swapped` 住在 `verbs/mod.rs` 而不是 check 里，
-因为 `rebase --all` 挑的就是同一批锚。理由见 [[verbs-recapture]]：
-三份抄成两对一错，是那个 bug 的成因，不是它的表现。
+One implementation, two callers — `swapped` lives in `verbs/mod.rs` rather than inside
+check, because `rebase --all` selects the very same set of anchors. The reason is in
+[[verbs-recapture]]: three copies, two of them copied correctly and one invented, is
+the cause of that bug, not a symptom of it.
 
-## 还没修的那一半：这个事实会被观测吃掉
+## The half that is not fixed: this fact gets eaten by an observation
 
-`swapped` 是从**最新那次观测**的 derivation 推出来的，所以谁先观测谁就把它抹掉。
-check 之所以还能报，只是因为它在自己的 observe 循环**之前**算这一段
-（挨着 `drifted` 那一行）—— 顺序反过来就永久静默了。
+`swapped` is derived from **the latest observation's** derivation, so whoever observes
+first wipes it out. The only reason check can still report it is that it computes this
+section **before** its own observe loop (right beside the `drifted` line) — reverse the
+order and it goes silent permanently.
 
-**但 `pass` 不会报。** 部署里 `pass` 按节奏跑，它一观测就把新 derivation 写进去，
-人再跑 `check` 就什么也看不见了。这正是 [[shapes-Dim]] 给 `Since` 维写下的那条：
-「变过了」是过去式，谁先观测谁就消费掉。
+**But `pass` will not report it.** In a deployment `pass` runs on a cadence, and the
+moment it observes it writes the new derivation in, so a human running `check`
+afterwards sees nothing. This is exactly what [[shapes-Dim]] wrote down for `Since`
+axes: "it changed" is past tense, and whoever observes first consumes it.
 
-真正的修法是把这件事记在消费不掉的地方 —— 一位，或者一条日志条目 ——
-而不是从最新读数现推。那是**基底的判据变更**，得 owner 拍板（第 5、第 7 条），
-所以这一版只补了报告，没补留存。在那之前：**重编之后先跑 `check`，再让 `pass` 上。**
+The real fix is to record this where an observation cannot consume it — a bit, or a log
+entry — rather than deriving it from the latest reading. That is **a change of criteria
+in the substrate** and needs the owner's call (decisions 5 and 7), so this version fixed
+the report and not the retention. Until then: **run `check` after a rebuild, before you
+let `pass` go.**
 
-**这不进 `gate.sh`。** 它要读 `.anchor/state/memory.db`，而 gate.sh 六条从没漂过，
-一半原因就是它不碰任何锚 —— 让 CI 因为某人本地没跑 `accept` 而红，就是把
-「要人看的信号」变成了构建失败。gate.sh 查源码树的恒等式；这一条查的是
-某一个仓库的锚存储对不对得上它自己的笔记，是另一个对象。
+**This does not go into `gate.sh`.** It has to read `.anchor/state/memory.db`, and half
+the reason gate.sh's six checks have never drifted is that it touches no anchor —
+turning CI red because somebody has not run `accept` locally converts "a signal for a
+human" into a build failure. gate.sh checks identities of the source tree; this one
+checks whether one particular repository's anchor store lines up with its own notes,
+which is a different object.

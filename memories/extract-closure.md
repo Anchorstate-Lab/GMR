@@ -5,20 +5,25 @@ about:
 watch: [sig, logic]
 ---
 
-# 闭包不能依赖它自己要保证的东西
+# A closure cannot depend on the thing it is there to guarantee
 
-## build 脚本链不了它正在构建的那个 crate
+## A build script cannot link the crate it is building
 
-所以 `gmr_outcome_contract()` 手写着 `"gmr.outcome.v1"`，跟 `gmr_core::OUTCOME_CONTRACT`
-靠 `lib.rs` 里的测试对齐。这是一份**明知故犯的第二份**，唯一的理由是构建期够不着第一份 ——
-而看住它的那个测试跟它同时落地，不是以后再说。
+So `gmr_outcome_contract()` writes `"gmr.outcome.v1"` by hand, kept in line with
+`gmr_core::OUTCOME_CONTRACT` by a test in `lib.rs`. This is **a second copy made
+knowingly**, and the only justification is that build time cannot reach the first
+one — and the test that watches it landed at the same time, not "later".
 
-## Cargo.lock 手工解析
+## Cargo.lock is parsed by hand
 
-`locked_versions` 自己拆 `[[package]]`，不用 TOML 解析器。因为闭包的作用就是
-「能改变输出的全部输入都进哈希」，而拉一个解析器进来就等于让哈希依赖那个解析器的版本 ——
-它一升级，全仓探针版本翻篇，而没有任何一次观测的结果变过。
+`locked_versions` picks `[[package]]` apart itself rather than using a TOML
+parser. Because the whole job of the closure is "every input that can change the
+output enters the hash", and pulling in a parser makes the hash depend on that
+parser's version — one upgrade and every probe version in the repository turns
+over, without the result of a single observation having changed.
 
-同理，`SHARED`（`matching.rs` · `walk.rs`）是整文件读进哈希的。**碰这两个文件一个字节 ——
-加个常量、加个测试、删行注释 —— 四个抽取器全换版本，要一次 `gmr rebase --all`。**
-所以碰它们的事必须编进同一个 commit、同一次迁移。这个哈希宁可多报也不漏报。
+By the same logic `SHARED` (`matching.rs` · `walk.rs`) is read into the hash whole.
+**Touch one byte of either file — add a constant, add a test, delete a comment
+line — and all four extractors swap versions, requiring one `gmr rebase --all`.**
+So anything that touches them has to be compiled into the same commit, the same
+migration. This hash would rather over-report than under-report.

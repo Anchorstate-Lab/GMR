@@ -2,18 +2,20 @@
 about: crates/gmr-core/src/addr.rs#write_array
 ---
 
-# 深度计数必须在错误路径上也回退
+# The depth counter has to unwind on the error path too
 
-`write_array` 和 `write_object` 用立即执行的闭包 `(|| { ... })()` 把主体包起来，
-拿到 result 之后再 `self.depth -= 1`，最后才返回。这不是风格 —— 主体里每个 `?`
-都可能提前返回，如果直接写 `self.depth += 1; ...?; self.depth -= 1;`，
-一次失败的规范化就会永久抬高深度计数，之后所有调用都在错的基线上判断
-`MAX_CANONICAL_DEPTH`。
+`write_array` and `write_object` wrap their bodies in an immediately-invoked
+closure `(|| { ... })()`, take the result, then do `self.depth -= 1`, and only
+then return. That is not style — every `?` inside the body can return early, and
+written straight as `self.depth += 1; ...?; self.depth -= 1;` one failed
+canonicalization would raise the depth counter permanently, leaving every later
+call to judge `MAX_CANONICAL_DEPTH` against the wrong baseline.
 
-同一个规范化器实例跨多次 `write` 复用时这条才致命。`canonical_write` 每次新建一个，
-所以今天摸不到；改成复用就会。
+This only turns fatal once one canonicalizer instance is reused across several
+`write` calls. `canonical_write` builds a fresh one each time, so today it cannot
+be reached; make it reusable and it can.
 
-## 变了要问什么
+## When this changes, ask
 
-主体里新增的提前返回，有没有绕过 `depth -= 1`？把闭包换成 `?` 直接写、或者引入
-`return`，都会重新打开这个洞。
+Does a new early return inside the body bypass `depth -= 1`? Replacing the
+closure with plain `?`, or introducing a `return`, reopens this hole.

@@ -2,15 +2,17 @@
 about: crates/gmr-core/src/journal.rs#reason
 ---
 
-# 派生，不是并排存
+# Derived, not stored alongside
 
-`FailureCode::reason()` 把 code 映射到基底真正会去动作的那个类。它是**算出来的**，
-不是跟 code 并排存一份 —— 存两份，早晚有一天某个新 code 忘了更新映射，
-两边开始各说各话，而且没有任何东西会发现。
+`FailureCode::reason()` maps a code onto the class the substrate will actually act
+on. It is **computed**, not kept next to the code — keep two copies and one day
+some new code forgets to update the mapping, the two sides start disagreeing, and
+nothing will ever notice.
 
-这跟 `AnchorState.closed` 是同一条纪律：能从已有事实推出来的，就不要再存一份。
+This is the same discipline as `AnchorState.closed`: whatever can be derived from
+facts already held does not get stored a second time.
 
-## 变了要问什么
+## When this changes, ask
 
-出现了「某个 code 的 reason 要覆盖」的需求 → 说明 code 的划分错了，
-该拆 code，不该给映射开后门。
+A need appears to "override the reason for some particular code" → that means the
+codes are divided wrong. Split the code; do not open a back door in the mapping.

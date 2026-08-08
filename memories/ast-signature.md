@@ -6,77 +6,96 @@ about:
 watch: [sig, logic]
 ---
 
-# 签名是这个定义对调用方的承诺，不是 tree-sitter 给了哪些字段
+# A signature is what this definition promises its callers, not which fields tree-sitter handed over
 
-`shape_fields` 用 `child_by_field_name` 取，只能拿到语法里**有名字的字段**。
-而「改了它每个调用方都要改」的东西有一半不在字段里：
+`shape_fields` fetches through `child_by_field_name`, so it can only reach the
+**named fields** of the grammar. And half of the things that mean "every caller
+has to change" are not in fields at all:
 
-| | 住在哪 | 拿它的机制 |
+| | where it lives | what fetches it |
 |---|---|---|
-| 参数 · 返回类型 · 类型参数 | 字段 | `shape_fields` |
-| `async` `unsafe` `const` · where 子句 | 无字段的子节点 | `shape_kinds` |
-| `#[derive]` `#[deprecated]` · TS/Python 装饰器 | **前驱兄弟** | `Attrs::Before` |
-| struct 字段 · enum 变体 · trait 方法签名 | 子节点的 body 列表 | `members` |
+| parameters · return type · type parameters | fields | `shape_fields` |
+| `async` `unsafe` `const` · where clauses | unnamed child nodes | `shape_kinds` |
+| `#[derive]` `#[deprecated]` · TS/Python decorators | **preceding siblings** | `Attrs::Before` |
+| struct fields · enum variants · trait method signatures | the body list of a child | `members` |
 
-这四条不是四个特例，是同一句话在语法树里的四个落点。判据是**去掉它，调用方还能不能
-原样编过**；能，它就不属于签名。
+These four are not four special cases, they are four places the same sentence
+lands in the syntax tree. The criterion is: **take it away — can the caller still
+compile unchanged?** If yes, it is not part of the signature.
 
-## 三个具体判断
+## Three concrete judgments
 
-**`Attrs::Before` 一个变体够了。** 实测三种语言都是前驱兄弟：Rust 的
-`attribute_item`、TS 的 `decorator`（在 `export_statement` 里排在 `class_declaration`
-前面）、Python 的 `decorator`（在 `decorated_definition` 里）。要用
-`prev_named_sibling` 而不是 `prev_sibling` —— TS 的 `export` 是匿名 token，
-夹在中间会把循环打断。
+**One `Attrs::Before` variant is enough.** All three languages were measured to use
+preceding siblings: Rust's `attribute_item`, TS's `decorator` (which sits before
+`class_declaration` inside `export_statement`), Python's `decorator` (inside
+`decorated_definition`). It has to use `prev_named_sibling` and not
+`prev_sibling` — TS's `export` is an anonymous token, and hitting it in between
+breaks the loop.
 
-**`NOISE` 是黑名单不是白名单。** 白名单让新出现的属性**静默**，黑名单让它出声，
-然后你决定要不要闭嘴。「系统不允许静默失败路径」只允许后者。名单里那九个
-（`allow` `warn` `deny` `expect` `inline` `cold` `doc` `rustfmt` `clippy`）的共同点是
-去掉它们调用方一个字都不用改。`serde` 不在里面 —— 它改的是线上格式。
+**`NOISE` is a blacklist, not a whitelist.** A whitelist makes a newly appearing
+attribute **silent**; a blacklist makes it speak up, and then you decide whether
+to shut it up. "The system allows no silent failure path" permits only the
+latter. What the nine on the list (`allow` `warn` `deny` `expect` `inline` `cold`
+`doc` `rustfmt` `clippy`) have in common is that removing them means no caller
+changes a character. `serde` is not among them — it changes the wire format.
 
-**type 的 shape 是它的成员，body 只剩成员的实现。** struct 没有 `parameters` 也没有
-`return_type`，所以它的 shape 曾经恒空，本仓库二十五个 contract 锚里有十个带着一条
-死轴在跑，而「加了一个字段」报的是 `logic-changed` —— 把「看所有构造点」说成了
-「重读实现」。拆开之后 struct 根本没有实现，加字段是签名变更；trait 的默认方法体
-仍然独立驱动 `logic`。
+**A type's shape is its members, and the body is left holding only their
+implementations.** A struct has no `parameters` and no `return_type`, so its shape
+used to be permanently empty: ten of this repository's twenty-five contract
+anchors were running with a dead axis, and "a field was added" reported
+`logic-changed` — saying "go re-read the implementation" when it meant "go look at
+every construction site". Split apart, a struct has no implementation at all and
+adding a field is a signature change; a trait's default method bodies still drive
+`logic` independently.
 
-## `at` 有两层，只有一层是身份
+## `at` has two layers, and only one of them is identity
 
 ```
-ITEMS       可匹配 —— 决定坐标挑中谁。在语义闭包里，改它换探针版本
-at \ ITEMS  可观测 —— form · surface · after。有界、可打印，但不参与匹配
-facts       测量 —— 关于已匹配对象的事实，可以哈希、可以无界
+ITEMS       matchable  — decides which candidate a coordinate selects.
+                         In the semantic closure; changing it swaps the probe version
+at \ ITEMS  observable — form · surface · after. Bounded, printable, does not match
+facts       measured   — facts about the already-matched object; hashable, may be unbounded
 ```
 
-中间那一层曾经是隐式的：我按「够小就放 `at`」放进去，判据没写下来。放进去的条件是
-**有界 · 可打印 · 不是身份**。不是身份这条最要紧 —— 一旦某个键既决定挑中谁又被当成
-观测方向，它就永远不会变（挑中的候选按定义在那个键上是相等的）。`file` 维就是这么
-死的，见 [[shapes-Dim]]。
+That middle layer used to be implicit: I put things in `at` on the basis of "small
+enough" and never wrote the criterion down. The condition for going in is
+**bounded · printable · not identity**. That last one matters most — the moment a
+key both decides which candidate is selected and is treated as an observable
+direction, it can never move again, because the selected candidates are by
+definition equal on it. That is how the `file` axis died; see [[shapes-Dim]].
 
-`every_matchable_key_is_one_the_probe_declares` 钉住 `ITEMS ⊆ at`：声明一个匹配键
-却不吐它，会让每一个用它写坐标的 position 静默匹配不上。
+`every_matchable_key_is_one_the_probe_declares` pins `ITEMS ⊆ at`: declaring a
+matchable key that is never emitted makes every position written with it fail to
+match, silently.
 
-## `use_declaration` 的名字
+## Naming a `use_declaration`
 
-`gmr` 那一层的公开面全是 `pub use`，而 `use_declaration` 上没有 `name` 字段 ——
-它们一度**一个身份都没有**，五条候选在 roster 里挤成五个空串。
+`gmr`'s public surface is entirely `pub use`, and `use_declaration` has no `name`
+field — so those entries once had **no identity at all**, five candidates crammed
+into five empty strings in the roster.
 
-修法不是编一个兜底 ID（字节偏移会在上方任何一次编辑后改变，那是把 hair-trigger
-换个地方复发），是给它们真名字：字段 `argument`，也就是导入路径本身。
-`Table.names` 是按序试的身份字段链，跟 `shape_fields` 同一个形状。
+The fix was not to invent a fallback id (a byte offset changes on any edit above
+it, which is the same hair-trigger relocated), it was to give them real names: the
+`argument` field, that is, the import path itself. `Table.names` is a chain of
+identity fields tried in order, the same shape as `shape_fields`.
 
-**兜底的 ID 如果对无关编辑不稳定，丢弃反而更诚实。** 但这两个都不是答案 ——
-答案是补上表示层的缺口。
+**A fallback id that is unstable under unrelated edits is more honest thrown away.**
+But neither of those is the answer — the answer is closing the gap in the
+representation layer.
 
-## 变了要问什么
+## When this changes, ask
 
-往 `shape_fields` 或 `shape_kinds` 加东西 → 问那条判据：去掉它调用方还能编过吗？
-不能 → 它属于签名。能 → 它是噪声，加进去等于教人忽略这一维。
+Adding something to `shape_fields` or `shape_kinds` → apply the criterion: take it
+away, can the caller still compile? No → it belongs to the signature. Yes → it is
+noise, and adding it teaches people to ignore this axis.
 
-`NOISE` 加一项 → 说出「去掉这个属性，哪个调用方都不用动」的理由。说不出就别加。
+Adding an entry to `NOISE` → state the reason "removing this attribute means no
+caller has to move". If you cannot say it, do not add it.
 
-`members` 的展开方式变了（比如开始递归进嵌套类型）→ 全部 type 锚的 sig 变，
-而且是**判据变更不是事实变更**，走 `rebase --all`，别当成漂移接受。
+`members` changes how it expands (recursing into nested types, say) → the `sig` of
+every type anchor moves, and it is **a change of criteria, not a change of fact**:
+go through `rebase --all`, do not accept it as drift.
 
-这三个函数都在 `build.rs` 的语义闭包里，动一次就换一次探针版本、全仓 `rebase`。
-所以要改就一次改完 —— 见 [[probe-Derivation]]。
+All three of these functions are inside `build.rs`'s semantic closure — touch one
+and the probe version swaps and the whole repository needs a `rebase`. So if you
+are going to change them, change them all at once — see [[probe-Derivation]].

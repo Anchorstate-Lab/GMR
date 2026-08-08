@@ -2,16 +2,20 @@
 about: crates/gmr-core/src/memory.rs#Binding
 ---
 
-# 关系本身，和某一次写下这个关系
+# The relation itself, versus one occasion of writing it down
 
-`reference` 说的是「关于哪些锚」，句号。任何关于**某一次写下这个关系**的事
-（当时看到的是哪个内容版本、什么时候发生的）都是存储层的视图元数据，
-不是关系的一部分 —— 那些住在 `gmr-store` 的 `BindingRecord` 里。
+`reference` says "about which anchors", full stop. Anything about **one particular
+occasion of writing that relation down** — which content version was in view at
+the time, when it happened — is storage-layer view metadata, not part of the
+relation. Those live in `gmr-store`'s `BindingRecord`.
 
-分开的理由：关系是幂等的，同一份记忆绑同一批锚绑几次都是同一件事；
-而「哪次绑的、看到的哪版」是有序的、会累积的。混在一起，绑定就不再幂等。
+The reason for the split: the relation is idempotent — binding the same memory to
+the same anchors any number of times is one and the same fact — while "which time
+it was bound, which version was seen" is ordered and accumulates. Mix them and
+binding stops being idempotent.
 
-## 变了要问什么
+## When this changes, ask
 
-`Binding` 上出现了时间戳、版本、序号 → 它正在变成一条记录。问：这个字段
-在「重放一遍绑定」时应该保持不变吗？应该 → 它不属于这里。
+A timestamp, a version or a sequence number appears on `Binding` → it is turning
+into a record. Ask: should this field stay unchanged when the binding is replayed?
+If yes, it does not belong here.

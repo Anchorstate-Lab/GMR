@@ -2,16 +2,19 @@
 about: crates/gmr-core/src/probe.rs#address
 ---
 
-# 「世界说这里什么都没有」也要有地址
+# "The world says there is nothing here" needs an address too
 
-NotFound 也拿一个地址。不给的话，把导出规则从 A 换成 B 之后，
-两次 NotFound 会比较为相等 —— 于是「换了探针再看，还是没有」和
-「什么都没发生」在日志里长得一模一样。
+NotFound gets an address as well. Without one, after swapping the derivation rule
+from A to B, two NotFounds would compare equal — and "looked again with a
+different probe, still nothing" and "nothing happened at all" would be
+indistinguishable in the log.
 
-地址是拿 `derivation.version` 一起算的，所以同一个「什么都没有」在不同探针下
-是不同的地址。这就是 `should_still` 能分辨这两种情况的原因。
+The address is computed together with `derivation.version`, so the same "nothing
+here" has a different address under a different probe. That is why `should_still`
+can tell those two cases apart.
 
-## 变了要问什么
+## When this changes, ask
 
-有人想让 NotFound 走一个固定常量地址（省事、可比较）→ 问他：换了探针之后
-仍然没找到，你打算怎么跟「没换探针也没找到」区分开。
+Someone wants NotFound to use one fixed constant address (simpler, comparable) →
+ask them: after swapping the probe and still not finding it, how do you plan to
+tell that apart from not finding it without swapping the probe?

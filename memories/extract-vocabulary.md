@@ -5,27 +5,33 @@ about:
 watch: [sig, logic]
 ---
 
-# `at` 有两层，只有一层进语义闭包
+# `at` has two layers, and only one enters the semantic closure
 
-`ITEMS` 里的键是**可匹配的**：它决定一个坐标挑中哪个候选，所以它住在语义闭包里，
-改它就该换探针版本。`at` 里而不在 `ITEMS` 里的键（`form` · `surface` · `after`）
-只是**可观测**，仅此而已。
+The keys in `ITEMS` are **matchable**: they decide which candidate a coordinate
+selects, so they live in the semantic closure and changing them should swap the
+probe version. Keys in `at` but not in `ITEMS` (`form` · `surface` · `after`) are
+merely **observable**, and nothing more.
 
-两层不能重叠。**一个既参与挑选、又被当成轴去读的键，永远不可能动** ——
-被挑中的候选按定义在它上面是相等的。`file` 那一维就是这么死的。
+The two layers cannot overlap. **A key that both takes part in the selection and
+is read as an axis can never move** — the selected candidates are by definition
+equal on it. That is how the `file` axis died.
 
-`every_matchable_key_is_one_the_probe_declares` 守 `ITEMS ⊆ at`：
-声明一个探针根本不吐的可匹配键，会让每个写了它的 position 静默地匹配不上。
+`every_matchable_key_is_one_the_probe_declares` guards `ITEMS ⊆ at`: declaring a
+matchable key the probe never emits makes every position written with it fail to
+match, silently.
 
-## 为什么 `Vocabulary` 故意在闭包外面
+## Why `Vocabulary` is deliberately outside the closure
 
-它约束的是**哪些 shape 喂得动这个探针**，不是探针**推导出什么**。
-换一个 `handles` 扩展名不改变任何一次观测的结果，不该让全仓的 fact_address 翻篇。
+What it constrains is **which shapes can be fed to this probe**, not what the probe
+**derives**. Changing one `handles` extension changes the result of no observation
+whatsoever, and should not turn over every `fact_address` in the repository.
 
-代价是它跟候选表能各走各的：`Vocabulary` 写在这个文件里，候选是在闭包里面造的。
-分家的时候，某个 shape 会去读一个没有候选携带的 `obs.at.<键>` —— 规则 fault，
-或者更糟，那一维**永远不会动而没有人发现**。
+The price is that it can drift apart from the candidate table: `Vocabulary` is
+written in this file, while the candidates are built inside the closure. When they
+part ways, some shape goes to read an `obs.at.<key>` that no candidate carries — a
+rule fault, or worse, an axis that **can never move and nobody notices**.
 
-所以每个声明的键都得从一次真实运行里回来。那个测试按 `nth` 逐个把并列候选跑一遍
-再取并集 —— 原来它靠报告里的 `matches` 一次拿全，那个字段为了 98% 的体积被删了
-（见 [[survey-report]]）。**测试付这个成本，生产不付。**
+So every declared key has to come back from a real run. That test walks the tied
+candidates one at a time by `nth` and takes the union; it used to get them all at
+once from the report's `matches` field, which was deleted for 98% of the bulk (see
+[[survey-report]]). **The test pays that cost, production does not.**

@@ -10,29 +10,39 @@ anchors:
     shape: fingerprint
 ---
 
-# 判据本体
+# The criteria themselves
 
-`CLAUDE.md` 是立场与红牌的唯一出处。这两个锚盯的是它本身。
+`CLAUDE.md` is the single source of the positions and the red cards. These two
+anchors watch it directly.
 
-## 指纹变了要问什么
+## When the fingerprint changes, ask
 
-指纹变了只有两种可能：**owner 改了判据**，或者**有人改了不该改的**。
-两者在观测上长得一模一样，基底分不出来 —— 所以它把这一节交回给你，由你说是哪一种。
+There are only two possibilities: **the owner changed the criteria**, or **someone
+changed what they should not have**. Observationally the two are identical and the
+substrate cannot tell them apart — so it hands this section back to you, and you
+say which it was.
 
-上一轮腐坏的机制正是第三环：AI 写论证 → 推翻 owner 的决定 → 论证进文档 →
-下一轮读到文档把论证当判据。这两个锚盯的就是那一环。
+The mechanism that rotted last time round was exactly this third link: AI writes an
+argument → overturns the owner's decision → the argument goes into the document →
+the next round reads the document and takes the argument for a criterion. These two
+anchors watch that link.
 
-这一层是**正交于代码颗粒度的**。`crates/` 底下的锚盯的是某段代码有没有动；
-这两个锚盯的是「判断那段代码该不该动」的依据有没有动。前者变了要看代码，
-后者变了要重读全部记忆。
+This layer is **orthogonal to code granularity**. The anchors under `crates/` watch
+whether some piece of code moved; these two watch whether the basis for judging
+*whether that code should have moved* has moved. When the former changes, go look at
+the code. When the latter changes, go re-read every memory.
 
-## red-cards 报 missing 要问什么
+## When red-cards reports missing, ask
 
-「四、红牌」这一节在 `5f6b22d rewrite claude.md` 里就没了，而这个锚一直显示已经捕获
-到基线 —— 因为 `file` 命中、`heading` 没命中，探针退回文件里第一个 heading，
-而当时的捕获规则不看 `exact`，把那个错的章节钉成了基线。两个 doctrine 锚
-因此指纹完全相同、都指向第 7 行。
+The "四、红牌" section has been gone since `5f6b22d rewrite claude.md`, and this
+anchor showed itself as having captured a baseline the whole time — because `file`
+matched, `heading` did not, the probe fell back to the first heading in the file,
+and the capture rule of the day did not look at `exact`, so it pinned that wrong
+section as the baseline. That is why the two doctrine anchors had identical
+fingerprints and both pointed at line 7.
 
-规则顺序修好之后它才开始说实话。它现在报 `missing` 是**对的**，要问的是：
-红牌那一节是被有意删掉的，还是搬走了？前者就关掉这个锚，后者就把 heading 改对。
-在你回答之前它会一直报，这正是它该做的。
+It only started telling the truth once the rule order was fixed. Its `missing`
+report now is **correct**, and the question to answer is: was the red-cards section
+deliberately deleted, or was it moved? If deleted, close this anchor; if moved, fix
+the heading. Until you answer, it will keep reporting — which is exactly what it
+should do.

@@ -5,34 +5,41 @@ about:
 watch: [sig, logic]
 ---
 
-# 删掉一个词的那个 commit，同时给它立碑
+# The commit that deletes a word erects its headstone in the same breath
 
-锚只在**坐标动了**的时候把记忆递到人面前。而一篇记忆点着一个已经不存在的
-status、shape 或字段，坐标一动没动 —— `gmr check` 干干净净，那句话就那么错着。
+An anchor only puts a memory in front of a person when **the coordinate moved**. And
+a memory naming a status, shape or field that no longer exists moves no coordinate at
+all — `gmr check` is spotless, and that sentence just goes on being wrong.
 
-实测过一次：`e11bc73` 在同一个 commit 里删掉 `Body::Table`、重写了
-`delivery-standing.md` 的交付三条路，却没注意到同一段下面「`captured` 是安定的；
-`added` `count-moved` `section-gone` 都不是」整句已经指着不存在的东西。
-一篇里四个。全仓七个，散在四篇。
+Measured once: `e11bc73` deleted `Body::Table` and rewrote `delivery-standing.md`'s
+three delivery paths in the same commit, and did not notice that the sentence lower in
+the same section — "`captured` is settled; `added` `count-moved` `section-gone` are
+not" — was by then pointing at things that did not exist. Four in one note. Seven
+across the repository, spread over four notes.
 
-## 为什么是墓碑名单，不是「必须存在」的断言
+## Why a headstone list, and not an assertion that things must exist
 
-反过来写 —— 扫记忆里的反引号，凡不在当前词表里的就报 —— 零误报做不到。
-本仓库的记忆里有一百多个反引号 token：`file` `name` `logic` 是活的轴，
-`accept` `rebase` 是动词，`pub` `const` `use` 是 Rust。**散文里认不出哪个是词表引用。**
+The other way round — scan the backticks in the memories and report any that are not
+in the current vocabulary — cannot be made false-positive-free. There are over a
+hundred backticked tokens in this repository's memories: `file` `name` `logic` are
+live axes, `accept` `rebase` are verbs, `pub` `const` `use` are Rust. **In prose you
+cannot tell which one is a vocabulary reference.**
 
-墓碑名单反过来：只列**确实被删掉的词**，零误报。代价是删词那天要加一行 ——
-而那一天恰恰是窗口开着的时候，人正看着那个词消失。
+A headstone list inverts that: it lists only **words that really were deleted**, with
+no false positives. The price is one line on the day a word is deleted — and that day
+is exactly when the window is open, with a person watching the word disappear.
 
-## 为什么退出码是 0
+## Why the exit code is 0
 
-`moved-file` 在 [[shapes-Dim]] 里是**正确的**：那一整段就是在记录这一维为什么被删。
-一篇记忆本来就该点名它埋掉的东西。所以「提到退役词」不可判定 —— 报出来，
-让人分哪些是墓碑、哪些是漏改。跟 `long-hand` 同级。
+`moved-file` is **correct** in [[shapes-Dim]]: that whole section exists to record why
+that axis was deleted. A memory is supposed to name what it buried. So "mentions a
+retired word" is undecidable — report it, and let a person sort the headstones from
+the ones somebody forgot to update. Same tier as `long-hand`.
 
-`nothing_is_both_retired_and_shipping` 守着名单不跟词表打架：一个词同时在两边，
-会让一篇正确的记忆被报成过期。
+`nothing_is_both_retired_and_shipping` keeps the list from fighting the vocabulary: a
+word on both sides would get a correct memory reported as stale.
 
-`vocabulary()` 是 `#[cfg(test)]` 的 —— 「这个 build 有哪些词」这个问题只有那一条断言
-在问，生产路径上没有人需要它。做成 `pub` 会多一个没有调用方的公开面，
-而 gate 的 `-D warnings` 当场就会说。
+`vocabulary()` is `#[cfg(test)]` — "which words does this build have" is a question
+only that one assertion asks, and nothing on the production path needs it. Making it
+`pub` would add a public surface with no caller, and gate's `-D warnings` says so on
+the spot.

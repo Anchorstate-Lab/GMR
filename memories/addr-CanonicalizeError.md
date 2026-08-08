@@ -2,14 +2,18 @@
 about: crates/gmr-core/src/addr.rs#CanonicalizeError
 ---
 
-# 规范化失败是它自己的失败，不是 IO 的
+# Canonicalization fails for its own reasons, not for IO's
 
-规范化能因为**它自己的理由**失败：结构太深、数字不能往返。这跟 `io::Error` 不是一回事 ——
-后者只说明「接收字节的那一端拒绝了」。合并成一个错误类型，调用方就再也分不清
-「我给的值不合法」和「磁盘满了」。
+Canonicalization can fail because of **something it did itself**: the structure
+is too deep, a number does not round-trip. That is not what `io::Error` says —
+that one says only that the end receiving the bytes refused them. Merge the two
+into one error type and the caller can no longer tell "the value I handed you is
+invalid" from "the disk is full".
 
-## 变了要问什么
+## When this changes, ask
 
-新增的变体是不是仍然只描述**规范化本身**做不到的事？如果一个变体的成因来自外部
-（网络、文件、锁），它不属于这里。反过来，把某个变体去掉时要问：那种失败现在
-怎么表达 —— 是真的不可能了，还是被吞进了 panic。
+Does the new variant still describe only what **canonicalization itself** cannot
+do? If a variant's cause comes from outside — network, file, lock — it does not
+belong here. And when a variant is removed, ask the other direction: how is that
+failure expressed now — has it truly become impossible, or has it been swallowed
+into a panic?

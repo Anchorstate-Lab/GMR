@@ -5,35 +5,44 @@ about:
 watch: [sig, logic]
 ---
 
-# state 里只能住参与判据的字段
+# Only fields that take part in a criterion may live in the state
 
-捕获成功之后，顶层就是这五个：`position` · `baseline` · `now` · `v` · `status`。
-`baseline` 和 `now` 的字段集合恒等于全部 `Since` 维的 `field`，
-`v` 的键集合恒等于全部维名。多一个都不行。
+Once a capture has succeeded, the top level is these five: `position` · `baseline` ·
+`now` · `v` · `status`. The field sets of `baseline` and `now` are identical to the
+`field` of every `Since` axis, and the key set of `v` is identical to every axis
+name. Not one more.
 
-**`absent` 是唯一的例外，而那个例外本身是判据。** 没捕获到的状态只有
-`position` · `v` · `status` 三个键 —— 不是省略，是**不许有** `baseline`：
-`baseline` 的意思是「你确认过的那个读数」，坐标没命中时根本不存在这样一个读数，
-凭空写一个就是钉一个谎（见 [[shapes-expand]]）。所以「多一个都不行」和
-「absent 少两个」是同一条纪律的两面：state 里只住得下真的参与过判据的东西。
+**`absent` is the only exception, and that exception is itself the criterion.** A
+state that captured nothing has only `position` · `v` · `status` — this is not an
+omission, `baseline` is **not allowed**: `baseline` means "the reading you
+confirmed", and when the coordinate did not hit there is no such reading, so writing
+one out of thin air pins a lie (see [[shapes-expand]]). So "not one more" and "absent
+has two fewer" are two faces of the same discipline: the state can only house things
+that genuinely took part in a criterion.
 
-活证据在这个仓库里：`gmr read 'doctrine::red-cards' --json` 的 state 顶层就是
-那三个键。注意钉这一条的那个测试只走了捕获成功那条路
-（`settled_state()` 喂的是 `obs.exact = true`），absent 分支没有断言看着，
-这段话是这一侧唯一的记载。
+The live proof is in this repository: the top level of the state from
+`gmr read 'doctrine::red-cards' --json` is exactly those three keys. Note that the
+test pinning this walks only the captured path (`settled_state()` feeds
+`obs.exact = true`), so no assertion watches the absent branch and this paragraph is
+the only record on that side.
 
-理由在基底那边：`should_still` 比的是**整个 State 相等**
-（`crates/gmr-core/src/journal.rs`）。所以一个不参与任何守卫比较的字段，
-照样让两次读数的 state 不同 —— 于是章节每挪一行就写一条 `Transitioned`，
-而**没有任何一位亮**。`gmr edges` 会被灌满不是转换的转换，`gmr check` 却干净，
-因为交付看的是位向量。
+The reason lives over in the substrate: `should_still` compares **the whole State for
+equality** (`crates/gmr-core/src/journal.rs`). So a field taking part in no guard
+comparison still makes two readings' states differ — and a section moving down a line
+writes a `Transitioned` with **no bit lit at all**. `gmr edges` fills up with
+transitions that are not transitions while `gmr check` stays clean, because delivery
+looks at the bit vector.
 
-这不是假想。`facts.line` 差一点就这么进来：想让 `gmr status` 能显示章节在第几行，
-顺手把它塞进 `reading()` 但不给它一维。`body_lines` 同理，也砍了。
+This is not imagined. `facts.line` came within an inch of getting in: the wish was
+for `gmr status` to be able to show which line a section is on, so it went into
+`reading()` without being given an axis. `body_lines` was the same, and was cut too.
 
-**位置和体积这类只给人看的事实没有丢**：它们随观测进日志，`facts` 每次都在那儿。
-要给人看就从观测里取，不要住进状态。渲染的缺口用渲染补，不用状态补。
+**Position and size, the facts that are only for a human to look at, were not lost**:
+they ride into the log with the observation, and `facts` is there every time. If it
+is for a person to look at, take it from the observation; do not house it in the
+state. Fill a rendering gap with rendering, not with state.
 
-一个推论：想加一维，就得同时想清楚它比什么。`Now` 维（像 `missing`）不写
-`baseline`/`now`，所以它不进这两个集合 —— 它说的是「这份读数不是关于我的目标的」，
-判据见 [[shapes-Dim]]。
+A corollary: wanting to add an axis means working out at the same time what it
+compares against. `Now` axes (like `missing`) write no `baseline`/`now`, so they do
+not join those two sets — what they say is "this reading is not about my target"; the
+criterion is in [[shapes-Dim]].
