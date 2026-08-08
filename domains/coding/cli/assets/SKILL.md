@@ -1,6 +1,6 @@
 ---
 name: gmr
-description: Use in any repository containing a `.anchor/` directory. GMR grounds subjective notes to recomputable facts about the code and tells you when they've drifted. Trigger whenever `.anchor/anchors.toml` exists at the repo root, and especially before trusting an old note, comment, or doc that claims something about specific code is still true.
+description: Use in any repository containing a `.anchor/` directory. GMR grounds subjective notes to recomputable facts about the code and tells you when they've drifted. Trigger whenever `.anchor/` exists at the repo root, and especially before trusting an old note, comment, or doc that claims something about specific code is still true.
 ---
 
 # gmr — grounded memory runtime
@@ -13,7 +13,7 @@ An anchor watching a named symbol keeps a **vector**, one bit per axis: `missing
 
 ## Detection
 
-If `.anchor/anchors.toml` exists at the repo root, this repository is managed by `gmr`. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
+If `.anchor/` exists at the repo root, this repository is managed by `gmr`. Don't look for `.anchor/anchors.toml` specifically — most repos have none; a repo whose anchors all come from notes with full frontmatter never creates one, and that's normal, not broken. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
 
 ```
 gmr status --json
@@ -24,10 +24,10 @@ gmr check --json
 
 This is a loop you run yourself as part of normal work — not a human-only ritual you wait to be asked for:
 
-1. `gmr init` — creates `.anchor/`, installs bundled probes. Idempotent, safe to rerun.
+1. `gmr init` — creates `.anchor/`, installs bundled probes, and (if not already present) writes this skill doc to `.claude/skills/gmr/SKILL.md` in the project, or `~/.claude/skills/gmr/SKILL.md` with `--global`. Idempotent, safe to rerun — but it never overwrites a file that's already there, including this one, so re-running `init` after a `gmr` upgrade won't refresh a stale copy of this doc; delete it first if you want the bundled version back.
 2. `gmr anchor src/auth.ts#createSession -m "sessions expire after 30 minutes because ..."` — routes the coordinate to a probe, a shape and a position, writes the note, opens the anchor and binds the memory. Say nothing but the coordinate and it all follows; the note is left for you to write and reported as `unwritten` until you do.
-3. `gmr check` — did anything move on an axis a memory asked about? Exits 1 if so, and hands you the memories to re-read.
-4. `gmr accept <key> --why "..."` — you looked, and what it shows is the new baseline. Clears the vector, seals the reason.
+3. `gmr check` — did anything move on an axis a memory asked about? Exits 1 if so, and hands you the memories to re-read. It also flags two other conditions that make what it reports untrustworthy: anchors whose declaration no longer matches their live criteria (`gmr accept --all --criteria --why "..."` to take the new criteria), and anchors standing on a reading a different probe instrument took (`gmr rebase --all --why "..."` to recapture). Resolve those before trusting a quiet `check`.
+4. `gmr accept <key> --why "..."` — you looked, and what it shows is the new baseline. Clears the vector, seals the reason. If both a baseline drift and a criteria drift are pending at once, plain `--why` refuses and asks you to say which with `--baseline` or `--criteria` — they're different judgments and don't share one reason.
 5. `gmr status` — everything being watched, its axes, its memories. Reads only.
 
 `gmr anchor` with no coordinate opens whatever the declarations and notes already ask for — that is what a fresh clone needs, since the journal does not travel with the repository.
@@ -63,7 +63,7 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 ## Reading `gmr doctor --json`
 
 ```json
-{"anchors": N, "live": N, "absent": [...], "unseen": [...], "barren": [...], "stranded": [...], "content_versioning": bool, "provider_warnings": [{"provider": "...", "message": "..."}]}
+{"anchors": N, "live": N, "absent": [...], "unseen": [...], "barren": [...], "stranded": [...], "content_versioning": bool, "provider_warnings": [{"provider": "...", "message": "..."}], "notes": [{"note": "...", "code": "...", "detail": "...", "breaks": bool}]}
 ```
 
 - `barren` — anchors nobody has bound a note to yet.
@@ -71,6 +71,7 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 - `unseen` — outstanding failed attempts; check the probe or its credentials.
 - `stranded` — no transport here can resolve the declared probe (`gmr probes build`).
 - `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it will fail with "no content provider could version" until the underlying cause is fixed. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
+- `notes` — lint findings over every file under `memories/`, independent of the anchors above. `breaks: true` means the note names no live anchor at all; `breaks: false` is advisory. Codes: `unclaimed` (no frontmatter, so nothing observes whether this note still holds), `bare-key` (an `anchors:` entry binds to a key without declaring it, and nothing else in the repo declares that key either), `long-hand` (an explicit `anchors:` entry states exactly what `about: <coord>` would already route to — safe to simplify), `retired` (the note names a shape/axis word this build no longer has — stale, or a deliberate record of something buried; only you can tell which).
 
 ## Binding non-git content
 

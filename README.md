@@ -76,15 +76,24 @@ Run commands with `--repo <path>` (default is `.`).
 gmr --repo /path/to/project init
 ```
 
-This creates the local `.anchor/` layout and installs the built-in probe bundle.
-It does not create anchors or notes for you.
+This creates the local `.anchor/` layout, installs the built-in probe bundle,
+and (the first time only) writes a Claude Code skill doc to
+`.claude/skills/gmr/SKILL.md` — pass `--global` to write it to
+`~/.claude/skills/gmr/SKILL.md` instead. It does not create anchors or notes
+for you. Safe to rerun; it never overwrites a file that already exists.
 
-### 2. Write a note
+### 2. Anchor a coordinate and write the memory
 
-Create a note file in your project with frontmatter that identifies the thing you
-want to track.
+```sh
+gmr --repo /path/to/project anchor src/auth.ts#createSession \
+  -m "sessions expire after 30 minutes because ..."
+```
 
-Example:
+`anchor` routes the coordinate to a probe, a shape and a position, writes a
+note under `memories/` with that memory, opens the anchor, and binds the note
+to it — all in one step. Omit `-m` and the note is left for you to write,
+reported as `unwritten` until you do. Equivalently, you can hand-write the
+note yourself with the same frontmatter and run `gmr sync` to open it:
 
 ```md
 ---
@@ -94,52 +103,69 @@ about: src/auth.ts#createSession
 # Sessions must still be created inside the service boundary
 ```
 
-### 3. Open the note
+Run `gmr anchor` with no coordinate to open whatever the declarations and
+notes already ask for — what a fresh clone needs, since the journal doesn't
+travel with the repository.
+
+### 3. Check for drift
 
 ```sh
-gmr --repo /path/to/project sync
+gmr --repo /path/to/project check --json
 ```
 
-`sync` opens the anchors that notes declare and binds those notes to the
-corresponding anchors.
+`check` evaluates due anchors and exits 1 if any axis a note asked about
+moved, handing back the notes bound to what moved. It also flags anchors
+whose declaration no longer matches their live criteria, and anchors
+standing on a reading a different probe instrument took — resolve those
+(see `accept --criteria` and `rebase` below) before trusting a quiet result.
 
-### 4. Observe changes
+### 4. Accept what you find
 
 ```sh
-gmr --repo /path/to/project observe
+gmr --repo /path/to/project accept src/auth.ts#createSession --why "..."
 ```
 
-If the observable state behind an anchor has changed, `observe` exits with code
-1.
+You looked, and what `check` showed is the new baseline; `accept` clears the
+vector and seals the reason permanently into the journal. If a declaration
+change is pending too, pass `--baseline` or `--criteria` explicitly — they're
+separate judgments and don't share one reason.
 
-### 5. See moved notes
+### 5. See everything being watched
 
 ```sh
-gmr --repo /path/to/project pass --json
+gmr --repo /path/to/project status --json
 ```
 
-`pass` reports the notes bound to anchors that moved, so a consumer can act on them.
+`status` reports every anchor, its axes, and the notes bound to it. Reads only.
 
 ## Common commands
 
-- `init` — set up `.anchor/` and install bundled probes
-- `probes list` — list available probes
-- `sync` — open anchors declared by notes and align bindings
+The front door — six verbs `gmr --help` shows:
+
+- `init` — set up `.anchor/`, install bundled probes, write the skill doc
+- `anchor` — watch a coordinate and write the memory that goes with it
+- `status` — what is being watched, on which axes, with which memories
+- `check` — did anything move on an axis a memory asked about?
+- `accept` — take what an anchor now shows as the new baseline, or take a
+  changed declaration's criteria (`--baseline` / `--criteria` / `--all --criteria`)
+- `close` — retire an anchor permanently
+
+Everything else still works, reachable through `gmr help <name>`:
+
+- `probes list` / `probes build` — list or build available probes
+- `sync` — open anchors declared by notes and align bindings (what `anchor`
+  with no coordinate runs)
 - `open` — create an anchor directly by hand
-- `observe` — evaluate due anchors and detect movement
-- `pass` — return moved notes and bound anchors
-- `read` — inspect current anchor state
-- `reprobe` — change which probe an anchor uses
-- `retransition` — update transition rules for an anchor
-- `reterminal` — update a terminal status set
-- `rebase` — recapture anchors after probe or engine changes
-- `restate` — adjust anchor state with sealed rationale
+- `observe` / `pass` / `read` — evaluate due anchors, return moved notes, or
+  read raw anchor state
+- `reprobe` / `retransition` / `reterminal` / `rebase` / `restate` — hand-drive
+  one part of an anchor's criteria; each needs `--why`, sealed into the journal
 - `bind` / `reaffirm` / `cobound` — manage reference bindings
 - `link` — record a relationship between references
-- `close` — retire an anchor permanently
 - `edges` — read journal transitions since a point
 - `health` — inspect anchor liveness
-- `doctor` — find anchors that were never observed or have no note
+- `doctor` — anchors never observed, with no note, unresolvable, or notes
+  with lint problems (`unclaimed`, `bare-key`, `long-hand`, `retired`)
 - `requeue` — force an anchor back onto the due queue
 - `export` / `import` — snapshot and replay store contents
 
