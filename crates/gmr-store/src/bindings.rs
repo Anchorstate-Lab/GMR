@@ -3,13 +3,10 @@ use gmr_core::{AnchorKey, Binding, Ref, Seq, Version};
 
 use crate::error::StoreError;
 
-/// A `Binding` plus metadata about the write that recorded it, which is not
-/// part of the `reference x anchors` relation itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BindingRecord {
     pub binding: Binding,
     pub bound_version: Version,
-    /// The bound anchor's head at bind time; `None` unless exactly one anchor.
     pub bound_at_seq: Option<Seq>,
 }
 

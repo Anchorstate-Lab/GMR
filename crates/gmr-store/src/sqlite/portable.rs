@@ -25,8 +25,6 @@ use super::{db_err, decode_err};
 use crate::error::StoreError;
 use crate::sqlite::SqliteStore;
 
-/// The export format's own identity — independent of `schema::SCHEMA_VERSION`.
-/// Bump this only if a row shape below changes, not when the SQL schema does.
 pub const EXPORT_SCHEMA: &str = "gmr.store-export.v1";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -38,8 +36,6 @@ pub struct PortableSummary {
     pub sealed: usize,
 }
 
-/// One line of the export, tagged so a single stream can carry all five
-/// tables plus the manifest without a second file format.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "table", rename_all = "snake_case")]
 enum Line {
@@ -96,11 +92,6 @@ fn write_line(out: &mut impl Write, line: &Line) -> Result<(), StoreError> {
         .map_err(|e| StoreError::io(format!("cannot write the export: {e}")))
 }
 
-/// `expected` is what the row held when it was written; `landed` is where it
-/// came to rest just now. They can only differ if the target was not
-/// actually empty — the pre-flight count check makes that a bug, not a
-/// possibility, so this turns it into a loud error instead of a silently
-/// misaligned `Still.ref_entry` or `bindings.bound_at_seq`.
 fn expect_seq(table: &str, expected: i64, landed: i64) -> Result<(), StoreError> {
     if expected == landed {
         return Ok(());
@@ -111,10 +102,6 @@ fn expect_seq(table: &str, expected: i64, landed: i64) -> Result<(), StoreError>
 }
 
 impl SqliteStore {
-    /// Snapshot the journal, bindings, links and sealed rationale as JSONL.
-    /// Table order is fixed (journal, bindings, binding_anchors, links,
-    /// sealed) so a later `import_jsonl` sees every foreign key before the
-    /// row that names it.
     pub async fn export_jsonl(&self, out: &mut impl Write) -> Result<PortableSummary, StoreError> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let mut summary = PortableSummary::default();
@@ -217,11 +204,6 @@ impl SqliteStore {
         Ok(summary)
     }
 
-    /// Replay a JSONL export. Refuses anything but a store with no journal,
-    /// bindings, binding_anchors, links or sealed rows: this recreates
-    /// history at the exact seq values it was written at, which only holds
-    /// when nothing occupies those seqs yet. Atomic — a bad line anywhere
-    /// leaves the store exactly as empty as it started.
     pub async fn import_jsonl(&self, input: impl BufRead) -> Result<PortableSummary, StoreError> {
         for (table, sql) in [
             ("journal", "SELECT COUNT(*) FROM journal"),
@@ -300,8 +282,6 @@ impl SqliteStore {
                     summary.bindings += 1;
                 }
                 Line::BindingAnchors { seq, anchor } => {
-                    // `seq` is trusted as-is: the Bindings arm above already
-                    // proved the row it names landed at this exact seq.
                     sqlx::query("INSERT INTO binding_anchors (seq, anchor) VALUES (?1, ?2)")
                         .bind(seq)
                         .bind(&anchor)

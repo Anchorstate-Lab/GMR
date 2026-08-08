@@ -163,9 +163,6 @@ async fn journal_refuses_a_stale_fencing_token<J: Journal>(j: &J) {
 
     j.append(&key, &entry, Fence::Held(8)).await.unwrap();
 
-    // This anchor is lease-managed. Slipping in another observation from the
-    // side is exactly the second writer the lease exists to prevent. Author
-    // revisions are exempt because they are not observations.
     let err = j.append(&key, &entry, Fence::Unleased).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Constraint);
     assert_eq!(err.code, ErrorCode::LeaseManagedObservation);
@@ -479,9 +476,6 @@ async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
         "retired anchors should not be dequeued"
     );
 
-    // If a retired anchor returns, epoch must not move backward. The journal
-    // only accepts monotonic tokens and remembers the highest one seen for this
-    // anchor; if the queue starts over, every new token will be rejected.
     q.enqueue(&a, t0 + Duration::seconds(1_000)).await.unwrap();
     let reborn = q
         .due(t0 + Duration::seconds(1_000), Duration::seconds(60), 10)

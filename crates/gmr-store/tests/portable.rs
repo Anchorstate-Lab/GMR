@@ -43,8 +43,6 @@ fn obs(shape: &str) -> Observation {
     }
 }
 
-/// One anchor exercising every table: an open, a still (which carries a real
-/// `ref_entry` seq), a revise sealing a rationale, one binding and one link.
 async fn populated() -> gmr_store::sqlite::SqliteStore {
     let store = gmr_store::sqlite::open_in_memory().await.unwrap();
     let key = AnchorKey::new("a::one");
@@ -187,8 +185,6 @@ async fn import_refuses_a_file_with_no_manifest_row() {
     assert_eq!(err.kind, ErrorKind::Corrupt);
 }
 
-/// The whole point: export must not go through gmr-core's `Entry` type, so a
-/// body shape this build's enum cannot parse must still export cleanly.
 #[tokio::test]
 async fn export_does_not_require_the_body_to_match_this_builds_entry_enum() {
     let store = gmr_store::sqlite::open_in_memory().await.unwrap();

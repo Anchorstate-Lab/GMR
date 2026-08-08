@@ -68,9 +68,6 @@ async fn the_log_refuses_rewriting_itself() {
     }
 }
 
-/// The mirror of the two tests around it: retain and cadence say how an anchor
-/// is run, not what it judged, so overwriting one is the supported operation
-/// rather than the blocked one.
 #[tokio::test]
 async fn run_settings_are_meant_to_be_overwritten() {
     use gmr_core::{Retain, RunSettings};

@@ -19,17 +19,10 @@ pub enum Disposition {
     Retire,
 }
 
-/// Implementations must guarantee: **fences issued for one anchor increase
-/// strictly monotonically, and retiring does not reset the counter.** The journal
-/// uses it as a high-water mark to block stale-lease writes; going backwards once
-/// wedges that anchor forever.
 #[async_trait]
 pub trait Queue: Send + Sync {
-    /// Resets `anchor`: due now, lease and parked state cleared.
     async fn enqueue(&self, anchor: &AnchorKey, due: DateTime<Utc>) -> Result<(), StoreError>;
 
-    /// Inserts only if absent. `Ok(false)` leaves an existing row untouched,
-    /// backoff and park included.
     async fn ensure_enqueued(
         &self,
         anchor: &AnchorKey,
@@ -43,11 +36,6 @@ pub trait Queue: Send + Sync {
         limit: usize,
     ) -> Result<Vec<Ticket>, StoreError>;
 
-    /// Take the lease on one specific anchor, due or not.
-    ///
-    /// Hand-triggered observations come through here — otherwise they can only
-    /// write past the token, which is the very second writer the lease prevents.
-    /// Not getting it means someone else holds it, so let them write.
     async fn lease(
         &self,
         anchor: &AnchorKey,
