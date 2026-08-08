@@ -1,11 +1,12 @@
-# 脚本探针的声明。四个抽取器（ast-map · addr-map · name-map · prose-map）
-# 不在这里 —— 它们链进二进制，身份由语义闭包挣得，`probes list` 印得出来。
+# Script probe declarations. The four extractors (ast-map · addr-map · name-map · prose-map)
+# are not listed here — they are built into the binary, and their identity is earned by their semantic closure.
+# `probes list` prints them.
 #
-# 这里只剩「不是抽取器」的那一类：shell 出去问别的程序的东西。
+# This file contains only the non-extractor kind: shell probes that ask external programs.
 
-# 这一个不走 coord，而且它 shell 出去调 cargo 和 jq —— 它报告的是关于宿主
-# 的事实，不是关于仓库的事实。env_from_host 让传输层把 verifiability 降级
-# 成 Open，那正是它应得的。
+# This probe does not use coord and shells out to cargo and jq. It reports facts about the host,
+# not about the repository. env_from_host tells the transport layer to downgrade verifiability to Open,
+# which is exactly what this probe deserves.
 [probe.test-roster]
 stage = { probe = "domains/coding/probes/test-roster.sh" }
 entrypoint = "probe"

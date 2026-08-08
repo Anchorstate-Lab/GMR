@@ -1,10 +1,10 @@
-# 判据声明跟着 git；日志和制品不跟。
+# Criteria declarations are tracked by git; logs and build artifacts are not.
 #
-# 日志只增不改：每次 observe 都追加条目，那正是设计要的，也正是一个被提交的
-# 文件不该有的样子。`sync` 能从声明重建它，但重建捕获的是**此刻**的基准，
-# 不是当初那次 —— 日志里的历史重建不回来。
+# Logs are append-only: every observe appends an entry. That is the design, and it is exactly
+# the shape that should not be committed. `sync` can rebuild logs from declarations, but it
+# captures the current baseline, not the original run — historical replay from logs is not possible.
 #
-# 制品是本机编译出来的，带着 platform 和二进制哈希，跨平台不通用。
+# Artifacts are locally built and carry platform-specific binary hashes, so they are not portable.
 *
 !.gitignore
 !anchors.toml
