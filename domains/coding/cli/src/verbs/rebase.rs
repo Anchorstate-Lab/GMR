@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Runtime};
+use gmr::Runtime;
 
 use crate::error::CliError;
 use crate::verbs::sealed;
@@ -16,7 +16,11 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let keys = match all {
-        true => swapped(rt).await?,
+        true => crate::verbs::swapped(rt, &rt.anchors().await?)
+            .await?
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect(),
         false => {
             let mut out = Vec::new();
             for arg in &keys {
@@ -57,21 +61,4 @@ pub async fn run(
         sealed(&revised.context, &revised.rationale);
     }
     Ok(0)
-}
-
-/// Anchors whose last reading was taken by a rule this build no longer has.
-async fn swapped(rt: &Runtime) -> Result<Vec<AnchorKey>, CliError> {
-    let mut out = Vec::new();
-    for view in rt.read_all().await? {
-        if view.closed {
-            continue;
-        }
-        let (Some(was), Ok(now)) = (&view.derivation, rt.instrument(&view.anchor.probe)) else {
-            continue;
-        };
-        if was.version != now.version {
-            out.push(view.key.clone());
-        }
-    }
-    Ok(out)
 }

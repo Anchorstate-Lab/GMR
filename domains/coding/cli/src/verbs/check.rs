@@ -48,6 +48,7 @@ pub async fn run(
     let catalog = Catalog::load(root)?;
     let subs = Subscriptions::load(root, &catalog)?;
     let drifted = drifted(rt, root, catalog, &keys).await?;
+    let swapped = super::swapped(rt, &keys).await?;
 
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<String>)> = Vec::new();
     let mut unclaimed = Vec::new();
@@ -85,8 +86,11 @@ pub async fn run(
         ));
     }
 
-    let wrong =
-        !handed.is_empty() || !unclaimed.is_empty() || !unseen.is_empty() || !drifted.is_empty();
+    let wrong = !handed.is_empty()
+        || !unclaimed.is_empty()
+        || !unseen.is_empty()
+        || !drifted.is_empty()
+        || !swapped.is_empty();
 
     if json {
         println!(
@@ -103,6 +107,9 @@ pub async fn run(
                 })).collect::<Vec<_>>(),
                 "criteria_drifted": drifted.iter().map(|(k, f)| serde_json::json!({
                     "anchor": k, "facets": f
+                })).collect::<Vec<_>>(),
+                "instrument_swapped": swapped.iter().map(|(k, v)| serde_json::json!({
+                    "anchor": k, "versions": v
                 })).collect::<Vec<_>>(),
             })
         );
@@ -127,7 +134,12 @@ pub async fn run(
     super::observe::report_unclaimed(&unclaimed);
 
     match (handed.len(), quiet) {
-        (0, 0) if unseen.is_empty() && unclaimed.is_empty() && drifted.is_empty() => {
+        (0, 0)
+            if unseen.is_empty()
+                && unclaimed.is_empty()
+                && drifted.is_empty()
+                && swapped.is_empty() =>
+        {
             println!("{} anchors, nothing moved.", keys.len())
         }
         (0, n) if n > 0 => println!(
@@ -154,6 +166,21 @@ pub async fn run(
             println!("  != {key}  ({facets})");
         }
         println!("\n     gmr accept --all --criteria --why '...'");
+    }
+
+    if !swapped.is_empty() {
+        println!(
+            "\n{} of {} stand on a reading a different instrument took.\n\
+             The stored baseline and what this build measures are not comparable, so\n\
+             an axis above may be quiet because nothing moved, or loud because the\n\
+             probe changed — this run cannot tell those apart.",
+            swapped.len(),
+            keys.len()
+        );
+        for (key, versions) in &swapped {
+            println!("  ~= {key}  ({versions})");
+        }
+        println!("\n     gmr rebase --all --why '...'");
     }
     Ok(i32::from(wrong))
 }

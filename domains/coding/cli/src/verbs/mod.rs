@@ -111,6 +111,33 @@ pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<Str
         .collect())
 }
 
+pub(crate) async fn swapped(
+    rt: &Runtime,
+    keys: &[AnchorKey],
+) -> Result<Vec<(AnchorKey, String)>, CliError> {
+    let mut out = Vec::new();
+    for key in keys {
+        let view = rt.read(key).await?;
+        if view.closed {
+            continue;
+        }
+        let (Some(was), Ok(now)) = (&view.derivation, rt.instrument(&view.anchor.probe)) else {
+            continue;
+        };
+        if was.version != now.version {
+            out.push((
+                key.clone(),
+                format!(
+                    "{} -> {}",
+                    &was.version.as_str()[..12],
+                    &now.version.as_str()[..12]
+                ),
+            ));
+        }
+    }
+    Ok(out)
+}
+
 pub(crate) fn sealed(context: &ContentHash, rationale: &ContentHash) {
     println!(
         "  context   {} (captured by substrate, cannot be forged)",
