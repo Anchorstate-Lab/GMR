@@ -2,6 +2,7 @@ target/
 
 # codegraph tool index (local, rebuildable)
 .codegraph/
+.vscode/
 
 __pycache__/
 
