@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 const VERSION: &str = env!("GMR_EXTRACTOR_ADDR");
 
-const ITEMS: [&str; 3] = ["path", "name", "fingerprint"];
+pub(crate) const ITEMS: [&str; 3] = ["path", "name", "fingerprint"];
 
 fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
     let Ok(bytes) = std::fs::read(path) else {

@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 const VERSION: &str = env!("GMR_EXTRACTOR_NAME");
 
-const ITEMS: [&str; 2] = ["name", "scope"];
+pub(crate) const ITEMS: [&str; 2] = ["name", "scope"];
 
 #[derive(Default)]
 struct Seen {

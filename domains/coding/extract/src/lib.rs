@@ -199,6 +199,39 @@ mod tests {
         },
     ];
 
+    /// `at` has two tiers and only one of them is `ITEMS`. A key in `ITEMS`
+    /// is matchable: it decides which candidate a coordinate picks, so it
+    /// lives inside the semantic closure. A key in `at` but not `ITEMS` is
+    /// observable and nothing more. Declaring a matchable key the probe never
+    /// emits would make every position naming it silently unmatchable.
+    #[test]
+    fn every_matchable_key_is_one_the_probe_declares() {
+        for (v, items) in [
+            (ast_map(), &ast::ITEMS[..]),
+            (named("addr-map"), &addr::ITEMS[..]),
+            (named("name-map"), &name::ITEMS[..]),
+            (named("prose-map"), &prose::ITEMS[..]),
+        ] {
+            for key in items {
+                assert!(
+                    v.at.contains(key),
+                    "`{}` matches on `{key}` but does not declare it",
+                    v.name
+                );
+            }
+        }
+    }
+
+    fn named(name: &str) -> &'static Vocabulary {
+        vocabularies()
+            .find(|v| v.name == name)
+            .unwrap_or_else(|| panic!("`{name}` is not linked in"))
+    }
+
+    fn ast_map() -> &'static Vocabulary {
+        named("ast-map")
+    }
+
     #[test]
     fn every_key_a_probe_declares_comes_back_from_a_real_run() {
         let reg = registry();

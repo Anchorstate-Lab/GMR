@@ -1,7 +1,6 @@
 ---
 about:
   - domains/coding/cli/src/delivery.rs#delivers
-  - domains/coding/cli/src/shapes.rs#settled_of
 watch: [sig, logic]
 ---
 

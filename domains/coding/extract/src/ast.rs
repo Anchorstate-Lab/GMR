@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 const VERSION: &str = env!("GMR_EXTRACTOR_AST");
 
-const ITEMS: [&str; 7] = ["file", "kind", "vis", "name", "callee", "member", "shape"];
+pub(crate) const ITEMS: [&str; 7] = ["file", "kind", "vis", "name", "callee", "member", "shape"];
 
 fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")

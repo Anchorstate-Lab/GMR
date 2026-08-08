@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 const VERSION: &str = env!("GMR_EXTRACTOR_PROSE");
 
-const ITEMS: [&str; 3] = ["file", "heading", "fingerprint"];
+pub(crate) const ITEMS: [&str; 3] = ["file", "heading", "fingerprint"];
 
 fn heading(line: &str) -> Option<(usize, String)> {
     let t = line.trim_start();
