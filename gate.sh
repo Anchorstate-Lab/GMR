@@ -1,10 +1,21 @@
 #!/bin/sh
-# **基底的门禁。** 这个脚本原样就是 CI。
+# **类型和测试表达不了的恒等式，唯一的住处。** 这个脚本原样就是 CI。
 #
 #   sh gate.sh
 #
-# 它只查基底与电池,**不碰任何锚**。锚报出的状态是要有人来看的信号，
-# 不是构建失败 —— 门禁替它判，就等于把语义搬进了工具。
+# 恒等式 = 一次为真、应当永远为真的关系。它不需要有人接收信号 —— 所以它不该
+# 住在散文、注释或记忆里，那三处都要等一个人读到才生效，而恒等式被破坏的那一
+# 刻没有任何东西会动。恒等式有三个家，按「谁能表达它」分：
+#
+#   类型      能让它不可能被违反的，优先（同一个值只存一份，就没有两份可分家）
+#   测试      Rust 能判定的，住 `cargo test`，紧挨着它保护的那段代码
+#   gate.sh   跨包的依赖事实、文件层面的文本纪律 —— 前两者都够不着的
+#
+# 这里只有两节：拓扑、纪律。加一条新的恒等式先问前两个家收不收；都不收才进来。
+#
+# 它查的是**源码树**，**不碰任何锚**。锚报出的状态是要有人来看的信号，不是
+# 构建失败 —— 门禁替它判，就等于把语义搬进了工具。判据漂了这类关于**运行时
+# 存储**的恒等式归 `gmr check`，不归这里。
 set -e
 cd "$(dirname "$0")"
 
@@ -19,6 +30,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 echo "── test"
 cargo test --workspace
+
+echo
+echo "══ 拓扑"
 
 # 纯度不靠纯脸/脏脸的 trait 分裂,由 crate 边界扛。但依赖清单是一条
 # **外部检查**,不是类型约束 —— 不在这里查,就没人会查。
@@ -119,4 +133,37 @@ fi
 cargo build -p gmr --no-default-features
 
 echo
-echo "gate: 基底全绿"
+echo "══ 纪律"
+
+# 注释和记忆各存一份必然分家，而记忆有锚盯着、注释没有。清区只增不减：
+# 清完一个包就往 CLEAN 加一行，那一行是一次真实清理的凭证。不做 diff 比对 ——
+# diff 要一个 base ref，CI 里那是状态；清区名单零状态、单调。
+#
+# EXEMPT 是 CLAUDE.md 写明的两个例外里的第二个：clap 的 `///` 是 --help 的
+# 正文，是给用户看的字符串，只是碰巧用了注释语法。第一个例外 `//!` 说的是
+# 「这个文件是什么」，直接在判据里放行。
+echo "── 清区里零注释"
+python3 - <<'COMMENTS' || exit 1
+import pathlib, subprocess, sys
+
+CLEAN = ["crates/gmr-core", "crates/gmr-content", "crates/gmr"]
+EXEMPT = ["domains/coding/cli/src/cli.rs"]
+
+files = subprocess.run(["git", "ls-files", "*.rs"],
+                       capture_output=True, text=True, check=True).stdout.split()
+bad = []
+for f in files:
+    if f in EXEMPT or not any(f.startswith(d + "/") for d in CLEAN):
+        continue
+    for n, line in enumerate(pathlib.Path(f).read_text().splitlines(), 1):
+        s = line.lstrip()
+        if s.startswith("//") and not s.startswith("//!"):
+            bad.append(f"{f}:{n}  {s[:60]}")
+if bad:
+    print("gate: 清区里出现了注释 —— 要说的话锚成记忆",
+          *bad, sep="\n  ", file=sys.stderr)
+    sys.exit(1)
+COMMENTS
+
+echo
+echo "gate: 恒等式全绿"
