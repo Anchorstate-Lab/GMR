@@ -12,13 +12,6 @@ use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Transport}
 
 use crate::closure;
 
-/// Runs a file in the user's own repository. Identity is that file's content,
-/// hashed at call time — the script does not get to say what it is.
-///
-/// [`Verifiability::Open`] always: the interpreter that reads the script is not
-/// in the hash, and the environment is inherited rather than cleared. Clearing
-/// it would only mean the user cannot find their own python; the honest move is
-/// to inherit and say the closure is open.
 pub struct Script {
     kind: Kind,
     cwd: PathBuf,
@@ -210,7 +203,6 @@ mod tests {
         assert_eq!(facts.as_value()["sha"], json!("abc"));
     }
 
-    /// The script does not get to say what it is.
     #[tokio::test]
     async fn the_identity_is_the_file_and_one_byte_moves_it() {
         let w = World::new();
@@ -244,8 +236,6 @@ mod tests {
         );
     }
 
-    /// Moving code between files changes nothing about the bytes; it does change
-    /// what runs.
     #[test]
     fn moving_a_line_between_files_moves_the_version() {
         let w = World::new();
@@ -314,7 +304,6 @@ mod tests {
         assert_eq!(facts.as_value()["at"], json!({ "env": "staging" }));
     }
 
-    /// Clearing it would only mean the user cannot find their own interpreter.
     #[tokio::test]
     async fn the_environment_is_inherited() {
         let w = World::new();

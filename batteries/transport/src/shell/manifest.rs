@@ -28,17 +28,10 @@ impl Platform {
     }
 }
 
-/// What this machine has, and what rule it stands for. **Two hashes, two jobs:**
-/// [`Manifest::address`] is the byte-exact identity of these files here, which
-/// moves with the platform and is what verification checks;
-/// [`Manifest::derivation`] is what the publisher earned from sources, is the
-/// same everywhere, and is what the journal records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     pub schema: String,
     pub kind: Kind,
-    /// The rule these bytes implement, earned from its sources by whoever
-    /// published it. Two platforms' artifacts of one probe share it.
     pub derivation: ProbeVersion,
     pub entrypoint: String,
     #[serde(default)]
@@ -51,11 +44,8 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// Where it lives and what it must hash to. Local by design.
     pub fn address(&self) -> ProbeVersion {
         let value = serde_json::to_value(self).expect("a manifest always serialises");
-        // Manifest's shape is fixed by its type, not by data — its nesting depth
-        // is bounded regardless of how many files/args/env entries it holds.
         let hash =
             content_hash_of(&value).expect("a Manifest never exceeds canonicalization limits");
         ProbeVersion::new(hash.into_inner())
@@ -108,9 +98,6 @@ mod tests {
         );
     }
 
-    /// Which is exactly why it cannot be the derivation: the same rule built for
-    /// two machines would otherwise read as two rules, and no journal could be
-    /// compared against another.
     #[test]
     fn the_platform_is_part_of_the_address() {
         let mut other = manifest("bin/p", "a");

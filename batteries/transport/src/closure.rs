@@ -2,11 +2,6 @@ use std::path::Path;
 
 use gmr_core::{ProbeVersion, content_hash_of_bytes};
 
-/// A file hashes to its content; a directory to every file under it, path and
-/// bytes alike, so moving code between two of its files still moves the version.
-///
-/// `None` means the path could not be read — a caller that cannot say what a
-/// rule is must not claim one.
 pub fn of_path(path: &Path) -> Option<ProbeVersion> {
     let mut acc = Vec::new();
     absorb(path, path, &mut acc)?;

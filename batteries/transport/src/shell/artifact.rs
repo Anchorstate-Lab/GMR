@@ -12,16 +12,12 @@ pub const INSTALL_FILE: &str = "installed.json";
 
 pub const INSTALL_SCHEMA: &str = "gmr.probe-install.v2";
 
-/// Probe name -> the artifact installed for it here. The name travels; the
-/// artifact does not. Self-describing, so no assembly has to thread a table in.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InstallIndex {
     schema: String,
     installed: BTreeMap<String, String>,
 }
 
-/// Content-addressed probe store: `<root>/<version>/manifest.json` plus the
-/// files named by the manifest.
 pub struct Artifacts {
     root: PathBuf,
 }
@@ -34,8 +30,6 @@ fn bad(m: impl Into<String>) -> ArtifactError {
     ArtifactError(m.into())
 }
 
-/// A verified artifact. Holding one means the manifest and every listed file
-/// matched byte-for-byte.
 pub struct Resolved {
     pub manifest: Manifest,
     pub root: PathBuf,
@@ -75,7 +69,6 @@ impl Artifacts {
         Ok(index)
     }
 
-    /// Overwrites: refusing would leave this machine on the old binary forever.
     pub fn install(&self, name: &ProbeName, built: &ProbeVersion) -> Result<(), ArtifactError> {
         let mut index = self.index()?;
         index
@@ -88,7 +81,6 @@ impl Artifacts {
             .map_err(|e| bad(format!("cannot write the install index: {e}")))
     }
 
-    /// `None` is a real answer: a good name, simply not installed here.
     pub fn installed(&self, name: &ProbeName) -> Result<Option<ProbeVersion>, ArtifactError> {
         Ok(self
             .index()?
@@ -106,10 +98,6 @@ impl Artifacts {
             .collect())
     }
 
-    /// Read the manifest, verify its own hash, then verify every file it names.
-    ///
-    /// Any mismatch is refused. An artifact with mismatched content is not an
-    /// old version; it is a derivation rule we cannot name.
     pub fn resolve(&self, name: &ProbeName) -> Result<Resolved, ArtifactError> {
         let version = &self.installed(name)?.ok_or_else(|| {
             bad(format!(
@@ -184,9 +172,6 @@ fn verify(dir: &Path, rel: &str, want: &ContentHash) -> Result<(), ArtifactError
     Ok(())
 }
 
-/// Publish a directory as an artifact, addressed by its manifest hash. The
-/// `derivation` it stands for is the publisher's to state: only they have the
-/// sources it was earned from.
 pub fn publish(
     artifacts: &Artifacts,
     from: &Path,

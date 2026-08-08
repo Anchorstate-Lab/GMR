@@ -11,22 +11,13 @@ use serde_json::Value;
 
 use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 
-/// `(cwd, position, params) -> facts | null`. Same contract the subprocess
-/// probes answer on stdout, minus the process.
 pub type Extract = dyn Fn(&Path, &Value, &Value) -> Result<Value, String> + Send + Sync;
 
-/// One probe, and the hash of everything that can change what it returns.
 pub struct Registered {
     pub version: ProbeVersion,
     pub extract: Arc<Extract>,
 }
 
-/// Runs probes linked into this binary. Which probes exist, and what each one's
-/// closure hashes over, are the assembly's to state — this only carries them.
-///
-/// [`Verifiability::Closed`] holds by construction: the version handed to
-/// [`Transport::resolve`] belongs to the very function [`Transport::invoke`]
-/// then calls.
 pub struct InProcess {
     kind: Kind,
     cwd: PathBuf,
@@ -89,9 +80,6 @@ impl Transport for InProcess {
         let params = probe.params.clone();
         let work = tokio::task::spawn_blocking(move || extract(&cwd, &position, &params));
 
-        // Giving up waiting is all we can do: a blocking thread cannot be
-        // cancelled, so it runs to completion unobserved. That is the price of
-        // not paying for a process boundary, and it belongs in the open.
         let joined = tokio::time::timeout(self.timeout, work)
             .await
             .map_err(|_| {
@@ -105,8 +93,6 @@ impl Transport for InProcess {
                 )
             })?;
 
-        // A panic here would otherwise take the whole process with it, and a
-        // crash is not an entry. It is our failure, and it gets recorded as one.
         let facts = joined
             .map_err(|e| {
                 ProbeError::with_code(
@@ -194,7 +180,6 @@ mod tests {
         assert!(e.message.contains("no such credential"), "{}", e.message);
     }
 
-    /// Without this the whole CLI dies and nothing is written down.
     #[tokio::test]
     async fn a_panic_is_recorded_not_propagated() {
         let t = transport("p", || panic!("index out of bounds"));

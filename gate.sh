@@ -157,7 +157,7 @@ import pathlib, subprocess, sys
 
 CLEAN = ["crates/gmr-core", "crates/gmr-content", "crates/gmr", "crates/gmr-probe",
          "crates/gmr-expr", "batteries/survey", "batteries/provider",
-         "domains/coding/extract"]
+         "batteries/transport", "domains/coding/extract"]
 EXEMPT = ["domains/coding/cli/src/cli.rs"]
 
 files = subprocess.run(["git", "ls-files", "*.rs"],

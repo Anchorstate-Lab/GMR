@@ -17,8 +17,6 @@ use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Transport}
 pub use artifact::{ArtifactError, Artifacts, publish};
 pub use manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
-/// Executes only artifacts. The anchor names a probe; the store says which
-/// artifact stands for that name here, verified byte for byte before it runs.
 pub struct Shell {
     kind: Kind,
     cwd: PathBuf,
@@ -71,8 +69,6 @@ impl Transport for Shell {
     }
 
     async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Outcome, ProbeError> {
-        // Resolution failure is unusable: if we cannot name the derivation rule,
-        // we should not run it.
         let resolved = self.artifacts.resolve(&probe.name).map_err(|e| {
             ProbeError::with_code(
                 gmr_core::ReasonClass::Unusable,
@@ -85,8 +81,6 @@ impl Transport for Shell {
         command
             .args(&resolved.manifest.args)
             .current_dir(&self.cwd)
-            // Start with defaults, then let the manifest override them. What the
-            // manifest declares is what runs, and it enters the version.
             .env_clear()
             .env("LC_ALL", "C")
             .env("LANG", "C")
@@ -176,7 +170,6 @@ mod tests {
     use gmr_probe::ProbeErrorCode;
     use serde_json::json;
 
-    /// Two hashes for one artifact: where it lives, and what rule it is.
     struct Published {
         address: ProbeVersion,
         derivation: ProbeVersion,
@@ -214,7 +207,6 @@ mod tests {
             self.publish_full(body, &[], env)
         }
 
-        /// Publish an sh script as a probe.
         fn publish(&self, body: &str, args: &[&str]) -> Published {
             self.publish_full(body, args, &[])
         }
@@ -275,8 +267,6 @@ mod tests {
         assert_eq!(facts.as_value()["count"], json!(2));
     }
 
-    /// The journal gets the rule, not the file. Two machines building one probe
-    /// hold different bytes and must still be comparable.
     #[tokio::test]
     async fn the_version_is_the_rule_not_the_bytes_that_implement_it() {
         let w = World::new();
@@ -336,7 +326,6 @@ mod tests {
         assert_eq!(e.code, ProbeErrorCode::ArtifactInvalid);
     }
 
-    /// Our failure, not the world's absence; it must never fold into the state.
     #[tokio::test]
     async fn a_probe_that_is_not_installed_is_our_failure() {
         let w = World::new();
@@ -471,7 +460,6 @@ mod tests {
         );
     }
 
-    /// Otherwise an upgrade leaves this machine running the old binary forever.
     #[test]
     fn reinstalling_a_name_repoints_it() {
         let w = World::new();
@@ -500,8 +488,6 @@ mod tests {
         assert!(e.0.contains("v99"), "{}", e.0);
     }
 
-    /// Host env reaches the probe without entering the hash, so the closure is
-    /// open however exactly the artifact is pinned.
     #[test]
     fn host_env_opens_the_closure() {
         let w = World::new();
