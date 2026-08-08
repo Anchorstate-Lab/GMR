@@ -164,35 +164,47 @@ mod tests {
     /// `obs.at.<key>` no candidate carries — the rule faults, or the axis is
     /// simply never able to move and nobody finds out. Every declared key has
     /// to come back from a real run.
-    const FIXTURES: [(&str, &[(&str, &str)], &str); 4] = [
-        (
-            "ast-map",
-            &[(
-                "a.rs",
-                "use std::fmt;\npub struct X { pub a: u64 }\npub fn f() { g(); }\n",
-            )],
-            r#"{"file": "a.rs"}"#,
-        ),
-        ("addr-map", &[("a.rs", "anything")], r#"{"path": "a.rs"}"#),
-        (
-            "name-map",
-            &[("a.rs", "let needle = 1;\n")],
-            r#"{"name": "needle"}"#,
-        ),
-        (
-            "prose-map",
-            &[("a.md", "# Top\n\nbody\n")],
-            r#"{"file": "a.md"}"#,
-        ),
+    struct Fixture {
+        probe: &'static str,
+        file: &'static str,
+        body: &'static str,
+        pos: &'static str,
+    }
+
+    const FIXTURES: [Fixture; 4] = [
+        Fixture {
+            probe: "ast-map",
+            file: "a.rs",
+            body: "use std::fmt;\npub struct X { pub a: u64 }\npub fn f() { g(); }\n",
+            pos: r#"{"file": "a.rs"}"#,
+        },
+        Fixture {
+            probe: "addr-map",
+            file: "a.rs",
+            body: "anything",
+            pos: r#"{"path": "a.rs"}"#,
+        },
+        Fixture {
+            probe: "name-map",
+            file: "a.rs",
+            body: "let needle = 1;\n",
+            pos: r#"{"name": "needle"}"#,
+        },
+        Fixture {
+            probe: "prose-map",
+            file: "a.md",
+            body: "# Top\n\nbody\n",
+            pos: r#"{"file": "a.md"}"#,
+        },
     ];
 
     #[test]
     fn every_key_a_probe_declares_comes_back_from_a_real_run() {
         let reg = registry();
         for v in vocabularies() {
-            let (_, files, pos) = FIXTURES
+            let f = FIXTURES
                 .iter()
-                .find(|(n, _, _)| *n == v.name)
+                .find(|f| f.probe == v.name)
                 .unwrap_or_else(|| {
                     panic!(
                         "`{}` has no fixture; then it can declare keys it never emits",
@@ -203,12 +215,10 @@ mod tests {
             let dir = std::env::temp_dir().join(format!("gmr-vocab-{}", v.name));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
-            for (path, body) in *files {
-                std::fs::write(dir.join(path), body).unwrap();
-            }
+            std::fs::write(dir.join(f.file), f.body).unwrap();
             let out = (reg[&ProbeName::new(v.name)].extract)(
                 &dir,
-                &serde_json::from_str(pos).unwrap(),
+                &serde_json::from_str(f.pos).unwrap(),
                 &serde_json::json!({}),
             )
             .unwrap_or_else(|e| panic!("`{}` on its own fixture: {e}", v.name));

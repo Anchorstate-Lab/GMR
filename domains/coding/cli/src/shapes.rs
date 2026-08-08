@@ -24,8 +24,18 @@ enum Body {
 pub struct Dim {
     pub name: &'static str,
     pub status: &'static str,
-    field: &'static str,
-    obs: &'static str,
+    reads: Reads,
+}
+
+#[derive(Debug)]
+enum Reads {
+    Now {
+        guard: &'static str,
+    },
+    Since {
+        field: &'static str,
+        obs: &'static str,
+    },
 }
 
 const CONTRACT: Shape = Shape {
@@ -33,34 +43,51 @@ const CONTRACT: Shape = Shape {
     body: Body::Vector {
         dims: &[
             Dim {
+                name: MISSING,
+                status: "missing",
+                reads: Reads::Now {
+                    guard: "obs.exact == false",
+                },
+            },
+            Dim {
                 name: "kind",
                 status: "kind-changed",
-                field: "form",
-                obs: "obs.at.form",
+                reads: Reads::Since {
+                    field: "form",
+                    obs: "obs.at.form",
+                },
             },
             Dim {
                 name: "sig",
                 status: "signature-changed",
-                field: "sig",
-                obs: "obs.at.shape",
+                reads: Reads::Since {
+                    field: "sig",
+                    obs: "obs.at.shape",
+                },
             },
             Dim {
                 name: "surface",
                 status: "visibility-changed",
-                field: "vis",
-                obs: "obs.at.vis",
+                reads: Reads::Since {
+                    field: "vis",
+                    obs: "obs.at.vis",
+                },
             },
             Dim {
                 name: "logic",
                 status: "logic-changed",
-                field: "body",
-                obs: "obs.facts.body",
+                reads: Reads::Since {
+                    field: "body",
+                    obs: "obs.facts.body",
+                },
             },
             Dim {
                 name: "line",
                 status: "moved-line",
-                field: "line",
-                obs: "obs.facts.line",
+                reads: Reads::Since {
+                    field: "line",
+                    obs: "obs.facts.line",
+                },
             },
         ],
         watch: &["missing", "kind", "sig", "surface", "logic", "line"],
@@ -164,9 +191,7 @@ pub fn watch_of(shape: &Shape) -> Option<&'static [&'static str]> {
 pub fn axes_of(shape: &Shape) -> Vec<&'static str> {
     match shape.body {
         Body::Table { .. } => Vec::new(),
-        Body::Vector { dims, .. } => std::iter::once(MISSING)
-            .chain(dims.iter().map(|d| d.name))
-            .collect(),
+        Body::Vector { dims, .. } => dims.iter().map(|d| d.name).collect(),
     }
 }
 
@@ -181,22 +206,37 @@ fn reading(dims: &[Dim]) -> String {
     object(
         &dims
             .iter()
-            .map(|d| (d.field.into(), d.obs.into()))
+            .filter_map(|d| match d.reads {
+                Reads::Since { field, obs } => Some((field.into(), obs.into())),
+                Reads::Now { .. } => None,
+            })
             .collect::<Vec<_>>(),
     )
 }
 
-fn vector(dims: &[Dim], missing: &str, each: impl Fn(&Dim) -> String) -> String {
-    let mut fields = vec![("missing".to_owned(), missing.to_owned())];
-    fields.extend(dims.iter().map(|d| (d.name.to_owned(), each(d))));
-    object(&fields)
+fn vector(dims: &[Dim], each: impl Fn(&Dim) -> String) -> String {
+    object(
+        &dims
+            .iter()
+            .map(|d| (d.name.to_owned(), each(d)))
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn bit(d: &Dim) -> String {
-    format!(
-        "state.v.{} or ({} != state.baseline.{})",
-        d.name, d.obs, d.field
-    )
+    match d.reads {
+        Reads::Now { guard } => guard.to_owned(),
+        Reads::Since { field, obs } => {
+            format!("state.v.{} or ({obs} != state.baseline.{field})", d.name)
+        }
+    }
+}
+
+fn opening(d: &Dim) -> String {
+    match d.reads {
+        Reads::Now { guard } => guard.to_owned(),
+        Reads::Since { .. } => "false".into(),
+    }
 }
 
 fn seen(dims: &[Dim], status: &str) -> String {
@@ -204,13 +244,14 @@ fn seen(dims: &[Dim], status: &str) -> String {
         ("position".into(), "state.position".into()),
         ("baseline".into(), "state.baseline".into()),
         ("now".into(), reading(dims)),
-        ("v".into(), vector(dims, "false", bit)),
+        ("v".into(), vector(dims, bit)),
         ("status".into(), format!("\"{status}\"")),
     ])
 }
 
 fn expand(dims: &[Dim]) -> Vec<String> {
-    let mut out = Vec::with_capacity(dims.len() + 4);
+    let standing = || dims.iter().filter(|d| matches!(d.reads, Reads::Now { .. }));
+    let mut out = Vec::with_capacity(dims.len() + 3);
 
     out.push(format!(
         "not exists(state.baseline) and obs.exact => {}",
@@ -218,7 +259,7 @@ fn expand(dims: &[Dim]) -> Vec<String> {
             ("position".into(), "state.position".into()),
             ("baseline".into(), reading(dims)),
             ("now".into(), reading(dims)),
-            ("v".into(), vector(dims, "false", |_| "false".into())),
+            ("v".into(), vector(dims, opening)),
             ("status".into(), format!("\"{SETTLED}\"")),
         ])
     ));
@@ -227,27 +268,34 @@ fn expand(dims: &[Dim]) -> Vec<String> {
         "not exists(state.baseline) => {}",
         object(&[
             ("position".into(), "state.position".into()),
-            ("v".into(), vector(dims, "true", |_| "false".into())),
+            ("v".into(), vector(dims, opening)),
             ("status".into(), "\"absent\"".into()),
         ])
     ));
 
-    out.push(format!(
-        "obs.exact == false => {}",
-        object(&[
-            ("position".into(), "state.position".into()),
-            ("baseline".into(), "state.baseline".into()),
-            ("now".into(), "state.now".into()),
-            (
-                "v".into(),
-                vector(dims, "true", |d| format!("state.v.{}", d.name))
-            ),
-            ("status".into(), "\"missing\"".into()),
-        ])
-    ));
+    out.extend(standing().map(|d| {
+        format!(
+            "{} => {}",
+            bit(d),
+            object(&[
+                ("position".into(), "state.position".into()),
+                ("baseline".into(), "state.baseline".into()),
+                ("now".into(), "state.now".into()),
+                (
+                    "v".into(),
+                    vector(dims, |x| match x.reads {
+                        Reads::Now { guard } => guard.to_owned(),
+                        Reads::Since { .. } => format!("state.v.{}", x.name),
+                    })
+                ),
+                ("status".into(), format!("\"{}\"", d.status)),
+            ])
+        )
+    }));
 
     out.extend(
         dims.iter()
+            .filter(|d| matches!(d.reads, Reads::Since { .. }))
             .map(|d| format!("{} => {}", bit(d), seen(dims, d.status))),
     );
     out.push(format!("true => {}", seen(dims, SETTLED)));
@@ -434,13 +482,6 @@ mod tests {
         rules_of(get("contract").unwrap())
     }
 
-    /// One axis, one pair of sources that should move it and nothing else.
-    ///
-    /// `unmet` only asks whether the probe emits the path a rule reads. It
-    /// cannot ask whether that path can ever hold a different value, which is
-    /// how `file` survived three commits as an axis that could not fire. These
-    /// run the real extractor and the real generated rules, so an axis that
-    /// nothing can move fails here instead of waiting to be noticed by hand.
     struct Shot {
         axis: &'static str,
         moves: &'static [&'static str],
@@ -566,6 +607,30 @@ mod tests {
             "shot {at} did not open clean: {opened}"
         );
         set(&step(&rules, &look(shot.after), &opened))
+    }
+
+    #[test]
+    fn what_an_axis_answers_decides_when_its_bit_falls() {
+        let Body::Vector { dims, .. } = &get("contract").unwrap().body else {
+            panic!("contract keeps a vector");
+        };
+        for d in *dims {
+            let carries = bit(d).contains(&format!("state.v.{}", d.name));
+            match d.reads {
+                Reads::Now { .. } => assert!(
+                    !carries,
+                    "`{}` answers about now, so carrying its own last bit would \
+                     keep it up after the condition stopped holding",
+                    d.name
+                ),
+                Reads::Since { .. } => assert!(
+                    carries,
+                    "`{}` answers about drift since you confirmed, so dropping \
+                     its own last bit hands the signal to whoever observed first",
+                    d.name
+                ),
+            }
+        }
     }
 
     #[test]
@@ -709,8 +774,6 @@ mod tests {
         assert_eq!(s["status"], "visibility-changed");
     }
 
-    /// `kind` normalizes struct, enum and trait to one word, so the axis that
-    /// answers "is this still the same sort of thing" has to read `form`.
     #[test]
     fn a_struct_that_becomes_an_enum_is_not_a_changed_implementation() {
         let r = contract();
