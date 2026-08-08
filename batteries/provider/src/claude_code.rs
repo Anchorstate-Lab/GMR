@@ -4,18 +4,12 @@ use async_trait::async_trait;
 use gmr_content::{ContentError, ContentProvider, Fetched};
 use gmr_core::{ExternalId, ProviderId, Version, content_hash_of_bytes};
 
-/// Reads Claude Code's own per-project memory files as bindable content.
-/// Read-only: this battery never writes into another product's data
-/// directory, only observes it.
 pub struct ClaudeMemory {
     root: PathBuf,
     id: ProviderId,
 }
 
 impl ClaudeMemory {
-    /// `project_root` is the repository this binary runs against. The memory
-    /// directory Claude Code keeps for it is derived from that path, the
-    /// same way `Git` derives its root from it.
     pub fn new(project_root: impl AsRef<Path>) -> Result<Self, ContentError> {
         Ok(Self {
             root: memory_dir(project_root.as_ref())?,
@@ -23,10 +17,6 @@ impl ClaudeMemory {
         })
     }
 
-    /// Test-only: points straight at a directory without going through
-    /// `memory_dir`'s guess. Production callers use `GMR_CLAUDE_MEMORY_DIR`
-    /// for the same purpose — that path is already covered by `new`, so this
-    /// constructor has no reason to be public.
     #[cfg(test)]
     fn at(memory_dir: impl Into<PathBuf>) -> Self {
         Self {
@@ -36,15 +26,6 @@ impl ClaudeMemory {
     }
 }
 
-/// Claude Code's directory-naming convention for a project's data — the
-/// absolute path with every `/` replaced by `-` — is an internal convention,
-/// not a documented public contract. Verified empirically against this
-/// machine's `~/.claude/projects/` (including a path whose own name already
-/// contains hyphens, e.g. `.../moltbook-001` → `-...-moltbook-001`, so the
-/// substitution isn't ambiguous going forward even though it isn't
-/// reversible). `GMR_CLAUDE_MEMORY_DIR` overrides it outright if a future
-/// Claude Code version changes the convention or the guess is otherwise
-/// wrong.
 fn memory_dir(project_root: &Path) -> Result<PathBuf, ContentError> {
     if let Ok(over) = std::env::var("GMR_CLAUDE_MEMORY_DIR") {
         return Ok(PathBuf::from(over));
@@ -79,9 +60,6 @@ impl ContentProvider for ClaudeMemory {
         }))
     }
 
-    /// Memory files carry no history of their own — an old version is simply
-    /// not retrievable. `MemoryLens` already treats that as a legitimate
-    /// answer (`retrievable: Some(false)`), not an error.
     async fn fetch_at(
         &self,
         _id: &ExternalId,
@@ -161,8 +139,6 @@ mod tests {
 
     #[test]
     fn env_override_bypasses_the_directory_guess() {
-        // SAFETY: single-threaded assertion around a process-global var; no
-        // other test in this module touches GMR_CLAUDE_MEMORY_DIR.
         unsafe {
             std::env::set_var("GMR_CLAUDE_MEMORY_DIR", "/tmp/wherever");
         }
