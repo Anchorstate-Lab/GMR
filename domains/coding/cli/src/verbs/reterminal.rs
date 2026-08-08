@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Change, Runtime};
+use gmr::{Change, Runtime};
 
 use crate::error::CliError;
 use crate::rules;
@@ -11,7 +11,7 @@ pub async fn run(
     why: String,
     json: bool,
 ) -> Result<i32, CliError> {
-    let key = AnchorKey::new(key);
+    let key = super::resolve_one(rt, &key).await?;
     let want = rules::terminal(&terminal);
     let revised = rt
         .revise(

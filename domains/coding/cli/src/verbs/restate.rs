@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Change, Runtime, State};
+use gmr::{Change, Runtime, State};
 
 use crate::error::CliError;
 use crate::verbs::sealed;
@@ -10,7 +10,7 @@ pub async fn run(
     why: String,
     json: bool,
 ) -> Result<i32, CliError> {
-    let key = AnchorKey::new(key);
+    let key = super::resolve_one(rt, &key).await?;
     let value: serde_json::Value = serde_json::from_str(&state)
         .map_err(|e| CliError(format!("new state is not valid JSON: {e}")))?;
     if !value.is_object() {

@@ -1,9 +1,9 @@
-use gmr::{AnchorKey, Runtime};
+use gmr::Runtime;
 
 use crate::error::CliError;
 
 pub async fn run(rt: &Runtime, key: String, json: bool) -> Result<i32, CliError> {
-    let key = AnchorKey::new(key);
+    let key = super::resolve_one(rt, &key).await?;
     let requeued = rt.requeue(&key).await?;
 
     if json {

@@ -247,6 +247,18 @@ out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 0 ] || fail "accept 之后 check 应当是 0，得到 $code" "$out"
 
+# 拼错一个字母时，说的必须是「没有这个锚」并指出最接近的那个 —— 而不是
+# 「租约被别人持有」，那是把我们的失败说成了世界的状态。
+step "打错的键说人话"
+set +e
+out=$("$gmr" --repo "$repo" check 'src/session.ts#rotare' 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] || fail "不存在的锚不该成功" "$out"
+echo "$out" | grep -q 'no anchor matches' || fail "没说清是键不对" "$out"
+echo "$out" | grep -q "$key" || fail "没指出最接近的那个键" "$out"
+out=$("$gmr" --repo "$repo" status 'src/session.ts')
+echo "$out" | grep -q "$key" || fail "只读动词该把文件前缀摊开" "$out"
+
 # accept 钉的必须是此刻的事实，不是上一次观测留在 state 里的读数。人先 check
 # 看见红的，再把改动撤回，然后 accept —— 如果 accept 拿的是那份过期读数，
 # 它会把坏的钉成基线，好代码反倒永远报"变了"。

@@ -31,10 +31,62 @@ use gmr::{AnchorKey, Change, ContentHash, Revised, Runtime, State};
 
 use crate::error::CliError;
 
-/// Clear the state back to the position alone, then look. The shape's own
-/// capture rule writes the baseline, so what gets pinned is a reading taken
-/// now — not whatever the last pass happened to leave in the state. If the
-/// target is no longer there the capture rule says so instead of pinning it.
+fn shared_prefix(a: &str, b: &str) -> usize {
+    a.bytes().zip(b.bytes()).take_while(|(x, y)| x == y).count()
+}
+
+fn nearest(all: &[AnchorKey], arg: &str) -> String {
+    let mut ranked: Vec<&AnchorKey> = all.iter().collect();
+    ranked.sort_by_key(|k| {
+        (
+            std::cmp::Reverse(shared_prefix(k.as_str(), arg)),
+            k.as_str(),
+        )
+    });
+    let lines: Vec<String> = ranked.iter().take(3).map(|k| format!("    {k}")).collect();
+    match lines.is_empty() {
+        true => "Nothing is anchored yet; `gmr anchor <coordinate>` opens the first one.".into(),
+        false => format!("Nearest:\n{}", lines.join("\n")),
+    }
+}
+
+fn pick(all: &[AnchorKey], arg: &str) -> Vec<AnchorKey> {
+    match all.iter().find(|k| k.as_str() == arg) {
+        Some(hit) => vec![hit.clone()],
+        None => all
+            .iter()
+            .filter(|k| k.as_str().starts_with(arg))
+            .cloned()
+            .collect(),
+    }
+}
+
+pub(crate) async fn resolve(rt: &Runtime, arg: &str) -> Result<Vec<AnchorKey>, CliError> {
+    let all = rt.anchors().await?;
+    let hits = pick(&all, arg);
+    match hits.is_empty() {
+        true => Err(CliError(format!(
+            "no anchor matches `{arg}`.\n{}",
+            nearest(&all, arg)
+        ))),
+        false => Ok(hits),
+    }
+}
+
+pub(crate) async fn resolve_one(rt: &Runtime, arg: &str) -> Result<AnchorKey, CliError> {
+    let mut hits = resolve(rt, arg).await?;
+    if hits.len() > 1 {
+        let list: Vec<String> = hits.iter().map(|k| format!("    {k}")).collect();
+        return Err(CliError(format!(
+            "`{arg}` covers {} anchors, and this changes one:\n{}\n\
+             Name the one you mean. Each of these is a separate judgment.",
+            hits.len(),
+            list.join("\n")
+        )));
+    }
+    Ok(hits.remove(0))
+}
+
 pub(crate) async fn recapture(
     rt: &Runtime,
     key: &AnchorKey,
@@ -68,4 +120,45 @@ pub(crate) fn sealed(context: &ContentHash, rationale: &ContentHash) {
         "  rationale {} (written by you; substrate only preserves tamper evidence)",
         &rationale.as_str()[..12]
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn keys() -> Vec<AnchorKey> {
+        ["a.rs#f", "a.rs#g", "b.rs#f", "doctrine::rules"]
+            .into_iter()
+            .map(AnchorKey::new)
+            .collect()
+    }
+
+    #[test]
+    fn an_exact_key_wins_over_the_prefix_it_also_is() {
+        let all = [AnchorKey::new("a.rs#f"), AnchorKey::new("a.rs#foo")];
+        assert_eq!(pick(&all, "a.rs#f"), [AnchorKey::new("a.rs#f")]);
+    }
+
+    #[test]
+    fn a_file_names_every_anchor_under_it() {
+        assert_eq!(
+            pick(&keys(), "a.rs"),
+            [AnchorKey::new("a.rs#f"), AnchorKey::new("a.rs#g")]
+        );
+    }
+
+    #[test]
+    fn a_typo_is_told_what_it_nearly_said() {
+        assert!(pick(&keys(), "a.rs#ff").is_empty());
+        let said = nearest(&keys(), "a.rs#ff");
+        assert!(
+            said.lines().nth(1).is_some_and(|l| l.contains("a.rs#f")),
+            "the closest key must come first, got:\n{said}"
+        );
+    }
+
+    #[test]
+    fn nothing_anchored_says_so_instead_of_listing_nothing() {
+        assert!(nearest(&[], "x").contains("gmr anchor"));
+    }
 }

@@ -17,7 +17,13 @@ pub async fn run(
 ) -> Result<i32, CliError> {
     let keys = match all {
         true => swapped(rt).await?,
-        false => keys.into_iter().map(AnchorKey::new).collect(),
+        false => {
+            let mut out = Vec::new();
+            for arg in &keys {
+                out.push(crate::verbs::resolve_one(rt, arg).await?);
+            }
+            out
+        }
     };
     if keys.is_empty() {
         println!("no anchor is standing on a reading a different instrument took");

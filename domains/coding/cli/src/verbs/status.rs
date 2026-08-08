@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, AnchorView, Runtime};
+use gmr::{AnchorView, Runtime};
 
 use crate::error::CliError;
 use crate::probes::Catalog;
@@ -36,7 +36,13 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let views = match &key {
-        Some(k) => vec![rt.read(&AnchorKey::new(k.clone())).await?],
+        Some(k) => {
+            let mut out = Vec::new();
+            for key in super::resolve(rt, k).await? {
+                out.push(rt.read(&key).await?);
+            }
+            out
+        }
         None => rt.read_all().await?,
     };
     let live: Vec<&AnchorView> = views.iter().filter(|v| !v.closed).collect();

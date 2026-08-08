@@ -1,10 +1,10 @@
-use gmr::{AnchorKey, Runtime};
+use gmr::Runtime;
 
 use crate::error::CliError;
 
 pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, CliError> {
     let keys = match key {
-        Some(k) => vec![AnchorKey::new(k)],
+        Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
 

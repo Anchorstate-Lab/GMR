@@ -13,7 +13,7 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let keys = match key {
-        Some(k) => vec![AnchorKey::new(k)],
+        Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
     let subs = Subscriptions::load(root, &Catalog::load(root)?)?;

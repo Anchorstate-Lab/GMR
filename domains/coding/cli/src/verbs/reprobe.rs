@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Change, Runtime};
+use gmr::{Change, Runtime};
 
 use crate::error::CliError;
 use crate::probes::Catalog;
@@ -13,7 +13,7 @@ pub async fn run(
     why: String,
     json: bool,
 ) -> Result<i32, CliError> {
-    let key = AnchorKey::new(key);
+    let key = super::resolve_one(rt, &key).await?;
     let kind = Catalog::load(root)?.kind_of(&probe);
     let probe = crate::rules::probe(kind, &probe, &params)?;
     let revised = rt

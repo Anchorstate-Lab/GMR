@@ -158,13 +158,14 @@ pub async fn run(
         }
         return Ok(0);
     }
-    let key = AnchorKey::new(key.ok_or_else(|| {
+    let arg = key.ok_or_else(|| {
         CliError(
             "name an anchor, or pass --all --criteria to take a declaration change \
              across the whole repository"
                 .into(),
         )
-    })?);
+    })?;
+    let key = crate::verbs::resolve_one(rt, &arg).await?;
     one(rt, root, &key, &why, asked, json).await
 }
 

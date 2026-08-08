@@ -1,10 +1,16 @@
-use gmr::{AnchorKey, Runtime};
+use gmr::Runtime;
 
 use crate::{error::CliError, render};
 
 pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, CliError> {
     let views = match key {
-        Some(k) => vec![rt.read(&AnchorKey::new(k)).await?],
+        Some(k) => {
+            let mut out = Vec::new();
+            for key in super::resolve(rt, &k).await? {
+                out.push(rt.read(&key).await?);
+            }
+            out
+        }
         None => rt.read_all().await?,
     };
 
