@@ -325,6 +325,79 @@ mod tests {
         );
     }
 
+    fn settled_state(shape: &Shape) -> Value {
+        let mut obs = serde_json::Map::new();
+        obs.insert("exact".into(), Value::Bool(true));
+        let mut at = serde_json::Map::new();
+        let mut facts = serde_json::Map::new();
+        for r in reads_of_shape(shape) {
+            match r.split_once('.') {
+                Some(("at", k)) => drop(at.insert(k.into(), "x".into())),
+                Some(("facts", k)) => drop(facts.insert(k.into(), "x".into())),
+                _ => drop(obs.entry(r).or_insert(Value::from(0))),
+            }
+        }
+        obs.insert("at".into(), Value::Object(at));
+        obs.insert("facts".into(), Value::Object(facts));
+        let obs = Value::Object(obs);
+        let rules = rules_of(shape);
+        let opened = step(&rules, &obs, &Value::Null);
+        step(&rules, &obs, &opened)
+    }
+
+    #[test]
+    fn state_carries_exactly_what_some_guard_compares_and_nothing_else() {
+        for shape in ALL {
+            let state = settled_state(shape);
+            let top: BTreeSet<&str> = state
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(
+                top,
+                BTreeSet::from(["position", "baseline", "now", "v", "status"]),
+                "`{}`: a field no guard reads still makes the state unequal, and \
+                 `should_still` compares the whole state — so it writes a Transition \
+                 with no bit lit. Facts that only inform a reader belong in the \
+                 observation, which the journal already keeps",
+                shape.name
+            );
+
+            let since: BTreeSet<&str> = shape
+                .dims
+                .iter()
+                .filter_map(|d| match d.reads {
+                    Reads::Since { field, .. } => Some(field),
+                    Reads::Now { .. } => None,
+                })
+                .collect();
+            for side in ["baseline", "now"] {
+                let got: BTreeSet<&str> = state[side]
+                    .as_object()
+                    .unwrap_or_else(|| panic!("`{}`: {side} is not an object", shape.name))
+                    .keys()
+                    .map(String::as_str)
+                    .collect();
+                assert_eq!(got, since, "`{}`: {side}", shape.name);
+            }
+
+            let bits: BTreeSet<&str> = state["v"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(
+                bits,
+                shape.dims.iter().map(|d| d.name).collect::<BTreeSet<_>>(),
+                "`{}`: one bit per dimension, no more and no fewer",
+                shape.name
+            );
+        }
+    }
+
     #[test]
     fn an_unknown_shape_names_what_this_build_ships() {
         let e = get("nope").unwrap_err();

@@ -5,6 +5,35 @@ use gmr::{AnchorKey, Observed, Runtime};
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
 use crate::probes::Catalog;
+use crate::verbs::sync::{Context, DEFAULT_FILE, differs, merged, read_declared};
+
+async fn drifted(
+    rt: &Runtime,
+    root: &Path,
+    catalog: Catalog,
+    keys: &[AnchorKey],
+) -> Result<Vec<(AnchorKey, String)>, CliError> {
+    let declared = read_declared(root, DEFAULT_FILE)?;
+    let notes = crate::memories::scan(root, &catalog)?;
+    let decls = merged(&declared, &notes);
+    let ctx = Context { catalog };
+
+    let mut out = Vec::new();
+    for key in keys {
+        let Some(decl) = decls.iter().find(|d| d.key == key.as_str()) else {
+            continue;
+        };
+        let view = rt.read(key).await?;
+        if view.closed {
+            continue;
+        }
+        let facets = differs(&view.anchor, decl, &ctx)?;
+        if !facets.is_empty() {
+            out.push((key.clone(), facets.join(" · ")));
+        }
+    }
+    Ok(out)
+}
 
 pub async fn run(
     rt: &Runtime,
@@ -16,7 +45,9 @@ pub async fn run(
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
-    let subs = Subscriptions::load(root, &Catalog::load(root)?)?;
+    let catalog = Catalog::load(root)?;
+    let subs = Subscriptions::load(root, &catalog)?;
+    let drifted = drifted(rt, root, catalog, &keys).await?;
 
     let mut handed: Vec<(AnchorKey, String, Vec<String>)> = Vec::new();
     let mut unclaimed = Vec::new();
@@ -45,7 +76,8 @@ pub async fn run(
         handed.push((key.clone(), status, memories));
     }
 
-    let wrong = !handed.is_empty() || !unclaimed.is_empty() || !unseen.is_empty();
+    let wrong =
+        !handed.is_empty() || !unclaimed.is_empty() || !unseen.is_empty() || !drifted.is_empty();
 
     if json {
         println!(
@@ -59,6 +91,9 @@ pub async fn run(
                 "unclaimed": unclaimed,
                 "unseen": unseen.iter().map(|(k, m)| serde_json::json!({
                     "anchor": k, "detail": m
+                })).collect::<Vec<_>>(),
+                "criteria_drifted": drifted.iter().map(|(k, f)| serde_json::json!({
+                    "anchor": k, "facets": f
                 })).collect::<Vec<_>>(),
             })
         );
@@ -80,17 +115,33 @@ pub async fn run(
     super::observe::report_unclaimed(&unclaimed);
 
     match (handed.len(), quiet) {
-        (0, 0) if unseen.is_empty() && unclaimed.is_empty() => {
+        (0, 0) if unseen.is_empty() && unclaimed.is_empty() && drifted.is_empty() => {
             println!("{} anchors, nothing moved.", keys.len())
         }
         (0, n) if n > 0 => println!(
             "\n{} anchors, {n} moved on axes nobody asked about. `gmr status` shows them.",
             keys.len()
         ),
-        (n, _) => println!(
+        (n, _) if n > 0 => println!(
             "\n{n} of {} handed a memory back. Re-read it: does what you wrote still hold?",
             keys.len()
         ),
+        _ => {}
+    }
+
+    if !drifted.is_empty() {
+        println!(
+            "\n{} of {} stand on criteria their declaration no longer asks for.\n\
+             Nothing above is trustworthy until these are taken: an anchor whose rules\n\
+             this build cannot name has no axes, so `watch:` does not apply to it and it\n\
+             falls back to reporting any transition at all.",
+            drifted.len(),
+            keys.len()
+        );
+        for (key, facets) in &drifted {
+            println!("  != {key}  ({facets})");
+        }
+        println!("\n     gmr accept --all --criteria --why '...'");
     }
     Ok(i32::from(wrong))
 }
