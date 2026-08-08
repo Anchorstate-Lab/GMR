@@ -1,21 +1,27 @@
 #!/bin/sh
-# **类型和测试表达不了的恒等式，唯一的住处。** 这个脚本原样就是 CI。
+# **Invariants that types and tests cannot express – the only home they have.**
+# This script is the CI gate, as is.
 #
 #   sh gate.sh
 #
-# 恒等式 = 一次为真、应当永远为真的关系。它不需要有人接收信号 —— 所以它不该
-# 住在散文、注释或记忆里，那三处都要等一个人读到才生效，而恒等式被破坏的那一
-# 刻没有任何东西会动。恒等式有三个家，按「谁能表达它」分：
+# An invariant is a relation that holds once and must hold forever. It does not
+# require anyone to receive a signal – so it should not live in prose, comments,
+# or memory, because those three only take effect when a human reads them, and
+# at the moment an invariant is broken nothing moves. Invariants have three
+# homes, ordered by their ability to express them:
 #
-#   类型      能让它不可能被违反的，优先（同一个值只存一份，就没有两份可分家）
-#   测试      Rust 能判定的，住 `cargo test`，紧挨着它保护的那段代码
-#   gate.sh   跨包的依赖事实、文件层面的文本纪律 —— 前两者都够不着的
+#   types       give priority: if a value is stored only once, it cannot diverge
+#   tests       can be decided by Rust, live in `cargo test`, adjacent to code
+#   gate.sh     cross‑package dependency facts, file‑level textual discipline –
+#               the first two cannot reach here.
 #
-# 这里只有两节：拓扑、纪律。加一条新的恒等式先问前两个家收不收；都不收才进来。
+# This file has only two sections: Topology and Discipline. For a new invariant,
+# first ask whether the first two homes can take it; only if not, it belongs here.
 #
-# 它查的是**源码树**，**不碰任何锚**。锚报出的状态是要有人来看的信号，不是
-# 构建失败 —— 门禁替它判，就等于把语义搬进了工具。判据漂了这类关于**运行时
-# 存储**的恒等式归 `gmr check`，不归这里。
+# It inspects the **source tree**, and never touches any anchor. Anchors report
+# state that requires a human to look – not a build failure. If the gate judges
+# them, semantics would be moved into tooling. Invariants about **runtime storage**
+# belong to `gmr check`, not here.
 set -e
 cd "$(dirname "$0")"
 
@@ -32,19 +38,20 @@ echo "── test"
 cargo test --workspace
 
 echo
-echo "══ 拓扑"
+echo "══ Topology"
 
-# 纯度不靠纯脸/脏脸的 trait 分裂,由 crate 边界扛。但依赖清单是一条
-# **外部检查**,不是类型约束 —— 不在这里查,就没人会查。
-echo "── 纯根：零 workspace 依赖"
+# Purity is not carried by trait splits (pure/impure), but by crate boundaries.
+# However, the dependency list is an **external check**, not a type constraint –
+# if not checked here, no one will.
+echo "── pure roots: zero workspace dependencies"
 for c in gmr-core gmr-expr; do
   if cargo tree -p "$c" --edges normal --prefix none | tail -n +2 | grep -qE '^gmr-'; then
-    echo "gate: $c 有 workspace 依赖 —— 它不再是纯根" >&2
+    echo "gate: $c has workspace dependencies – it is no longer a pure root" >&2
     exit 1
   fi
 done
 
-echo "── 依赖禁区（清单只有 architecture.toml 一份，不再各存拷贝）"
+echo "── dependency forbidden zones (only architecture.toml holds the list, no per‑crate copies)"
 python3 - <<'FORBIDDEN' || exit 1
 import tomllib, subprocess, sys
 arch = tomllib.load(open("architecture.toml", "rb"))
@@ -68,14 +75,14 @@ for m in arch["member"]:
     deps = {l.split()[0] for l in r.stdout.splitlines()[1:] if l.strip()}
     bad += [f"{m['name']} -> {d}" for d in sorted(deps & banned)]
 if errs:
-    print("gate: 禁区检查够不到这些成员", *errs, sep="\n  ", file=sys.stderr)
+    print("gate: forbidden check cannot reach these members", *errs, sep="\n  ", file=sys.stderr)
     sys.exit(1)
 if bad:
-    print("gate: 依赖禁区被撞了", *bad, sep="\n  ", file=sys.stderr)
+    print("gate: forbidden dependencies violated", *bad, sep="\n  ", file=sys.stderr)
     sys.exit(1)
 FORBIDDEN
 
-echo "── 分层：底层不许依赖上层"
+echo "── layering: lower layers must not depend on upper ones"
 python3 - <<'LAYERS' || exit 1
 import json, pathlib, subprocess, sys
 LAYER = {"crates": 0, "batteries": 1, "domains": 2}
@@ -87,7 +94,7 @@ for top in LAYER:
         r = subprocess.run(["cargo", "metadata", "--no-deps", "--format-version", "1",
                             "--manifest-path", str(man)], capture_output=True, text=True)
         if r.returncode:
-            print(f"gate: 读不动 {man}", file=sys.stderr)
+            print(f"gate: cannot read {man}", file=sys.stderr)
             sys.exit(1)
         for p in json.loads(r.stdout)["packages"]:
             if p["id"] in seen:
@@ -102,51 +109,53 @@ for top in LAYER:
 bad = [f"{a}({pkgs[a]}) -> {b}({pkgs[b]})" for a, b in edges
        if a in pkgs and b in pkgs and LAYER[pkgs[b]] > LAYER[pkgs[a]]]
 if bad:
-    print("gate: 底层依赖了上层", *bad, sep="\n  ", file=sys.stderr)
+    print("gate: lower layer depends on upper layer", *bad, sep="\n  ", file=sys.stderr)
     sys.exit(1)
 LAYERS
 
-echo "── 基底不 ship 任何具体实现"
+echo "── base layer must not ship any concrete implementation"
 if cargo tree -p gmr-probe --edges normal --prefix none | tail -n +2 |
    grep -qiE '^(tokio|reqwest|hyper)'; then
-  echo "gate: gmr-probe 拖进了传输的实现 —— 它该只是契约" >&2
+  echo "gate: gmr-probe pulls in a transport implementation – it should be only a contract" >&2
   exit 1
 fi
 if cargo tree -p gmr-store --edges normal --prefix none | tail -n +2 |
    grep -qiE '^(sqlx|rusqlite|libsqlite3|postgres|tokio-postgres)'; then
-  echo "gate: gmr-store 默认就把数据库拖进来了" >&2
+  echo "gate: gmr-store drags in a database implementation by default" >&2
   exit 1
 fi
 
-echo "── 基底不产二进制"
+echo "── base layer must not produce any binary"
 if cargo metadata --no-deps --format-version 1 |
    grep -oE '"name":"gmr[^"]*","[^}]*"kind":\["bin"\]' | grep -q .; then
-  echo "gate: 基底里冒出了一个二进制 —— 装配是域的事" >&2
+  echo "gate: a binary appeared in the base layer – assembly belongs to domains" >&2
   exit 1
 fi
 
-echo "── 门面：只重导出"
+echo "── facade: only re‑exports"
 if grep -qE '^pub (fn|struct|enum|trait|const|type) ' crates/gmr/src/lib.rs; then
-  echo "gate: 门面里出现了定义 —— 它成了第七个包,而且是没人看守的那个" >&2
+  echo "gate: facade contains a definition – it becomes a seventh package, and one without a guardian" >&2
   exit 1
 fi
 cargo build -p gmr --no-default-features
 
 echo
-echo "══ 纪律"
+echo "══ Discipline"
 
-# 注释和记忆各存一份必然分家，而记忆有锚盯着、注释没有。清区只增不减：
-# 清完一个包就往 CLEAN 加一行，那一行是一次真实清理的凭证。不做 diff 比对 ——
-# diff 要一个 base ref，CI 里那是状态；清区名单零状态、单调。
+# Comments and memory each keep a copy, and they inevitably diverge. Memory is
+# guarded by anchors, comments are not. The clean list only grows: after cleaning
+# a package, add one line to CLEAN. That line is a receipt of a real cleaning.
+# We do not diff against a base ref – diff needs a reference, which is state;
+# the clean list is zero‑state and monotonic.
 #
-# EXEMPT 是 CLAUDE.md 写明的两个例外里的第二个：clap 的 `///` 是 --help 的
-# 正文，是给用户看的字符串，只是碰巧用了注释语法。第一个例外 `//!` 说的是
-# 「这个文件是什么」，直接在判据里放行。
-echo "── 清区里零注释"
+# EXEMPT is the second exception listed in CLAUDE.md: clap’s `///` is the body of
+# --help, a user‑visible string that happens to use comment syntax. The first
+# exception `//!` is about “what this file is” and is directly allowed in the rule.
+echo "── no comments in the clean zones"
 python3 - <<'COMMENTS' || exit 1
 import pathlib, subprocess, sys
 
-CLEAN = ["crates/gmr-core", "crates/gmr-content", "crates/gmr",
+CLEAN = ["crates/gmr-core", "crates/gmr-content", "crates/gmr", "crates/gmr-probe",
          "batteries/survey", "domains/coding/extract"]
 EXEMPT = ["domains/coding/cli/src/cli.rs"]
 
@@ -161,10 +170,10 @@ for f in files:
         if s.startswith("//") and not s.startswith("//!"):
             bad.append(f"{f}:{n}  {s[:60]}")
 if bad:
-    print("gate: 清区里出现了注释 —— 要说的话锚成记忆",
+    print("gate: comments found in clean zones – say it with an anchor, not a comment",
           *bad, sep="\n  ", file=sys.stderr)
     sys.exit(1)
 COMMENTS
 
 echo
-echo "gate: 恒等式全绿"
+echo "gate: all invariants green"

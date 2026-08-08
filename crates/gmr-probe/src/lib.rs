@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use gmr_core::{Derivation, Kind, Outcome, ProbeName, ProbeRef, ReasonClass};
 
-/// Shared by caller and callee so the name has one owner, not two copies.
 pub const POSITION_ENV: &str = "GMR_POSITION";
 
 pub const PARAMS_ENV: &str = "GMR_PARAMS";
@@ -40,9 +39,6 @@ impl ProbeErrorCode {
     }
 }
 
-/// Kept separate from [`gmr_core::FailureCode`] so this type stays the set a
-/// transport can actually produce; the log's vocabulary also covers rule
-/// failures, which no transport can raise.
 impl From<ProbeErrorCode> for gmr_core::FailureCode {
     fn from(code: ProbeErrorCode) -> Self {
         match code {
@@ -91,12 +87,8 @@ impl ProbeError {
 pub trait Transport: Send + Sync {
     fn kind(&self) -> &Kind;
 
-    /// What a name stands for, **answerable before the call**: so a bad name is
-    /// refused at declaration time, and so a swapped instrument is knowable
-    /// without first taking a reading with it.
     fn resolve(&self, name: &ProbeName) -> Option<Derivation>;
 
-    /// The world's answer. The identity came from [`Transport::resolve`].
     async fn invoke(
         &self,
         probe: &ProbeRef,
