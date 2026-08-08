@@ -71,6 +71,7 @@ pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {
                 .map(|(k, v)| (k.to_owned(), v))
                 .collect();
             coord::Candidate::new(
+                format!("{}@{}", c["name"], c["scope"]),
                 c,
                 json!({
                     "occurrences": s.count,

@@ -43,8 +43,8 @@ pub async fn run(
     }?;
 
     let reads =
-        crate::shapes::reads_of(&transitions).map_err(|e| CliError(format!("{key}: {e}")))?;
-    let missing = crate::shapes::unmet(&reads, &catalog.obs_of(&probe_name)?);
+        crate::contract::reads_of(&transitions).map_err(|e| CliError(format!("{key}: {e}")))?;
+    let missing = crate::contract::unmet(&reads, &catalog.obs_of(&probe_name)?);
     if !missing.is_empty() {
         return Err(CliError(format!(
             "{key}: rules read {}, which probe `{probe_name}` does not emit",

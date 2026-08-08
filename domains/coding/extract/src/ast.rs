@@ -148,11 +148,12 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             continue;
         };
         let text = |n: tree_sitter::Node| src.get(n.byte_range()).map(squeeze).unwrap_or_default();
-        let name = node
-            .child_by_field_name("name")
-            .map(text)
-            .or_else(|| node.child_by_field_name("function").map(text))
+        let name = table
+            .names
+            .iter()
+            .find_map(|f| node.child_by_field_name(f).map(text))
             .or_else(|| named_by_parent(table, node).map(text))
+            .filter(|n| !n.is_empty())
             .unwrap_or_default();
         let (declared, implemented) = match kind == "type" {
             true => members(node, &src),
@@ -200,7 +201,10 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
         .map(|(k, v)| (k.to_owned(), v))
         .collect();
         let facts = json!({ "body": coord::hash(&body), "line": node.start_position().row + 1 });
-        here.push((node.start_byte(), coord::Candidate::new(c, facts)));
+        here.push((
+            node.start_byte(),
+            coord::Candidate::new(format!("{kind}:{}", c[naming(kind)]), c, facts),
+        ));
     }
 
     let mut named: Vec<(usize, String)> = here

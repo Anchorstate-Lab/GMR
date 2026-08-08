@@ -9,12 +9,28 @@ pub const COORD_REPORT_SCHEMA: &str = "gmr.probe-coord.v1";
 pub struct Candidate {
     pub coord: BTreeMap<String, String>,
     pub facts: Value,
+    id: String,
 }
 
 impl Candidate {
-    pub fn new(coord: BTreeMap<String, String>, facts: Value) -> Self {
-        Self { coord, facts }
+    pub fn new(id: impl Into<String>, coord: BTreeMap<String, String>, facts: Value) -> Self {
+        Self {
+            coord,
+            facts,
+            id: id.into(),
+        }
     }
+}
+
+/// Who is in the tied set, one identity per line, sorted. A roster compares
+/// this instead of the full reports: it says which things are here without
+/// saying anything about what any of them look like, so a body edit cannot
+/// move it. Duplicates are kept, so `roll.lines().count() == candidates` — a
+/// candidate the extractor could not name would otherwise vanish silently.
+fn roll(tied: &[&Candidate]) -> String {
+    let mut ids: Vec<&str> = tied.iter().map(|c| c.id.as_str()).collect();
+    ids.sort_unstable();
+    ids.join("\n")
 }
 
 pub type Want = Vec<(String, String)>;
@@ -94,6 +110,7 @@ pub fn report(
         "at": pick.coord,
         "facts": pick.facts,
         "candidates": tied.len(),
+        "roll": roll(&tied),
         "exact": best.iter().all(|hit| *hit),
         // Coordinate item order is priority; report it instead of hiding it in arguments.
         "priority": names(),
@@ -118,7 +135,13 @@ mod tests {
     use super::*;
 
     fn cand(pairs: &[(&str, &str)]) -> Candidate {
+        let id = pairs
+            .iter()
+            .find(|(k, _)| *k == "name")
+            .map_or("anon", |(_, v)| *v)
+            .to_owned();
         Candidate::new(
+            id,
             pairs
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
@@ -281,12 +304,32 @@ mod tests {
         assert_eq!(r["missed"], json!(["kind"]));
     }
 
+    /// A candidate the extractor could not name would collapse into another
+    /// blank line and the roster would under-count without saying so. Keeping
+    /// duplicates makes that impossible to hide.
+    #[test]
+    fn the_roll_has_one_line_per_candidate() {
+        let all = vec![
+            cand(&[("kind", "function"), ("name", "b")]),
+            cand(&[("kind", "function"), ("name", "a")]),
+            cand(&[("kind", "function"), ("name", "a")]),
+        ];
+        let out = report("x", &want(&[("kind", "function")]), 0, &all).unwrap();
+        let roll = out["roll"].as_str().unwrap();
+        assert_eq!(
+            roll.lines().count(),
+            out["candidates"].as_u64().unwrap() as usize
+        );
+        assert_eq!(roll, "a\na\nb", "sorted, and a repeat is still two lines");
+    }
+
     #[test]
     fn an_oversized_roster_is_refused_never_truncated() {
         let w = want(&[("kind", "function")]);
         let many: Vec<Candidate> = (0..20_000)
             .map(|i| {
                 Candidate::new(
+                    format!("f{i}"),
                     [
                         ("kind".to_owned(), "function".to_owned()),
                         (

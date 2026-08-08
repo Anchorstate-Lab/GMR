@@ -24,7 +24,11 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
     .collect();
-    out.push(coord::Candidate::new(c, json!({ "bytes": bytes.len() })));
+    out.push(coord::Candidate::new(
+        c["path"].clone(),
+        c,
+        json!({ "bytes": bytes.len() }),
+    ));
 }
 
 pub fn probe(root: &Path, pos: &Value) -> Result<Value, String> {

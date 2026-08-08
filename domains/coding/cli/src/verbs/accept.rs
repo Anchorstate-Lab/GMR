@@ -17,13 +17,13 @@ pub enum What {
 pub struct Pending {
     pub axes: Vec<String>,
     pub missing: bool,
-    pub unsettled: Option<String>,
+    pub vectored: bool,
     pub facets: Vec<&'static str>,
 }
 
 impl Pending {
     fn baseline(&self) -> bool {
-        !self.axes.is_empty() || self.unsettled.is_some()
+        !self.axes.is_empty() || !self.vectored
     }
 
     fn criteria(&self) -> bool {
@@ -31,20 +31,10 @@ impl Pending {
     }
 
     fn standing(&self) -> String {
-        match (&self.unsettled, self.axes.is_empty()) {
-            (Some(status), _) => status.clone(),
-            (None, _) => self.axes.join(" · "),
+        match self.axes.is_empty() {
+            true => "hand-written rules; nothing here counts axes".to_owned(),
+            false => self.axes.join(" · "),
         }
-    }
-}
-
-fn unsettled_status(view: &gmr::AnchorView) -> Option<String> {
-    let name = crate::shapes::name_of(&view.anchor.transitions)?;
-    let ok = crate::shapes::settled_of(crate::shapes::get(name).ok()?);
-    let status = view.state.status()?.to_string();
-    match ok.contains(&status.as_str()) {
-        true => None,
-        false => Some(status),
     }
 }
 
@@ -59,13 +49,9 @@ async fn pending(
             "{key} is closed; closure is irreversible"
         )));
     }
-    let vector = crate::delivery::axes_set(&view.state);
-    let axes = vector.clone().unwrap_or_default();
+    let vectored = crate::shapes::of(&view.anchor.transitions).is_some();
+    let axes = crate::delivery::axes_set(&view.state).unwrap_or_default();
     let missing = axes.iter().any(|k| k == crate::shapes::MISSING);
-    let unsettled = match vector {
-        Some(_) => None,
-        None => unsettled_status(&view),
-    };
 
     let ctx = Context {
         catalog: Catalog::load(root)?,
@@ -86,7 +72,7 @@ async fn pending(
         Pending {
             axes,
             missing,
-            unsettled,
+            vectored,
             facets,
         },
         decl,
@@ -228,7 +214,7 @@ async fn one(
             serde_json::json!({
                 "anchor": key,
                 "accepted": match what { What::Baseline => "baseline", What::Criteria => "criteria" },
-                "axes": p.axes, "unsettled": p.unsettled, "facets": p.facets,
+                "axes": p.axes, "facets": p.facets,
                 "context": last.context, "rationale": last.rationale,
             })
         );
@@ -236,11 +222,11 @@ async fn one(
     }
 
     match what {
-        What::Baseline => match &p.unsettled {
-            Some(status) => println!(
-                "{key} re-captured from `{status}`; if the world still reads that way it says so again"
+        What::Baseline => match p.axes.is_empty() {
+            true => println!(
+                "{key} re-captured from a fresh reading; if the world still reads that way it says so again"
             ),
-            None => println!(
+            false => println!(
                 "{key} re-captured from a fresh reading; {} cleared",
                 p.axes.join(" · ")
             ),
@@ -259,27 +245,24 @@ mod tests {
         Pending {
             axes: axes.iter().map(|s| (*s).to_owned()).collect(),
             missing: axes.contains(&"missing"),
-            unsettled: None,
+            vectored: true,
             facets: facets.to_vec(),
         }
     }
 
-    fn unsettled(status: &str) -> Pending {
+    fn hand_written() -> Pending {
         Pending {
             axes: Vec::new(),
             missing: false,
-            unsettled: Some(status.to_owned()),
+            vectored: false,
             facets: Vec::new(),
         }
     }
 
     #[test]
-    fn a_table_shape_sitting_on_an_unsettled_status_has_something_to_accept() {
-        assert_eq!(
-            choose(&unsettled("section-gone"), None).unwrap(),
-            What::Baseline
-        );
-        assert!(choose(&unsettled("section-gone"), Some(What::Baseline)).is_ok());
+    fn an_anchor_with_hand_written_rules_can_always_be_re_captured() {
+        assert_eq!(choose(&hand_written(), None).unwrap(), What::Baseline);
+        assert!(choose(&hand_written(), Some(What::Baseline)).is_ok());
     }
 
     #[test]

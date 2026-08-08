@@ -21,8 +21,6 @@ pub fn axes_set(state: &State) -> Option<Vec<String>> {
 #[derive(Debug, Default)]
 pub struct Subscriptions {
     per_note: BTreeMap<String, Vec<String>>,
-    per_anchor: BTreeMap<String, Vec<String>>,
-    settled: BTreeMap<String, &'static [&'static str]>,
 }
 
 impl Subscriptions {
@@ -30,20 +28,10 @@ impl Subscriptions {
         let notes = crate::memories::scan(root, catalog)?;
         let declared = read_declared(root, DEFAULT_FILE)?;
 
-        let mut per_anchor = BTreeMap::new();
-        let mut settled = BTreeMap::new();
         let mut axes_by_anchor: BTreeMap<&str, Vec<&'static str>> = BTreeMap::new();
         for decl in merged(&declared, &notes) {
             let Some(name) = &decl.shape else { continue };
-            let shape = crate::shapes::get(name)?;
-            settled.insert(decl.key.clone(), crate::shapes::settled_of(shape));
-            if let Some(watch) = crate::shapes::watch_of(shape) {
-                per_anchor.insert(
-                    decl.key.clone(),
-                    watch.iter().map(|s| (*s).to_owned()).collect(),
-                );
-                axes_by_anchor.insert(&decl.key, crate::shapes::axes_of(shape));
-            }
+            axes_by_anchor.insert(&decl.key, crate::shapes::axes_of(crate::shapes::get(name)?));
         }
 
         let mut per_note = BTreeMap::new();
@@ -65,30 +53,29 @@ impl Subscriptions {
             per_note.insert(note.path.clone(), watch.clone());
         }
 
-        Ok(Self {
-            per_note,
-            per_anchor,
-            settled,
-        })
+        Ok(Self { per_note })
     }
 
-    pub fn delivers(&self, anchor: &str, note: &str, state: &State, moved: bool) -> bool {
-        let Some(set) = axes_set(state) else {
-            return match self.settled.get(anchor) {
-                Some(ok) => !state.status().is_some_and(|s| ok.contains(&s.as_str())),
-                None => moved,
-            };
+    pub fn delivers(
+        &self,
+        shape: Option<&crate::shapes::Shape>,
+        note: &str,
+        state: &State,
+        moved: bool,
+    ) -> bool {
+        let Some(shape) = shape else {
+            return moved;
         };
+        let set = axes_set(state).unwrap_or_default();
         if set.is_empty() {
             return false;
         }
-        match self
-            .per_note
-            .get(note)
-            .or_else(|| self.per_anchor.get(anchor))
-        {
+        match self.per_note.get(note) {
             Some(watch) => set.iter().any(|a| watch.contains(a)),
-            None => true,
+            None => {
+                let watch = crate::shapes::watch_of(shape);
+                set.iter().any(|a| watch.contains(&a.as_str()))
+            }
         }
     }
 }
@@ -101,56 +88,47 @@ mod tests {
         State::new(serde_json::json!({ "position": {}, "v": v, "status": "x" }))
     }
 
-    fn subs(note: &[&str], anchor: &[&str]) -> Subscriptions {
+    fn narrowed(note: &[&str]) -> Subscriptions {
         Subscriptions {
             per_note: BTreeMap::from([(
                 "memories/a.md".to_owned(),
                 note.iter().map(|s| (*s).to_owned()).collect(),
             )]),
-            per_anchor: BTreeMap::from([(
-                "k".to_owned(),
-                anchor.iter().map(|s| (*s).to_owned()).collect(),
-            )]),
-            settled: BTreeMap::new(),
         }
     }
 
-    fn table(status: &str) -> State {
-        State::new(serde_json::json!({ "position": {}, "n": 3, "status": status }))
-    }
-
-    fn with_settled(ok: &'static [&'static str]) -> Subscriptions {
-        Subscriptions {
-            settled: BTreeMap::from([("k".to_owned(), ok)]),
-            ..Default::default()
-        }
+    fn contract() -> Option<&'static crate::shapes::Shape> {
+        crate::shapes::get("contract").ok()
     }
 
     #[test]
     fn an_unwatched_axis_moves_without_handing_back_the_memory() {
-        let s = subs(&["logic"], &["missing", "sig", "logic"]);
-        let moved_line = state(serde_json::json!({ "logic": false, "line": true }));
-        assert!(!s.delivers("k", "memories/a.md", &moved_line, true));
+        let s = narrowed(&["logic"]);
+        let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
+        assert!(!s.delivers(contract(), "memories/a.md", &moved_place, true));
 
-        let moved_logic = state(serde_json::json!({ "logic": true, "line": false }));
-        assert!(s.delivers("k", "memories/a.md", &moved_logic, true));
+        let moved_logic = state(serde_json::json!({ "logic": true, "place": false }));
+        assert!(s.delivers(contract(), "memories/a.md", &moved_logic, true));
     }
 
+    /// The default comes from the shape itself, not from a second copy of it
+    /// kept beside the declaration — those two can disagree while criteria
+    /// drift is outstanding.
     #[test]
     fn a_note_that_says_nothing_takes_its_shapes_default() {
-        let s = subs(&[], &["missing", "sig"]);
-        let moved_sig = state(serde_json::json!({ "sig": true, "line": false }));
-        assert!(s.delivers("k", "memories/b.md", &moved_sig, true));
-
-        let moved_line = state(serde_json::json!({ "sig": false, "line": true }));
-        assert!(!s.delivers("k", "memories/b.md", &moved_line, true));
+        let s = narrowed(&["logic"]);
+        let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
+        assert!(
+            s.delivers(contract(), "memories/b.md", &moved_place, true),
+            "contract watches every axis, and this note asked for nothing else"
+        );
     }
 
     #[test]
     fn a_settled_vector_hands_back_nothing() {
         let s = Subscriptions::default();
         assert!(!s.delivers(
-            "k",
+            contract(),
             "memories/a.md",
             &state(serde_json::json!({ "sig": false })),
             true
@@ -159,24 +137,20 @@ mod tests {
 
     #[test]
     fn a_set_bit_keeps_handing_the_memory_back_after_the_observation_that_set_it() {
-        let s = subs(&["sig"], &["missing", "sig"]);
+        let s = narrowed(&["sig"]);
         let carried = state(serde_json::json!({ "sig": true }));
-        assert!(s.delivers("k", "memories/a.md", &carried, false));
-        assert!(s.delivers("k", "memories/b.md", &carried, false));
+        assert!(s.delivers(contract(), "memories/a.md", &carried, false));
+        assert!(s.delivers(contract(), "memories/b.md", &carried, false));
     }
 
+    /// Hand-written rules are the escape hatch, and an anchor using it has no
+    /// axes to subscribe to. Falling back to the transition edge is a known
+    /// downgrade, not an oversight.
     #[test]
-    fn a_table_shape_hands_back_until_its_status_is_one_the_shape_calls_settled() {
-        let s = with_settled(&["captured"]);
-        assert!(!s.delivers("k", "memories/a.md", &table("captured"), true));
-        assert!(s.delivers("k", "memories/a.md", &table("section-gone"), false));
-        assert!(s.delivers("k", "memories/a.md", &table("added"), false));
-    }
-
-    #[test]
-    fn a_shape_nobody_declared_falls_back_to_the_transition_edge() {
+    fn an_anchor_with_no_shape_falls_back_to_the_transition_edge() {
         let s = Subscriptions::default();
-        assert!(s.delivers("k", "memories/a.md", &table("moved"), true));
-        assert!(!s.delivers("k", "memories/a.md", &table("moved"), false));
+        let hand = State::new(serde_json::json!({ "position": {}, "n": 3, "status": "moved" }));
+        assert!(s.delivers(None, "memories/a.md", &hand, true));
+        assert!(!s.delivers(None, "memories/a.md", &hand, false));
     }
 }

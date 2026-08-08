@@ -1,23 +1,10 @@
-use std::collections::BTreeSet;
-
 use crate::error::CliError;
 
 #[derive(Debug)]
 pub struct Shape {
     pub name: &'static str,
-    body: Body,
-}
-
-#[derive(Debug)]
-enum Body {
-    Table {
-        rules: &'static [&'static str],
-        settled: &'static [&'static str],
-    },
-    Vector {
-        dims: &'static [Dim],
-        watch: &'static [&'static str],
-    },
+    dims: &'static [Dim],
+    watch: &'static [&'static str],
 }
 
 #[derive(Debug)]
@@ -35,120 +22,102 @@ enum Reads {
     Since {
         field: &'static str,
         obs: &'static str,
+        op: Cmp,
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Cmp {
+    Ne,
+    Gt,
+    Lt,
+}
+
+impl Cmp {
+    fn as_str(self) -> &'static str {
+        match self {
+            Cmp::Ne => "!=",
+            Cmp::Gt => ">",
+            Cmp::Lt => "<",
+        }
+    }
+}
+
+const fn now(name: &'static str, status: &'static str, guard: &'static str) -> Dim {
+    Dim {
+        name,
+        status,
+        reads: Reads::Now { guard },
+    }
+}
+
+const fn since(
+    name: &'static str,
+    status: &'static str,
+    field: &'static str,
+    obs: &'static str,
+) -> Dim {
+    Dim {
+        name,
+        status,
+        reads: Reads::Since {
+            field,
+            obs,
+            op: Cmp::Ne,
+        },
+    }
+}
+
+const fn compare(
+    name: &'static str,
+    status: &'static str,
+    field: &'static str,
+    obs: &'static str,
+    op: Cmp,
+) -> Dim {
+    Dim {
+        name,
+        status,
+        reads: Reads::Since { field, obs, op },
+    }
+}
+
+const GONE: Dim = now(MISSING, "missing", "obs.exact == false");
+
 const CONTRACT: Shape = Shape {
     name: "contract",
-    body: Body::Vector {
-        dims: &[
-            Dim {
-                name: MISSING,
-                status: "missing",
-                reads: Reads::Now {
-                    guard: "obs.exact == false",
-                },
-            },
-            Dim {
-                name: "kind",
-                status: "kind-changed",
-                reads: Reads::Since {
-                    field: "form",
-                    obs: "obs.at.form",
-                },
-            },
-            Dim {
-                name: "sig",
-                status: "signature-changed",
-                reads: Reads::Since {
-                    field: "sig",
-                    obs: "obs.at.shape",
-                },
-            },
-            Dim {
-                name: "surface",
-                status: "surface-changed",
-                reads: Reads::Since {
-                    field: "surface",
-                    obs: "obs.at.surface",
-                },
-            },
-            Dim {
-                name: "logic",
-                status: "logic-changed",
-                reads: Reads::Since {
-                    field: "body",
-                    obs: "obs.facts.body",
-                },
-            },
-            Dim {
-                name: "place",
-                status: "moved",
-                reads: Reads::Since {
-                    field: "after",
-                    obs: "obs.at.after",
-                },
-            },
-        ],
-        watch: &["missing", "kind", "sig", "surface", "logic", "place"],
-    },
+    dims: &[
+        GONE,
+        since("kind", "kind-changed", "form", "obs.at.form"),
+        since("sig", "signature-changed", "sig", "obs.at.shape"),
+        since("surface", "surface-changed", "surface", "obs.at.surface"),
+        since("logic", "logic-changed", "body", "obs.facts.body"),
+        since("place", "moved", "after", "obs.at.after"),
+    ],
+    watch: &["missing", "kind", "sig", "surface", "logic", "place"],
 };
 
 const ROSTER: Shape = Shape {
     name: "roster",
-    body: Body::Table {
-        settled: &["captured"],
-        rules: &[
-            r#"obs.exact == false => { position: state.position, n: 0, matches: [], status: "coordinate-missed" }"#,
-            r#"not exists(state.n) => { position: state.position, n: obs.candidates, matches: obs.matches, status: "captured" }"#,
-            r#"obs.candidates > state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "added" }"#,
-            r#"obs.candidates < state.n => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "removed" }"#,
-            r#"changed("matches") => { position: state.position, n: obs.candidates, matches: obs.matches, was: state.matches, status: "moved" }"#,
-        ],
-    },
-};
-
-const OCCURRENCE: Shape = Shape {
-    name: "occurrence",
-    body: Body::Table {
-        settled: &["captured"],
-        rules: &[
-            r#"not exists(state.n) => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, status: "captured" }"#,
-            r#"obs.at.scope != state.scope => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.scope, status: "entered-code" }"#,
-            r#"obs.facts.occurrences != state.n => { position: state.position, scope: obs.at.scope, n: obs.facts.occurrences, files: obs.facts.files, was: state.n, status: "count-moved" }"#,
-        ],
-    },
+    dims: &[
+        GONE,
+        compare("grew", "grew", "count", "obs.candidates", Cmp::Gt),
+        compare("shrank", "shrank", "count", "obs.candidates", Cmp::Lt),
+        since("roll", "swapped", "roll", "obs.roll"),
+    ],
+    watch: &["missing", "grew", "shrank", "roll"],
 };
 
 const FINGERPRINT: Shape = Shape {
     name: "fingerprint",
-    body: Body::Table {
-        settled: &["captured"],
-        rules: &[
-            r#"not exists(state.fingerprint) and obs.exact => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, status: "captured" }"#,
-            r#"not exists(state.fingerprint) => { position: state.position, status: "absent" }"#,
-            r#"obs.exact == false => { position: state.position, fingerprint: state.fingerprint, line: state.line, status: "section-gone" }"#,
-            r#"obs.at.fingerprint != state.fingerprint => { position: state.position, fingerprint: obs.at.fingerprint, line: obs.facts.line, was: state.fingerprint, status: "drifted" }"#,
-        ],
-    },
+    dims: &[
+        GONE,
+        since("drift", "drifted", "fingerprint", "obs.at.fingerprint"),
+    ],
+    watch: &["missing", "drift"],
 };
 
-const SYMBOL: Shape = Shape {
-    name: "symbol",
-    body: Body::Table {
-        settled: &["captured"],
-        rules: &[
-            r#"obs.found == false => { position: state.position, status: "missing" }"#,
-            r#"not exists(state.signature) => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, status: "captured" }"#,
-            r#"obs.at.shape != state.signature => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.signature, status: "signature-changed" }"#,
-            r#"obs.facts.body != state.body => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.body, status: "logic-changed" }"#,
-            r#"obs.at.file != state.file => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.file, status: "moved-file" }"#,
-            r#"obs.facts.line != state.line => { position: state.position, signature: obs.at.shape, body: obs.facts.body, file: obs.at.file, line: obs.facts.line, was: state.line, status: "moved-line" }"#,
-        ],
-    },
-};
-
-pub const ALL: &[&Shape] = &[&CONTRACT, &ROSTER, &OCCURRENCE, &FINGERPRINT, &SYMBOL];
+pub const ALL: &[&Shape] = &[&CONTRACT, &ROSTER, &FINGERPRINT];
 
 pub fn get(name: &str) -> Result<&'static Shape, CliError> {
     ALL.iter().copied().find(|s| s.name == name).ok_or_else(|| {
@@ -160,39 +129,25 @@ pub fn get(name: &str) -> Result<&'static Shape, CliError> {
 }
 
 pub fn rules_of(shape: &Shape) -> Vec<String> {
-    match shape.body {
-        Body::Table { rules, .. } => rules.iter().map(|r| (*r).to_owned()).collect(),
-        Body::Vector { dims, .. } => expand(dims),
-    }
+    expand(shape.dims)
 }
 
-pub fn settled_of(shape: &Shape) -> &'static [&'static str] {
-    match shape.body {
-        Body::Table { settled, .. } => settled,
-        Body::Vector { .. } => SETTLED_ONLY,
-    }
+pub fn of(transitions: &gmr::Transitions) -> Option<&'static Shape> {
+    ALL.iter()
+        .copied()
+        .find(|s| crate::rules::transitions(&rules_of(s)).is_ok_and(|t| &t == transitions))
 }
-
-const SETTLED_ONLY: &[&str] = &[SETTLED];
 
 pub fn name_of(transitions: &gmr::Transitions) -> Option<&'static str> {
-    ALL.iter()
-        .find(|s| crate::rules::transitions(&rules_of(s)).is_ok_and(|t| &t == transitions))
-        .map(|s| s.name)
+    of(transitions).map(|s| s.name)
 }
 
-pub fn watch_of(shape: &Shape) -> Option<&'static [&'static str]> {
-    match shape.body {
-        Body::Table { .. } => None,
-        Body::Vector { watch, .. } => Some(watch),
-    }
+pub fn watch_of(shape: &Shape) -> &'static [&'static str] {
+    shape.watch
 }
 
 pub fn axes_of(shape: &Shape) -> Vec<&'static str> {
-    match shape.body {
-        Body::Table { .. } => Vec::new(),
-        Body::Vector { dims, .. } => dims.iter().map(|d| d.name).collect(),
-    }
+    shape.dims.iter().map(|d| d.name).collect()
 }
 
 pub const MISSING: &str = "missing";
@@ -203,15 +158,16 @@ fn object(fields: &[(String, String)]) -> String {
 }
 
 fn reading(dims: &[Dim]) -> String {
-    object(
-        &dims
-            .iter()
-            .filter_map(|d| match d.reads {
-                Reads::Since { field, obs } => Some((field.into(), obs.into())),
-                Reads::Now { .. } => None,
-            })
-            .collect::<Vec<_>>(),
-    )
+    let mut fields: Vec<(String, String)> = Vec::new();
+    for d in dims {
+        let Reads::Since { field, obs, .. } = d.reads else {
+            continue;
+        };
+        if !fields.iter().any(|(k, _)| k == field) {
+            fields.push((field.into(), obs.into()));
+        }
+    }
+    object(&fields)
 }
 
 fn vector(dims: &[Dim], each: impl Fn(&Dim) -> String) -> String {
@@ -226,9 +182,11 @@ fn vector(dims: &[Dim], each: impl Fn(&Dim) -> String) -> String {
 fn bit(d: &Dim) -> String {
     match d.reads {
         Reads::Now { guard } => guard.to_owned(),
-        Reads::Since { field, obs } => {
-            format!("state.v.{} or ({obs} != state.baseline.{field})", d.name)
-        }
+        Reads::Since { field, obs, op } => format!(
+            "state.v.{} or ({obs} {} state.baseline.{field})",
+            d.name,
+            op.as_str()
+        ),
     }
 }
 
@@ -304,59 +262,12 @@ fn expand(dims: &[Dim]) -> Vec<String> {
 
 pub const SETTLED: &str = "settled";
 
-const COORD_REPORT_FIELDS: &[&str] = &[
-    "schema",
-    "extractor",
-    "found",
-    "matched",
-    "missed",
-    "candidates",
-    "exact",
-    "matches",
-    "priority",
-];
-
-const COORD_SCHEMA: &str = "gmr.probe-coord.v1";
-
-pub fn reads_of(transitions: &gmr::Transitions) -> Result<BTreeSet<String>, CliError> {
-    let mut out = BTreeSet::new();
-    for rule in transitions.iter() {
-        for expr in [&rule.when, &rule.to] {
-            let node = gmr::expr::parse(&expr.source)
-                .map_err(|e| CliError(format!("`{}`: {e}", expr.source)))?;
-            out.extend(node.reads_obs());
-        }
-    }
-    Ok(out)
-}
-
-fn known(obs: &crate::probes::Obs) -> BTreeSet<String> {
-    if obs.schema == COORD_SCHEMA {
-        let mut out: BTreeSet<String> = COORD_REPORT_FIELDS
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect();
-        out.extend(obs.at.iter().map(|k| format!("at.{k}")));
-        out.extend(obs.facts.iter().map(|k| format!("facts.{k}")));
-        out
-    } else {
-        obs.at.iter().chain(&obs.facts).cloned().collect()
-    }
-}
-
-pub fn unmet(reads: &BTreeSet<String>, obs: &crate::probes::Obs) -> Vec<String> {
-    let known = known(obs);
-    reads
-        .iter()
-        .filter(|r| !known.contains(*r))
-        .cloned()
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{COORD_SCHEMA, reads_of, unmet};
     use serde_json::Value;
+    use std::collections::BTreeSet;
 
     #[test]
     fn every_shape_is_a_program_the_evaluator_accepts() {
@@ -384,7 +295,7 @@ mod tests {
     fn roster_reads_only_report_level_fields() {
         assert_eq!(
             reads_of_shape(&ROSTER),
-            BTreeSet::from(["exact", "candidates", "matches"].map(String::from))
+            BTreeSet::from(["exact", "candidates", "roll"].map(String::from))
         );
     }
 
@@ -394,48 +305,23 @@ mod tests {
     }
 
     #[test]
-    fn occurrence_needs_name_maps_vocabulary() {
-        let reads = reads_of_shape(&OCCURRENCE);
-        let name_map = obs(
-            COORD_SCHEMA,
-            &["name", "scope"],
-            &["occurrences", "file_count", "files", "first"],
-        );
-        assert!(unmet(&reads, &name_map).is_empty());
-
-        let ast_map = obs(
-            COORD_SCHEMA,
-            &[
-                "file", "kind", "form", "vis", "surface", "after", "name", "shape",
-            ],
-            &["body", "line"],
-        );
-        assert_eq!(
-            unmet(&reads, &ast_map),
-            vec!["at.scope", "facts.files", "facts.occurrences"]
-        );
-    }
-
-    #[test]
-    fn fingerprint_takes_prose_map_but_not_addr_map() {
+    fn fingerprint_takes_any_probe_that_names_a_fingerprint() {
         let reads = reads_of_shape(&FINGERPRINT);
-        assert!(
-            unmet(
-                &reads,
-                &obs(
-                    COORD_SCHEMA,
-                    &["file", "heading", "fingerprint"],
-                    &["line", "lines"]
-                )
-            )
-            .is_empty()
-        );
+        for at in [
+            &["file", "heading", "fingerprint"][..],
+            &["path", "name", "fingerprint"][..],
+        ] {
+            assert!(
+                unmet(&reads, &obs(COORD_SCHEMA, at, &[])).is_empty(),
+                "{at:?}"
+            );
+        }
         assert_eq!(
             unmet(
                 &reads,
-                &obs(COORD_SCHEMA, &["path", "name", "fingerprint"], &["bytes"])
+                &obs(COORD_SCHEMA, &["name", "scope"], &["occurrences"])
             ),
-            vec!["facts.line"]
+            vec!["at.fingerprint"]
         );
     }
 
@@ -485,109 +371,217 @@ mod tests {
     }
 
     struct Shot {
+        shape: &'static str,
         axis: &'static str,
         moves: &'static [&'static str],
-        name: &'static str,
+        probe: &'static str,
+        file: &'static str,
+        pos: &'static str,
         before: &'static str,
         after: &'static str,
     }
 
+    const AST: &str = "ast-map";
+    const PROSE: &str = "prose-map";
+
     const RANGE: &[Shot] = &[
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub fn f(x: u64, y: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub fn f(x: u64) -> u32 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub async fn f(x: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub unsafe fn f(x: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f<T>(x: T) -> T { x }",
             after: "pub fn f<T: Clone>(x: T) -> T { x }",
         },
         Shot {
+            shape: "contract",
             axis: "surface",
             moves: &["surface"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "fn f(x: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "logic",
             moves: &["logic"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { helper(x) }",
             after: "pub fn f(x: u64) -> u64 { other(x) }",
         },
         Shot {
+            shape: "contract",
             axis: "place",
             moves: &["place"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn a() {}\npub fn f(x: u64) -> u64 { x }",
             after: "pub fn a() {}\npub fn b() {}\npub fn f(x: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "surface",
             moves: &["surface"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "#[deprecated]\npub fn f(x: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "missing",
             moves: &["missing"],
-            name: "f",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub fn gone(x: u64) -> u64 { x }",
         },
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "X",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub struct X { pub a: u64 }",
             after: "pub struct X { pub a: u64, pub b: u8 }",
         },
         Shot {
+            shape: "contract",
             axis: "sig",
             moves: &["sig"],
-            name: "X",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub struct X { pub a: u64 }",
             after: "pub struct X { pub a: u32 }",
         },
         Shot {
+            shape: "contract",
             axis: "logic",
             moves: &["logic"],
-            name: "X",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub trait X { fn go(&self) -> u8 { 1 } }",
             after: "pub trait X { fn go(&self) -> u8 { 2 } }",
         },
         Shot {
+            shape: "roster",
+            axis: "missing",
+            moves: &["missing"],
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "kind": "function"}"#,
+            before: "pub fn a() {}",
+            after: "pub struct A;",
+        },
+        Shot {
+            shape: "roster",
+            axis: "grew",
+            moves: &["grew", "roll"],
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "kind": "function"}"#,
+            before: "pub fn a() {}",
+            after: "pub fn a() {}\npub fn b() {}",
+        },
+        Shot {
+            shape: "roster",
+            axis: "shrank",
+            moves: &["shrank", "roll"],
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "kind": "function"}"#,
+            before: "pub fn a() {}\npub fn b() {}",
+            after: "pub fn a() {}",
+        },
+        Shot {
+            shape: "roster",
+            axis: "roll",
+            moves: &["roll"],
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "kind": "function"}"#,
+            before: "pub fn a() {}",
+            after: "pub fn b() {}",
+        },
+        Shot {
+            shape: "fingerprint",
+            axis: "missing",
+            moves: &["missing"],
+            probe: PROSE,
+            file: "a.md",
+            pos: r#"{"file": "a.md", "heading": "H"}"#,
+            before: "# H\n\nbody\n",
+            after: "# Other\n\nbody\n",
+        },
+        Shot {
+            shape: "fingerprint",
+            axis: "drift",
+            moves: &["drift"],
+            probe: PROSE,
+            file: "a.md",
+            pos: r#"{"file": "a.md", "heading": "H"}"#,
+            before: "# H\n\nbody\n",
+            after: "# H\n\nrewritten\n",
+        },
+        Shot {
+            shape: "contract",
             axis: "kind",
             moves: &["kind", "sig"],
-            name: "X",
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub struct X { pub a: u64 }",
             after: "pub enum X { A }",
         },
@@ -597,19 +591,19 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("gmr-range-{at}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("a.rs");
-        let probe = coding_extract::registry();
-        let probe = &probe
-            .get(&gmr::ProbeName::new("ast-map"))
-            .expect("ast-map is linked in")
+        let file = dir.join(shot.file);
+        let reg = coding_extract::registry();
+        let probe = &reg
+            .get(&gmr::ProbeName::new(shot.probe))
+            .unwrap_or_else(|| panic!("`{}` is not linked in", shot.probe))
             .extract;
-        let pos = serde_json::json!({ "file": "a.rs", "name": shot.name });
+        let pos: Value = serde_json::from_str(shot.pos).unwrap();
         let look = |src: &str| {
             std::fs::write(&file, src).unwrap();
             probe(&dir, &pos, &serde_json::json!({})).unwrap()
         };
 
-        let rules = contract();
+        let rules = rules_of(get(shot.shape).unwrap());
         let opened = step(&rules, &look(shot.before), &Value::Null);
         assert!(
             set(&opened).is_empty(),
@@ -620,10 +614,7 @@ mod tests {
 
     #[test]
     fn what_an_axis_answers_decides_when_its_bit_falls() {
-        let Body::Vector { dims, .. } = &get("contract").unwrap().body else {
-            panic!("contract keeps a vector");
-        };
-        for d in *dims {
+        for d in get("contract").unwrap().dims {
             let carries = bit(d).contains(&format!("state.v.{}", d.name));
             match d.reads {
                 Reads::Now { .. } => assert!(
@@ -656,13 +647,18 @@ mod tests {
     }
 
     #[test]
-    fn no_axis_is_left_off_the_range() {
-        let axes = axes_of(get("contract").unwrap());
-        for axis in &axes {
-            assert!(
-                RANGE.iter().any(|s| s.axis == *axis),
-                "`{axis}` has no shot; an axis nothing is known to move is how a dead one hides"
-            );
+    fn no_axis_of_any_shape_is_left_off_the_range() {
+        for shape in ALL {
+            for axis in axes_of(shape) {
+                assert!(
+                    RANGE
+                        .iter()
+                        .any(|s| s.shape == shape.name && s.axis == axis),
+                    "`{}`'s `{axis}` has no shot; an axis nothing is known to move \
+                     is how a dead one hides",
+                    shape.name
+                );
+            }
         }
     }
 
@@ -805,7 +801,7 @@ mod tests {
     #[test]
     fn every_axis_hands_the_memory_back_unless_the_note_narrows_it() {
         let shape = get("contract").unwrap();
-        let watch = watch_of(shape).expect("contract keeps a vector");
+        let watch = watch_of(shape);
         assert_eq!(
             watch,
             axes_of(shape),
@@ -955,7 +951,7 @@ mod tests {
         let first = step(&r, &fell_back, &Value::Null);
         assert_eq!(first["status"], "absent", "a miss is not a baseline");
         assert!(
-            first.get("fingerprint").is_none(),
+            first.get("baseline").is_none(),
             "nothing may be pinned from a fallback: {first}"
         );
 
@@ -970,17 +966,17 @@ mod tests {
     fn a_fingerprint_that_matched_captures_and_still_notices_the_heading_leaving() {
         let r = fingerprint();
         let captured = step(&r, &section("四、红牌", "aaa", 40, true), &Value::Null);
-        assert_eq!(captured["status"], "captured");
-        assert_eq!(captured["fingerprint"], "aaa");
+        assert_eq!(captured["status"], "settled");
+        assert_eq!(captured["baseline"]["fingerprint"], "aaa");
 
         let after = step(
             &r,
             &section("一、这十三条", "bac58fed", 7, false),
             &captured,
         );
-        assert_eq!(after["status"], "section-gone");
+        assert_eq!(after["status"], "missing");
         assert_eq!(
-            after["fingerprint"], "aaa",
+            after["baseline"]["fingerprint"], "aaa",
             "the baseline survives; the fallback must not overwrite it"
         );
     }

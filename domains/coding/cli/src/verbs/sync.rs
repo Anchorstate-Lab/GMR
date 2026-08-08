@@ -62,9 +62,9 @@ impl AnchorDecl {
     /// exactly the check a shape gets, because `reads_of` walks whatever
     /// `to_transitions` produced rather than a preset's own declared list.
     fn check_contract(&self, ctx: &Context) -> Result<(), CliError> {
-        let reads = crate::shapes::reads_of(&self.to_transitions()?)
+        let reads = crate::contract::reads_of(&self.to_transitions()?)
             .map_err(|e| CliError(format!("{}: {e}", self.key)))?;
-        let missing = crate::shapes::unmet(&reads, &ctx.catalog.obs_of(&self.probe)?);
+        let missing = crate::contract::unmet(&reads, &ctx.catalog.obs_of(&self.probe)?);
         match missing.is_empty() {
             true => Ok(()),
             false => Err(CliError(format!(
@@ -427,10 +427,18 @@ rules = [
             .unwrap()
     }
 
-    /// Migration guarantee: swapping literal rules for a shape moves no criteria.
+    /// Naming a shape and writing rules by hand are the same kind of thing to
+    /// the substrate: both arrive as a rule table. The escape hatch is that a
+    /// note may write its own, not that it gets a lesser sort of anchor.
     #[test]
-    fn a_shape_expands_to_the_table_it_replaces() {
-        assert_eq!(
+    fn hand_written_rules_and_a_named_shape_both_become_transitions() {
+        assert!(
+            decl(&format!("{ART}\nshape = \"roster\""))
+                .to_transitions()
+                .is_ok()
+        );
+        assert!(decl(&format!("{ART}{RULES}")).to_transitions().is_ok());
+        assert_ne!(
             decl(&format!("{ART}\nshape = \"roster\""))
                 .to_transitions()
                 .unwrap(),
@@ -494,10 +502,10 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     #[test]
     fn a_shape_the_probe_cannot_feed_is_refused() {
         let (_d, c) = ctx(AST_LIKE);
-        let e = decl("probe = \"ast-like\"\nshape = \"occurrence\"")
+        let e = decl("probe = \"ast-like\"\nshape = \"fingerprint\"")
             .check_contract(&c)
             .unwrap_err();
-        assert!(e.to_string().contains("facts.occurrences"), "{e}");
+        assert!(e.to_string().contains("at.fingerprint"), "{e}");
     }
 
     #[test]

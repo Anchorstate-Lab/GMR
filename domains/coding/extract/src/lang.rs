@@ -23,6 +23,7 @@ pub struct Table {
     pub kinds: &'static [(&'static str, &'static str)],
     pub shape_fields: &'static [&'static str],
     pub shape_kinds: &'static [&'static str],
+    pub names: &'static [&'static str],
     pub attrs: Attrs,
     pub vis: Vis,
     pub name_from_parent: &'static [&'static str],
@@ -48,6 +49,7 @@ pub const RUST: Table = Table {
     ],
     shape_fields: &["type_parameters", "parameters", "return_type", "type"],
     shape_kinds: &["function_modifiers", "where_clause"],
+    names: &["name", "function", "argument"],
     attrs: Attrs::Before("attribute_item"),
     vis: Vis::Child("visibility_modifier"),
     name_from_parent: &[],
@@ -78,6 +80,8 @@ const TS_SHAPE: &[&str] = &["type_parameters", "parameters", "return_type", "typ
 
 const TS_SHAPE_KINDS: &[&str] = &["async", "abstract", "readonly"];
 
+const TS_NAMES: &[&str] = &["name", "function", "source", "constructor"];
+
 const TS_NAME_FROM_PARENT: &[&str] = &["variable_declarator", "pair"];
 
 const TS_VIS: Vis = Vis::Ancestor {
@@ -91,6 +95,7 @@ pub const TYPESCRIPT: Table = Table {
     kinds: TS_KINDS,
     shape_fields: TS_SHAPE,
     shape_kinds: TS_SHAPE_KINDS,
+    names: TS_NAMES,
     attrs: Attrs::Before("decorator"),
     vis: TS_VIS,
     name_from_parent: TS_NAME_FROM_PARENT,
@@ -102,6 +107,7 @@ pub const TSX: Table = Table {
     kinds: TS_KINDS,
     shape_fields: TS_SHAPE,
     shape_kinds: TS_SHAPE_KINDS,
+    names: TS_NAMES,
     attrs: Attrs::Before("decorator"),
     vis: TS_VIS,
     name_from_parent: TS_NAME_FROM_PARENT,
@@ -120,6 +126,7 @@ pub const PYTHON: Table = Table {
     ],
     shape_fields: &["type_parameters", "parameters", "return_type", "type"],
     shape_kinds: &["async"],
+    names: &["name", "function", "module_name"],
     attrs: Attrs::Before("decorator"),
     vis: Vis::Absent,
     name_from_parent: &[],
@@ -140,6 +147,7 @@ pub const GO: Table = Table {
     ],
     shape_fields: &["type_parameters", "parameters", "result", "type"],
     shape_kinds: &[],
+    names: &["name", "function", "path"],
     attrs: Attrs::Absent,
     vis: Vis::LeadingUpper("export"),
     name_from_parent: &[],

@@ -59,7 +59,7 @@ fn position_for(coord: &str, at: &[String], probe: &str) -> Result<Value, CliErr
 fn fits(shape: &str, obs: &crate::probes::Obs) -> Result<bool, CliError> {
     let transitions =
         crate::rules::transitions(&crate::shapes::rules_of(crate::shapes::get(shape)?))?;
-    Ok(crate::shapes::unmet(&crate::shapes::reads_of(&transitions)?, obs).is_empty())
+    Ok(crate::contract::unmet(&crate::contract::reads_of(&transitions)?, obs).is_empty())
 }
 
 fn shape_for(coord: &str, obs: &crate::probes::Obs) -> Result<String, CliError> {

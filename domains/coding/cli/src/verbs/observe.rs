@@ -92,9 +92,10 @@ pub(crate) async fn delivered(
         }
         return Ok(Vec::new());
     }
+    let shape = crate::shapes::of(&rt.read(key).await?.anchor.transitions);
     Ok(bound
         .into_iter()
-        .filter(|m| subs.delivers(key.as_str(), m, to, moved))
+        .filter(|m| subs.delivers(shape, m, to, moved))
         .collect())
 }
 

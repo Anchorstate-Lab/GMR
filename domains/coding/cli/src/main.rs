@@ -1,4 +1,5 @@
 mod cli;
+mod contract;
 mod coord;
 mod delivery;
 mod error;

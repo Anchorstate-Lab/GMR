@@ -43,6 +43,7 @@ fn sections(rel: &str, src: &str, out: &mut Vec<coord::Candidate>) {
             .map(|(k, v)| (k.to_owned(), v))
             .collect();
             out.push(coord::Candidate::new(
+                format!("{}#{}", c["file"], c["heading"]),
                 c,
                 json!({ "line": line, "lines": body.len() }),
             ));
