@@ -28,8 +28,8 @@ anchors:
 
 ## red-cards 报 missing 要问什么
 
-「四、红牌」这一节在 `5f6b22d rewrite claude.md` 里就没了，而这个锚一直报
-`captured` —— 因为 `file` 命中、`heading` 没命中，探针退回文件里第一个 heading，
+「四、红牌」这一节在 `5f6b22d rewrite claude.md` 里就没了，而这个锚一直显示已经捕获
+到基线 —— 因为 `file` 命中、`heading` 没命中，探针退回文件里第一个 heading，
 而当时的捕获规则不看 `exact`，把那个错的章节钉成了基线。两个 doctrine 锚
 因此指纹完全相同、都指向第 7 行。
 

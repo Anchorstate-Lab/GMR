@@ -152,6 +152,28 @@ pub fn axes_of(shape: &Shape) -> Vec<&'static str> {
 
 pub const MISSING: &str = "missing";
 
+pub const RETIRED: &[&str] = &[
+    "added",
+    "captured",
+    "count-moved",
+    "matches",
+    "moved-file",
+    "occurrence",
+    "removed",
+    "section-gone",
+    "symbol",
+];
+
+#[cfg(test)]
+fn vocabulary() -> std::collections::BTreeSet<&'static str> {
+    let mut out = std::collections::BTreeSet::from([SETTLED, "absent"]);
+    for shape in ALL {
+        out.insert(shape.name);
+        out.extend(shape.dims.iter().flat_map(|d| [d.name, d.status]));
+    }
+    out
+}
+
 fn object(fields: &[(String, String)]) -> String {
     let body: Vec<String> = fields.iter().map(|(k, v)| format!("{k}: {v}")).collect();
     format!("{{ {} }}", body.join(", "))
@@ -394,6 +416,18 @@ mod tests {
                 shape.dims.iter().map(|d| d.name).collect::<BTreeSet<_>>(),
                 "`{}`: one bit per dimension, no more and no fewer",
                 shape.name
+            );
+        }
+    }
+
+    #[test]
+    fn nothing_is_both_retired_and_shipping() {
+        let live = vocabulary();
+        for word in RETIRED {
+            assert!(
+                !live.contains(word),
+                "`{word}` is on the tombstone list and also in this build's vocabulary; \
+                 a note naming it would be reported as stale while being correct"
             );
         }
     }

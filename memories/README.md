@@ -79,6 +79,7 @@ anchors:
 | `unclaimed` | 没有 frontmatter —— 这篇笔记没有锚，没人观测它说的还成不成立 | 1 |
 | `bare-key` | 裸键：只绑定不声明，而本仓库没有别处声明锚 | 1 |
 | `long-hand` | 完整式写的东西坐标本来就能路由到，该退回 `about:` | 0（建议） |
+| `retired` | 提到了 `shapes::RETIRED` 里的词 —— 这个 build 没有它了 | 0（建议） |
 
 判据是**试着走一遍**：把 `key` 当坐标路由，如果推出来的探针和 position 跟手写的
 一模一样，且没有 `rules` / `terminal` / 非默认 `params`，那这份完整式就没挣到它的位置。

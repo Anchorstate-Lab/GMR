@@ -228,8 +228,27 @@ pub fn lint(root: &Path, catalog: &Catalog) -> Result<Vec<Lint>, CliError> {
                 Entry::Declared(_) => {}
             }
         }
+        out.extend(tombstones(&rel, &text));
     }
     Ok(out)
+}
+
+fn tombstones(rel: &str, text: &str) -> Option<Lint> {
+    let named: Vec<String> = crate::shapes::RETIRED
+        .iter()
+        .filter(|w| text.contains(&format!("`{w}`")))
+        .map(|w| format!("`{w}`"))
+        .collect();
+    (!named.is_empty()).then(|| Lint {
+        note: rel.to_owned(),
+        code: "retired",
+        detail: format!(
+            "names {}, which this build no longer has — stale, or deliberately \
+             recording what it buried; only you can tell those apart",
+            named.join(" ")
+        ),
+        breaks: false,
+    })
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Vec<Note>, CliError> {

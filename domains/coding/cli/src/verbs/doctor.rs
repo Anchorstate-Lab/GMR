@@ -41,7 +41,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
     let notes = crate::memories::lint(root, &crate::probes::Catalog::load(root)?)?;
-    let (malformed, long_hand): (Vec<_>, Vec<_>) = notes.iter().partition(|l| l.breaks);
+    let (malformed, advisory): (Vec<_>, Vec<_>) = notes.iter().partition(|l| l.breaks);
     // stranded/provider_warnings mean something declared or expected isn't
     // actually working, not just "worth noting" like absent/barren/unseen —
     // that's the line between exit 1 and exit 0.
@@ -104,11 +104,8 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             l.note, l.code, l.detail
         );
     }
-    for l in &long_hand {
-        println!(
-            "long-hand {}\n          <- {}; see memories/README.md",
-            l.note, l.detail
-        );
+    for l in &advisory {
+        println!("{:9} {}\n          <- {}", l.code, l.note, l.detail);
     }
     if !stranded.is_empty() {
         println!(
