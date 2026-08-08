@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Link, Outcome, Ref, Seq, State, StatusId, Version, scan,
+    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, Ref, Seq, State, StatusId, Version, scan,
 };
 use serde::Serialize;
 
@@ -31,6 +31,8 @@ pub struct AnchorView {
     /// What derived the reading this state stands on. Compare it against what
     /// the probe resolves to now and you know whether the instrument changed.
     pub derivation: Option<Derivation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facts: Option<Facts>,
     pub memories: Vec<MemoryView>,
 }
 
@@ -97,6 +99,7 @@ async fn read(
         _ => Sighting::Absent,
     };
     let derivation = s.latest.as_ref().map(|o| o.versions.derivation.clone());
+    let facts = s.latest.as_ref().and_then(|o| o.facts().cloned());
 
     Ok(AnchorView {
         key: key.clone(),
@@ -110,6 +113,7 @@ async fn read(
         last_sighting: s.last_sighting,
         sightings,
         derivation,
+        facts,
         memories,
     })
 }

@@ -1,4 +1,36 @@
 use gmr::AnchorView;
+use serde_json::Value;
+
+pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
+    let facts = facts?.as_value();
+    if facts.get("schema")?.as_str()? != crate::contract::COORD_SCHEMA {
+        return None;
+    }
+    if facts.get("exact")?.as_bool()? {
+        return None;
+    }
+    let list = |key: &str| {
+        facts
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            })
+            .unwrap_or_default()
+    };
+    Some(match facts.get("found").and_then(Value::as_bool) {
+        Some(true) => format!(
+            "{} matched, {} did not — this reading is about whichever of {} others was closest",
+            list("matched"),
+            list("missed"),
+            facts.get("candidates").and_then(Value::as_u64).unwrap_or(0)
+        ),
+        _ => format!("nothing there answered to any of {}", list("priority")),
+    })
+}
 
 pub fn anchor(v: &AnchorView) -> String {
     let mut out = String::new();

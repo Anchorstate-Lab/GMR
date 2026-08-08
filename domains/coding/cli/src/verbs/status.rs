@@ -121,6 +121,9 @@ pub async fn run(
         if let Some(axes) = axes {
             println!("    v  {axes}");
         }
+        if let Some(d) = crate::render::diagnosis(view.facts.as_ref()) {
+            println!("    ?  {d}");
+        }
         for (note, blank) in memories {
             match blank {
                 true => println!("    ! {note}   unwritten"),

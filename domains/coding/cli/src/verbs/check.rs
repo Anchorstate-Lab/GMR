@@ -49,7 +49,7 @@ pub async fn run(
     let subs = Subscriptions::load(root, &catalog)?;
     let drifted = drifted(rt, root, catalog, &keys).await?;
 
-    let mut handed: Vec<(AnchorKey, String, Vec<String>)> = Vec::new();
+    let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<String>)> = Vec::new();
     let mut unclaimed = Vec::new();
     let mut unseen = Vec::new();
     let mut quiet = 0;
@@ -65,15 +65,24 @@ pub async fn run(
             other => matches!(other, Observed::Transitioned { .. }),
         };
 
-        let state = rt.read(key).await?.state;
+        let view = rt.read(key).await?;
         let memories =
-            super::observe::delivered(rt, &subs, key, &state, moved, &mut unclaimed).await?;
+            super::observe::delivered(rt, &subs, key, &view.state, moved, &mut unclaimed).await?;
         if memories.is_empty() {
             quiet += usize::from(moved);
             continue;
         }
-        let status = state.status().map(|s| s.to_string()).unwrap_or_default();
-        handed.push((key.clone(), status, memories));
+        let status = view
+            .state
+            .status()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        handed.push((
+            key.clone(),
+            status,
+            crate::render::diagnosis(view.facts.as_ref()),
+            memories,
+        ));
     }
 
     let wrong =
@@ -84,8 +93,8 @@ pub async fn run(
             "{}",
             serde_json::json!({
                 "observed": keys.len(),
-                "handed_back": handed.iter().map(|(k, s, m)| serde_json::json!({
-                    "anchor": k, "status": s, "memories": m
+                "handed_back": handed.iter().map(|(k, s, d, m)| serde_json::json!({
+                    "anchor": k, "status": s, "diagnosis": d, "memories": m
                 })).collect::<Vec<_>>(),
                 "moved_unwatched": quiet,
                 "unclaimed": unclaimed,
@@ -100,8 +109,11 @@ pub async fn run(
         return Ok(i32::from(wrong));
     }
 
-    for (key, status, memories) in &handed {
+    for (key, status, diagnosis, memories) in &handed {
         println!("{key}   {status}");
+        if let Some(d) = diagnosis {
+            println!("  {d}");
+        }
         for m in memories {
             println!("  → {m}");
         }
