@@ -50,10 +50,10 @@ The repository includes a simple install script for prebuilt releases.
 If you want a direct binary install without npm:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Zongming-He/GMR/main/dist/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Anchorstate-Lab/GMR/main/dist/install.sh | sh
 ```
 
-If you are using a fork or mirror, replace `Zongming-He/GMR` with your repository path.
+If you are using a fork or mirror, replace `Anchorstate-Lab/GMR` with your repository path.
 
 ### Build from source
 
