@@ -48,6 +48,32 @@ stop, and seeing it must not change what the work would otherwise have said. See
 [[transport-inprocess]] for the other side of that line, and [[survey-narrow]]
 for the same distinction drawn about an optimisation.
 
+### The third field that is not here
+
+`Budget` was designed with a `file_cap` beside the deadline and the
+`output_cap`: a per-file byte ceiling, with files above it skipped instead of
+read. It was not dropped for lack of time. **The rule above rules it out.**
+Skipping a file removes every candidate that file would have contributed, and a
+run with the cap then answers a question a run without it would have answered
+differently — a shorter roster, not a refusal. That is a knob that changes the
+answer sitting outside the earned version, which is the one thing this section
+exists to forbid.
+
+`output_cap` looks like the same idea and is its opposite: it measures the
+finished answer and rejects **the whole of it** (`ProbeError::too_large`). It
+can only ever produce no answer, so it stays operational and out of the closure.
+The test is not "does it have a number in it" but "can the result still be
+handed to a caller after it fires".
+
+So nothing refuses a large file today — `visit` reads whatever it walks over,
+and a single 5.6 MB source file costs about a second here, all of it inside one
+uninterruptible gap between two checkpoints. If a ceiling is ever wanted, it
+belongs in the extractor's `eligible()`, alongside the extension rules: a
+statement about which files this probe looks at, hashed into its closure, so
+narrowing it earns a new version and every anchor rebases. That is the honest
+price of changing what was looked at, and the reason it cannot be bought with an
+operational flag.
+
 ## A deadline nobody looks at is not cancellation
 
 For a while `checkpoint()` had exactly one caller in the whole repository, and
