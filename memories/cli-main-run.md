@@ -1,5 +1,8 @@
 ---
-about: domains/coding/cli/src/main.rs#run
+about:
+  - domains/coding/cli/src/main.rs#run
+  - domains/coding/cli/src/main.rs#served
+  - domains/coding/cli/src/main.rs#main
 watch: [logic]
 ---
 
@@ -11,8 +14,29 @@ probes likewise never touches the journal — routing them through a full
 `Runtime` would be pure overhead for verbs that only need the filesystem
 and the probe store.
 
-`Export` and `Import` are dispatched right after the store opens, but
-still before `Runtime::builder().build()` — deliberately on the raw
+## Why the split into `run` and `served`
+
+`run` stops as soon as the store is open; everything downstream of that
+lives in `served`. The split exists so there is exactly one place that
+closes the store, on every path a store was opened on, including the error
+ones. Inlining `served` back into `run` means either duplicating
+`store.close().await` at each `return`, or leaking the pool on the paths
+that forget — and the pool is closed explicitly because `main` no longer
+waits for it, see below.
+
+`main` builds the runtime by hand rather than through `#[tokio::main]`, and
+ends with `shutdown_background()`. Dropping a runtime blocks until every
+blocking task that has already started finishes, and a `spawn_blocking`
+closure cannot be cancelled from outside — so an extractor that overran its
+budget kept a core pegged for minutes *after* the CLI had already printed
+its error and `run` had returned. `shutdown_background` detaches those
+threads so they die with the process. `ExitCode` is returned rather than
+calling `std::process::exit`, which would skip std's stdout flush and
+silently drop buffered output whenever stdout is a pipe — which is how CI
+reads it.
+
+`Export` and `Import` are dispatched first inside `served`, before
+`Runtime::builder().build()` — deliberately on the raw
 `SqliteStore`, not through a `Runtime`. A schema-version gap between the
 export's format and this build is exactly the situation `import_jsonl`
 (see [[store-portable-import]]) has to detect and refuse; constructing a

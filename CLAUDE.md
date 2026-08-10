@@ -55,9 +55,8 @@ Two exceptions (neither are “comments”):
 - `//!` module headers – describe “what this file is”, not “why”.
 - `///` in `cli.rs` for clap – those are `--help` text, user‑facing strings that happen to use comment syntax. Removing them removes help.
 
-This rule lives in `gate.sh` under “zero comments in clean zones”, not in this prose – prose only applies when read, but no anchor fires when comments creep back.  
-Clean zones grow monotonically; once cleaned, add a line to `CLEAN`. Current clean zones:  
-`crates/gmr-core`, `crates/gmr-content`, `crates/gmr`, `batteries/survey`, `domains/coding/extract`.
+This rule lives in `tools/gate.py` under “no comments in the clean zones”, not in this prose – prose only applies when read, but no anchor fires when comments creep back.  
+Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `tools/gate.py`, which is the list itself – do not restate it here, or this paragraph becomes a second copy that drifts.
 
 ---
 

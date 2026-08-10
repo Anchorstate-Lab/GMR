@@ -98,11 +98,16 @@ fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
     cwd.join(params.get("root").and_then(Value::as_str).unwrap_or("."))
 }
 
-pub fn registry(state_dir: Option<&Path>) -> BTreeMap<ProbeName, Registered> {
-    let cache = Arc::new(match state_dir {
-        Some(dir) => Cache::load(&dir.join("extract-cache.json")),
-        None => Cache::disabled(),
-    });
+pub fn registry(state_dir: &Path) -> Result<BTreeMap<ProbeName, Registered>, String> {
+    let cache = Cache::load(&state_dir.join("extract-cache.json"))?;
+    Ok(bind(Arc::new(cache)))
+}
+
+pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {
+    bind(Arc::new(Cache::disabled()))
+}
+
+fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
     PROBES
         .iter()
         .map(|(v, probe, version)| {
@@ -145,7 +150,7 @@ mod tests {
 
     #[test]
     fn a_name_is_a_name_and_registers_under_it() {
-        let reg = registry(None);
+        let reg = registry_uncached();
         for v in vocabularies() {
             assert!(reg.contains_key(&ProbeName::new(v.name)), "{}", v.name);
         }
@@ -221,7 +226,7 @@ mod tests {
 
     #[test]
     fn every_key_a_probe_declares_comes_back_from_a_real_run() {
-        let reg = registry(None);
+        let reg = registry_uncached();
         for v in vocabularies() {
             let f = FIXTURES
                 .iter()

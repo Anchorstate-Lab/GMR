@@ -44,10 +44,21 @@ fn stale_journal_guard(root: &std::path::Path, state: &std::path::Path) -> Resul
     )))
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let cli = Cli::parse();
-    match run(cli).await {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("gmr: cannot start the runtime: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let outcome = runtime.block_on(run(cli));
+    runtime.shutdown_background();
+    match outcome {
         Ok(code) => ExitCode::from(code as u8),
         Err(e) => {
             eprintln!("gmr: {e}");
@@ -92,18 +103,29 @@ async fn run(cli: Cli) -> Result<i32, CliError> {
         .map_err(|e| CliError(format!("cannot create {state:?}: {e}")))?;
     let store = gmr::sqlite::open(state.join("memory.db")).await?;
 
+    let outcome = served(cli, root, state, &store).await;
+    store.close().await;
+    outcome
+}
+
+async fn served(
+    cli: Cli,
+    root: PathBuf,
+    state: PathBuf,
+    store: &gmr::sqlite::SqliteStore,
+) -> Result<i32, CliError> {
     if let Command::Export { out } = cli.command {
-        return verbs::export::run(&store, out, cli.json).await;
+        return verbs::export::run(store, out, cli.json).await;
     }
     if let Command::Import { file } = cli.command {
-        return verbs::import::run(&store, file, cli.json).await;
+        return verbs::import::run(store, file, cli.json).await;
     }
 
     let catalog = probes::Catalog::load(&root)?;
     let mut builder = Runtime::builder()
         .transport(Arc::new(InProcess::new(
             &root,
-            coding_extract::registry(Some(&state)),
+            coding_extract::registry(&state).map_err(CliError)?,
         )))
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))

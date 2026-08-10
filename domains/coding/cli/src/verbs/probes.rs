@@ -39,11 +39,12 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
     let artifacts = Artifacts::new(store_dir(root));
 
     let mut rows = Vec::new();
+    let builtin = coding_extract::registry_uncached();
     for v in coding_extract::vocabularies() {
         rows.push(serde_json::json!({
             "probe": v.name,
             "kind": "builtin",
-            "version": coding_extract::registry(None)[&gmr::ProbeName::new(v.name)].version,
+            "version": builtin[&gmr::ProbeName::new(v.name)].version,
             "handles": v.handles,
             "obs": { "schema": v.schema, "at": v.at, "facts": v.facts },
         }));
