@@ -3,6 +3,7 @@ about:
   - batteries/transport/src/inproc.rs#invoke
   - batteries/transport/src/inproc.rs#a_panic_is_recorded_not_propagated
   - batteries/transport/src/inproc.rs#work_that_outran_its_budget_is_told_nobody_is_waiting
+  - batteries/survey/src/cache.rs#scan
 watch: [sig, logic]
 ---
 
@@ -31,11 +32,28 @@ look — and it is the same shape rust-analyzer uses for a cancelled query.
 `work_that_outran_its_budget_is_told_nobody_is_waiting` is the test that the
 signal actually arrives, not merely that it is set.
 
-**The extractors linked into this build do not check it yet.** The signal is
-carried to where they will read it; the scan loop starts honouring it when the
-extractor contract is rewritten, which is also where the one earned-version bump
-is spent. Until then, `shutdown_background` in the CLI is what stops an
-abandoned scan from outliving the process — see [[cli-main-run]].
+## The reader is in another crate, which is why this note went stale
+
+For one release the signal was carried to a door nobody opened: `invoke` set the
+flag, and not one extractor read it, so an abandoned scan ran to natural
+completion exactly as before. The reader now exists — it is the `budget.
+checkpoint()` in `scan`'s walk, once per file, in `batteries/survey`. That is one
+loop every extractor goes through, so no probe has to remember to look; see
+[[probe-budget]] for why it was put there rather than into each `probe()` body,
+and what the one version bump per probe bought.
+
+**This note said the opposite for four commits after that landed, and nothing
+caught it.** The anchors above watch `inproc.rs#invoke`, which did not change
+when the reader appeared in another crate — a note describing a mechanism that
+spans two crates cannot be anchored to only one end of it. That is why
+`cache.rs#scan` is now in this note's `about:`, alongside [[probe-budget]]'s own
+binding to it: two notes make claims about that loop, and both have to be woken
+when it moves.
+
+`shutdown_background` in the CLI is not made redundant by any of this — see
+[[cli-main-run]]. The checkpoint fires between files, so a single enormous file
+being parsed is still uninterruptible for as long as that parse takes, and a
+process that has already printed its error must not wait for it.
 
 ## The deadline is absolute, and that is the point
 
@@ -62,3 +80,10 @@ probe's bug kills the whole run" failure this exists to close, and the boundary
 has to be rebuilt somewhere explicit rather than assumed. And does the timeout
 path still cancel the budget before it returns? Without that line the race is
 back to being a notification.
+
+Then ask the other half, which lives in another crate: **does anything still
+read the flag?** Deleting the checkpoint from `scan` breaks nothing, compiles
+clean, and passes every test in this file — the setter and the reader are joined
+by a runtime convention, not by a type. `every_probe_stops_when_nobody_is_
+waiting_for_it_any_more` is the only thing standing between that edit and a
+silent return to a pegged core.
