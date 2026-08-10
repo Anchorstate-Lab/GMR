@@ -26,6 +26,8 @@ except ImportError:
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ARCH_TOML = ROOT / "architecture.toml"
 FACADE = ROOT / "crates" / "gmr" / "src" / "lib.rs"
+ACCEPTANCE = ROOT / "acceptance.sh"
+WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
 
 PURE_ROOTS = ["gmr-core", "gmr-expr"]
 
@@ -216,6 +218,49 @@ def check_comments_clean():
     return []
 
 
+def check_acceptance_intact():
+    """acceptance.sh must be whole, and CI must expect the step count it prints.
+
+    This exists because the file was once truncated mid-heredoc by an editing
+    pass. `sh` treats an unterminated `<<'EOF'` as delimited by end-of-file, so
+    the script still parsed, still exited 0, and tested almost nothing for two
+    days. `sh -n` does not catch it; a sentinel plus this check do.
+    """
+    errors = []
+    lines = ACCEPTANCE.read_text().splitlines()
+
+    code = [line for line in lines if not line.lstrip().startswith("#")]
+    opens = sum(1 for line in code if re.search(r"<<'EOF'", line))
+    closes = sum(1 for line in code if line.rstrip() == "EOF")
+    if opens != closes:
+        errors.append(
+            f"acceptance.sh opens {opens} heredocs and closes {closes} — "
+            "an unterminated one silently swallows the rest of the file"
+        )
+
+    tail = next((line for line in reversed(lines) if line.strip()), "")
+    m = re.match(r'^echo "ACCEPTANCE COMPLETE steps=\$steps"$', tail.strip())
+    if not m:
+        errors.append(
+            f"acceptance.sh must end with the sentinel echo, found: {tail.strip()[:60]!r}"
+        )
+
+    declared = len(re.findall(r"^step ", "\n".join(lines), re.MULTILINE))
+    workflow = WORKFLOW.read_text()
+    expected = re.search(r"ACCEPTANCE COMPLETE steps=(\d+)", workflow)
+    if not expected:
+        errors.append(
+            "the acceptance workflow does not grep for the sentinel, so a script "
+            "that silently stops early still goes green"
+        )
+    elif int(expected.group(1)) != declared:
+        errors.append(
+            f"acceptance.sh runs {declared} steps but the workflow greps for "
+            f"steps={expected.group(1)} — the two must not drift"
+        )
+    return errors
+
+
 CHECKS = [
     ("pure roots: zero workspace dependencies", check_pure_roots),
     ("dependency forbidden zones", check_forbidden_dependencies),
@@ -225,6 +270,7 @@ CHECKS = [
     ("facade: only re-exports", check_facade_only_reexports),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
+    ("acceptance.sh is whole and CI checks its sentinel", check_acceptance_intact),
 ]
 
 

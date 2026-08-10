@@ -29,5 +29,14 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
     - uses: actions/checkout@v4
+    # The step count is greped, not just the exit code. This script was once
+    # truncated mid-heredoc: sh took the unterminated <<'EOF' as delimited by
+    # end-of-file, so it parsed, exited 0, and tested almost nothing. Only the
+    # sentinel catches that, and tools/gate.py keeps this number in step with
+    # the script.
     - name: A stranger, a non-Rust repo, no toolchain
-      run: sh acceptance.sh
+      run: |
+        set -o pipefail
+        sh acceptance.sh | tee /tmp/acceptance.out
+        grep -q 'ACCEPTANCE COMPLETE steps=13' /tmp/acceptance.out \
+          || { echo "acceptance.sh did not run every step it declares"; exit 1; }
