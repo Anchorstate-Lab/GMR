@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS sealed (
 CREATE TABLE IF NOT EXISTS settings (
     anchor        TEXT    PRIMARY KEY,
     retain        TEXT    NOT NULL,   -- Retain, snake_case
-    cadence_secs  INTEGER             -- NULL defers to the deployment default
+    cadence_secs  INTEGER,            -- NULL defers to the deployment default
+    budget_ms     INTEGER             -- NULL defers to the deployment default
 );
 
 -- ── Queue: polling deployments only. **Mutable**, no pretence ──
@@ -94,4 +95,8 @@ CREATE TRIGGER IF NOT EXISTS sealed_no_update BEFORE UPDATE ON sealed
     BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
 CREATE TRIGGER IF NOT EXISTS sealed_no_delete BEFORE DELETE ON sealed
     BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
+"#;
+
+pub const V6_TO_V7: &str = r#"
+ALTER TABLE settings ADD COLUMN budget_ms INTEGER;
 "#;

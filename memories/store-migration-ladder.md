@@ -47,18 +47,24 @@ completely and is stamped, or does not land and is not — a failed migration
 leaves the database at the last version that fully succeeded, and the next run
 resumes from exactly there instead of replaying work or skipping it.
 
-## The ladder is empty today, and that is checked
+## The first rung, and what it cost
 
-Nothing in this build migrates anything: `SCHEMA_VERSION` has not moved since the
-ladder was introduced, so `LADDER` has no rungs. The mechanism is tested against
-synthetic ladders rather than a real one, deliberately — it lands before the
-first migration needs it, so the first migration is a one-line change instead of
-a change plus a mechanism plus an argument about the mechanism.
+v6 → v7 adds `settings.budget_ms`, one nullable column. The whole rung is one
+`ALTER TABLE`, which is the point: the mechanism landed one commit before the
+first migration needed it, so the migration itself was a line of SQL rather than
+a line of SQL plus a mechanism plus an argument about the mechanism.
+
+It was exercised on a real database, not only a fixture: this repository's own
+journal, 12.7 MB and 9867 entries stamped v6, opened under the new build, came
+back stamped v7 with all 235 settings rows intact and the new column reading
+NULL — no opinion, which is exactly what a setting nobody has expressed should
+say. Under the old refusal that database could only have been moved by exporting
+it on the old binary and importing on the new one.
 
 `the_ladder_has_a_rung_for_every_version_it_claims_to_cross` guards the gap that
-will otherwise appear: once a rung exists, adding a version without adding its
-rung makes every database at the version below permanently unopenable, and
-nothing else would notice until a user hit it.
+appears from here on: adding a version without adding its rung makes every
+database at the version below permanently unopenable, and nothing else would
+notice until a user hit it.
 
 ## When this changes, ask
 

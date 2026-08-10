@@ -110,6 +110,7 @@ impl World {
                 terminal: Default::default(),
                 initial: None,
                 settings: RunSettings {
+                    budget_ms: None,
                     retain: Retain::Tick,
                     cadence_secs: None,
                 },

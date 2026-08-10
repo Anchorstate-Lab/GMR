@@ -80,6 +80,7 @@ impl AnchorDecl {
 
     fn settings(&self) -> RunSettings {
         RunSettings {
+            budget_ms: None,
             retain: if self.retain_full {
                 Retain::Full
             } else {

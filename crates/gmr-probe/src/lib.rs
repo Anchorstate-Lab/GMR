@@ -26,6 +26,7 @@ impl Spent {
 
 #[derive(Debug, Clone)]
 pub struct Budget {
+    started: Instant,
     deadline: Instant,
     output_cap: usize,
     cancel: Arc<AtomicBool>,
@@ -34,6 +35,7 @@ pub struct Budget {
 impl Budget {
     pub fn until(deadline: Instant, output_cap: usize) -> Self {
         Self {
+            started: Instant::now(),
             deadline,
             output_cap,
             cancel: Arc::new(AtomicBool::new(false)),
@@ -48,6 +50,10 @@ impl Budget {
         self.deadline
     }
 
+    pub fn width(&self) -> Duration {
+        self.deadline.saturating_duration_since(self.started)
+    }
+
     pub fn output_cap(&self) -> usize {
         self.output_cap
     }
@@ -56,6 +62,10 @@ impl Budget {
         self.deadline
             .checked_duration_since(Instant::now())
             .filter(|left| !left.is_zero())
+    }
+
+    pub fn narrowed(&self, span: Duration) -> Self {
+        Self::until((Instant::now() + span).min(self.deadline), self.output_cap)
     }
 
     pub fn cancel(&self) {
@@ -172,9 +182,9 @@ impl ProbeError {
             ReasonClass::Unreachable,
             ProbeErrorCode::TimedOut,
             format!(
-                "{}; silence is not evidence. The budget was {:?} wide",
+                "{}; silence is not evidence. It was {:?} wide",
                 spent.as_str(),
-                budget.deadline()
+                budget.width()
             ),
         )
     }
@@ -223,6 +233,28 @@ mod tests {
             carried.checkpoint(),
             Err(Spent::Cancelled),
             "the transport cancels the copy it kept; the copy the work holds has to see it"
+        );
+    }
+
+    #[test]
+    fn narrowing_can_only_tighten_a_budget_never_widen_it() {
+        let batch = Budget::within(Duration::from_millis(50), 16);
+        assert!(
+            batch.narrowed(Duration::from_secs(3600)).deadline() <= batch.deadline(),
+            "an anchor asking for an hour inside a batch worth 50ms must not get an hour, \
+             or a per-anchor knob becomes a way around the batch's own bound"
+        );
+        assert!(batch.narrowed(Duration::from_millis(1)).deadline() < batch.deadline());
+    }
+
+    #[test]
+    fn narrowing_gives_the_anchor_its_own_cancellation() {
+        let batch = Budget::within(Duration::from_secs(600), 16);
+        let one = batch.narrowed(Duration::from_secs(600));
+        one.cancel();
+        assert!(
+            batch.checkpoint().is_ok(),
+            "one anchor giving up must not cancel the rest of the batch with it"
         );
     }
 

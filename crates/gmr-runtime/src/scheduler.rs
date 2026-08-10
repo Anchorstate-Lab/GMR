@@ -38,6 +38,10 @@ impl Scheduler {
         Ok(self.settings.put(anchor, settings).await?)
     }
 
+    pub async fn budget_for(&self, anchor: &AnchorKey) -> Result<Option<u64>, RuntimeError> {
+        Ok(self.settings_for(anchor).await?.budget_ms)
+    }
+
     pub async fn cadence_for(&self, anchor: &AnchorKey) -> Result<i64, RuntimeError> {
         Ok(self
             .settings_for(anchor)

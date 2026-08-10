@@ -53,6 +53,7 @@ impl World {
                 terminal: terminal.iter().map(|s| StatusId::new(*s)).collect(),
                 initial: None,
                 settings: RunSettings {
+                    budget_ms: None,
                     retain: Retain::Tick,
                     cadence_secs: None,
                 },
@@ -266,6 +267,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
             terminal: Default::default(),
             initial: Some(State::new(serde_json::json!({ "position": "a.json" }))),
             settings: RunSettings {
+                budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
             },
@@ -339,6 +341,7 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,
         },
@@ -699,6 +702,7 @@ async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
             terminal: [StatusId::new("settled")].into_iter().collect(),
             initial: None,
             settings: RunSettings {
+                budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
             },
@@ -738,6 +742,7 @@ async fn an_anchor_still_running_cannot_be_superseded() {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
             },
@@ -762,7 +767,8 @@ async fn a_direction_that_has_not_grown_yet_warns_instead_of_refusing() {
             transitions: transitions(&[(r#"changed("shape")"#, r#"{ shape: obs.shape }"#)]),
             terminal: Default::default(),
             initial: None,
-            settings: RunSettings { retain: Retain::Tick, cadence_secs: None },
+            settings: RunSettings {
+                budget_ms: None, retain: Retain::Tick, cadence_secs: None },
             supersedes: None,
         })
         .await

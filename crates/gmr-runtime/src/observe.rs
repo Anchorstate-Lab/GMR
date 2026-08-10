@@ -99,7 +99,12 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let outcome = match observer.invoke(&s.anchor, s.position(), budget).await {
+    let mine = match scheduler.budget_for(key).await? {
+        Some(ms) => budget.narrowed(std::time::Duration::from_millis(ms)),
+        None => budget.clone(),
+    };
+
+    let outcome = match observer.invoke(&s.anchor, s.position(), &mine).await {
         Ok(o) => o,
         Err(e) => {
             return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;

@@ -26,6 +26,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// How long any one probe may take, in milliseconds.
+    #[arg(long, global = true, default_value = "30000")]
+    pub probe_budget_ms: u64,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -297,6 +301,9 @@ pub struct OpenArgs {
     /// This anchor's observation cadence, in seconds.
     #[arg(long)]
     pub cadence_secs: Option<u64>,
+    /// How long this one anchor's probe may take, in milliseconds. Never widens --probe-budget-ms.
+    #[arg(long)]
+    pub budget_ms: Option<u64>,
     /// Supersede an already-closed anchor. Closure is irreversible; correction opens a new generation.
     #[arg(long, requires = "why")]
     pub supersedes: Option<String>,

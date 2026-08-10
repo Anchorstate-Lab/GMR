@@ -87,6 +87,7 @@ fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,
         },

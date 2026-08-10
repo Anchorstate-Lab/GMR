@@ -79,7 +79,7 @@ async fn connect(options: SqliteConnectOptions) -> Result<SqliteStore, StoreErro
     Ok(SqliteStore { pool })
 }
 
-pub(crate) const LADDER: &[(i64, &str)] = &[];
+pub(crate) const LADDER: &[(i64, &str)] = &[(6, schema::V6_TO_V7)];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
     let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -361,6 +361,66 @@ mod tests {
         migrate(store.pool()).await.unwrap();
         assert_eq!(before, shape(store.pool()).await);
         assert_eq!(stamp_of(store.pool()).await, schema::SCHEMA_VERSION);
+    }
+
+    const V6_SETTINGS: &str = "CREATE TABLE settings (\
+        anchor TEXT PRIMARY KEY, retain TEXT NOT NULL, cadence_secs INTEGER);";
+
+    #[tokio::test]
+    async fn a_real_v6_database_is_carried_to_v7_with_what_it_held() {
+        let pool = raw().await;
+        sqlx::raw_sql(V6_SETTINGS).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings VALUES ('a#b', 'full', 900)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("PRAGMA user_version = 6")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        climb(&pool, 6, 7, LADDER).await.unwrap();
+
+        assert_eq!(stamp_of(&pool).await, 7);
+        let (retain, cadence, budget): (String, Option<i64>, Option<i64>) = sqlx::query_as(
+            "SELECT retain, cadence_secs, budget_ms FROM settings WHERE anchor = 'a#b'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((retain.as_str(), cadence), ("full", Some(900)));
+        assert_eq!(
+            budget, None,
+            "a column that did not exist reads as no opinion"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_settings_table_a_v6_climbs_into_is_the_one_a_fresh_build_makes() {
+        let climbed = raw().await;
+        sqlx::raw_sql(V6_SETTINGS).execute(&climbed).await.unwrap();
+        sqlx::query("PRAGMA user_version = 6")
+            .execute(&climbed)
+            .await
+            .unwrap();
+        climb(&climbed, 6, 7, LADDER).await.unwrap();
+
+        let fresh = open_in_memory().await.unwrap();
+        assert_eq!(
+            columns(&climbed, "settings").await,
+            columns(fresh.pool(), "settings").await,
+            "the ladder and the full schema are two descriptions of one shape, and only \
+             this comparison keeps them saying the same thing"
+        );
+    }
+
+    async fn columns(pool: &SqlitePool, table: &str) -> Vec<(String, String)> {
+        sqlx::query_as(&format!(
+            "SELECT name, type FROM pragma_table_info('{table}') ORDER BY name"
+        ))
+        .fetch_all(pool)
+        .await
+        .unwrap()
     }
 
     #[test]

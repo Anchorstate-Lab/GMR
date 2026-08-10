@@ -64,6 +64,7 @@ pub async fn run(
             terminal: rules::terminal(&args.terminal),
             initial,
             settings: RunSettings {
+                budget_ms: args.budget_ms,
                 retain: if args.retain_full {
                     Retain::Full
                 } else {

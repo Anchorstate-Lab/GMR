@@ -119,6 +119,8 @@ pub struct RunSettings {
     pub retain: Retain,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cadence_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_ms: Option<u64>,
 }
 
 impl RunSettings {
