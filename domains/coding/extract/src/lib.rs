@@ -16,7 +16,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gmr_core::{ProbeName, ProbeVersion};
-use gmr_survey::Cache;
+use gmr_probe::Budget;
+use gmr_survey::{Cache, Halt};
 use gmr_transport::inproc::{ExtractError, Reach, Registered};
 use serde_json::Value;
 
@@ -28,7 +29,7 @@ pub struct Vocabulary {
     pub handles: &'static [&'static str],
 }
 
-type Probe = fn(&Path, &Value, &Cache) -> Result<Value, String>;
+type Probe = fn(&Path, &Value, &Cache, &Budget) -> Result<Value, Halt>;
 
 const PROBES: [(Vocabulary, Probe, &str); 4] = [
     (
@@ -122,8 +123,16 @@ fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
                 Registered {
                     version: ProbeVersion::new(*version),
                     extract: Arc::new(move |reach: &Reach| {
-                        probe(&root_of(&reach.cwd, &reach.params), &reach.position, &cache)
-                            .map_err(ExtractError::Refused)
+                        probe(
+                            &root_of(&reach.cwd, &reach.params),
+                            &reach.position,
+                            &cache,
+                            &reach.budget,
+                        )
+                        .map_err(|halt| match halt {
+                            Halt::Spent(spent) => ExtractError::Spent(spent),
+                            Halt::Refused(why) => ExtractError::Refused(why),
+                        })
                     }),
                 },
             )
@@ -283,6 +292,38 @@ mod tests {
                     v.name
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_probe_stops_when_nobody_is_waiting_for_it_any_more() {
+        let reg = registry_uncached();
+        for f in &FIXTURES {
+            let dir = std::env::temp_dir().join(format!("gmr-spent-{}", f.probe));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(f.file), f.body).unwrap();
+
+            let spent = Budget::until(
+                std::time::Instant::now() - std::time::Duration::from_secs(1),
+                1 << 20,
+            );
+            let outcome = (reg[&ProbeName::new(f.probe)].extract)(&Reach {
+                cwd: dir.clone(),
+                position: serde_json::from_str(f.pos).unwrap(),
+                params: serde_json::json!({}),
+                budget: spent,
+            });
+
+            assert!(
+                matches!(outcome, Err(ExtractError::Spent(_))),
+                "`{}` ran to completion on a budget that was already gone. A deadline the \
+                 work never looks at is not cancellation: the transport gives up, the caller \
+                 gets its error, and the thread carries on scanning the whole repository for \
+                 nobody. This loop is over every fixture so a new probe is covered by \
+                 existing, not by someone remembering",
+                f.probe
+            );
         }
     }
 }

@@ -5,6 +5,9 @@ about:
   - crates/gmr-probe/src/lib.rs#ProbeCall
   - crates/gmr-runtime/src/policy.rs#budget
   - crates/gmr-probe/src/lib.rs#narrowing_can_only_tighten_a_budget_never_widen_it
+  - batteries/survey/src/cache.rs#scan
+  - batteries/survey/src/cache.rs#Halt
+  - domains/coding/extract/src/lib.rs#every_probe_stops_when_nobody_is_waiting_for_it_any_more
 watch: [sig, logic]
 ---
 
@@ -44,6 +47,44 @@ The same rule is why `Reach` carries it: the work needs to see the deadline to
 stop, and seeing it must not change what the work would otherwise have said. See
 [[transport-inprocess]] for the other side of that line, and [[survey-narrow]]
 for the same distinction drawn about an optimisation.
+
+## A deadline nobody looks at is not cancellation
+
+For a while `checkpoint()` had exactly one caller in the whole repository, and
+it was in a test. The transport called `budget.cancel()` on timeout, the flag
+flipped, and the blocking thread scanning the repository never read it — so it
+ran to natural completion exactly as it had before any of this existed. What
+`Budget` actually delivered was **deadline propagation**, which is real and is
+most of the value; cancellation was decorative.
+
+The test that made it look wired is the dangerous part. `work_that_outran_its_
+budget_is_told_nobody_is_waiting` proves the mechanism works *when something
+cooperates*, and nothing in production did. A green test over an unreachable
+mechanism is worse than no test, because it answers the question nobody then
+asks again.
+
+The checkpoint now lives in `scan`'s walk, once per file — the one loop every
+extractor goes through, so no probe has to remember. Reaching it cost the budget
+a parameter on all four `probe()` functions and therefore **one version bump per
+probe**: unavoidable, because the closure hashes those files' bytes, and the
+alternative (an ambient deadline in a thread-local or a slot on the shared
+`Cache`) is the implicit clock and shared mutable state the discipline forbids.
+The answers were checked byte-for-byte across all four probes on a frozen
+snapshot first, so the bump is a translation.
+
+`every_probe_stops_when_nobody_is_waiting_for_it_any_more` is the guard, and it
+loops over the fixture table rather than naming probes, so a fifth extractor is
+covered the day it gets a fixture. It was checked red with the checkpoint
+removed.
+
+## A spent scan is not remembered, a refused one is
+
+`Halt` splits the two, and `worth_remembering` acts on the split: a
+`Refused` scan is deterministic — the same corpus refuses the same way — so the
+flight memoises it and the rest of the pass is spared a repeat. A `Spent` scan
+says nothing about the corpus at all; memoising it would poison the scope for
+the life of the process because one anchor ran late. This distinction is only
+expressible because the error stopped being a `String`.
 
 ## `ProbeCall` is a struct because the next thing will ride along
 

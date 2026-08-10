@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use gmr_probe::Budget;
 use gmr_survey as coord;
 use serde_json::{Value, json};
 
@@ -106,12 +107,18 @@ fn rolled(fragments: &[coord::Candidate]) -> Result<Vec<coord::Candidate>, Strin
         .collect())
 }
 
-pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, String> {
+pub fn probe(
+    root: &Path,
+    pos: &Value,
+    cache: &coord::Cache,
+    budget: &Budget,
+) -> Result<Value, coord::Halt> {
     let want = coord::wanted(pos, &ITEMS)?;
     let cands = coord::visit_folded(
         root,
         cache,
         "name-map",
+        budget,
         |p, rel, out| {
             collect(p, rel, out);
             Ok(())
@@ -119,17 +126,21 @@ pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, St
         rolled,
     )?;
     if cands.is_empty() {
-        return Err(format!(
+        return Err(coord::Halt::Refused(format!(
             "{} contains no readable files; the probe is likely pointed at the wrong directory",
             root.display()
-        ));
+        )));
     }
-    coord::report(VERSION, &want, coord::nth(pos), &cands)
+    Ok(coord::report(VERSION, &want, coord::nth(pos), &cands)?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn roomy() -> Budget {
+        Budget::within(std::time::Duration::from_secs(600), 1 << 24)
+    }
 
     fn fixture(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("name-map-{name}"));
@@ -143,7 +154,7 @@ mod tests {
     }
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos, &coord::Cache::disabled()).unwrap()
+        probe(dir, &pos, &coord::Cache::disabled(), &roomy()).unwrap()
     }
 
     #[test]
@@ -209,13 +220,21 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.rs", "fn f(){}")]);
-        assert!(probe(&d, &json!({}), &coord::Cache::disabled()).is_err());
+        assert!(probe(&d, &json!({}), &coord::Cache::disabled(), &roomy()).is_err());
     }
 
     #[test]
     fn an_unreadable_tree_is_our_failure_too() {
         let d = fixture("bare", &[]);
-        assert!(probe(&d, &json!({"name": "x"}), &coord::Cache::disabled()).is_err());
+        assert!(
+            probe(
+                &d,
+                &json!({"name": "x"}),
+                &coord::Cache::disabled(),
+                &roomy()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -253,7 +272,7 @@ mod tests {
         let (state, cache) = live_cache("reuse");
         let file = state.path().join("reuse.json");
 
-        probe(&d, &json!({"name": "build", "scope": ""}), &cache).unwrap();
+        probe(&d, &json!({"name": "build", "scope": ""}), &cache, &roomy()).unwrap();
 
         let on_disk = std::fs::read_to_string(&file).unwrap_or_default();
         assert!(
@@ -276,9 +295,9 @@ mod tests {
             json!({"name": "build", "scope": "shell"}),
             json!({"name": "nowhere", "scope": ""}),
         ] {
-            let cold = probe(&d, &pos, &coord::Cache::disabled()).unwrap();
-            let warm = probe(&d, &pos, &cache).unwrap();
-            let again = probe(&d, &pos, &cache).unwrap();
+            let cold = probe(&d, &pos, &coord::Cache::disabled(), &roomy()).unwrap();
+            let warm = probe(&d, &pos, &cache, &roomy()).unwrap();
+            let again = probe(&d, &pos, &cache, &roomy()).unwrap();
             assert_eq!(cold, warm, "a cache that changes the answer is not a cache");
             assert_eq!(warm, again, "and it has to keep changing nothing");
         }

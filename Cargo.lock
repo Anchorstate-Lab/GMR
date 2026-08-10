@@ -230,6 +230,7 @@ name = "coding-extract"
 version = "0.2.3"
 dependencies = [
  "gmr-core",
+ "gmr-probe",
  "gmr-survey",
  "gmr-transport",
  "serde_json",
@@ -599,6 +600,7 @@ dependencies = [
 name = "gmr-survey"
 version = "0.2.3"
 dependencies = [
+ "gmr-probe",
  "serde",
  "serde_json",
  "sha2",

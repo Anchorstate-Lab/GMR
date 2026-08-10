@@ -3,10 +3,34 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use gmr_probe::{Budget, Spent};
 use serde::{Deserialize, Serialize};
 
 use crate::matching::Candidate;
 use crate::walk::{hash, visit};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Halt {
+    Spent(Spent),
+    Refused(String),
+}
+
+impl From<String> for Halt {
+    fn from(why: String) -> Self {
+        Self::Refused(why)
+    }
+}
+
+impl std::fmt::Display for Halt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Spent(spent) => f.write_str(spent.as_str()),
+            Self::Refused(why) => f.write_str(why),
+        }
+    }
+}
+
+impl std::error::Error for Halt {}
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Entry {
@@ -25,7 +49,7 @@ struct OnDisk(Scoped);
 #[serde(transparent)]
 struct OnDiskRef<'a>(&'a Scoped);
 
-type Scanned = Result<Arc<Vec<Candidate>>, String>;
+type Scanned = Result<Arc<Vec<Candidate>>, Halt>;
 
 #[derive(Default)]
 struct Flight {
@@ -83,13 +107,13 @@ impl Cache {
     }
 
     fn get(&self, probe: &str, rel: &str, want_hash: &str) -> Option<Vec<Candidate>> {
-        let entries = self.entries.lock().unwrap();
+        let entries = guard(&self.entries);
         let entry = entries.get(probe)?.get(rel)?;
         (entry.hash == want_hash).then(|| entry.candidates.clone())
     }
 
     fn put(&self, probe: &str, rel: &str, file_hash: &str, candidates: &[Candidate]) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = guard(&self.entries);
         entries.entry(probe.to_owned()).or_default().insert(
             rel.to_owned(),
             Entry {
@@ -101,7 +125,7 @@ impl Cache {
     }
 
     fn retain(&self, probe: &str, seen: &HashSet<String>) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = guard(&self.entries);
         let Some(scope) = entries.get_mut(probe) else {
             return;
         };
@@ -126,7 +150,7 @@ impl Cache {
 
     fn replace(&self, path: &Path) -> Result<(), String> {
         let json = {
-            let entries = self.entries.lock().unwrap();
+            let entries = guard(&self.entries);
             serde_json::to_string(&OnDiskRef(&entries))
                 .map_err(|e| format!("cannot serialise the cache: {e}"))?
         };
@@ -149,7 +173,7 @@ impl Cache {
 
     fn flight(&self, scope: &str) -> Option<Arc<Flight>> {
         self.file.as_ref()?;
-        let mut flights = self.flights.lock().unwrap();
+        let mut flights = guard(&self.flights);
         Some(Arc::clone(flights.entry(scope.to_owned()).or_default()))
     }
 }
@@ -166,18 +190,19 @@ pub fn visit_cached(
     root: &Path,
     cache: &Cache,
     probe: &str,
+    budget: &Budget,
     collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
-) -> Result<Arc<Vec<Candidate>>, String> {
+) -> Scanned {
     let scope = scope_of(cache, probe, root);
     let Some(flight) = cache.flight(&scope) else {
-        return scan(root, cache, &scope, collect);
+        return scan(root, cache, &scope, budget, collect);
     };
-    let mut settled = flight.settled.lock().unwrap();
+    let mut settled = guard(&flight.settled);
     if let Some(done) = settled.as_ref() {
         return done.clone();
     }
-    let scanned = scan(root, cache, &scope, collect);
-    *settled = Some(scanned.clone());
+    let scanned = scan(root, cache, &scope, budget, collect);
+    *settled = worth_remembering(&scanned);
     scanned
 }
 
@@ -185,22 +210,31 @@ pub fn visit_folded(
     root: &Path,
     cache: &Cache,
     probe: &str,
+    budget: &Budget,
     collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
     fold: impl FnOnce(&[Candidate]) -> Result<Vec<Candidate>, String>,
-) -> Result<Arc<Vec<Candidate>>, String> {
+) -> Scanned {
     let scope = scope_of(cache, probe, root);
     let Some(flight) = cache.flight(&scope) else {
-        return fold(&visit_cached(root, cache, probe, collect)?).map(Arc::new);
+        let fragments = visit_cached(root, cache, probe, budget, collect)?;
+        return Ok(Arc::new(fold(&fragments)?));
     };
-    let mut folded = flight.folded.lock().unwrap();
+    let mut folded = guard(&flight.folded);
     if let Some(done) = folded.as_ref() {
         return done.clone();
     }
-    let done = visit_cached(root, cache, probe, collect)
-        .and_then(|fragments| fold(&fragments))
+    let done = visit_cached(root, cache, probe, budget, collect)
+        .and_then(|fragments| Ok(fold(&fragments)?))
         .map(Arc::new);
-    *folded = Some(done.clone());
+    *folded = worth_remembering(&done);
     done
+}
+
+fn worth_remembering(outcome: &Scanned) -> Option<Scanned> {
+    match outcome {
+        Err(Halt::Spent(_)) => None,
+        _ => Some(outcome.clone()),
+    }
 }
 
 fn scope_of(cache: &Cache, probe: &str, root: &Path) -> String {
@@ -212,11 +246,17 @@ fn scan(
     root: &Path,
     cache: &Cache,
     scope: &str,
+    budget: &Budget,
     mut collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
 ) -> Scanned {
     let mut cands = Vec::new();
     let mut seen = HashSet::new();
+    let mut halted = None;
     visit(root, &mut |p, rel| {
+        if let Err(spent) = budget.checkpoint() {
+            halted = Some(spent);
+            return Err(String::new());
+        }
         let Ok(bytes) = std::fs::read(p) else {
             return Ok(());
         };
@@ -231,15 +271,27 @@ fn scan(
         cache.put(scope, rel, &file_hash, &fragment);
         cands.extend(fragment);
         Ok(())
+    })
+    .map_err(|why| match halted {
+        Some(spent) => Halt::Spent(spent),
+        None => Halt::Refused(why),
     })?;
     cache.retain(scope, &seen);
     cache.persist()?;
     Ok(Arc::new(cands))
 }
 
+fn guard<T>(lock: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn roomy() -> Budget {
+        Budget::within(std::time::Duration::from_secs(600), 1 << 24)
+    }
     use std::collections::BTreeMap;
     use std::sync::atomic::AtomicUsize;
 
@@ -280,8 +332,10 @@ mod tests {
         let cache = Cache::disabled();
         let calls = AtomicUsize::new(0);
 
-        let first = visit_cached(d.path(), &cache, "p", counting_collect(&calls)).unwrap();
-        let second = visit_cached(d.path(), &cache, "p", counting_collect(&calls)).unwrap();
+        let first =
+            visit_cached(d.path(), &cache, "p", &roomy(), counting_collect(&calls)).unwrap();
+        let second =
+            visit_cached(d.path(), &cache, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(first.len(), 1);
@@ -296,11 +350,11 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let first = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &first, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &first, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         std::fs::write(src.path().join("a.rs"), "two").unwrap();
         let second = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &second, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &second, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
@@ -312,11 +366,13 @@ mod tests {
         let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
         let calls = AtomicUsize::new(0);
 
-        let first = visit_cached(d.path(), &cache, "p", counting_collect(&calls)).unwrap();
+        let first =
+            visit_cached(d.path(), &cache, "p", &roomy(), counting_collect(&calls)).unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 2, "one collect per file");
         assert_eq!(first.len(), 2);
 
-        let second = visit_cached(d.path(), &cache, "p", counting_collect(&calls)).unwrap();
+        let second =
+            visit_cached(d.path(), &cache, "p", &roomy(), counting_collect(&calls)).unwrap();
         assert_eq!(
             calls.load(Ordering::SeqCst),
             2,
@@ -331,8 +387,22 @@ mod tests {
         let cache = Cache::disabled();
         let calls = AtomicUsize::new(0);
 
-        visit_cached(d.path(), &cache, "ast-map", counting_collect(&calls)).unwrap();
-        visit_cached(d.path(), &cache, "addr-map", counting_collect(&calls)).unwrap();
+        visit_cached(
+            d.path(),
+            &cache,
+            "ast-map",
+            &roomy(),
+            counting_collect(&calls),
+        )
+        .unwrap();
+        visit_cached(
+            d.path(),
+            &cache,
+            "addr-map",
+            &roomy(),
+            counting_collect(&calls),
+        )
+        .unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
@@ -344,8 +414,22 @@ mod tests {
         let cache = Cache::disabled();
         let calls = AtomicUsize::new(0);
 
-        let from_a = visit_cached(a.path(), &cache, "ast-map", counting_collect(&calls)).unwrap();
-        let from_b = visit_cached(b.path(), &cache, "ast-map", counting_collect(&calls)).unwrap();
+        let from_a = visit_cached(
+            a.path(),
+            &cache,
+            "ast-map",
+            &roomy(),
+            counting_collect(&calls),
+        )
+        .unwrap();
+        let from_b = visit_cached(
+            b.path(),
+            &cache,
+            "ast-map",
+            &roomy(),
+            counting_collect(&calls),
+        )
+        .unwrap();
 
         assert_eq!(
             calls.load(Ordering::SeqCst),
@@ -365,11 +449,18 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let warm = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &warm, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &warm, "p", &roomy(), counting_collect(&calls)).unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         let reloaded = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &reloaded, "p", counting_collect(&calls)).unwrap();
+        visit_cached(
+            src.path(),
+            &reloaded,
+            "p",
+            &roomy(),
+            counting_collect(&calls),
+        )
+        .unwrap();
         assert_eq!(
             calls.load(Ordering::SeqCst),
             1,
@@ -395,7 +486,7 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
-        visit_cached(src.path(), &cache, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &cache, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 50, "one collect per file");
         assert_eq!(
@@ -414,11 +505,18 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let warm = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &warm, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &warm, "p", &roomy(), counting_collect(&calls)).unwrap();
         assert_eq!(warm.writes.load(Ordering::SeqCst), 1);
 
         let reloaded = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &reloaded, "p", counting_collect(&calls)).unwrap();
+        visit_cached(
+            src.path(),
+            &reloaded,
+            "p",
+            &roomy(),
+            counting_collect(&calls),
+        )
+        .unwrap();
         assert_eq!(
             reloaded.writes.load(Ordering::SeqCst),
             0,
@@ -441,10 +539,10 @@ mod tests {
             }
         };
 
-        assert!(visit_cached(d.path(), &cache, "p", &mut refuse).is_err());
+        assert!(visit_cached(d.path(), &cache, "p", &roomy(), &mut refuse).is_err());
         let after_first = calls.load(Ordering::SeqCst);
 
-        assert!(visit_cached(d.path(), &cache, "p", &mut refuse).is_err());
+        assert!(visit_cached(d.path(), &cache, "p", &roomy(), &mut refuse).is_err());
         assert_eq!(
             calls.load(Ordering::SeqCst),
             after_first,
@@ -483,11 +581,11 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let first = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &first, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &first, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         std::fs::remove_file(src.path().join("b.rs")).unwrap();
         let second = Cache::load(&cache_file, stamped()).unwrap();
-        visit_cached(src.path(), &second, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &second, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         let third = Cache::load(&cache_file, stamped()).unwrap();
         let entries = third.entries.lock().unwrap();
@@ -512,11 +610,11 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let before = Cache::load(&cache_file, stamped_as("v1")).unwrap();
-        visit_cached(src.path(), &before, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &before, "p", &roomy(), counting_collect(&calls)).unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         let after = Cache::load(&cache_file, stamped_as("v2")).unwrap();
-        visit_cached(src.path(), &after, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &after, "p", &roomy(), counting_collect(&calls)).unwrap();
         assert_eq!(
             calls.load(Ordering::SeqCst),
             2,
@@ -534,10 +632,10 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let before = Cache::load(&cache_file, stamped_as("v1")).unwrap();
-        visit_cached(src.path(), &before, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &before, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         let after = Cache::load(&cache_file, stamped_as("v2")).unwrap();
-        visit_cached(src.path(), &after, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &after, "p", &roomy(), counting_collect(&calls)).unwrap();
         let reloaded = Cache::load(&cache_file, stamped_as("v2")).unwrap();
         assert_eq!(
             reloaded.entries.lock().unwrap().len(),
@@ -554,7 +652,7 @@ mod tests {
         let calls = AtomicUsize::new(0);
 
         let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
-        visit_cached(src.path(), &cache, "p", counting_collect(&calls)).unwrap();
+        visit_cached(src.path(), &cache, "p", &roomy(), counting_collect(&calls)).unwrap();
 
         let leftovers: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
@@ -593,6 +691,7 @@ mod tests {
             src.path(),
             &cache,
             "p",
+            &roomy(),
             counting_collect(&calls),
             counting_fold(&folds),
         )
@@ -601,6 +700,7 @@ mod tests {
             src.path(),
             &cache,
             "p",
+            &roomy(),
             counting_collect(&calls),
             counting_fold(&folds),
         )
@@ -632,6 +732,7 @@ mod tests {
             one.path(),
             &cache,
             "p",
+            &roomy(),
             counting_collect(&calls),
             counting_fold(&folds),
         )
@@ -640,6 +741,7 @@ mod tests {
             two.path(),
             &cache,
             "p",
+            &roomy(),
             counting_collect(&calls),
             counting_fold(&folds),
         )
@@ -666,6 +768,7 @@ mod tests {
                 src.path(),
                 &cache,
                 "p",
+                &roomy(),
                 counting_collect(&calls),
                 counting_fold(&folds),
             )

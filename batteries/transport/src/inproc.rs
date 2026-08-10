@@ -84,6 +84,10 @@ impl Transport for InProcess {
             )
         })?;
 
+        let Some(left) = call.budget.remaining() else {
+            return Err(ProbeError::spent(Spent::Deadline, call.budget));
+        };
+
         let extract = Arc::clone(&registered.extract);
         let reach = Reach {
             cwd: self.cwd.clone(),
@@ -92,11 +96,6 @@ impl Transport for InProcess {
             budget: call.budget.clone(),
         };
         let work = tokio::task::spawn_blocking(move || extract(&reach));
-
-        let Some(left) = call.budget.remaining() else {
-            call.budget.cancel();
-            return Err(ProbeError::spent(Spent::Deadline, call.budget));
-        };
 
         let joined = match tokio::time::timeout(left, work).await {
             Ok(joined) => joined,

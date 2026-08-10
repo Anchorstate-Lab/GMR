@@ -2,6 +2,7 @@ use crate::lang;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use gmr_probe::Budget;
 use gmr_survey as coord;
 use serde_json::{Value, json};
 
@@ -226,21 +227,30 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
     Ok(())
 }
 
-pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, String> {
+pub fn probe(
+    root: &Path,
+    pos: &Value,
+    cache: &coord::Cache,
+    budget: &Budget,
+) -> Result<Value, coord::Halt> {
     let want = coord::wanted(pos, &ITEMS)?;
-    let cands = coord::visit_cached(root, cache, "ast-map", collect)?;
+    let cands = coord::visit_cached(root, cache, "ast-map", budget, collect)?;
     if cands.is_empty() {
-        return Err(format!(
+        return Err(coord::Halt::Refused(format!(
             "{} contains no parseable nodes; the probe is likely pointed at the wrong directory",
             root.display()
-        ));
+        )));
     }
-    coord::report(VERSION, &want, coord::nth(pos), &cands)
+    Ok(coord::report(VERSION, &want, coord::nth(pos), &cands)?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn roomy() -> Budget {
+        Budget::within(std::time::Duration::from_secs(600), 1 << 24)
+    }
 
     fn fixture(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("ast-map-{name}"));
@@ -257,7 +267,7 @@ mod tests {
         "pub fn alpha(x: u8) -> u8 { x }\npub fn beta(s: &str) -> usize { s.len() }\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos, &coord::Cache::disabled()).unwrap()
+        probe(dir, &pos, &coord::Cache::disabled(), &roomy()).unwrap()
     }
 
     #[test]
@@ -370,13 +380,21 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.rs", ONE)]);
-        assert!(probe(&d, &json!({}), &coord::Cache::disabled()).is_err());
+        assert!(probe(&d, &json!({}), &coord::Cache::disabled(), &roomy()).is_err());
     }
 
     #[test]
     fn a_directory_with_nothing_parseable_is_our_failure_too() {
         let d = fixture("bare", &[("readme.txt", "not code")]);
-        assert!(probe(&d, &json!({"name": "alpha"}), &coord::Cache::disabled()).is_err());
+        assert!(
+            probe(
+                &d,
+                &json!({"name": "alpha"}),
+                &coord::Cache::disabled(),
+                &roomy()
+            )
+            .is_err()
+        );
     }
 
     #[test]
