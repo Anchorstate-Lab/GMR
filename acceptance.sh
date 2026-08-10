@@ -360,6 +360,46 @@ cold=$(( $(date +%s) - start ))
 [ -s "$scale/.anchor/state/extract-cache.json" ] \
     || fail "the scan left no cache behind, so every later run pays the full price again"
 
+# ── A budget that runs out has to be *loud*. This is the failure the whole
+#    design points at: an anchor nobody could look at must come back as a
+#    refusal a person sees, and must never arrive as a quiet answer that drives
+#    a transition. A budget may produce no answer; it may not produce a shorter
+#    one.
+#
+#    The wall-clock version of this step -- "the probe sleeps eight seconds
+#    against a 300ms budget, assert the process is gone in two" -- was measured
+#    and deliberately not written, because there is no longer a signal to
+#    assert. A cold scan of the 1600 files above costs 0.53s here, and a single
+#    5.6 MB file (the case the per-file checkpoint cannot interrupt) costs
+#    1.07s; showing an 8:0.3 ratio needs tens of thousands of files. The only
+#    probe kind that can be made slow to order is a script probe, and its
+#    cancellation runs through kill_on_drop, never through the blocking-thread
+#    path the incident was actually about. A timing assertion built anyway would
+#    have a margin thinner than the runner's noise, go flaky, and be deleted --
+#    which is how green idling starts. So what is pinned here is the part that
+#    survived the extractors getting fast: the refusal is typed, it names its
+#    own width, and it does not become state.
+step "a budget that runs out refuses out loud, and refusing is not an answer"
+rm -f "$scale/.anchor/state/extract-cache.json"
+set +e
+out=$("$gmr" --repo "$scale" --probe-budget-ms 1 check 2>&1); code=$?
+set -e
+
+[ "$code" -ne 0 ] || fail "a probe that never got to look exited 0 — silence was read as agreement" "$out"
+echo "$out" | grep -q "could not be looked at" \
+    || fail "a spent budget was not reported as an anchor nobody looked at" "$out"
+echo "$out" | grep -q "TimedOut" \
+    || fail "the budget ran out and the reading did not say which failure it was" "$out"
+echo "$out" | grep -q "silence is not evidence" \
+    || fail "the refusal did not say why silence proves nothing" "$out"
+echo "$out" | grep -q "nothing moved" \
+    && fail "a spent budget was reported as a settled anchor — this is the silent lie" "$out"
+
+# The same anchor, with time to look, settles. A refusal that turned into state
+# would still be here, and no later run would clear it.
+"$gmr" --repo "$scale" check >/dev/null \
+    || fail "the anchor did not settle once it had time to look — a spent budget became state"
+
 echo
 echo "Accepted: a stranger's repo, no toolchain, no downloaded probes. Memory and"
 echo "          fact are tied together — in the source and outside it — and when the"
