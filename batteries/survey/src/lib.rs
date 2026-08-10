@@ -3,8 +3,10 @@
 
 pub mod cache;
 pub mod matching;
+pub mod narrow;
 pub mod walk;
 
 pub use cache::*;
 pub use matching::*;
+pub use narrow::*;
 pub use walk::*;
