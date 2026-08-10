@@ -707,7 +707,16 @@ mod tests {
         let pos: Value = serde_json::from_str(shot.pos).unwrap();
         let look = |src: &str| {
             std::fs::write(&file, src).unwrap();
-            probe(&dir, &pos, &serde_json::json!({})).unwrap()
+            probe(&gmr_transport::inproc::Reach {
+                cwd: dir.clone(),
+                position: pos.clone(),
+                params: serde_json::json!({}),
+                budget: gmr_transport::inproc::Budget::within(
+                    std::time::Duration::from_secs(30),
+                    1 << 20,
+                ),
+            })
+            .unwrap()
         };
 
         let rules = rules_of(get(shot.shape).unwrap());

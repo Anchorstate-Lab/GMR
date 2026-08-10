@@ -1,3 +1,7 @@
+use std::time::Duration;
+
+use gmr_probe::Budget;
+
 #[derive(Debug, Clone)]
 pub struct Policy {
     pub cadence_secs: u64,
@@ -7,6 +11,8 @@ pub struct Policy {
     pub batch: usize,
     pub stalled_attempts: u32,
     pub stalled_staleness_secs: i64,
+    pub probe_budget_ms: u64,
+    pub probe_output_cap: usize,
 }
 
 impl Default for Policy {
@@ -19,6 +25,8 @@ impl Default for Policy {
             batch: 64,
             stalled_attempts: 3,
             stalled_staleness_secs: 24 * 3600,
+            probe_budget_ms: 30_000,
+            probe_output_cap: 1024 * 1024,
         }
     }
 }
@@ -27,6 +35,13 @@ impl Policy {
     pub fn backoff_secs(&self, attempts: u32) -> i64 {
         let shift = attempts.saturating_sub(1).min(16);
         (self.backoff_base_secs.saturating_mul(1 << shift)).min(self.backoff_cap_secs) as i64
+    }
+
+    pub fn budget(&self) -> Budget {
+        Budget::within(
+            Duration::from_millis(self.probe_budget_ms),
+            self.probe_output_cap,
+        )
     }
 }
 

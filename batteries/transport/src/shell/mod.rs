@@ -5,14 +5,15 @@ pub mod testkit;
 
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::time::Duration;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, ProbeRef, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Transport};
+use gmr_probe::{
+    PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Spent, Transport,
+};
 
 pub use artifact::{ArtifactError, Artifacts, publish};
 pub use manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
@@ -21,8 +22,6 @@ pub struct Shell {
     kind: Kind,
     cwd: PathBuf,
     artifacts: Artifacts,
-    timeout: Duration,
-    output_cap: usize,
 }
 
 impl Shell {
@@ -31,19 +30,7 @@ impl Shell {
             kind: Kind::new("shell"),
             cwd: cwd.into(),
             artifacts: Artifacts::new(artifacts),
-            timeout: Duration::from_secs(30),
-            output_cap: 1024 * 1024,
         }
-    }
-
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-
-    pub fn with_output_cap(mut self, bytes: usize) -> Self {
-        self.output_cap = bytes;
-        self
     }
 
     pub fn artifacts(&self) -> &Artifacts {
@@ -68,8 +55,8 @@ impl Transport for Shell {
         })
     }
 
-    async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Outcome, ProbeError> {
-        let resolved = self.artifacts.resolve(&probe.name).map_err(|e| {
+    async fn invoke(&self, call: &ProbeCall<'_>) -> Result<Outcome, ProbeError> {
+        let resolved = self.artifacts.resolve(&call.probe.name).map_err(|e| {
             ProbeError::with_code(
                 gmr_core::ReasonClass::Unusable,
                 ProbeErrorCode::ArtifactInvalid,
@@ -86,36 +73,24 @@ impl Transport for Shell {
             .env("LANG", "C")
             .env("PATH", "/usr/bin:/bin")
             .envs(&resolved.manifest.env)
-            .env(POSITION_ENV, position.to_string())
-            .env(PARAMS_ENV, probe.params.to_string())
+            .env(POSITION_ENV, call.position.to_string())
+            .env(PARAMS_ENV, call.probe.params.to_string())
             .stdin(Stdio::null())
             .kill_on_drop(true);
 
-        let out = tokio::time::timeout(self.timeout, command.output())
+        let left = call
+            .budget
+            .remaining()
+            .ok_or_else(|| ProbeError::spent(Spent::Deadline, call.budget))?;
+
+        let out = tokio::time::timeout(left, command.output())
             .await
-            .map_err(|_| {
-                ProbeError::with_code(
-                    gmr_core::ReasonClass::Unreachable,
-                    ProbeErrorCode::TimedOut,
-                    format!(
-                        "probe did not return within {:?}; silence is not evidence",
-                        self.timeout
-                    ),
-                )
-            })?
+            .map_err(|_| ProbeError::spent(Spent::Deadline, call.budget))?
             .map_err(|e| ProbeError::unreachable(format!("cannot run probe: {e}")))?;
 
         let size = out.stdout.len() + out.stderr.len();
-        if size > self.output_cap {
-            return Err(ProbeError::with_code(
-                gmr_core::ReasonClass::Unusable,
-                ProbeErrorCode::OutputTooLarge,
-                format!(
-                    "probe output is {size} bytes, above the {} byte limit; refusing to truncate. \
-                     Storing a truncated reading as fact would be a lie. Print structure, not dumps",
-                    self.output_cap
-                ),
-            ));
+        if size > call.budget.output_cap() {
+            return Err(ProbeError::too_large(size, call.budget.output_cap()));
         }
 
         if !out.status.success() {
@@ -166,9 +141,14 @@ impl Transport for Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gmr_core::{ProbeVersion, ReasonClass};
-    use gmr_probe::ProbeErrorCode;
+    use gmr_core::{ProbeRef, ProbeVersion, ReasonClass};
+    use gmr_probe::{Budget, ProbeErrorCode};
     use serde_json::json;
+    use std::time::Duration;
+
+    fn wide() -> Budget {
+        Budget::within(Duration::from_secs(30), 1 << 20)
+    }
 
     struct Published {
         address: ProbeVersion,
@@ -248,7 +228,23 @@ mod tests {
         }
 
         async fn invoke(&self, params: Value, at: Value) -> Result<Outcome, ProbeError> {
-            self.shell().invoke(&Self::probe(params), &at).await
+            self.spend(params, at, wide()).await
+        }
+
+        async fn spend(
+            &self,
+            params: Value,
+            at: Value,
+            budget: Budget,
+        ) -> Result<Outcome, ProbeError> {
+            let probe = Self::probe(params);
+            self.shell()
+                .invoke(&ProbeCall {
+                    probe: &probe,
+                    position: &at,
+                    budget: &budget,
+                })
+                .await
         }
 
         fn resolve(&self) -> Option<Derivation> {
@@ -406,9 +402,11 @@ mod tests {
         let w = World::new();
         w.publish("sleep 5", &[]);
         let e = w
-            .shell()
-            .with_timeout(Duration::from_millis(60))
-            .invoke(&World::probe(json!({})), &Value::Null)
+            .spend(
+                json!({}),
+                Value::Null,
+                Budget::within(Duration::from_millis(60), 1 << 20),
+            )
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unreachable);
@@ -420,9 +418,11 @@ mod tests {
         let w = World::new();
         w.publish("printf 'x%.0s' $(seq 1 100)", &[]);
         let e = w
-            .shell()
-            .with_output_cap(16)
-            .invoke(&World::probe(json!({})), &Value::Null)
+            .spend(
+                json!({}),
+                Value::Null,
+                Budget::within(Duration::from_secs(30), 16),
+            )
             .await
             .unwrap_err();
         assert_eq!(e.reason, ReasonClass::Unusable);

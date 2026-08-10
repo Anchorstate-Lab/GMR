@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use gmr_core::{ProbeName, ProbeVersion};
 use gmr_survey::Cache;
-use gmr_transport::inproc::Registered;
+use gmr_transport::inproc::{ExtractError, Reach, Registered};
 use serde_json::Value;
 
 pub struct Vocabulary {
@@ -117,8 +117,9 @@ fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
                 ProbeName::new(v.name),
                 Registered {
                     version: ProbeVersion::new(*version),
-                    extract: Arc::new(move |cwd, pos, params| {
-                        probe(&root_of(cwd, params), pos, &cache)
+                    extract: Arc::new(move |reach: &Reach| {
+                        probe(&root_of(&reach.cwd, &reach.params), &reach.position, &cache)
+                            .map_err(ExtractError::Refused)
                     }),
                 },
             )
@@ -129,6 +130,7 @@ fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gmr_transport::inproc::Budget;
 
     #[test]
     fn the_contract_the_closure_hashes_is_the_one_core_declares() {
@@ -245,8 +247,13 @@ mod tests {
             let look = |nth: usize| {
                 let mut pos: Value = serde_json::from_str(f.pos).unwrap();
                 pos["nth"] = nth.into();
-                (reg[&ProbeName::new(v.name)].extract)(&dir, &pos, &serde_json::json!({}))
-                    .unwrap_or_else(|e| panic!("`{}` on its own fixture: {e}", v.name))
+                (reg[&ProbeName::new(v.name)].extract)(&Reach {
+                    cwd: dir.clone(),
+                    position: pos,
+                    params: serde_json::json!({}),
+                    budget: Budget::within(std::time::Duration::from_secs(30), 1 << 20),
+                })
+                .unwrap_or_else(|e| panic!("`{}` on its own fixture: {e}", v.name))
             };
 
             let tied = look(0)["candidates"].as_u64().unwrap() as usize;

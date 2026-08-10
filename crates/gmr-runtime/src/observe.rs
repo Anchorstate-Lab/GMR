@@ -4,6 +4,7 @@ use gmr_core::{
     should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
+use gmr_probe::Budget;
 use gmr_store::{Disposition, Fence};
 
 use crate::assembly::Runtime;
@@ -41,7 +42,8 @@ impl Runtime {
     }
 
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
-        observe(&self.log, &self.observer, &self.scheduler, key).await
+        let budget = self.scheduler.policy().budget();
+        observe(&self.log, &self.observer, &self.scheduler, key, &budget).await
     }
 }
 
@@ -50,9 +52,10 @@ async fn observe(
     observer: &Observer,
     scheduler: &Scheduler,
     key: &AnchorKey,
+    budget: &Budget,
 ) -> Result<Observed, RuntimeError> {
     if !scheduler.leases_configured() {
-        return observe_with(log, observer, scheduler, key, Fence::Unleased).await;
+        return observe_with(log, observer, scheduler, key, Fence::Unleased, budget).await;
     }
 
     let now = chrono::Utc::now();
@@ -61,7 +64,7 @@ async fn observe(
         return Err(RuntimeError::Leased { key: key.clone() });
     };
 
-    let seen = observe_with(log, observer, scheduler, key, ticket.fence).await;
+    let seen = observe_with(log, observer, scheduler, key, ticket.fence, budget).await;
     let after = match &seen {
         Ok(Observed::Closed) => Disposition::Retire,
         _ => Disposition::Reschedule {
@@ -78,6 +81,7 @@ pub(crate) async fn observe_with(
     scheduler: &Scheduler,
     key: &AnchorKey,
     fence: Fence,
+    budget: &Budget,
 ) -> Result<Observed, RuntimeError> {
     let entries = log.entries(key, 0).await?;
     let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
@@ -95,7 +99,7 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let outcome = match observer.invoke(&s.anchor, s.position()).await {
+    let outcome = match observer.invoke(&s.anchor, s.position(), budget).await {
         Ok(o) => o,
         Err(e) => {
             return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;

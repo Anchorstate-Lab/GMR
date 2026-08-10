@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gmr_core::{Anchor, Derivation, Outcome, ProbeRef};
-use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
+use gmr_probe::{Budget, ProbeCall, ProbeError, ProbeErrorCode, Transport};
 
 pub struct Observer {
     transports: Vec<Arc<dyn Transport>>,
@@ -40,9 +40,14 @@ impl Observer {
         &self,
         anchor: &Anchor,
         position: &serde_json::Value,
+        budget: &Budget,
     ) -> Result<Outcome, ProbeError> {
         self.transport(&anchor.probe)?
-            .invoke(&anchor.probe, position)
+            .invoke(&ProbeCall {
+                probe: &anchor.probe,
+                position,
+                budget,
+            })
             .await
     }
 }

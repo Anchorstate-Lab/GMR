@@ -83,7 +83,7 @@ async fn open(
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
     let outcome = observer
-        .invoke(&anchor, initial.position())
+        .invoke(&anchor, initial.position(), &scheduler.policy().budget())
         .await
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 

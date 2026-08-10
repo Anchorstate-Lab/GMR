@@ -70,9 +70,18 @@ async fn pass(
         )
         .await?;
 
+    let budget = scheduler.policy().budget();
     let mut out = Passed::default();
     for ticket in tickets {
-        let observed = observe_with(log, observer, scheduler, &ticket.anchor, ticket.fence).await?;
+        let observed = observe_with(
+            log,
+            observer,
+            scheduler,
+            &ticket.anchor,
+            ticket.fence,
+            &budget,
+        )
+        .await?;
         out.observed += 1;
 
         let disposition = match &observed {

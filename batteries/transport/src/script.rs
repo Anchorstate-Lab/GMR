@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::time::Duration;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, ProbeRef, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeError, ProbeErrorCode, Transport};
+use gmr_probe::{
+    PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Spent, Transport,
+};
 
 use crate::closure;
 
@@ -16,8 +17,6 @@ pub struct Script {
     kind: Kind,
     cwd: PathBuf,
     paths: BTreeMap<ProbeName, PathBuf>,
-    timeout: Duration,
-    output_cap: usize,
 }
 
 impl Script {
@@ -26,19 +25,7 @@ impl Script {
             kind: Kind::new("script"),
             cwd: cwd.into(),
             paths,
-            timeout: Duration::from_secs(30),
-            output_cap: 1024 * 1024,
         }
-    }
-
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-
-    pub fn with_output_cap(mut self, bytes: usize) -> Self {
-        self.output_cap = bytes;
-        self
     }
 
     fn entry(&self, name: &ProbeName) -> Option<PathBuf> {
@@ -59,48 +46,37 @@ impl Transport for Script {
         })
     }
 
-    async fn invoke(&self, probe: &ProbeRef, position: &Value) -> Result<Outcome, ProbeError> {
-        let entry = self.entry(&probe.name).ok_or_else(|| {
+    async fn invoke(&self, call: &ProbeCall<'_>) -> Result<Outcome, ProbeError> {
+        let name = &call.probe.name;
+        let entry = self.entry(name).ok_or_else(|| {
             ProbeError::with_code(
                 gmr_core::ReasonClass::Unusable,
                 ProbeErrorCode::ArtifactInvalid,
-                format!("no script is declared for the probe named `{}`", probe.name),
+                format!("no script is declared for the probe named `{name}`"),
             )
         })?;
 
         let mut command = Command::new(&entry);
         command
             .current_dir(&self.cwd)
-            .env(POSITION_ENV, position.to_string())
-            .env(PARAMS_ENV, probe.params.to_string())
+            .env(POSITION_ENV, call.position.to_string())
+            .env(PARAMS_ENV, call.probe.params.to_string())
             .stdin(Stdio::null())
             .kill_on_drop(true);
 
-        let out = tokio::time::timeout(self.timeout, command.output())
+        let left = call
+            .budget
+            .remaining()
+            .ok_or_else(|| ProbeError::spent(Spent::Deadline, call.budget))?;
+
+        let out = tokio::time::timeout(left, command.output())
             .await
-            .map_err(|_| {
-                ProbeError::with_code(
-                    gmr_core::ReasonClass::Unreachable,
-                    ProbeErrorCode::TimedOut,
-                    format!(
-                        "probe did not return within {:?}; silence is not evidence",
-                        self.timeout
-                    ),
-                )
-            })?
+            .map_err(|_| ProbeError::spent(Spent::Deadline, call.budget))?
             .map_err(|e| ProbeError::unreachable(format!("cannot run {}: {e}", entry.display())))?;
 
         let size = out.stdout.len() + out.stderr.len();
-        if size > self.output_cap {
-            return Err(ProbeError::with_code(
-                gmr_core::ReasonClass::Unusable,
-                ProbeErrorCode::OutputTooLarge,
-                format!(
-                    "probe output is {size} bytes, above the {} byte limit; refusing to truncate. \
-                     Storing a truncated reading as fact would be a lie. Print structure, not dumps",
-                    self.output_cap
-                ),
-            ));
+        if size > call.budget.output_cap() {
+            return Err(ProbeError::too_large(size, call.budget.output_cap()));
         }
 
         if !out.status.success() {
@@ -150,8 +126,14 @@ impl Transport for Script {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gmr_core::ReasonClass;
+    use gmr_core::{ProbeRef, ReasonClass};
+    use gmr_probe::Budget;
     use serde_json::json;
+    use std::time::Duration;
+
+    fn wide() -> Budget {
+        Budget::within(Duration::from_secs(30), 1 << 20)
+    }
 
     struct World {
         dir: tempfile::TempDir,
@@ -183,11 +165,22 @@ mod tests {
         }
 
         async fn invoke(&self, rel: &str, position: Value) -> Result<Outcome, ProbeError> {
+            self.spend(rel, position, wide()).await
+        }
+
+        async fn spend(
+            &self,
+            rel: &str,
+            position: Value,
+            budget: Budget,
+        ) -> Result<Outcome, ProbeError> {
+            let probe = ProbeRef::new(Kind::new("script"), ProbeName::new("deploy"), json!({}));
             self.script(rel)
-                .invoke(
-                    &ProbeRef::new(Kind::new("script"), ProbeName::new("deploy"), json!({})),
-                    &position,
-                )
+                .invoke(&ProbeCall {
+                    probe: &probe,
+                    position: &position,
+                    budget: &budget,
+                })
                 .await
         }
     }
@@ -319,14 +312,54 @@ mod tests {
         let w = World::new();
         w.write("p.sh", "sleep 5");
         let e = w
-            .script("p.sh")
-            .with_timeout(Duration::from_millis(60))
-            .invoke(
-                &ProbeRef::new(Kind::new("script"), ProbeName::new("deploy"), json!({})),
-                &Value::Null,
+            .spend(
+                "p.sh",
+                Value::Null,
+                Budget::within(Duration::from_millis(60), 1 << 20),
             )
             .await
             .unwrap_err();
         assert_eq!(e.code, ProbeErrorCode::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn a_script_is_killed_when_the_budget_runs_out_rather_than_left_running() {
+        let w = World::new();
+        let marker = w.dir.path().join("still-running");
+        w.write("p.sh", &format!("sleep 2; printf x > {}", marker.display()));
+        let e = w
+            .spend(
+                "p.sh",
+                Value::Null,
+                Budget::within(Duration::from_millis(60), 1 << 20),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(e.code, ProbeErrorCode::TimedOut);
+
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+        assert!(
+            !marker.exists(),
+            "kill_on_drop has to make the timeout a real cancellation for a subprocess; \
+             if the child ran to completion it only looked cancelled"
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_output_is_refused_never_truncated() {
+        let w = World::new();
+        w.write(
+            "p.sh",
+            "printf '{\"x\":\"%s\"}' $(printf 'y%.0s' $(seq 1 100))",
+        );
+        let e = w
+            .spend(
+                "p.sh",
+                Value::Null,
+                Budget::within(Duration::from_secs(30), 16),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(e.code, ProbeErrorCode::OutputTooLarge);
     }
 }
