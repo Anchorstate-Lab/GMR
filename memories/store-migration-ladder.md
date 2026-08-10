@@ -5,6 +5,8 @@ about:
   - crates/gmr-store/src/sqlite/mod.rs#rung
   - crates/gmr-store/src/sqlite/mod.rs#under_the_write_lock
   - crates/gmr-store/src/sqlite/mod.rs#a_climbed_database_ends_up_shaped_like_a_freshly_built_one
+  - crates/gmr-store/src/sqlite/mod.rs#a_whole_v6_database_climbs_into_the_shape_a_fresh_build_makes
+  - crates/gmr-store/src/sqlite/mod.rs#blueprint
   - crates/gmr-store/src/sqlite/mod.rs#two_openers_racing_the_same_upgrade_do_not_both_apply_it
 watch: [sig, logic]
 ---
@@ -41,6 +43,31 @@ That test compares `sqlite_master` between a database built from scratch and one
 carried up by the ladder. `that_comparison_can_actually_fail` runs the same
 comparison against a rung that drops the index, and asserts the two disagree —
 without it, the first test proves only that it was written.
+
+### The mechanism is proved on a toy schema; the shipped rung needs its own
+
+Those two run on a three-object fixture, which is right for proving the
+comparison works and wrong for proving *this* ladder works. So
+`a_whole_v6_database_climbs_into_the_shape_a_fresh_build_makes` runs it on the
+real pair: a frozen, complete v6 schema — every table, index and trigger a v6
+database in the wild actually has — climbed to v7 and compared against what this
+build makes from scratch.
+
+It cannot reuse `shape`. That helper compares `sqlite_master.sql` **verbatim**,
+which is exact and cheap while both paths execute the same DDL text, and simply
+untrue here: `ALTER TABLE ... ADD COLUMN` makes SQLite rewrite the stored
+`CREATE TABLE` text by appending to it, so the climbed `settings` carries the v6
+wording plus a tail while the fresh one carries the v7 wording. Two identical
+shapes, two different strings. `blueprint` therefore compares tables through
+`pragma_table_info` — name, type, nullability, default, primary key — and
+non-tables through their whitespace-squeezed SQL, so formatting cannot fail it
+and a forgotten column, index or trigger cannot pass it. Both halves were
+checked red: retyping the rung's column to `TEXT` fails it, and deleting one
+trigger from the v6 fixture fails it.
+
+The v6 fixture is frozen on purpose. Deriving it from `SCHEMA` by stripping the
+new column would make it track whatever the schema becomes, and the comparison
+would then be a mirror agreeing with itself.
 
 ## The version has to be read inside the write lock, not before it
 

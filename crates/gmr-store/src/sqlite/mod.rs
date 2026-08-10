@@ -414,13 +414,86 @@ mod tests {
         assert_eq!(stamp_of(store.pool()).await, schema::SCHEMA_VERSION);
     }
 
-    const V6_SETTINGS: &str = "CREATE TABLE settings (\
-        anchor TEXT PRIMARY KEY, retain TEXT NOT NULL, cadence_secs INTEGER);";
+    const V6_SCHEMA: &str = r#"
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS journal (
+    seq     INTEGER PRIMARY KEY AUTOINCREMENT,
+    anchor  TEXT    NOT NULL,
+    fence   INTEGER NOT NULL,
+    body    TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS journal_by_anchor ON journal(anchor, seq);
+
+CREATE TABLE IF NOT EXISTS bindings (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference      TEXT NOT NULL,
+    body           TEXT NOT NULL,
+    bound_version  TEXT NOT NULL,
+    bound_at_seq   INTEGER
+);
+CREATE INDEX IF NOT EXISTS bindings_by_reference ON bindings(reference, seq);
+
+CREATE TABLE IF NOT EXISTS binding_anchors (
+    seq        INTEGER NOT NULL REFERENCES bindings(seq),
+    anchor     TEXT    NOT NULL,
+    PRIMARY KEY (seq, anchor)
+);
+CREATE INDEX IF NOT EXISTS binding_anchors_by_anchor ON binding_anchors(anchor);
+
+CREATE TABLE IF NOT EXISTS links (
+    seq      INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_ref TEXT NOT NULL,
+    to_ref   TEXT NOT NULL,
+    kind     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS links_by_from ON links(from_ref);
+
+CREATE TABLE IF NOT EXISTS sealed (
+    address  TEXT PRIMARY KEY,
+    body     BLOB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    anchor        TEXT    PRIMARY KEY,
+    retain        TEXT    NOT NULL,
+    cadence_secs  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS queue (
+    anchor       TEXT    PRIMARY KEY,
+    due          INTEGER NOT NULL,
+    lease_until  INTEGER NOT NULL DEFAULT 0,
+    epoch        INTEGER NOT NULL DEFAULT 0,
+    parked       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS bindings_no_update BEFORE UPDATE ON bindings
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS bindings_no_delete BEFORE DELETE ON bindings
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS binding_anchors_no_update BEFORE UPDATE ON binding_anchors
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS binding_anchors_no_delete BEFORE DELETE ON binding_anchors
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS links_no_update BEFORE UPDATE ON links
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS links_no_delete BEFORE DELETE ON links
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS sealed_no_update BEFORE UPDATE ON sealed
+    BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
+CREATE TRIGGER IF NOT EXISTS sealed_no_delete BEFORE DELETE ON sealed
+    BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
+"#;
 
     #[tokio::test]
     async fn a_real_v6_database_is_carried_to_v7_with_what_it_held() {
         let pool = raw().await;
-        sqlx::raw_sql(V6_SETTINGS).execute(&pool).await.unwrap();
+        sqlx::raw_sql(V6_SCHEMA).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO settings VALUES ('a#b', 'full', 900)")
             .execute(&pool)
             .await
@@ -447,19 +520,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_settings_table_a_v6_climbs_into_is_the_one_a_fresh_build_makes() {
+    async fn a_whole_v6_database_climbs_into_the_shape_a_fresh_build_makes() {
         let climbed = raw().await;
-        sqlx::raw_sql(V6_SETTINGS).execute(&climbed).await.unwrap();
-        sqlx::query("PRAGMA user_version = 6")
-            .execute(&climbed)
-            .await
-            .unwrap();
+        sqlx::raw_sql(V6_SCHEMA).execute(&climbed).await.unwrap();
+        stamp(&climbed, 6).await;
         climb(&climbed, 7, LADDER).await.unwrap();
 
         let fresh = open_in_memory().await.unwrap();
         assert_eq!(
-            columns(&climbed, "settings").await,
-            columns(fresh.pool(), "settings").await,
+            blueprint(&climbed).await,
+            blueprint(fresh.pool()).await,
             "the ladder and the full schema are two descriptions of one shape, and only \
              this comparison keeps them saying the same thing"
         );
@@ -558,6 +628,40 @@ mod tests {
         .fetch_all(pool)
         .await
         .unwrap()
+    }
+
+    async fn blueprint(pool: &SqlitePool) -> Vec<String> {
+        let objects: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT type, name, COALESCE(sql, '') FROM sqlite_master \
+             WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap();
+
+        let mut drawn = Vec::new();
+        for (kind, name, sql) in objects {
+            if kind != "table" {
+                let squeezed: Vec<&str> = sql.split_whitespace().collect();
+                drawn.push(format!("{kind} {name} :: {}", squeezed.join(" ")));
+                continue;
+            }
+            drawn.push(format!("table {name}"));
+            let columns: Vec<(String, String, i64, Option<String>, i64)> = sqlx::query_as(&format!(
+                "SELECT name, type, \"notnull\", dflt_value, pk FROM pragma_table_info('{name}') \
+                 ORDER BY name"
+            ))
+            .fetch_all(pool)
+            .await
+            .unwrap();
+            for (column, of_type, not_null, default, key) in columns {
+                let default = default.unwrap_or_else(|| "-".to_owned());
+                drawn.push(format!(
+                    "  {column} {of_type} notnull={not_null} default={default} pk={key}"
+                ));
+            }
+        }
+        drawn
     }
 
     #[test]
