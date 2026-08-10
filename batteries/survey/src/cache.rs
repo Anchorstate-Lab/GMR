@@ -30,6 +30,7 @@ type Scanned = Result<Arc<Vec<Candidate>>, String>;
 #[derive(Default)]
 struct Flight {
     settled: Mutex<Option<Scanned>>,
+    folded: Mutex<Option<Scanned>>,
 }
 
 pub struct Cache {
@@ -167,8 +168,7 @@ pub fn visit_cached(
     probe: &str,
     collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
 ) -> Result<Arc<Vec<Candidate>>, String> {
-    let stamp = cache.stamps.get(probe).map(String::as_str).unwrap_or("");
-    let scope = format!("{probe}@{stamp}@{}", root.display());
+    let scope = scope_of(cache, probe, root);
     let Some(flight) = cache.flight(&scope) else {
         return scan(root, cache, &scope, collect);
     };
@@ -179,6 +179,33 @@ pub fn visit_cached(
     let scanned = scan(root, cache, &scope, collect);
     *settled = Some(scanned.clone());
     scanned
+}
+
+pub fn visit_folded(
+    root: &Path,
+    cache: &Cache,
+    probe: &str,
+    collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
+    fold: impl FnOnce(&[Candidate]) -> Result<Vec<Candidate>, String>,
+) -> Result<Arc<Vec<Candidate>>, String> {
+    let scope = scope_of(cache, probe, root);
+    let Some(flight) = cache.flight(&scope) else {
+        return fold(&visit_cached(root, cache, probe, collect)?).map(Arc::new);
+    };
+    let mut folded = flight.folded.lock().unwrap();
+    if let Some(done) = folded.as_ref() {
+        return done.clone();
+    }
+    let done = visit_cached(root, cache, probe, collect)
+        .and_then(|fragments| fold(&fragments))
+        .map(Arc::new);
+    *folded = Some(done.clone());
+    done
+}
+
+fn scope_of(cache: &Cache, probe: &str, root: &Path) -> String {
+    let stamp = cache.stamps.get(probe).map(String::as_str).unwrap_or("");
+    format!("{probe}@{stamp}@{}", root.display())
 }
 
 fn scan(
@@ -536,5 +563,119 @@ mod tests {
             .filter(|n| n.ends_with(".tmp"))
             .collect();
         assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    fn counting_fold(
+        folds: &AtomicUsize,
+    ) -> impl FnOnce(&[Candidate]) -> Result<Vec<Candidate>, String> + '_ {
+        move |cands| {
+            folds.fetch_add(1, Ordering::SeqCst);
+            Ok((0..cands.len())
+                .map(|i| {
+                    Candidate::new(
+                        format!("folded {i}"),
+                        BTreeMap::new(),
+                        serde_json::json!({}),
+                    )
+                })
+                .collect())
+        }
+    }
+
+    #[test]
+    fn an_aggregate_is_folded_once_per_scan_not_once_per_question() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one"), ("b/c.rs", "two")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
+        let (calls, folds) = (AtomicUsize::new(0), AtomicUsize::new(0));
+
+        let first = visit_folded(
+            src.path(),
+            &cache,
+            "p",
+            counting_collect(&calls),
+            counting_fold(&folds),
+        )
+        .unwrap();
+        let second = visit_folded(
+            src.path(),
+            &cache,
+            "p",
+            counting_collect(&calls),
+            counting_fold(&folds),
+        )
+        .unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the second answer is the first one"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "two files, read once each");
+        assert_eq!(
+            folds.load(Ordering::SeqCst),
+            1,
+            "a cross-file aggregate is a pure function of the fragments, and the fragments \
+             are already settled for this scope. Folding again per question is the whole \
+             cost the per-file cache does not remove"
+        );
+    }
+
+    #[test]
+    fn two_roots_do_not_share_a_folded_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = tree(&[("a.rs", "one")]);
+        let two = tree(&[("a.rs", "one"), ("b.rs", "two")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
+        let (calls, folds) = (AtomicUsize::new(0), AtomicUsize::new(0));
+
+        let a = visit_folded(
+            one.path(),
+            &cache,
+            "p",
+            counting_collect(&calls),
+            counting_fold(&folds),
+        )
+        .unwrap();
+        let b = visit_folded(
+            two.path(),
+            &cache,
+            "p",
+            counting_collect(&calls),
+            counting_fold(&folds),
+        )
+        .unwrap();
+
+        assert_eq!(
+            (a.len(), b.len()),
+            (1, 2),
+            "{}",
+            "the fold memo is keyed by the same scope the scan is, or narrowing a probe to \
+             one directory would be served whatever the first root produced"
+        );
+        assert_eq!(folds.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_disabled_cache_folds_every_time_it_is_asked() {
+        let src = tree(&[("a.rs", "one")]);
+        let cache = Cache::disabled();
+        let (calls, folds) = (AtomicUsize::new(0), AtomicUsize::new(0));
+
+        for _ in 0..3 {
+            visit_folded(
+                src.path(),
+                &cache,
+                "p",
+                counting_collect(&calls),
+                counting_fold(&folds),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            folds.load(Ordering::SeqCst),
+            3,
+            "disabled has to mean disabled: a test that rewrites a file and asks again must \
+             see the new answer, and a memo it cannot invalidate would hand back the old one"
+        );
     }
 }

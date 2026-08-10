@@ -77,7 +77,11 @@ async fn pass(
         if budget.remaining().is_none() {
             out.skipped += 1;
             scheduler
-                .settle(&ticket, Disposition::Reschedule { after_secs: 0 }, Utc::now())
+                .settle(
+                    &ticket,
+                    Disposition::Reschedule { after_secs: 0 },
+                    Utc::now(),
+                )
                 .await?;
             continue;
         }

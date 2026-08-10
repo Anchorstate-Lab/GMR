@@ -9,10 +9,10 @@ const VERSION: &str = env!("GMR_EXTRACTOR_NAME");
 pub(crate) const ITEMS: [&str; 2] = ["name", "scope"];
 
 #[derive(Default)]
-struct Seen {
+struct Seen<'a> {
     count: usize,
-    files: BTreeSet<String>,
-    first: Option<(String, usize)>,
+    files: BTreeSet<&'a str>,
+    first: Option<(&'a str, usize)>,
 }
 
 fn idents(line: &str) -> impl Iterator<Item = &str> {
@@ -20,55 +20,77 @@ fn idents(line: &str) -> impl Iterator<Item = &str> {
         .filter(|w| !w.is_empty() && !w.chars().next().is_some_and(|c| c.is_ascii_digit()))
 }
 
-fn scopes_of(rel: &str) -> Vec<String> {
-    let mut out = vec![String::new()];
-    let mut acc = String::new();
-    for part in rel.split('/').filter(|p| !p.is_empty()) {
-        if !acc.is_empty() {
-            acc.push('/');
+fn scopes_of(rel: &str) -> Result<Vec<&str>, String> {
+    let mut out = vec![""];
+    let mut end = 0;
+    for part in rel.split('/') {
+        if part.is_empty() {
+            return Err(format!(
+                "{rel} has an empty path component, so its scopes are not prefixes of it. \
+                 A walked path cannot look like this; something upstream is handing out \
+                 paths it did not build from directory entries"
+            ));
         }
-        acc.push_str(part);
-        out.push(acc.clone());
+        end += part.len();
+        out.push(&rel[..end]);
+        end += 1;
     }
-    out
+    Ok(out)
 }
 
-fn collect(path: &Path, rel: &str, out: &mut BTreeMap<(String, String), Seen>) {
+fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
     let Ok(src) = std::fs::read_to_string(path) else {
         return;
     };
-    let scopes = scopes_of(rel);
+    let mut here: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     for (i, line) in src.lines().enumerate() {
         for w in idents(line) {
-            for s in &scopes {
-                let e = out.entry((w.to_owned(), s.clone())).or_default();
-                e.count += 1;
-                e.files.insert(rel.to_owned());
-                e.first.get_or_insert_with(|| (rel.to_owned(), i + 1));
-            }
+            let e = here.entry(w).or_insert((0, i + 1));
+            e.0 += 1;
         }
     }
+    out.extend(here.into_iter().map(|(name, (count, line))| {
+        coord::Candidate::new(
+            format!("{rel}#{name}"),
+            [("name", name), ("file", rel)]
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                .collect(),
+            json!({"count": count, "line": line}),
+        )
+    }));
 }
 
-pub fn probe(root: &Path, pos: &Value, _cache: &coord::Cache) -> Result<Value, String> {
-    let want = coord::wanted(pos, &ITEMS)?;
-    let mut seen = BTreeMap::new();
-    coord::visit(root, &mut |p, rel| {
-        collect(p, rel, &mut seen);
-        Ok(())
-    })?;
-    if seen.is_empty() {
-        return Err(format!(
-            "{} contains no readable files; the probe is likely pointed at the wrong directory",
-            root.display()
-        ));
+fn merge(fragments: &[coord::Candidate]) -> Result<BTreeMap<(&str, &str), Seen<'_>>, String> {
+    let mut seen: BTreeMap<(&str, &str), Seen> = BTreeMap::new();
+    let mut walked: Option<(&str, Vec<&str>)> = None;
+    for f in fragments {
+        let (Some(name), Some(rel)) = (f.coord.get("name"), f.coord.get("file")) else {
+            continue;
+        };
+        let count = f.facts["count"].as_u64().unwrap_or_default() as usize;
+        let line = f.facts["line"].as_u64().unwrap_or_default() as usize;
+        if walked.as_ref().is_none_or(|(had, _)| had != rel) {
+            walked = Some((rel, scopes_of(rel)?));
+        }
+        let (_, scopes) = walked.as_ref().expect("just filled");
+        for s in scopes {
+            let e = seen.entry((name.as_str(), s)).or_default();
+            e.count += count;
+            e.files.insert(rel.as_str());
+            e.first.get_or_insert((rel.as_str(), line));
+        }
     }
-    let cands: Vec<coord::Candidate> = seen
+    Ok(seen)
+}
+
+fn rolled(fragments: &[coord::Candidate]) -> Result<Vec<coord::Candidate>, String> {
+    Ok(merge(fragments)?
         .into_iter()
         .map(|((name, scope), s)| {
             let c: BTreeMap<String, String> = [("name", name), ("scope", scope)]
                 .into_iter()
-                .map(|(k, v)| (k.to_owned(), v))
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
                 .collect();
             coord::Candidate::new(
                 format!("{}@{}", c["name"], c["scope"]),
@@ -81,7 +103,27 @@ pub fn probe(root: &Path, pos: &Value, _cache: &coord::Cache) -> Result<Value, S
                 }),
             )
         })
-        .collect();
+        .collect())
+}
+
+pub fn probe(root: &Path, pos: &Value, cache: &coord::Cache) -> Result<Value, String> {
+    let want = coord::wanted(pos, &ITEMS)?;
+    let cands = coord::visit_folded(
+        root,
+        cache,
+        "name-map",
+        |p, rel, out| {
+            collect(p, rel, out);
+            Ok(())
+        },
+        rolled,
+    )?;
+    if cands.is_empty() {
+        return Err(format!(
+            "{} contains no readable files; the probe is likely pointed at the wrong directory",
+            root.display()
+        ));
+    }
     coord::report(VERSION, &want, coord::nth(pos), &cands)
 }
 
@@ -141,11 +183,20 @@ mod tests {
     #[test]
     fn scopes_are_every_prefix_of_the_path() {
         assert_eq!(
-            scopes_of("a/b/c.rs"),
+            scopes_of("a/b/c.rs").unwrap(),
             vec!["", "a", "a/b", "a/b/c.rs"]
-                .into_iter()
-                .map(String::from)
-                .collect::<Vec<_>>()
+        );
+        assert_eq!(scopes_of("top.rs").unwrap(), vec!["", "top.rs"]);
+    }
+
+    #[test]
+    fn a_path_whose_scopes_are_not_its_prefixes_is_refused_not_dropped() {
+        let e = scopes_of("a//b.rs").unwrap_err();
+        assert!(
+            e.contains("empty path component"),
+            "scopes are borrowed slices of the path, which only works while every scope is \
+             a prefix of it. A path where that breaks has to say so — skipping the file \
+             would take it out of every count in silence"
         );
     }
 
@@ -173,5 +224,63 @@ mod tests {
         let v = at(&d, json!({"name": "f"}));
         assert_eq!(v["extractor"], VERSION);
         assert_eq!(v["extractor"].as_str().unwrap().len(), 64);
+    }
+
+    fn corpus() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("a.rs", "fn build() {}\nfn build_more() { build(); }\n"),
+            ("core/b.rs", "fn build() { helper(); }\n"),
+            ("core/deep/c.rs", "fn helper() {}\nfn build() {}\n"),
+            ("shell/d.rs", "fn unrelated() {}\n"),
+        ]
+    }
+
+    fn live_cache(tag: &str) -> (tempfile::TempDir, coord::Cache) {
+        let state = tempfile::tempdir().unwrap();
+        let cache = coord::Cache::load(
+            &state.path().join(format!("{tag}.json")),
+            [("name-map".to_owned(), VERSION.to_owned())]
+                .into_iter()
+                .collect(),
+        )
+        .unwrap();
+        (state, cache)
+    }
+
+    #[test]
+    fn a_second_query_reuses_what_the_first_one_read() {
+        let d = fixture("reuse", &corpus());
+        let (state, cache) = live_cache("reuse");
+        let file = state.path().join("reuse.json");
+
+        probe(&d, &json!({"name": "build", "scope": ""}), &cache).unwrap();
+
+        let on_disk = std::fs::read_to_string(&file).unwrap_or_default();
+        assert!(
+            on_disk.contains("name-map"),
+            "name-map wrote nothing to the cache, so it re-reads and re-tokenises the whole \
+             repository on every single query — the one probe that pays its full cost every \
+             time it is asked, forever"
+        );
+    }
+
+    #[test]
+    fn caching_changes_nothing_about_the_answer() {
+        let d = fixture("identical", &corpus());
+        let (_state, cache) = live_cache("identical");
+
+        for pos in [
+            json!({"name": "build", "scope": ""}),
+            json!({"name": "build", "scope": "core"}),
+            json!({"name": "helper", "scope": "core/deep"}),
+            json!({"name": "build", "scope": "shell"}),
+            json!({"name": "nowhere", "scope": ""}),
+        ] {
+            let cold = probe(&d, &pos, &coord::Cache::disabled()).unwrap();
+            let warm = probe(&d, &pos, &cache).unwrap();
+            let again = probe(&d, &pos, &cache).unwrap();
+            assert_eq!(cold, warm, "a cache that changes the answer is not a cache");
+            assert_eq!(warm, again, "and it has to keep changing nothing");
+        }
     }
 }
