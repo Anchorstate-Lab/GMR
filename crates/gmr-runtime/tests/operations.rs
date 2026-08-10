@@ -649,3 +649,106 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
         .unwrap_err();
     assert_eq!(err.code(), "lease_managed_observation");
 }
+
+fn slow_probe(root: &std::path::Path, secs: &str) -> ProbeRef {
+    gmr_transport::shell::testkit::install_script(
+        root.join(".probes"),
+        "slow",
+        &format!("sleep {secs}; cat world.json"),
+    )
+}
+
+async fn open_slow(w: &World, name: &str, secs: &str) -> AnchorKey {
+    let key = AnchorKey::new(name);
+    w.runtime
+        .open(OpenRequest {
+            key: key.clone(),
+            probe: slow_probe(w.dir.path(), secs),
+            transitions: watching("x"),
+            terminal: Default::default(),
+            initial: None,
+            settings: RunSettings {
+                budget_ms: None,
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+    key
+}
+
+#[tokio::test]
+async fn a_batch_that_runs_out_of_budget_does_not_blame_the_anchors_it_never_reached() {
+    let w = World::polled(Policy {
+        probe_budget_ms: 700,
+        cadence_secs: 300,
+        ..Default::default()
+    });
+    w.write(r#"{"x":1}"#);
+
+    let mut keys = Vec::new();
+    for name in ["a1", "a2", "a3", "a4", "a5", "a6"] {
+        keys.push(open_slow(&w, name, "0.3").await);
+    }
+
+    let passed = w.runtime.pass().await.unwrap();
+
+    let mut blamed = Vec::new();
+    for key in &keys {
+        if w.runtime.read(key).await.unwrap().attempts > 0 {
+            blamed.push(key.to_string());
+        }
+    }
+
+    assert!(
+        passed.observed < keys.len(),
+        "the fixture is not exercising the cliff: every anchor fit inside the budget"
+    );
+    assert!(
+        blamed.len() <= 1,
+        "a batch that runs out of budget can produce at most one timed-out anchor — the one \
+         in flight when the clock ran out. Everything behind it was never invoked, so it was \
+         not observed and found wanting, it was not observed at all. Instead {} anchors carry \
+         an attempt: {blamed:?}. An attempt backs the anchor off exponentially and, after {} \
+         of them, reports it as stalled: 'this anchor is stuck' where the truth is 'we ran out \
+         of time before its turn'",
+        blamed.len(),
+        Policy::default().stalled_attempts
+    );
+    assert_eq!(
+        passed.observed + passed.skipped,
+        keys.len(),
+        "every due ticket is either observed or explicitly skipped. A pass that got through \
+         half its batch has to say so, or it looks exactly like a pass that had nothing left \
+         to do"
+    );
+}
+
+#[tokio::test]
+async fn an_anchor_the_budget_never_reached_comes_back_at_the_front_of_the_next_pass() {
+    let w = World::polled(Policy {
+        probe_budget_ms: 700,
+        cadence_secs: 3600,
+        ..Default::default()
+    });
+    w.write(r#"{"x":1}"#);
+
+    let mut keys = Vec::new();
+    for name in ["b1", "b2", "b3", "b4", "b5", "b6"] {
+        keys.push(open_slow(&w, name, "0.3").await);
+    }
+
+    let first = w.runtime.pass().await.unwrap();
+    assert!(first.skipped > 0);
+
+    let again = w.runtime.pass().await.unwrap();
+    assert!(
+        again.observed > 0,
+        "a skipped anchor is still due — it was never looked at. Rescheduling it a cadence \
+         away would hide a starving tail behind a cadence of {}s, which is how a batch that \
+         is permanently too small for its queue looks healthy forever",
+        3600
+    );
+}

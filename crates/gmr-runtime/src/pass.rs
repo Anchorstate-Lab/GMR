@@ -16,6 +16,7 @@ pub struct Passed {
     pub moved: Vec<AnchorKey>,
     pub unseen: usize,
     pub retired: usize,
+    pub skipped: usize,
 }
 
 impl Runtime {
@@ -73,6 +74,14 @@ async fn pass(
     let budget = scheduler.policy().budget();
     let mut out = Passed::default();
     for ticket in tickets {
+        if budget.remaining().is_none() {
+            out.skipped += 1;
+            scheduler
+                .settle(&ticket, Disposition::Reschedule { after_secs: 0 }, Utc::now())
+                .await?;
+            continue;
+        }
+
         let observed = observe_with(
             log,
             observer,

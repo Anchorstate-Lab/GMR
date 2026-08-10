@@ -30,10 +30,10 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             "{}",
             serde_json::json!({
                 "observed": p.observed, "moved": rows, "handed_back": handed,
-                "unseen": p.unseen, "retired": p.retired,
+                "unseen": p.unseen, "retired": p.retired, "skipped": p.skipped,
             })
         );
-    } else if p.observed == 0 {
+    } else if p.observed == 0 && p.skipped == 0 {
         println!("nothing was due — a pass only observes anchors whose cadence has come round");
     } else {
         println!(
@@ -43,6 +43,15 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             p.unseen,
             p.retired
         );
+        if p.skipped > 0 {
+            println!(
+                "  {} due anchors were never looked at — this pass ran out of its probe budget \
+                 before their turn. They keep their place at the front of the next pass. If this \
+                 number does not fall, the batch is too small for the queue or the budget is too \
+                 tight: raise --probe-budget-ms",
+                p.skipped
+            );
+        }
         for (key, memories) in &moved {
             if memories.is_empty() {
                 continue;
