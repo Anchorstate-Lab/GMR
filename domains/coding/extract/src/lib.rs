@@ -99,7 +99,11 @@ fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
 }
 
 pub fn registry(state_dir: &Path) -> Result<BTreeMap<ProbeName, Registered>, String> {
-    let cache = Cache::load(&state_dir.join("extract-cache.json"))?;
+    let stamps = PROBES
+        .iter()
+        .map(|(v, _, version)| (v.name.to_owned(), (*version).to_owned()))
+        .collect();
+    let cache = Cache::load(&state_dir.join("extract-cache.json"), stamps)?;
     Ok(bind(Arc::new(cache)))
 }
 

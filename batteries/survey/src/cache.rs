@@ -34,6 +34,7 @@ struct Flight {
 
 pub struct Cache {
     file: Option<PathBuf>,
+    stamps: HashMap<String, String>,
     entries: Mutex<Scoped>,
     dirty: AtomicBool,
     writes: AtomicUsize,
@@ -41,7 +42,7 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn load(file: &Path) -> Result<Self, String> {
+    pub fn load(file: &Path, stamps: HashMap<String, String>) -> Result<Self, String> {
         let entries = match std::fs::read_to_string(file) {
             Ok(text) => {
                 serde_json::from_str::<OnDisk>(&text)
@@ -58,16 +59,21 @@ impl Cache {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Scoped::new(),
             Err(e) => return Err(format!("cannot read {}: {e}", file.display())),
         };
-        Ok(Self::held(Some(file.to_owned()), entries))
+        let entries = entries
+            .into_iter()
+            .filter(|(scope, _)| current(scope, &stamps))
+            .collect();
+        Ok(Self::held(Some(file.to_owned()), entries, stamps))
     }
 
     pub fn disabled() -> Self {
-        Self::held(None, Scoped::new())
+        Self::held(None, Scoped::new(), HashMap::new())
     }
 
-    fn held(file: Option<PathBuf>, entries: Scoped) -> Self {
+    fn held(file: Option<PathBuf>, entries: Scoped, stamps: HashMap<String, String>) -> Self {
         Self {
             file,
+            stamps,
             entries: Mutex::new(entries),
             dirty: AtomicBool::new(false),
             writes: AtomicUsize::new(0),
@@ -147,13 +153,22 @@ impl Cache {
     }
 }
 
+fn current(scope: &str, stamps: &HashMap<String, String>) -> bool {
+    let mut parts = scope.splitn(3, '@');
+    let (Some(probe), Some(stamp)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    stamps.get(probe).map(String::as_str) == Some(stamp)
+}
+
 pub fn visit_cached(
     root: &Path,
     cache: &Cache,
     probe: &str,
     collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
 ) -> Result<Arc<Vec<Candidate>>, String> {
-    let scope = format!("{probe}@{}", root.display());
+    let stamp = cache.stamps.get(probe).map(String::as_str).unwrap_or("");
+    let scope = format!("{probe}@{stamp}@{}", root.display());
     let Some(flight) = cache.flight(&scope) else {
         return scan(root, cache, &scope, collect);
     };
@@ -201,6 +216,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::atomic::AtomicUsize;
 
+    fn stamped() -> HashMap<String, String> {
+        ["p", "ast-map", "addr-map"]
+            .into_iter()
+            .map(|n| (n.to_owned(), "v1".to_owned()))
+            .collect()
+    }
+
     fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
         for (path, body) in files {
@@ -246,11 +268,11 @@ mod tests {
         let cache_file = dir.path().join("cache.json");
         let calls = AtomicUsize::new(0);
 
-        let first = Cache::load(&cache_file).unwrap();
+        let first = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &first, "p", counting_collect(&calls)).unwrap();
 
         std::fs::write(src.path().join("a.rs"), "two").unwrap();
-        let second = Cache::load(&cache_file).unwrap();
+        let second = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &second, "p", counting_collect(&calls)).unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 2);
@@ -260,7 +282,7 @@ mod tests {
     fn a_second_lookup_in_the_same_process_does_not_rewalk() {
         let dir = tempfile::tempdir().unwrap();
         let d = tree(&[("a.rs", "one"), ("b.rs", "two")]);
-        let cache = Cache::load(&dir.path().join("cache.json")).unwrap();
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
         let calls = AtomicUsize::new(0);
 
         let first = visit_cached(d.path(), &cache, "p", counting_collect(&calls)).unwrap();
@@ -315,11 +337,11 @@ mod tests {
         let cache_file = dir.path().join("cache.json");
         let calls = AtomicUsize::new(0);
 
-        let warm = Cache::load(&cache_file).unwrap();
+        let warm = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &warm, "p", counting_collect(&calls)).unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        let reloaded = Cache::load(&cache_file).unwrap();
+        let reloaded = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &reloaded, "p", counting_collect(&calls)).unwrap();
         assert_eq!(
             calls.load(Ordering::SeqCst),
@@ -345,7 +367,7 @@ mod tests {
         let src = tree(&files);
         let calls = AtomicUsize::new(0);
 
-        let cache = Cache::load(&dir.path().join("cache.json")).unwrap();
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
         visit_cached(src.path(), &cache, "p", counting_collect(&calls)).unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 50, "one collect per file");
@@ -364,11 +386,11 @@ mod tests {
         let cache_file = dir.path().join("cache.json");
         let calls = AtomicUsize::new(0);
 
-        let warm = Cache::load(&cache_file).unwrap();
+        let warm = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &warm, "p", counting_collect(&calls)).unwrap();
         assert_eq!(warm.writes.load(Ordering::SeqCst), 1);
 
-        let reloaded = Cache::load(&cache_file).unwrap();
+        let reloaded = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &reloaded, "p", counting_collect(&calls)).unwrap();
         assert_eq!(
             reloaded.writes.load(Ordering::SeqCst),
@@ -381,7 +403,7 @@ mod tests {
     fn a_failed_scan_is_not_retried_by_the_next_caller() {
         let dir = tempfile::tempdir().unwrap();
         let d = tree(&[("a.rs", "1"), ("b.rs", "2"), ("c.rs", "3"), ("d.rs", "4")]);
-        let cache = Cache::load(&dir.path().join("cache.json")).unwrap();
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
         let calls = AtomicUsize::new(0);
 
         let mut refuse = |_p: &Path, rel: &str, _o: &mut Vec<Candidate>| {
@@ -410,7 +432,7 @@ mod tests {
         let path = dir.path().join("cache.json");
         std::fs::write(&path, "{ this is not json").unwrap();
 
-        let Err(e) = Cache::load(&path) else {
+        let Err(e) = Cache::load(&path, stamped()) else {
             panic!("a cache file that is not JSON has to be reported, not discarded")
         };
         assert!(e.contains("cache.json"), "{e}");
@@ -423,7 +445,7 @@ mod tests {
     #[test]
     fn a_cache_file_that_is_not_there_yet_is_not_a_failure() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(Cache::load(&dir.path().join("absent.json")).is_ok());
+        assert!(Cache::load(&dir.path().join("absent.json"), stamped()).is_ok());
     }
 
     #[test]
@@ -433,14 +455,14 @@ mod tests {
         let cache_file = dir.path().join("cache.json");
         let calls = AtomicUsize::new(0);
 
-        let first = Cache::load(&cache_file).unwrap();
+        let first = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &first, "p", counting_collect(&calls)).unwrap();
 
         std::fs::remove_file(src.path().join("b.rs")).unwrap();
-        let second = Cache::load(&cache_file).unwrap();
+        let second = Cache::load(&cache_file, stamped()).unwrap();
         visit_cached(src.path(), &second, "p", counting_collect(&calls)).unwrap();
 
-        let third = Cache::load(&cache_file).unwrap();
+        let third = Cache::load(&cache_file, stamped()).unwrap();
         let entries = third.entries.lock().unwrap();
         let scope = entries.values().next().expect("one scope was written");
         assert!(scope.contains_key("a.rs"));
@@ -451,13 +473,60 @@ mod tests {
         );
     }
 
+    fn stamped_as(version: &str) -> HashMap<String, String> {
+        [("p".to_owned(), version.to_owned())].into_iter().collect()
+    }
+
+    #[test]
+    fn a_cache_written_by_one_version_of_a_probe_is_not_served_to_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+        let cache_file = dir.path().join("cache.json");
+        let calls = AtomicUsize::new(0);
+
+        let before = Cache::load(&cache_file, stamped_as("v1")).unwrap();
+        visit_cached(src.path(), &before, "p", counting_collect(&calls)).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let after = Cache::load(&cache_file, stamped_as("v2")).unwrap();
+        visit_cached(src.path(), &after, "p", counting_collect(&calls)).unwrap();
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "the file did not change but the logic that reads it did, so the candidates \
+             have to be recomputed — serving the old ones is the probe reporting what a \
+             version it no longer is would have said"
+        );
+    }
+
+    #[test]
+    fn entries_a_probe_version_can_no_longer_reach_are_dropped_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+        let cache_file = dir.path().join("cache.json");
+        let calls = AtomicUsize::new(0);
+
+        let before = Cache::load(&cache_file, stamped_as("v1")).unwrap();
+        visit_cached(src.path(), &before, "p", counting_collect(&calls)).unwrap();
+
+        let after = Cache::load(&cache_file, stamped_as("v2")).unwrap();
+        visit_cached(src.path(), &after, "p", counting_collect(&calls)).unwrap();
+        let reloaded = Cache::load(&cache_file, stamped_as("v2")).unwrap();
+        assert_eq!(
+            reloaded.entries.lock().unwrap().len(),
+            1,
+            "the superseded version's entries are unreachable, so they are not kept — \
+             otherwise the file grows by a whole repository at every upgrade"
+        );
+    }
+
     #[test]
     fn a_written_cache_leaves_no_temporary_behind() {
         let dir = tempfile::tempdir().unwrap();
         let src = tree(&[("a.rs", "one")]);
         let calls = AtomicUsize::new(0);
 
-        let cache = Cache::load(&dir.path().join("cache.json")).unwrap();
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
         visit_cached(src.path(), &cache, "p", counting_collect(&calls)).unwrap();
 
         let leftovers: Vec<_> = std::fs::read_dir(dir.path())

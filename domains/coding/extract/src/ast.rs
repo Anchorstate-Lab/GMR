@@ -177,8 +177,10 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
         }
         let body = match kind == "type" {
             true => implemented,
-            false => node
-                .child_by_field_name("body")
+            false => table
+                .body_fields
+                .iter()
+                .find_map(|f| node.child_by_field_name(f))
                 .map(text)
                 .unwrap_or_default(),
         };
@@ -568,6 +570,49 @@ mod tests {
         let two = at(&d, json!({"file": "a.rs", "name": "X"}));
         assert_eq!(one["at"]["shape"], two["at"]["shape"]);
         assert_ne!(one["facts"]["body"], two["facts"]["body"]);
+    }
+
+    #[test]
+    fn a_constant_is_a_coordinate_something_can_be_anchored_to() {
+        let d = fixture(
+            "consts",
+            &[(
+                "a.rs",
+                "pub const WIRE: &str = \"v1\";\nstatic COUNT: u8 = 3;\npub fn f() {}\n",
+            )],
+        );
+        let v = at(&d, json!({"file": "a.rs", "name": "WIRE"}));
+        assert_eq!(
+            v["missed"],
+            json!([]),
+            "a const the world still has must not read as absent"
+        );
+        assert_eq!(v["at"]["kind"], "constant");
+        assert_eq!(v["at"]["vis"], "pub");
+        assert_eq!(
+            at(&d, json!({"file": "a.rs", "name": "COUNT"}))["at"]["kind"],
+            "constant"
+        );
+
+        let moved = fixture(
+            "consts-moved",
+            &[("a.rs", "pub const WIRE: &str = \"v2\";\n")],
+        );
+        assert_ne!(
+            v["facts"]["body"],
+            at(&moved, json!({"file": "a.rs", "name": "WIRE"}))["facts"]["body"],
+            "changing what a constant says is the whole reason to anchor one"
+        );
+    }
+
+    #[test]
+    fn a_constants_declared_type_is_part_of_its_shape() {
+        let a = fixture("const-ty-a", &[("a.rs", "pub const X: u8 = 1;")]);
+        let b = fixture("const-ty-b", &[("a.rs", "pub const X: u64 = 1;")]);
+        assert_ne!(
+            at(&a, json!({"file": "a.rs", "name": "X"}))["at"]["shape"],
+            at(&b, json!({"file": "a.rs", "name": "X"}))["at"]["shape"]
+        );
     }
 
     #[test]

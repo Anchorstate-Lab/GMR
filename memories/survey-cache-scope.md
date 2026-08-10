@@ -6,10 +6,26 @@ watch: [sig, logic]
 # The cache key must cover everything that can change what `collect` returns for a file
 
 `Cache`'s whole reason to exist is "same input, skip recomputing" — which only
-holds if the key genuinely captures every input `collect` reads. Right now that's
-`probe` name, `root` (folded into `scope`), and each file's content hash. Nothing
-else reaches `collect`: `probe(root, pos, cache)` never passes `params` through,
-so `root` really is the only other axis besides file content.
+holds if the key genuinely captures every input `collect` reads. That is the
+`probe` name, the probe's **earned version**, `root` (all three folded into
+`scope`), and each file's content hash. Nothing else reaches `collect`:
+`probe(root, pos, cache)` never passes `params` through, so `root` really is the
+only other axis besides file content and the logic itself.
+
+The version was missing until a self-audit walked into it. Adding `const_item`
+to the Rust table made `ast-map` able to see constants — and four anchors that
+had been permanently `absent` went on reading `absent`, because the file bytes
+had not changed and the cache happily served candidates computed by the version
+that could not see constants. **The probe reported what a version it no longer
+was would have said, and said it with the new version's number attached.** The
+file content was the same, so nothing looked wrong; only deleting the cache by
+hand made the upgrade take effect.
+
+That is the failure this note already named, arriving through the one input
+nobody had thought of as an input: `collect` itself. `Cache::load` now also
+drops any scope whose stamp is not one of the versions this build carries —
+without that, every upgrade would leave a whole repository's candidates behind
+forever.
 
 It was not always in the key. The first version keyed the scan-level memo on
 `probe` alone. `root_of` takes `root` out of `params`, not the process's cwd — see
