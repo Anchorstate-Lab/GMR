@@ -30,6 +30,7 @@ pub struct Budget {
     deadline: Instant,
     output_cap: usize,
     cancel: Arc<AtomicBool>,
+    inherited: Vec<Arc<AtomicBool>>,
 }
 
 impl Budget {
@@ -39,6 +40,7 @@ impl Budget {
             deadline,
             output_cap,
             cancel: Arc::new(AtomicBool::new(false)),
+            inherited: Vec::new(),
         }
     }
 
@@ -65,15 +67,28 @@ impl Budget {
     }
 
     pub fn narrowed(&self, span: Duration) -> Self {
-        Self::until((Instant::now() + span).min(self.deadline), self.output_cap)
+        let mut inherited = self.inherited.clone();
+        inherited.push(Arc::clone(&self.cancel));
+        Self {
+            inherited,
+            ..Self::until((Instant::now() + span).min(self.deadline), self.output_cap)
+        }
     }
 
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
     }
 
+    fn abandoned(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+            || self
+                .inherited
+                .iter()
+                .any(|flag| flag.load(Ordering::SeqCst))
+    }
+
     pub fn checkpoint(&self) -> Result<(), Spent> {
-        if self.cancel.load(Ordering::SeqCst) {
+        if self.abandoned() {
             return Err(Spent::Cancelled);
         }
         match self.remaining() {
@@ -256,6 +271,30 @@ mod tests {
             batch.checkpoint().is_ok(),
             "one anchor giving up must not cancel the rest of the batch with it"
         );
+    }
+
+    #[test]
+    fn a_narrowed_budget_still_hears_the_batch_that_minted_it_give_up() {
+        let batch = Budget::within(Duration::from_secs(600), 16);
+        let one = batch.narrowed(Duration::from_secs(600));
+        batch.cancel();
+        assert_eq!(
+            one.checkpoint(),
+            Err(Spent::Cancelled),
+            "cancellation runs down the tree, never up. An anchor with a per-anchor budget \
+             that stopped inheriting the batch's cancellation would keep scanning after the \
+             whole batch was abandoned — and which anchors do that would depend on whether \
+             someone had set a per-anchor budget, which is not a difference anyone declared"
+        );
+    }
+
+    #[test]
+    fn a_grandchild_hears_the_whole_line_above_it() {
+        let batch = Budget::within(Duration::from_secs(600), 16);
+        let one = batch.narrowed(Duration::from_secs(600));
+        let inner = one.narrowed(Duration::from_secs(600));
+        batch.cancel();
+        assert_eq!(inner.checkpoint(), Err(Spent::Cancelled));
     }
 
     #[test]

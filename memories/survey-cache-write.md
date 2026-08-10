@@ -64,6 +64,34 @@ keeps the per-file map but no scan-level memo, so callers that rewrite a file
 and immediately re-probe the same directory — which is exactly what the shape
 and extractor tests do — still see the change.
 
+## Once per scan is not once per run, and a per-scope flag does not close the gap
+
+`persist` writes at the end of each scan, and a cold `gmr check` on this
+repository scans eight times — once for the root and once for each `layer::*`
+anchor's narrower root (see [[layers]]). Eight full-file writes to land one
+6.3 MB file.
+
+The obvious fix is wrong, and the test says so. Making `dirty` per scope changes
+which scans *trigger* a write; it cannot change that `replace` serialises the
+whole `Scoped` map every time. On a cold run every scope is dirty, so it is N
+full writes either way —
+`a_cold_run_over_several_roots_writes_the_whole_file_once_per_root` pins exactly
+that, so nobody re-derives it.
+
+What would work is writing once per process instead of once per scan: `scan`
+stops calling `persist`, the assembly layer flushes before it exits. That buys
+about 44 MB of writes on a cold run of this repository — under half a second —
+and costs a new obligation nobody can see they have forgotten, plus losing the
+whole scan rather than part of it when a run is killed. Against a module that
+an on-disk index would delete outright, it is not worth it. Written down so the
+trade is re-decided rather than rediscovered.
+
+The duplication underneath is the bigger number anyway: `scope` is
+`probe@stamp@root`, so a file under `crates/gmr-runtime` is stored once for the
+root scope and again for its layer's, and 4.5 MB of distinct content becomes
+6.5 MB. No storage format fixes that — see [[survey-cache-scope]]. Making `root`
+a filter on the query rather than part of the key does.
+
 ## When this changes, ask
 
 Does anything write the cache file from inside the per-file loop again, or

@@ -26,8 +26,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
-    /// How long any one probe may take, in milliseconds.
-    #[arg(long, global = true, default_value = "30000")]
+    /// How long one round of observing may take, in milliseconds. A round is the whole
+    /// operation, not each probe in it: `check` and `observe` look at one anchor per round,
+    /// but `pass` observes a batch inside a single round, so this bounds the batch. Anchors
+    /// the round never reaches are reported as skipped, not as failures.
+    #[arg(long, global = true, default_value_t = gmr::Policy::default().probe_budget_ms)]
     pub probe_budget_ms: u64,
 
     #[command(subcommand)]
@@ -309,4 +312,21 @@ pub struct OpenArgs {
     pub supersedes: Option<String>,
     #[arg(long, requires = "supersedes")]
     pub why: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_budget_default_has_one_source_of_truth() {
+        let cli = Cli::parse_from(["gmr", "--repo", ".", "check"]);
+        assert_eq!(
+            cli.probe_budget_ms,
+            gmr::Policy::default().probe_budget_ms,
+            "a literal here and a literal in Policy::default drift the moment one is edited, \
+             and main.rs hands the flag's value to the policy — so the policy's own default \
+             would quietly stop being what anyone gets"
+        );
+    }
 }

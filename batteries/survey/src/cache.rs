@@ -781,4 +781,35 @@ mod tests {
              see the new answer, and a memo it cannot invalidate would hand back the old one"
         );
     }
+
+    #[test]
+    fn a_cold_run_over_several_roots_writes_the_whole_file_once_per_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[
+            ("a/one.rs", "one"),
+            ("a/two.rs", "two"),
+            ("b/three.rs", "three"),
+            ("c/four.rs", "four"),
+        ]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped()).unwrap();
+        let calls = AtomicUsize::new(0);
+
+        for root in ["", "a", "b", "c"] {
+            visit_cached(
+                &src.path().join(root),
+                &cache,
+                "p",
+                &roomy(),
+                counting_collect(&calls),
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            cache.writes.load(Ordering::SeqCst),
+            4,
+            "one full-file write per scanned root: the flag is per cache, but so is the \
+             serialisation, so making the flag per scope changes nothing here"
+        );
+    }
 }
