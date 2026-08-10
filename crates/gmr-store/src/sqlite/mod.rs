@@ -87,71 +87,110 @@ async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
         .await
         .map_err(db_err)?;
 
-    if stamped == 0 {
-        sqlx::raw_sql(schema::SCHEMA)
-            .execute(pool)
-            .await
-            .map_err(db_err)?;
-        sqlx::query(&format!("PRAGMA user_version = {}", schema::SCHEMA_VERSION))
-            .execute(pool)
-            .await
-            .map_err(db_err)?;
+    if stamped == schema::SCHEMA_VERSION {
         return Ok(());
     }
-
     if stamped > schema::SCHEMA_VERSION {
-        return Err(StoreError::with_code(
-            ErrorKind::Constraint,
-            ErrorCode::SchemaVersionMismatch,
-            format!(
-                "this database is stamped schema v{stamped}, and this build only knows v{}. \
-                 Refusing to open — misreading a database written by a later generation is \
-                 far worse than not opening it. Upgrade gmr",
-                schema::SCHEMA_VERSION
-            ),
-        ));
+        return Err(from_the_future(stamped));
     }
-
-    climb(pool, stamped, schema::SCHEMA_VERSION, LADDER).await
+    climb(pool, schema::SCHEMA_VERSION, LADDER).await
 }
 
-async fn climb(
-    pool: &SqlitePool,
-    from: i64,
+fn from_the_future(stamped: i64) -> StoreError {
+    StoreError::with_code(
+        ErrorKind::Constraint,
+        ErrorCode::SchemaVersionMismatch,
+        format!(
+            "this database is stamped schema v{stamped}, and this build only knows v{}. \
+             Refusing to open — misreading a database written by a later generation is \
+             far worse than not opening it. Upgrade gmr",
+            schema::SCHEMA_VERSION
+        ),
+    )
+}
+
+enum Climbed {
+    Landed,
+    Again,
+}
+
+async fn climb(pool: &SqlitePool, to: i64, ladder: &[(i64, &str)]) -> Result<(), StoreError> {
+    while let Climbed::Again = rung(pool, to, ladder).await? {}
+    Ok(())
+}
+
+async fn rung(pool: &SqlitePool, to: i64, ladder: &[(i64, &str)]) -> Result<Climbed, StoreError> {
+    let mut held = pool.acquire().await.map_err(db_err)?;
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *held)
+        .await
+        .map_err(db_err)?;
+
+    let climbed = under_the_write_lock(&mut held, to, ladder).await;
+    let closed = sqlx::query(match climbed.is_ok() {
+        true => "COMMIT",
+        false => "ROLLBACK",
+    })
+    .execute(&mut *held)
+    .await;
+
+    let climbed = climbed?;
+    closed.map_err(db_err)?;
+    Ok(climbed)
+}
+
+async fn under_the_write_lock(
+    held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
     to: i64,
     ladder: &[(i64, &str)],
-) -> Result<(), StoreError> {
-    let mut at = from;
-    while at < to {
-        let step = ladder
-            .iter()
-            .find(|(rung, _)| *rung == at)
-            .map(|(_, sql)| *sql)
-            .ok_or_else(|| {
-                StoreError::with_code(
-                    ErrorKind::Constraint,
-                    ErrorCode::SchemaVersionMismatch,
-                    format!(
-                        "this database is stamped schema v{at} and this build is v{to}, \
-                         but nothing in this build knows how to carry a v{at} across. \
-                         Export it with the version of gmr that wrote it, then import here"
-                    ),
-                )
-            })?;
+) -> Result<Climbed, StoreError> {
+    let at: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&mut **held)
+        .await
+        .map_err(db_err)?;
 
-        let mut tx = pool.begin().await.map_err(db_err)?;
-        sqlx::raw_sql(step)
-            .execute(&mut *tx)
-            .await
-            .map_err(db_err)?;
-        sqlx::query(&format!("PRAGMA user_version = {}", at + 1))
-            .execute(&mut *tx)
-            .await
-            .map_err(db_err)?;
-        tx.commit().await.map_err(db_err)?;
-        at += 1;
+    if at == to {
+        return Ok(Climbed::Landed);
     }
-    Ok(())
+    if at > to {
+        return Err(from_the_future(at));
+    }
+
+    let (next, sql) = match at {
+        0 => (to, schema::SCHEMA),
+        _ => (
+            at + 1,
+            ladder
+                .iter()
+                .find(|(rung, _)| *rung == at)
+                .map(|(_, sql)| *sql)
+                .ok_or_else(|| {
+                    StoreError::with_code(
+                        ErrorKind::Constraint,
+                        ErrorCode::SchemaVersionMismatch,
+                        format!(
+                            "this database is stamped schema v{at} and this build is v{to}, \
+                             but nothing in this build knows how to carry a v{at} across. \
+                             Export it with the version of gmr that wrote it, then import here"
+                        ),
+                    )
+                })?,
+        ),
+    };
+
+    sqlx::raw_sql(sql)
+        .execute(&mut **held)
+        .await
+        .map_err(db_err)?;
+    sqlx::query(&format!("PRAGMA user_version = {next}"))
+        .execute(&mut **held)
+        .await
+        .map_err(db_err)?;
+
+    Ok(match next == to {
+        true => Climbed::Landed,
+        false => Climbed::Again,
+    })
 }
 
 #[derive(Debug)]
@@ -214,6 +253,13 @@ mod tests {
             .unwrap()
     }
 
+    async fn stamp(pool: &SqlitePool, at: i64) {
+        sqlx::query(&format!("PRAGMA user_version = {at}"))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
     async fn stamp_of(pool: &SqlitePool) -> i64 {
         sqlx::query_scalar("PRAGMA user_version")
             .fetch_one(pool)
@@ -244,7 +290,8 @@ mod tests {
 
         let climbed = raw().await;
         sqlx::raw_sql(OLD).execute(&climbed).await.unwrap();
-        climb(&climbed, 1, 2, &[(1, RUNG)]).await.unwrap();
+        stamp(&climbed, 1).await;
+        climb(&climbed, 2, &[(1, RUNG)]).await.unwrap();
 
         assert_eq!(
             shape(&fresh).await,
@@ -262,7 +309,8 @@ mod tests {
 
         let climbed = raw().await;
         sqlx::raw_sql(OLD).execute(&climbed).await.unwrap();
-        climb(&climbed, 1, 2, &[(1, "CREATE TABLE b (y TEXT);")])
+        stamp(&climbed, 1).await;
+        climb(&climbed, 2, &[(1, "CREATE TABLE b (y TEXT);")])
             .await
             .unwrap();
 
@@ -281,7 +329,8 @@ mod tests {
             (2, "CREATE TABLE two (x INTEGER);"),
             (3, "CREATE TABLE three (x INTEGER);"),
         ];
-        climb(&pool, 1, 4, ladder).await.unwrap();
+        stamp(&pool, 1).await;
+        climb(&pool, 4, ladder).await.unwrap();
 
         assert_eq!(stamp_of(&pool).await, 4);
         let names: Vec<String> = shape(&pool).await.into_iter().map(|(n, _)| n).collect();
@@ -299,7 +348,8 @@ mod tests {
             (1, "CREATE TABLE one (x INTEGER);"),
             (2, "CREATE TABLE two (x INTEGER);"),
         ];
-        climb(&pool, 2, 3, ladder).await.unwrap();
+        stamp(&pool, 2).await;
+        climb(&pool, 3, ladder).await.unwrap();
 
         let names: Vec<String> = shape(&pool).await.into_iter().map(|(n, _)| n).collect();
         assert_eq!(
@@ -312,12 +362,13 @@ mod tests {
     #[tokio::test]
     async fn a_missing_rung_is_refused_and_says_which_one() {
         let pool = raw().await;
-        let e = climb(&pool, 4, 6, &[(5, "CREATE TABLE five (x INTEGER);")])
+        stamp(&pool, 4).await;
+        let e = climb(&pool, 6, &[(5, "CREATE TABLE five (x INTEGER);")])
             .await
             .unwrap_err();
         assert_eq!(e.code, ErrorCode::SchemaVersionMismatch);
         assert!(e.to_string().contains("v4"), "{e}");
-        assert_eq!(stamp_of(&pool).await, 0, "nothing was stamped");
+        assert_eq!(stamp_of(&pool).await, 4, "a refused climb moves nothing");
     }
 
     #[tokio::test]
@@ -329,7 +380,7 @@ mod tests {
             .unwrap();
         let ladder: &[(i64, &str)] =
             &[(1, "CREATE TABLE ok (x INTEGER);"), (2, "THIS IS NOT SQL;")];
-        assert!(climb(&pool, 1, 3, ladder).await.is_err());
+        assert!(climb(&pool, 3, ladder).await.is_err());
         assert_eq!(
             stamp_of(&pool).await,
             2,
@@ -379,7 +430,7 @@ mod tests {
             .await
             .unwrap();
 
-        climb(&pool, 6, 7, LADDER).await.unwrap();
+        climb(&pool, 7, LADDER).await.unwrap();
 
         assert_eq!(stamp_of(&pool).await, 7);
         let (retain, cadence, budget): (String, Option<i64>, Option<i64>) = sqlx::query_as(
@@ -403,7 +454,7 @@ mod tests {
             .execute(&climbed)
             .await
             .unwrap();
-        climb(&climbed, 6, 7, LADDER).await.unwrap();
+        climb(&climbed, 7, LADDER).await.unwrap();
 
         let fresh = open_in_memory().await.unwrap();
         assert_eq!(
@@ -412,6 +463,92 @@ mod tests {
             "the ladder and the full schema are two descriptions of one shape, and only \
              this comparison keeps them saying the same thing"
         );
+    }
+
+    async fn on_disk(path: &Path) -> SqlitePool {
+        SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(path)
+                    .create_if_missing(true)
+                    .busy_timeout(std::time::Duration::from_secs(10)),
+            )
+            .await
+            .unwrap()
+    }
+
+    const RACED_RUNG: &[(i64, &str)] = &[(1, "ALTER TABLE a ADD COLUMN y INTEGER;")];
+
+    #[test]
+    fn two_openers_racing_the_same_upgrade_do_not_both_apply_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("memory.db");
+
+        alone(async {
+            let seed = on_disk(&path).await;
+            sqlx::raw_sql("CREATE TABLE a (x INTEGER);")
+                .execute(&seed)
+                .await
+                .unwrap();
+            sqlx::query("PRAGMA user_version = 1")
+                .execute(&seed)
+                .await
+                .unwrap();
+            seed.close().await;
+        });
+
+        let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let racers: Vec<_> = ["first", "second"]
+            .into_iter()
+            .map(|who| {
+                let (path, gate) = (path.clone(), std::sync::Arc::clone(&gate));
+                std::thread::spawn(move || {
+                    alone(async {
+                        let pool = on_disk(&path).await;
+                        gate.wait();
+                        let outcome = climb(&pool, 2, RACED_RUNG).await;
+                        pool.close().await;
+                        (who, outcome)
+                    })
+                })
+            })
+            .collect();
+
+        for racer in racers {
+            let (who, outcome) = racer.join().unwrap();
+            outcome.unwrap_or_else(|e| {
+                panic!(
+                    "the {who} opener failed: {e}\n\
+                     A rung is an ALTER, which is not idempotent. Two processes that both read \
+                     the stamp outside any transaction will both try to apply it, and one gets \
+                     a bare SQLite error — so the whole SchemaVersionMismatch vocabulary, the \
+                     messages written to tell a person what to do, is bypassed on the single \
+                     run that ever reaches this path"
+                )
+            });
+        }
+
+        alone(async {
+            let held = on_disk(&path).await;
+            assert_eq!(stamp_of(&held).await, 2);
+            assert_eq!(
+                columns(&held, "a").await,
+                vec![
+                    ("x".to_owned(), "INTEGER".to_owned()),
+                    ("y".to_owned(), "INTEGER".to_owned())
+                ],
+                "the column lands exactly once"
+            );
+        });
+    }
+
+    fn alone<T>(work: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(work)
     }
 
     async fn columns(pool: &SqlitePool, table: &str) -> Vec<(String, String)> {

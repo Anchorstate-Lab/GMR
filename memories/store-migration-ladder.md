@@ -2,7 +2,10 @@
 about:
   - crates/gmr-store/src/sqlite/mod.rs#migrate
   - crates/gmr-store/src/sqlite/mod.rs#climb
+  - crates/gmr-store/src/sqlite/mod.rs#rung
+  - crates/gmr-store/src/sqlite/mod.rs#under_the_write_lock
   - crates/gmr-store/src/sqlite/mod.rs#a_climbed_database_ends_up_shaped_like_a_freshly_built_one
+  - crates/gmr-store/src/sqlite/mod.rs#two_openers_racing_the_same_upgrade_do_not_both_apply_it
 watch: [sig, logic]
 ---
 
@@ -38,6 +41,32 @@ That test compares `sqlite_master` between a database built from scratch and one
 carried up by the ladder. `that_comparison_can_actually_fail` runs the same
 comparison against a rung that drops the index, and asserts the two disagree —
 without it, the first test proves only that it was written.
+
+## The version has to be read inside the write lock, not before it
+
+Deciding what to do and doing it are one step, not two. The first version read
+`PRAGMA user_version` outside any transaction and then opened a **deferred**
+one, so two processes starting together both saw v6 and both tried to apply the
+rung. A rung is an `ALTER TABLE`, which is not idempotent: one of them lost with
+a bare SQLite error — `duplicate column name`, or `database is locked` depending
+on how the two interleaved.
+
+Nothing was corrupted and a retry succeeded. What was lost is worse than that
+sounds: **the whole vocabulary above was bypassed on the only run that ever
+reaches this path.** `SchemaVersionMismatch` and its "export it with the version
+that wrote it" sentence exist to tell a person what to do, and a first upgrade
+under any concurrency handed them a SQLite internal instead.
+
+`rung` now takes `BEGIN IMMEDIATE` — SQLite's write lock, acquired at BEGIN
+rather than on first write — and re-reads the stamp **inside** it. A process
+that arrives second reads the version its neighbour just wrote and lands
+without doing anything. The loop is per rung rather than one transaction around
+the whole ladder, so the resumability below survives.
+
+`migrate` still reads the stamp unlocked first, purely as a fast path: the
+overwhelmingly common answer is "already at this version", and that answer needs
+no lock to be safe. Every answer that implies *writing* is taken again under the
+lock, where it is authoritative.
 
 ## Why the stamp is inside the rung's transaction
 
