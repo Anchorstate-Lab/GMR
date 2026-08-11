@@ -89,6 +89,13 @@ pub fn vocabularies() -> impl Iterator<Item = &'static Vocabulary> {
     PROBES.iter().map(|(v, _, _)| v)
 }
 
+pub const RECIPES: [&gmr_survey::Recipe; 4] =
+    [&ast::RECIPE, &addr::RECIPE, &name::RECIPE, &prose::RECIPE];
+
+pub fn recipe(name: &str) -> Option<&'static gmr_survey::Recipe> {
+    RECIPES.into_iter().find(|r| r.name == name)
+}
+
 pub fn for_extension(ext: &str) -> Option<&'static str> {
     vocabularies()
         .find(|v| v.handles.contains(&ext))
