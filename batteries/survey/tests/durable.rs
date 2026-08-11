@@ -1,6 +1,6 @@
 use std::sync::{Arc, Barrier};
 
-use gmr_survey::index::{Generation, Index, Indexed, Row};
+use gmr_survey::index::{Generation, Index, Indexed, Row, sort_key};
 use gmr_survey::sqlite::{SCHEMA_VERSION, open};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
@@ -11,7 +11,7 @@ fn file(rel: &str) -> Indexed {
     Indexed {
         rel: rel.to_owned(),
         hash: "h".to_owned(),
-        sort: rel.replace('/', "\u{0}"),
+        sort: sort_key(rel),
         rows: vec![Row {
             ord: 0,
             id: rel.to_owned(),

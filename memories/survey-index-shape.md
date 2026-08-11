@@ -4,6 +4,9 @@ about:
   - batteries/survey/src/index.rs#under
   - batteries/survey/src/index.rs#Indexed
   - batteries/survey/src/index.rs#Index
+  - batteries/survey/src/index.rs#sort_key
+  - batteries/survey/src/index.rs#the_sort_key_reproduces_the_order_the_walk_hands_files_over_in
+  - batteries/survey/src/index.rs#sorting_the_same_paths_by_their_bytes_would_not_have_agreed
   - batteries/survey/src/testkit.rs#Remembered
 watch: [sig, logic]
 ---
@@ -59,6 +62,33 @@ orders by the raw path fails on it before it has a caller.
 
 Handing the key in rather than deriving it also lets an aggregating extractor
 order by something that is not a path at all.
+
+### That key had one definition and it lived in the tests
+
+`rel.replace('/', "\u{0}")` was written once in `conformance.rs` and once in
+`durable.rs`, and nowhere in any shipped file. So the conformance suite proved
+the two backends agree **about a key the tests themselves invented**. The
+extractor that will eventually produce `Indexed` would have computed it a third
+time, off to one side, and computing it differently would have left every test
+in this crate green — the backends would still agree with each other, about the
+wrong order.
+
+`sort_key` is that definition, once. It does not contradict the paragraph above:
+the index still never derives an order from `rel`. `sort_key` is a helper the
+**writer** calls, and a path-shaped writer is only one kind — `name-map` orders
+by `(name, scope)` and has no use for it.
+
+`the_sort_key_reproduces_the_order_the_walk_hands_files_over_in` states the
+invariant that until now was only implied by a hardcoded expectation: walk a
+real tree, sort what came back by this key, and get the walk back.
+`sorting_the_same_paths_by_their_bytes_would_not_have_agreed` guards the
+fixture — drop the sibling pairs from it and byte order would agree, leaving
+the first test proving nothing.
+
+Checked red together: `sort_key` returning `rel` untouched fails all three —
+the invariant test, and both halves of the conformance suite, which keep their
+own hardcoded sequence and therefore still catch it on their own rather than
+following the helper into the same mistake.
 
 ## A write reopens a sealed generation
 

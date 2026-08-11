@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row};
+use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, sort_key};
 use gmr_survey::matching::Want;
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
@@ -23,7 +23,7 @@ fn file(rel: &str, hash: &str, rows: Vec<Row>) -> Indexed {
     Indexed {
         rel: rel.to_owned(),
         hash: hash.to_owned(),
-        sort: rel.replace('/', "\u{0}"),
+        sort: sort_key(rel),
         rows,
     }
 }
