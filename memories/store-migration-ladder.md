@@ -69,6 +69,26 @@ The v6 fixture is frozen on purpose. Deriving it from `SCHEMA` by stripping the
 new column would make it track whatever the schema becomes, and the comparison
 would then be a mirror agreeing with itself.
 
+### It also catches the mistake nobody plans to make
+
+Editing `SCHEMA` and forgetting to move `SCHEMA_VERSION` is the way this rots in
+practice, and it is worse than it looks: fresh installs get the new object and
+every database already in the field does not, because nothing re-applies
+`SCHEMA` after a climb. Two populations, one version stamp, silently different.
+
+No gate has to look for that, because this test already fails on it. The frozen
+fixture climbs through the rungs that exist; a `SCHEMA` that grew a column the
+rungs do not know about produces a fresh build the climbed database cannot
+match. Checked by adding a column and running it: red on
+`a_whole_v6_database_climbs_into_the_shape_a_fresh_build_makes`, and on nothing
+else.
+
+The one thing it does not see is `SCHEMA`'s pragmas — `journal_mode`,
+`foreign_keys` — which are not objects in `sqlite_master` and are not compared.
+Those are settings on the connection, not shape a database carries, so changing
+one is not a migration; if that ever stops being true, this is the sentence that
+was wrong.
+
 ## The version has to be read inside the write lock, not before it
 
 Deciding what to do and doing it are one step, not two. The first version read
