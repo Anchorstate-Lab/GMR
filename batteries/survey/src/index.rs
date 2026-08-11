@@ -90,6 +90,7 @@ pub enum Fault {
     Corrupt,
     Io,
     Absent,
+    Foreign,
     Other,
 }
 
@@ -114,6 +115,19 @@ impl IndexError {
             format!(
                 "there is no index for {of}. A generation is opened by writing into it, and \
                  sealing one that was never opened would record a completeness nobody earned"
+            ),
+        )
+    }
+
+    pub fn foreign(what: &str, holds: &[String]) -> Self {
+        Self::new(
+            Fault::Foreign,
+            format!(
+                "{what} already holds {}, and none of it was written by an index. A derived \
+                 store answers a shape it does not know by razing and rebuilding, which is only \
+                 free when everything in the file can be recomputed — so it is refused here \
+                 rather than applied to somebody else's database",
+                holds.join(", ")
             ),
         )
     }

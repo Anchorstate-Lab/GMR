@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS posting (
 
 const KINDS: [&str; 4] = ["view", "trigger", "index", "table"];
 
+const MARKER: &str = "generation";
+
 fn db_err(e: sqlx::Error) -> IndexError {
     let fault = match &e {
         sqlx::Error::Database(db) if db.message().contains("locked") => Fault::Busy,
@@ -90,6 +92,7 @@ impl SqliteIndex {
 }
 
 pub async fn open(file: impl AsRef<Path>) -> Result<SqliteIndex, IndexError> {
+    let file = file.as_ref();
     let options = SqliteConnectOptions::new()
         .filename(file)
         .create_if_missing(true)
@@ -100,7 +103,7 @@ pub async fn open(file: impl AsRef<Path>) -> Result<SqliteIndex, IndexError> {
         .connect_with(options)
         .await
         .map_err(db_err)?;
-    ready(&pool).await?;
+    ready(&pool, &file.display().to_string()).await?;
     Ok(SqliteIndex { pool })
 }
 
@@ -113,11 +116,11 @@ pub async fn open_in_memory() -> Result<SqliteIndex, IndexError> {
         .connect_with(SqliteConnectOptions::new().in_memory(true))
         .await
         .map_err(db_err)?;
-    ready(&pool).await?;
+    ready(&pool, "an in-memory index").await?;
     Ok(SqliteIndex { pool })
 }
 
-async fn ready(pool: &SqlitePool) -> Result<(), IndexError> {
+async fn ready(pool: &SqlitePool, what: &str) -> Result<(), IndexError> {
     let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(pool)
         .await
@@ -130,7 +133,7 @@ async fn ready(pool: &SqlitePool) -> Result<(), IndexError> {
         .execute(&mut *held)
         .await
         .map_err(db_err)?;
-    let raised = raise(&mut held).await;
+    let raised = raise(&mut held, what).await;
     let closed = sqlx::query(match raised.is_ok() {
         true => "COMMIT",
         false => "ROLLBACK",
@@ -142,13 +145,17 @@ async fn ready(pool: &SqlitePool) -> Result<(), IndexError> {
     Ok(())
 }
 
-async fn raise(held: &mut PoolConnection<sqlx::Sqlite>) -> Result<(), IndexError> {
+async fn raise(held: &mut PoolConnection<sqlx::Sqlite>, what: &str) -> Result<(), IndexError> {
     let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(&mut **held)
         .await
         .map_err(db_err)?;
     if stamped == SCHEMA_VERSION {
         return Ok(());
+    }
+    let holds = strangers(held).await?;
+    if !holds.is_empty() {
+        return Err(IndexError::foreign(what, &holds));
     }
     raze(held).await?;
     sqlx::raw_sql(SCHEMA)
@@ -160,6 +167,19 @@ async fn raise(held: &mut PoolConnection<sqlx::Sqlite>) -> Result<(), IndexError
         .await
         .map_err(db_err)?;
     Ok(())
+}
+
+async fn strangers(held: &mut PoolConnection<sqlx::Sqlite>) -> Result<Vec<String>, IndexError> {
+    let named: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .fetch_all(&mut **held)
+    .await
+    .map_err(db_err)?;
+    match named.iter().any(|name| name == MARKER) {
+        true => Ok(Vec::new()),
+        false => Ok(named),
+    }
 }
 
 async fn raze(held: &mut PoolConnection<sqlx::Sqlite>) -> Result<(), IndexError> {

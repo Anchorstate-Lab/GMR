@@ -85,6 +85,58 @@ async fn an_index_this_build_cannot_read_is_rebuilt_rather_than_refused() {
     fresh.close().await;
 }
 
+async fn holding(path: &std::path::Path, table: &str) {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}?mode=rwc", path.display()))
+        .await
+        .unwrap();
+    sqlx::raw_sql(&format!(
+        "CREATE TABLE {table} (seq INTEGER PRIMARY KEY, body TEXT); \
+         INSERT INTO {table} (seq, body) VALUES (1, 'a fact nobody can recompute'); \
+         PRAGMA user_version = 7"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+}
+
+async fn tables(path: &std::path::Path) -> Vec<String> {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
+        .await
+        .unwrap();
+    let named = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
+         ORDER BY name",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    named
+}
+
+#[tokio::test]
+async fn a_database_the_index_did_not_write_is_refused_rather_than_razed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("memory.db");
+    holding(&path, "entry").await;
+
+    let refused = open(&path)
+        .await
+        .expect_err("opening somebody else's database has to fail");
+
+    assert_eq!(refused.fault, gmr_survey::index::Fault::Foreign);
+    assert!(refused.to_string().contains("entry"), "{refused}");
+    assert_eq!(
+        tables(&path).await,
+        ["entry"],
+        "the journal lives one filename away from the index, both crates export a \
+         `sqlite::open`, and both stamp `PRAGMA user_version` — so a path mixed up once \
+         used to drop every table in the file and return Ok. An index is derived and may \
+         raze itself; a journal holds the only copy of what it knows"
+    );
+}
+
 fn opened(path: std::path::PathBuf, gate: Arc<Barrier>) -> Result<i64, String> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     gate.wait();
