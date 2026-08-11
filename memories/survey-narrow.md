@@ -3,6 +3,8 @@ about:
   - batteries/survey/src/narrow.rs#narrow
   - batteries/survey/src/narrow.rs#touches
   - batteries/survey/src/narrow.rs#narrowing_never_changes_what_report_says
+  - batteries/survey/src/narrow.rs#want
+  - batteries/survey/src/narrow.rs#the_rounds_actually_reach_every_branch_they_claim_to
 watch: [sig, logic]
 ---
 
@@ -36,6 +38,23 @@ matches nothing, one that matches everything, an out-of-range `nth`, and a roll
 over `MAX_BYTES`. The last two matter because both sides have to **refuse with
 the same words** — an optimisation that changes an error message is still a
 change to what the tool said.
+
+### The generator had a blind spot the counters could not see
+
+`the_rounds_actually_reach_every_branch_they_claim_to` counts how often each
+branch was reached, because five thousand rounds prove nothing about a branch
+they never entered. It was missing a shape of its own: `want` was built as
+`KEYS.take(n)`, so it only ever emitted **prefixes**.
+
+`wanted` does not work that way. It filters the probe's items against the
+position, so a coordinate naming `file` and `name` but not `kind` yields a want
+that skips an item and keeps a later one — and item order is precisely what
+`best`'s lexicographic max turns on. A whole class of coordinate was outside the
+five thousand rounds, and every counter was green.
+
+`want` now picks each key independently and `gapped` counts the ones that skip.
+Checked red by restoring the prefix generator: `gapped` is the only assertion
+that fails, which is the point — the other four could not have told you.
 
 `narrow` must stay a stable filter. `report` reads `nth` as an index into
 `tied`, and `tied` inherits the order it was given. Reordering here renames

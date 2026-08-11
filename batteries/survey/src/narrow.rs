@@ -63,11 +63,23 @@ mod tests {
     }
 
     fn want(rng: &mut Rng) -> Want {
-        let n = 1 + rng.below(KEYS.len());
-        KEYS.iter()
-            .take(n)
-            .map(|k| ((*k).to_owned(), VALUES[rng.below(VALUES.len())].to_owned()))
-            .collect()
+        loop {
+            let mut picked = Want::new();
+            for k in KEYS {
+                if rng.below(2) == 1 {
+                    picked.push((k.to_owned(), VALUES[rng.below(VALUES.len())].to_owned()));
+                }
+            }
+            if !picked.is_empty() {
+                return picked;
+            }
+        }
+    }
+
+    fn skips_a_key(want: &Want) -> bool {
+        want.iter()
+            .map(|(k, _)| k.as_str())
+            .ne(KEYS.iter().copied().take(want.len()))
     }
 
     #[test]
@@ -90,12 +102,16 @@ mod tests {
     fn the_rounds_actually_reach_every_branch_they_claim_to() {
         let mut rng = Rng(0x5EED);
         let (mut found, mut absent, mut refused, mut narrowed) = (0, 0, 0, 0);
+        let mut gapped = 0;
         for _ in 0..5000 {
             let all = corpus(&mut rng);
             let w = want(&mut rng);
             let kept = narrow(&all, &w);
             if kept.len() < all.len() {
                 narrowed += 1;
+            }
+            if skips_a_key(&w) {
+                gapped += 1;
             }
             match report("x", &w, rng.below(3), &all) {
                 Err(_) => refused += 1,
@@ -109,6 +125,13 @@ mod tests {
         assert!(
             narrowed > 100,
             "narrowing actually dropped something {narrowed} times"
+        );
+        assert!(
+            gapped > 100,
+            "a want that skips an item and keeps a later one was reached {gapped} times. \
+             `wanted` builds the want by filtering the probe's items against the position, so \
+             any subsequence is reachable — and priority is what `best`'s lexicographic max \
+             turns on, so a generator that only ever emits prefixes leaves that untested"
         );
     }
 
