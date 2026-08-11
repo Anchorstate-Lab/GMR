@@ -122,15 +122,16 @@ async fn served(
     }
 
     let catalog = probes::Catalog::load(&root)?;
+    let linked = coding_extract::registry(&state);
+    if let Some(fault) = &linked.cache_fault {
+        eprintln!("gmr: {fault}");
+    }
     let mut builder = Runtime::builder()
         .policy(gmr::Policy {
             probe_budget_ms: cli.probe_budget_ms,
             ..Default::default()
         })
-        .transport(Arc::new(InProcess::new(
-            &root,
-            coding_extract::registry(&state).map_err(CliError)?,
-        )))
+        .transport(Arc::new(InProcess::new(&root, linked.probes)))
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .provider(Arc::new(Git::new(&root)))
@@ -207,7 +208,9 @@ async fn served(
         Command::Health { key } => verbs::health::run(&rt, key, json).await,
         Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
         Command::Pass => verbs::pass::run(&rt, &root, json).await,
-        Command::Doctor => verbs::doctor::run(&rt, &root, json).await,
+        Command::Doctor => {
+            verbs::doctor::run(&rt, &root, linked.cache_fault.as_deref(), json).await
+        }
         Command::Export { .. } => unreachable!("export was handled above"),
         Command::Import { .. } => unreachable!("import was handled above"),
     }

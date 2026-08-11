@@ -3,8 +3,10 @@ about:
   - batteries/survey/src/cache.rs#persist
   - batteries/survey/src/cache.rs#replace
   - batteries/survey/src/cache.rs#flight
+  - batteries/survey/src/cache.rs#load
   - batteries/survey/src/cache.rs#a_scan_writes_the_cache_file_once_not_once_per_file
   - batteries/survey/src/cache.rs#a_failed_scan_is_not_retried_by_the_next_caller
+  - batteries/survey/src/cache.rs#a_corrupt_cache_still_scans_and_leaves_a_readable_file_behind
 watch: [sig, logic]
 ---
 
@@ -41,8 +43,31 @@ blocking threads and lets them die at process exit — possibly inside this
 function. Without the rename, that exit path corrupts the cache, and a corrupt
 cache is silently discarded on the next load, so the repository would quietly
 pay a full scan forever with nothing to read that said so. That is why `load`
-now separates "no file yet" (fine, start empty) from "a file that will not
-parse" (reported, never swallowed).
+separates "no file yet" (fine, start empty) from "a file that will not parse".
+
+## A file that will not parse is a fault, not a refusal
+
+`load` cannot fail. It returns a `Cache` either way and carries the reason in
+`fault()`, which the CLI prints and `doctor` reports as advisory.
+
+It used to return `Result` and the CLI used `?`, which meant an unreadable
+cache stopped **every verb** — including `doctor`, the one you would run to
+find out what was wrong. A derived artefact that cannot be read is not a reason
+to refuse to work; it is a reason to say so and rebuild. "No silent failure
+paths" is about being heard, not about being fatal, and the two get conflated
+whenever the only tool at hand is `?`.
+
+The faulted cache keeps its path, so the first scan after it overwrites the
+unreadable file and the cost is paid once rather than every run. Keeping the
+path matters for a second reason that is easy to miss: `flight` is `None` when
+there is no file, so degrading to `Cache::disabled()` would have dropped
+single-flight and brought back the thread-per-anchor rescan this whole file
+exists to prevent.
+
+Overwriting destroys no evidence worth keeping. `replace` is temp-and-rename,
+so this code cannot have produced a torn file; an unreadable one is disk damage
+or a serialisation shape this build no longer speaks, and both are repaired by
+rebuilding. The fault is reported before the overwrite, never after.
 
 ## Why a failed scan is remembered
 

@@ -16,7 +16,12 @@ fn versioning_is_broken(root: &Path) -> bool {
     !root.join(".git").exists()
 }
 
-pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError> {
+pub async fn run(
+    rt: &Runtime,
+    root: &Path,
+    cache_fault: Option<&str>,
+    json: bool,
+) -> Result<i32, CliError> {
     let views = rt.read_all().await?;
     let live: Vec<_> = views.iter().filter(|v| !v.closed).collect();
 
@@ -54,7 +59,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
                 "anchors": views.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "content_versioning": !no_git,
-                "provider_warnings": provider_warnings,
+                "provider_warnings": provider_warnings, "cache_fault": cache_fault,
                 "notes": notes.iter().map(|l| serde_json::json!({
                     "note": l.note, "code": l.code, "detail": l.detail, "breaks": l.breaks,
                 })).collect::<Vec<_>>(),
@@ -116,6 +121,12 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             "provider  {} unavailable: {}\n          \
              <- bindings through it will fail with \"no content provider could version\"",
             w.provider, w.message
+        );
+    }
+    if let Some(fault) = cache_fault {
+        println!(
+            "cache     {fault}\n          \
+             <- advisory, not broken: the next verb that probes writes a fresh one"
         );
     }
     Ok(exit_code)

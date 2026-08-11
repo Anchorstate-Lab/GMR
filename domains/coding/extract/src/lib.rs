@@ -99,13 +99,21 @@ fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
     cwd.join(params.get("root").and_then(Value::as_str).unwrap_or("."))
 }
 
-pub fn registry(state_dir: &Path) -> Result<BTreeMap<ProbeName, Registered>, String> {
+pub struct Linked {
+    pub probes: BTreeMap<ProbeName, Registered>,
+    pub cache_fault: Option<String>,
+}
+
+pub fn registry(state_dir: &Path) -> Linked {
     let stamps = PROBES
         .iter()
         .map(|(v, _, version)| (v.name.to_owned(), (*version).to_owned()))
         .collect();
-    let cache = Cache::load(&state_dir.join("extract-cache.json"), stamps)?;
-    Ok(bind(Arc::new(cache)))
+    let cache = Cache::load(&state_dir.join("extract-cache.json"), stamps);
+    Linked {
+        cache_fault: cache.fault().map(str::to_owned),
+        probes: bind(Arc::new(cache)),
+    }
 }
 
 pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {

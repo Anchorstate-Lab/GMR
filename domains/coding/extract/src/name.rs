@@ -261,8 +261,7 @@ mod tests {
             [("name-map".to_owned(), VERSION.to_owned())]
                 .into_iter()
                 .collect(),
-        )
-        .unwrap();
+        );
         (state, cache)
     }
 
