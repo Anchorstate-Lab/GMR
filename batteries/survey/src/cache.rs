@@ -7,6 +7,7 @@ use gmr_probe::{Budget, Spent};
 use serde::{Deserialize, Serialize};
 
 use crate::matching::Candidate;
+use crate::recipe::Recipe;
 use crate::walk::{hash, visit};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,17 +234,35 @@ pub fn visit_cached(
     cache: &Cache,
     probe: &str,
     budget: &Budget,
-    collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
+    mut collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
 ) -> Scanned {
     let scope = scope_of(cache, probe, root);
-    let Some(flight) = cache.flight(&scope) else {
-        return scan(root, cache, &scope, budget, collect);
+    let every = |_: &str| true;
+    let read_again = |p: &Path, rel: &str, _: &[u8], out: &mut Vec<Candidate>| collect(p, rel, out);
+    once(cache, &scope, || {
+        scan(root, cache, &scope, budget, &every, read_again)
+    })
+}
+
+pub fn gather(root: &Path, cache: &Cache, recipe: &Recipe, budget: &Budget) -> Scanned {
+    let scope = scope_of(cache, recipe.name, root);
+    let collect = |_: &Path, rel: &str, bytes: &[u8], out: &mut Vec<Candidate>| {
+        (recipe.collect)(rel, bytes, out)
+    };
+    once(cache, &scope, || {
+        scan(root, cache, &scope, budget, &(recipe.eligible), collect)
+    })
+}
+
+fn once(cache: &Cache, scope: &str, run: impl FnOnce() -> Scanned) -> Scanned {
+    let Some(flight) = cache.flight(scope) else {
+        return run();
     };
     let mut settled = guard(&flight.settled);
     if let Some(done) = settled.as_ref() {
         return done.clone();
     }
-    let scanned = scan(root, cache, &scope, budget, collect);
+    let scanned = run();
     *settled = worth_remembering(&scanned);
     scanned
 }
@@ -289,7 +308,8 @@ fn scan(
     cache: &Cache,
     scope: &str,
     budget: &Budget,
-    mut collect: impl FnMut(&Path, &str, &mut Vec<Candidate>) -> Result<(), String>,
+    eligible: &dyn Fn(&str) -> bool,
+    mut collect: impl FnMut(&Path, &str, &[u8], &mut Vec<Candidate>) -> Result<(), String>,
 ) -> Scanned {
     let mut cands = Vec::new();
     let mut seen = HashSet::new();
@@ -298,6 +318,9 @@ fn scan(
         if let Err(spent) = budget.checkpoint() {
             halted = Some(spent);
             return Err(String::new());
+        }
+        if !eligible(rel) {
+            return Ok(());
         }
         let Ok(bytes) = std::fs::read(p) else {
             return Ok(());
@@ -309,7 +332,7 @@ fn scan(
             return Ok(());
         }
         let mut fragment = Vec::new();
-        collect(p, rel, &mut fragment)?;
+        collect(p, rel, &bytes, &mut fragment)?;
         cache.put(scope, rel, &file_hash, &fragment);
         cands.extend(fragment);
         Ok(())
@@ -342,6 +365,82 @@ mod tests {
             .into_iter()
             .map(|n| (n.to_owned(), "v1".to_owned()))
             .collect()
+    }
+
+    fn gathering(eligible: fn(&str) -> bool) -> crate::recipe::Recipe {
+        crate::recipe::Recipe {
+            name: "p",
+            ..crate::recipe::fixture::recipe(eligible, crate::recipe::Merge::Concat)
+        }
+    }
+
+    #[test]
+    fn a_file_the_recipe_rules_out_leaves_no_trace_in_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let src = tree(&[("a.rs", "alpha"), ("notes.md", "prose")]);
+
+        let cache = Cache::load(&path, stamped());
+        let out = gather(
+            src.path(),
+            &cache,
+            &gathering(crate::recipe::fixture::rust_only),
+            &roomy(),
+        )
+        .unwrap();
+
+        assert_eq!(out.len(), 1);
+        let entries = guard(&cache.entries);
+        let scope = entries.values().next().expect("one scope was written");
+        assert!(scope.contains_key("a.rs"));
+        assert!(
+            !scope.contains_key("notes.md"),
+            "an ineligible file is skipped before it is read, so it is never hashed and              never stored. The old path read every file in the tree and cached an empty              list for the ones no extractor could use"
+        );
+    }
+
+    #[test]
+    fn the_bytes_the_recipe_is_handed_are_the_ones_the_cache_hashed() {
+        fn echo(rel: &str, bytes: &[u8], out: &mut Vec<Candidate>) -> Result<(), String> {
+            out.push(Candidate::new(
+                rel.to_owned(),
+                [("name".to_owned(), hash(&String::from_utf8_lossy(bytes)))].into(),
+                serde_json::json!({}),
+            ));
+            Ok(())
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "alpha")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+        let recipe = crate::recipe::Recipe {
+            collect: echo,
+            ..gathering(crate::recipe::fixture::anything)
+        };
+
+        let out = gather(src.path(), &cache, &recipe, &roomy()).unwrap();
+        let entries = guard(&cache.entries);
+        let scope = entries.values().next().unwrap();
+        assert_eq!(
+            out[0].coord["name"], scope["a.rs"].hash,
+            "the scan reads the file once and hands those bytes on. Reading it a second              time inside collect is what the old signature forced, and it doubled the IO              on every cache miss"
+        );
+    }
+
+    #[test]
+    fn a_second_gather_in_the_same_process_reuses_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+        let recipe = gathering(crate::recipe::fixture::anything);
+
+        let first = gather(src.path(), &cache, &recipe, &roomy()).unwrap();
+        std::fs::write(src.path().join("a.rs"), "changed").unwrap();
+        let second = gather(src.path(), &cache, &recipe, &roomy()).unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the same question asked twice in one pass is answered once — the flight memo              covers gather exactly as it covers the path it replaces"
+        );
     }
 
     fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
