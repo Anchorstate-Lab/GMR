@@ -8,7 +8,7 @@ watch: [sig, logic]
 
 # `Candidate` currently means two different things, and `narrow` is where that becomes a bug
 
-`visit_cached` returns `Vec<Candidate>`. For `ast-map`, `addr-map` and
+`gather` returns `Vec<Candidate>`. For `ast-map`, `addr-map` and
 `prose-map` those really are candidates: their `coord` keys are the probe's
 declared `at` vocabulary, and `report` can select among them directly.
 
@@ -25,7 +25,7 @@ which.
 ## Why this is inert today and will not stay that way
 
 The fragments never reach `report`, so nothing observes the confusion. But
-`narrow` exists precisely to filter what `visit_cached` returns, and `touches`
+`narrow` exists precisely to filter what `gather` returns, and `touches`
 matches on any `coord` key it is handed. Point it at `name-map`'s fragments and
 it will match them on `("file", …)` — a key that is not part of the coordinate
 anyone anchored. Whether that happens to give the right answer for one probe is
@@ -47,7 +47,7 @@ will be handing it candidates from three probes and fragments from a fourth.
 
 ## When this changes, ask
 
-Does `visit_cached`'s return type distinguish "an answer this coordinate could
+Does `gather`'s return type distinguish "an answer this coordinate could
 name" from "a partial tally about one file"? If not, does anything between the
 scan and `report` filter, sort, count or truncate that vector? Those are the
 operations that need to know the difference, and every one of them is silent

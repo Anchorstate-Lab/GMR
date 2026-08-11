@@ -87,7 +87,7 @@ cannot be cancelled is a slow scan with no way out.
 
 `name-map` is the only `Fold`, and [[name-map-cache]] measured what memoising it
 is worth: 467ms to 7.4ms. `Merge::Fold` therefore does not run in `look`; it runs
-through `cache::folded`, which is the same `Flight` slot `visit_folded` used.
+through `cache::folded`, in the same `Flight` slot the path it replaced used.
 `Merge::Concat` hands the gathered `Arc` straight back — a fold memo for the
 identity would be a full copy of the corpus on every question.
 

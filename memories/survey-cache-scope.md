@@ -1,5 +1,5 @@
 ---
-about: batteries/survey/src/cache.rs#visit_cached
+about: batteries/survey/src/cache.rs#gather
 watch: [sig, logic]
 ---
 
