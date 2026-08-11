@@ -219,24 +219,25 @@ def check_comments_clean():
 
 
 def check_acceptance_intact():
-    """acceptance.sh must be whole, and CI must expect the step count it prints.
+    """The sentinel exists, says how many steps ran, and CI checks that number.
 
     This exists because the file was once truncated mid-heredoc by an editing
     pass. `sh` treats an unterminated `<<'EOF'` as delimited by end-of-file, so
     the script still parsed, still exited 0, and tested almost nothing for two
-    days. `sh -n` does not catch it; a sentinel plus this check do.
+    days. `sh -n` does not catch it.
+
+    What catches it is the sentinel, and only the sentinel. An unterminated
+    heredoc swallows every line after it -- including the `step` calls that
+    increment the counter and the final echo itself -- so the run either prints
+    nothing or prints a number lower than the workflow greps for. This function
+    does not read the script for balanced `<<'EOF'` / `EOF` pairs any more. That
+    count was a heuristic, it could not see a marker inside a heredoc body (this
+    script writes shell scripts into heredocs), and it happened to balance only
+    because the paragraph above it is a comment the reader stripped. A check
+    that passes for the wrong reason is worse than one that is not there.
     """
     errors = []
     lines = ACCEPTANCE.read_text().splitlines()
-
-    code = [line for line in lines if not line.lstrip().startswith("#")]
-    opens = sum(1 for line in code if re.search(r"<<'EOF'", line))
-    closes = sum(1 for line in code if line.rstrip() == "EOF")
-    if opens != closes:
-        errors.append(
-            f"acceptance.sh opens {opens} heredocs and closes {closes} — "
-            "an unterminated one silently swallows the rest of the file"
-        )
 
     tail = next((line for line in reversed(lines) if line.strip()), "")
     m = re.match(r'^echo "ACCEPTANCE COMPLETE steps=\$steps"$', tail.strip())
@@ -245,7 +246,15 @@ def check_acceptance_intact():
             f"acceptance.sh must end with the sentinel echo, found: {tail.strip()[:60]!r}"
         )
 
-    declared = len(re.findall(r"^step ", "\n".join(lines), re.MULTILINE))
+    body = "\n".join(lines)
+    if not re.search(r"^step\(\) \{ steps=\$\(\(steps \+ 1\)\)", body, re.MULTILINE):
+        errors.append(
+            "acceptance.sh's step() must increment $steps — the sentinel prints that "
+            "counter, and a step() that does not touch it makes the number a constant "
+            "and every check below it decorative"
+        )
+
+    declared = len(re.findall(r"^step ", body, re.MULTILINE))
     workflow = WORKFLOW.read_text()
     expected = re.search(r"ACCEPTANCE COMPLETE steps=(\d+)", workflow)
     if not expected:
@@ -270,7 +279,7 @@ CHECKS = [
     ("facade: only re-exports", check_facade_only_reexports),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
-    ("acceptance.sh is whole and CI checks its sentinel", check_acceptance_intact),
+    ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
 ]
 
 
