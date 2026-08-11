@@ -11,8 +11,9 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::index::{Built, Generation, Index, IndexError, Indexed, Located, Row, touched, under};
+use crate::index::{Built, Generation, Index, IndexError, Indexed, Located, Row, under};
 use crate::matching::Want;
+use crate::narrow::touches;
 
 struct Kept {
     hash: String,
@@ -154,7 +155,7 @@ impl Index for Remembered {
         let held = guard(&self.held);
         let kept: Vec<_> = ordered(&held, of, root)
             .into_iter()
-            .filter(|(_, _, row)| touched(row, want))
+            .filter(|(_, _, row)| touches(&row.coord, want))
             .collect();
         Ok(located(kept))
     }

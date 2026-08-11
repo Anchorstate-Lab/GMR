@@ -146,10 +146,6 @@ pub fn under(rel: &str, root: &str) -> bool {
     }
 }
 
-pub fn touched(row: &Row, want: &Want) -> bool {
-    want.iter().any(|(k, v)| row.coord.get(k) == Some(v))
-}
-
 pub fn sort_key(rel: &str) -> String {
     rel.replace('/', "\u{0}")
 }
@@ -183,16 +179,6 @@ pub trait Index: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    fn row(name: &str) -> Row {
-        Row {
-            ord: 0,
-            id: name.to_owned(),
-            coord: [("name".to_owned(), name.to_owned())].into(),
-            facts: json!({}),
-        }
-    }
 
     #[test]
     fn a_generation_is_the_probe_and_the_version_and_not_the_root() {
@@ -227,16 +213,6 @@ mod tests {
         assert!(!under("crates/gmr-core", "crates/gmr-core"));
         assert!(under("anything/at/all.rs", ""));
         assert!(under("anything/at/all.rs", "."));
-    }
-
-    #[test]
-    fn a_row_is_touched_when_any_one_wanted_pair_matches() {
-        let want: Want = vec![
-            ("name".to_owned(), "alpha".to_owned()),
-            ("kind".to_owned(), "function".to_owned()),
-        ];
-        assert!(touched(&row("alpha"), &want));
-        assert!(!touched(&row("beta"), &want));
     }
 
     fn laid_out() -> (tempfile::TempDir, Vec<String>) {

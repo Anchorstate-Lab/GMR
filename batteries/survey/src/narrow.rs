@@ -3,16 +3,20 @@
 //! Nothing calls this yet. It lands ahead of the query that will use it so the
 //! equivalence property below exists before anything depends on it.
 
+use std::collections::BTreeMap;
+
 use crate::matching::{Candidate, Want};
 
-pub fn touches(candidate: &Candidate, want: &Want) -> bool {
-    want.iter().any(|(k, v)| candidate.coord.get(k) == Some(v))
+pub type Coord = BTreeMap<String, String>;
+
+pub fn touches(coord: &Coord, want: &Want) -> bool {
+    want.iter().any(|(k, v)| coord.get(k) == Some(v))
 }
 
 pub fn narrow(candidates: &[Candidate], want: &Want) -> Vec<Candidate> {
     candidates
         .iter()
-        .filter(|c| touches(c, want))
+        .filter(|c| touches(&c.coord, want))
         .cloned()
         .collect()
 }
@@ -246,13 +250,29 @@ mod tests {
     }
 
     #[test]
+    fn anything_carrying_a_coordinate_is_touched_by_any_one_wanted_pair() {
+        let want = w(&[("name", "alpha"), ("kind", "function")]);
+        let coord = |name: &str| -> Coord { [("name".to_owned(), name.to_owned())].into() };
+        assert!(touches(&coord("alpha"), &want));
+        assert!(!touches(&coord("beta"), &want));
+        assert_eq!(
+            touches(&cand(&[("name", "alpha")]).coord, &want),
+            touches(&coord("alpha"), &want),
+            "the union rule is one rule. It was written twice — here over a Candidate and \
+             in the index over a Row — and the equivalence proof below only ever covered \
+             this copy, so the day the other drifted the theorem would have stopped \
+             describing what the query does, silently"
+        );
+    }
+
+    #[test]
     fn a_candidate_that_hits_nothing_can_never_be_the_one_reported() {
         let want = w(&[("file", "a.rs"), ("name", "wanted")]);
         let all = [
             cand(&[("file", "a.rs"), ("name", "other")]),
             cand(&[("file", "z.rs"), ("name", "unrelated")]),
         ];
-        assert!(!touches(&all[1], &want));
+        assert!(!touches(&all[1].coord, &want));
         let reported = report("x", &want, 0, &all).unwrap();
         assert_eq!(reported["at"]["file"], "a.rs");
         assert_eq!(
