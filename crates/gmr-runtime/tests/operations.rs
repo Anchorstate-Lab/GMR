@@ -682,7 +682,7 @@ async fn open_slow(w: &World, name: &str, secs: &str) -> AnchorKey {
 #[tokio::test]
 async fn a_batch_that_runs_out_of_budget_does_not_blame_the_anchors_it_never_reached() {
     let w = World::polled(Policy {
-        probe_budget_ms: 1500,
+        probe_budget_ms: 4000,
         cadence_secs: 300,
         ..Default::default()
     });
@@ -690,7 +690,7 @@ async fn a_batch_that_runs_out_of_budget_does_not_blame_the_anchors_it_never_rea
 
     let mut keys = Vec::new();
     for i in 0..30 {
-        keys.push(open_slow(&w, &format!("a{i}"), "0.1").await);
+        keys.push(open_slow(&w, &format!("a{i}"), "0.2").await);
     }
 
     let passed = w.runtime.pass().await.unwrap();
@@ -729,7 +729,7 @@ async fn a_batch_that_runs_out_of_budget_does_not_blame_the_anchors_it_never_rea
 #[tokio::test]
 async fn an_anchor_the_budget_never_reached_comes_back_at_the_front_of_the_next_pass() {
     let w = World::polled(Policy {
-        probe_budget_ms: 1500,
+        probe_budget_ms: 4000,
         cadence_secs: 3600,
         ..Default::default()
     });
@@ -737,7 +737,7 @@ async fn an_anchor_the_budget_never_reached_comes_back_at_the_front_of_the_next_
 
     let mut keys = Vec::new();
     for i in 0..30 {
-        keys.push(open_slow(&w, &format!("b{i}"), "0.1").await);
+        keys.push(open_slow(&w, &format!("b{i}"), "0.2").await);
     }
 
     let first = w.runtime.pass().await.unwrap();
