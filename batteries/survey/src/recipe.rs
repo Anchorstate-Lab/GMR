@@ -9,25 +9,18 @@ use std::path::Path;
 use gmr_probe::Budget;
 use serde_json::Value;
 
-use crate::cache::{Cache, Halt, gather};
+use crate::cache::{Cache, Halt, folded, gather};
 use crate::matching::{Candidate, nth, report, wanted};
 
 pub type Collect = fn(&str, &[u8], &mut Vec<Candidate>) -> Result<(), String>;
 
 pub type Eligible = fn(&str) -> bool;
 
+pub type Fold = fn(&[Candidate]) -> Result<Vec<Candidate>, String>;
+
 pub enum Merge {
     Concat,
-    Fold(fn(&[Candidate]) -> Result<Vec<Candidate>, String>),
-}
-
-impl Merge {
-    pub fn apply(&self, gathered: &[Candidate]) -> Result<Vec<Candidate>, String> {
-        match self {
-            Self::Concat => Ok(gathered.to_vec()),
-            Self::Fold(fold) => fold(gathered),
-        }
-    }
+    Fold(Fold),
 }
 
 pub struct Recipe {
@@ -49,7 +42,10 @@ pub fn look(
 ) -> Result<Value, Halt> {
     let want = wanted(pos, recipe.items)?;
     let gathered = gather(root, cache, recipe, budget)?;
-    let candidates = recipe.merge.apply(&gathered)?;
+    let candidates = match recipe.merge {
+        Merge::Concat => gathered,
+        Merge::Fold(fold) => folded(root, cache, recipe.name, &gathered, fold)?,
+    };
     if candidates.is_empty() {
         return Err(Halt::Refused(format!(
             "{} {}; the probe is likely pointed at the wrong directory",
@@ -106,12 +102,16 @@ mod tests {
     use super::fixture::*;
     use super::*;
 
-    fn candidate(name: &str) -> Candidate {
-        Candidate::new(
-            name,
-            [("name".to_owned(), name.to_owned())].into(),
-            serde_json::json!({ "n": 1 }),
-        )
+    fn tally(all: &[Candidate]) -> Result<Vec<Candidate>, String> {
+        Ok(vec![Candidate::new(
+            "all",
+            [("name".to_owned(), "all".to_owned())].into(),
+            serde_json::json!({ "n": all.len() }),
+        )])
+    }
+
+    fn refuse(_: &[Candidate]) -> Result<Vec<Candidate>, String> {
+        Err("that corpus makes no sense".to_owned())
     }
 
     fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
@@ -126,41 +126,6 @@ mod tests {
 
     fn roomy() -> Budget {
         Budget::within(std::time::Duration::from_secs(60), 1 << 20)
-    }
-
-    #[test]
-    fn concat_hands_on_what_it_was_given() {
-        let gathered = [candidate("a"), candidate("b")];
-        let out = Merge::Concat.apply(&gathered).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].coord["name"], "a");
-    }
-
-    #[test]
-    fn a_fold_may_return_fewer_than_it_was_given() {
-        fn total(all: &[Candidate]) -> Result<Vec<Candidate>, String> {
-            Ok(vec![Candidate::new(
-                "all",
-                [("name".to_owned(), "all".to_owned())].into(),
-                serde_json::json!({ "n": all.len() }),
-            )])
-        }
-        let out = Merge::Fold(total)
-            .apply(&[candidate("a"), candidate("b")])
-            .unwrap();
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].facts, serde_json::json!({ "n": 2 }));
-    }
-
-    #[test]
-    fn a_fold_that_refuses_refuses_the_whole_reading() {
-        fn refuse(_: &[Candidate]) -> Result<Vec<Candidate>, String> {
-            Err("that corpus makes no sense".to_owned())
-        }
-        let Err(why) = Merge::Fold(refuse).apply(&[candidate("a")]) else {
-            panic!("a fold that cannot make sense of the corpus refuses the reading")
-        };
-        assert_eq!(why, "that corpus makes no sense");
     }
 
     #[test]
@@ -251,5 +216,40 @@ mod tests {
             "a file the recipe rules out is not read, so it cannot contribute — which is \
              why the predicate belongs to the extractor and inside its earned version"
         );
+    }
+
+    #[test]
+    fn a_fold_may_answer_about_something_no_single_file_holds() {
+        let d = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);
+        let out = look(
+            &recipe(anything, Merge::Fold(tally)),
+            d.path(),
+            &serde_json::json!({ "name": "all" }),
+            &Cache::disabled(),
+            &roomy(),
+        )
+        .unwrap();
+        assert_eq!(
+            out["facts"]["n"], 2,
+            "the fold sees every fragment the walk produced, which is the only way a \
+             cross-file total can exist at all"
+        );
+    }
+
+    #[test]
+    fn a_fold_that_refuses_refuses_the_whole_reading() {
+        let d = tree(&[("a.rs", "alpha")]);
+        let e = look(
+            &recipe(anything, Merge::Fold(refuse)),
+            d.path(),
+            &serde_json::json!({ "name": "alpha" }),
+            &Cache::disabled(),
+            &roomy(),
+        )
+        .unwrap_err();
+        let Halt::Refused(why) = e else {
+            panic!("a corpus the fold cannot make sense of is our failure")
+        };
+        assert_eq!(why, "that corpus makes no sense");
     }
 }

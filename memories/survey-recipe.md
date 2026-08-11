@@ -1,6 +1,8 @@
 ---
 about:
   - batteries/survey/src/recipe.rs#Recipe
+  - domains/coding/extract/src/ast.rs#RECIPE
+  - domains/coding/extract/src/name.rs#RECIPE
   - batteries/survey/src/recipe.rs#look
   - batteries/survey/src/recipe.rs#Merge
   - batteries/survey/src/cache.rs#gather
@@ -10,10 +12,6 @@ watch: [sig, logic]
 ---
 
 # An extractor is six things, and it was read out of the four that exist
-
-Nothing calls this yet. It lands ahead of the extractors that will use it so the
-shape can be argued about before four version bumps ride on it — the same
-staging as [[survey-narrow]].
 
 The four `probe` bodies were word-for-word identical. Reading them side by side,
 everything that differed is a field:
@@ -84,6 +82,27 @@ means by *earned*.
 The budget checkpoint stays **ahead** of the predicate. A tree of a hundred
 thousand ineligible files still has to be interruptible, and a cheap skip that
 cannot be cancelled is a slow scan with no way out.
+
+## The fold still has to be remembered
+
+`name-map` is the only `Fold`, and [[name-map-cache]] measured what memoising it
+is worth: 467ms to 7.4ms. `Merge::Fold` therefore does not run in `look`; it runs
+through `cache::folded`, which is the same `Flight` slot `visit_folded` used.
+`Merge::Concat` hands the gathered `Arc` straight back — a fold memo for the
+identity would be a full copy of the corpus on every question.
+
+## The translation was proved, not hoped
+
+Landing this earns all four extractors a new version, which is only honest if
+the answers did not move. 1149 readings — every `path#symbol` coordinate this
+repository's own memories declare, each asked of the probe that owns it and of
+the ones that do not, plus roster shapes and `nth` sweeps — run against a frozen
+copy of the tree under both codes: 941 `found`, 208 `found:false`, and **zero
+differences apart from the `extractor` field itself**.
+
+The barren branch has no reading in that set, which is worth saying rather than
+leaving to be discovered: it is covered by unit tests in this file, not by the
+sweep.
 
 ## When this changes, ask
 

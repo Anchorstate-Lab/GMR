@@ -7,7 +7,7 @@ use gmr_probe::{Budget, Spent};
 use serde::{Deserialize, Serialize};
 
 use crate::matching::Candidate;
-use crate::recipe::Recipe;
+use crate::recipe::{Fold, Recipe};
 use crate::walk::{hash, visit};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,6 +252,27 @@ pub fn gather(root: &Path, cache: &Cache, recipe: &Recipe, budget: &Budget) -> S
     once(cache, &scope, || {
         scan(root, cache, &scope, budget, &(recipe.eligible), collect)
     })
+}
+
+pub fn folded(
+    root: &Path,
+    cache: &Cache,
+    probe: &str,
+    gathered: &Arc<Vec<Candidate>>,
+    fold: Fold,
+) -> Scanned {
+    let scope = scope_of(cache, probe, root);
+    let run = || Ok(Arc::new(fold(gathered)?));
+    let Some(flight) = cache.flight(&scope) else {
+        return run();
+    };
+    let mut slot = guard(&flight.folded);
+    if let Some(done) = slot.as_ref() {
+        return done.clone();
+    }
+    let done = run();
+    *slot = worth_remembering(&done);
+    done
 }
 
 fn once(cache: &Cache, scope: &str, run: impl FnOnce() -> Scanned) -> Scanned {

@@ -121,11 +121,15 @@ fn naming(kind: &str) -> &'static str {
     }
 }
 
-fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+fn parseable(rel: &str) -> bool {
+    lang::for_path(rel).is_some()
+}
+
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
     let Some(table) = lang::for_path(rel) else {
         return Ok(());
     };
-    let Ok(src) = std::fs::read_to_string(path) else {
+    let Ok(src) = std::str::from_utf8(bytes) else {
         return Ok(());
     };
     let mut parser = tree_sitter::Parser::new();
@@ -134,7 +138,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             "cannot install the parser for {rel}: {e}; this is my failure, not the world's answer"
         )
     })?;
-    let tree = parser.parse(&src, None).ok_or_else(|| {
+    let tree = parser.parse(src, None).ok_or_else(|| {
         format!("{rel} did not parse into a tree; this is my failure, not the world's answer")
     })?;
 
@@ -157,7 +161,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
             .filter(|n| !n.is_empty())
             .unwrap_or_default();
         let (declared, implemented) = match kind == "type" {
-            true => members(node, &src),
+            true => members(node, src),
             false => (String::new(), String::new()),
         };
         let mut sig = Vec::new();
@@ -186,7 +190,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
                 .unwrap_or_default(),
         };
         let vis = visibility(table, node, &name, &text);
-        let mut surface = attributes(table, node, &src);
+        let mut surface = attributes(table, node, src);
         if !vis.is_empty() {
             surface.insert(0, vis.clone());
         }
@@ -233,16 +237,18 @@ pub fn probe(
     cache: &coord::Cache,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    let want = coord::wanted(pos, &ITEMS)?;
-    let cands = coord::visit_cached(root, cache, "ast-map", budget, collect)?;
-    if cands.is_empty() {
-        return Err(coord::Halt::Refused(format!(
-            "{} contains no parseable nodes; the probe is likely pointed at the wrong directory",
-            root.display()
-        )));
-    }
-    Ok(coord::report(VERSION, &want, coord::nth(pos), &cands)?)
+    coord::look(&RECIPE, root, pos, cache, budget)
 }
+
+pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
+    name: "ast-map",
+    version: VERSION,
+    items: &ITEMS,
+    eligible: parseable,
+    collect,
+    merge: coord::Merge::Concat,
+    barren: "contains no parseable nodes",
+};
 
 #[cfg(test)]
 mod tests {

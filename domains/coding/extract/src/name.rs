@@ -39,9 +39,13 @@ fn scopes_of(rel: &str) -> Result<Vec<&str>, String> {
     Ok(out)
 }
 
-fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
-    let Ok(src) = std::fs::read_to_string(path) else {
-        return;
+fn every(_: &str) -> bool {
+    true
+}
+
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+    let Ok(src) = std::str::from_utf8(bytes) else {
+        return Ok(());
     };
     let mut here: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     for (i, line) in src.lines().enumerate() {
@@ -60,6 +64,7 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) {
             json!({"count": count, "line": line}),
         )
     }));
+    Ok(())
 }
 
 fn merge(fragments: &[coord::Candidate]) -> Result<BTreeMap<(&str, &str), Seen<'_>>, String> {
@@ -113,26 +118,18 @@ pub fn probe(
     cache: &coord::Cache,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    let want = coord::wanted(pos, &ITEMS)?;
-    let cands = coord::visit_folded(
-        root,
-        cache,
-        "name-map",
-        budget,
-        |p, rel, out| {
-            collect(p, rel, out);
-            Ok(())
-        },
-        rolled,
-    )?;
-    if cands.is_empty() {
-        return Err(coord::Halt::Refused(format!(
-            "{} contains no readable files; the probe is likely pointed at the wrong directory",
-            root.display()
-        )));
-    }
-    Ok(coord::report(VERSION, &want, coord::nth(pos), &cands)?)
+    coord::look(&RECIPE, root, pos, cache, budget)
 }
+
+pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
+    name: "name-map",
+    version: VERSION,
+    items: &ITEMS,
+    eligible: every,
+    collect,
+    merge: coord::Merge::Fold(rolled),
+    barren: "contains no readable files",
+};
 
 #[cfg(test)]
 mod tests {

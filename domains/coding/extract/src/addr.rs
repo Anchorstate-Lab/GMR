@@ -9,18 +9,19 @@ const VERSION: &str = env!("GMR_EXTRACTOR_ADDR");
 
 pub(crate) const ITEMS: [&str; 3] = ["path", "name", "fingerprint"];
 
-fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
-    let Ok(bytes) = std::fs::read(path) else {
-        return Ok(());
-    };
-    let name = path
+fn every(_: &str) -> bool {
+    true
+}
+
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+    let name = Path::new(rel)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let c: BTreeMap<String, String> = [
         ("path", rel.to_owned()),
         ("name", name),
-        ("fingerprint", coord::hash(&String::from_utf8_lossy(&bytes))),
+        ("fingerprint", coord::hash(&String::from_utf8_lossy(bytes))),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
@@ -33,21 +34,23 @@ fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<()
     Ok(())
 }
 
+pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
+    name: "addr-map",
+    version: VERSION,
+    items: &ITEMS,
+    eligible: every,
+    collect,
+    merge: coord::Merge::Concat,
+    barren: "contains no files",
+};
+
 pub fn probe(
     root: &Path,
     pos: &Value,
     cache: &coord::Cache,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    let want = coord::wanted(pos, &ITEMS)?;
-    let cands = coord::visit_cached(root, cache, "addr-map", budget, collect)?;
-    if cands.is_empty() {
-        return Err(coord::Halt::Refused(format!(
-            "{} contains no files; the probe is likely pointed at the wrong directory",
-            root.display()
-        )));
-    }
-    Ok(coord::report(VERSION, &want, coord::nth(pos), &cands)?)
+    coord::look(&RECIPE, root, pos, cache, budget)
 }
 
 #[cfg(test)]

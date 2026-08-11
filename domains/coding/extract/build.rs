@@ -27,9 +27,27 @@ const CLOSURE: [(&str, &[&str]); 4] = [
     ("prose", &[]),
 ];
 
-const SHARED: [&str; 2] = [
-    "batteries/survey/src/matching.rs",
-    "batteries/survey/src/walk.rs",
+const SHARED_DIR: &str = "batteries/survey/src";
+
+const WAIVED: [(&str, &str); 6] = [
+    (
+        "lib.rs",
+        "module declarations and re-exports; holds no logic",
+    ),
+    (
+        "cache.rs",
+        "storage. Freshness cannot change a pure collect's answer: same bytes, same \
+         candidates. What files reach collect at all is `eligible`, which lives in each \
+         extractor and is hashed with it",
+    ),
+    (
+        "narrow.rs",
+        "proved output-preserving; hashing it would rebase every repository for an answer \
+         identical byte for byte. See memories/survey-narrow.md",
+    ),
+    ("index.rs", "storage contract; no extractor reads it"),
+    ("sqlite.rs", "storage backend; no extractor reads it"),
+    ("testkit.rs", "storage backend; no extractor reads it"),
 ];
 
 const EXTRA: [(&str, &str); 1] = [("ast", "lang.rs")];
@@ -46,8 +64,8 @@ fn main() {
     );
 
     let mut shared = String::new();
-    for rel in SHARED {
-        let path = root.join(rel);
+    for rel in shared_files(&root) {
+        let path = root.join(&rel);
         println!("cargo:rerun-if-changed={}", path.display());
         shared.push_str(&read(&path));
     }
@@ -78,6 +96,34 @@ fn main() {
             hex(&closure)
         );
     }
+}
+
+fn shared_files(root: &Path) -> Vec<String> {
+    let dir = root.join(SHARED_DIR);
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let listing = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot list {} for the closure: {e}", dir.display()));
+
+    let mut present: Vec<String> = listing
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".rs"))
+        .collect();
+    present.sort();
+
+    for (waived, why) in WAIVED {
+        assert!(
+            present.iter().any(|name| name == waived),
+            "{SHARED_DIR}/{waived} is waived out of the closure ({why}) but no longer exists. \
+             A waiver for a file nobody can find is a hole nobody can see"
+        );
+    }
+
+    present
+        .into_iter()
+        .filter(|name| !WAIVED.iter().any(|(waived, _)| waived == name))
+        .map(|name| format!("{SHARED_DIR}/{name}"))
+        .collect()
 }
 
 fn gmr_outcome_contract() -> &'static str {

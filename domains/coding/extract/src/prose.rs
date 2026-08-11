@@ -72,14 +72,26 @@ fn sections(rel: &str, src: &str, out: &mut Vec<coord::Candidate>) {
     flush(&mut open, &mut body);
 }
 
-fn collect(path: &Path, rel: &str, out: &mut Vec<coord::Candidate>) -> Result<(), String> {
-    if rel.ends_with(".md")
-        && let Ok(src) = std::fs::read_to_string(path)
-    {
-        sections(rel, &src, out);
+fn markdown(rel: &str) -> bool {
+    rel.ends_with(".md")
+}
+
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+    if let Ok(src) = std::str::from_utf8(bytes) {
+        sections(rel, src, out);
     }
     Ok(())
 }
+
+pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
+    name: "prose-map",
+    version: VERSION,
+    items: &ITEMS,
+    eligible: markdown,
+    collect,
+    merge: coord::Merge::Concat,
+    barren: "contains no Markdown sections",
+};
 
 pub fn probe(
     root: &Path,
@@ -87,15 +99,7 @@ pub fn probe(
     cache: &coord::Cache,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    let want = coord::wanted(pos, &ITEMS)?;
-    let cands = coord::visit_cached(root, cache, "prose-map", budget, collect)?;
-    if cands.is_empty() {
-        return Err(coord::Halt::Refused(format!(
-            "{} contains no Markdown sections; the probe is likely pointed at the wrong directory",
-            root.display()
-        )));
-    }
-    Ok(coord::report(VERSION, &want, coord::nth(pos), &cands)?)
+    coord::look(&RECIPE, root, pos, cache, budget)
 }
 
 #[cfg(test)]

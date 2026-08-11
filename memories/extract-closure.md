@@ -22,8 +22,32 @@ output enters the hash", and pulling in a parser makes the hash depend on that
 parser's version — one upgrade and every probe version in the repository turns
 over, without the result of a single observation having changed.
 
-By the same logic `SHARED` (`matching.rs` · `walk.rs`) is read into the hash whole.
-**Touch one byte of either file — add a constant, add a test, delete a comment
-line — and all four extractors swap versions, requiring one `gmr rebase --all`.**
-So anything that touches them has to be compiled into the same commit, the same
-migration. This hash would rather over-report than under-report.
+By the same logic the shared files are read into the hash whole. **Touch one byte
+of any of them — add a constant, add a test, delete a comment line — and all four
+extractors swap versions, requiring one `gmr rebase --all`.** So anything that
+touches them has to be compiled into the same commit, the same migration. This
+hash would rather over-report than under-report.
+
+## The shared set is default-in, and that is the whole point
+
+`shared_files` lists `batteries/survey/src` and hashes **everything** in it,
+minus `WAIVED`. It used to be a list of two filenames, and the failure mode of a
+list is silence: `cache.rs` sat outside it while deciding what reached `collect`
+and when an entry was fresh, and nobody noticed until somebody went looking.
+
+Adding a file to that directory now changes all four versions with nobody having
+listed it. Checked by adding one: the versions moved. Leaving a file out is a
+sentence someone has to write, in `WAIVED`, next to the reason. Today those are
+storage (`cache.rs`, `index.rs`, `sqlite.rs`, `testkit.rs`), a function proved
+output-preserving (`narrow.rs`, see [[survey-narrow]]), and `lib.rs`, which
+declares modules and re-exports.
+
+A stale waiver is a hole nobody can see, so `shared_files` refuses to build when
+one names a file that is gone. Checked by renaming `narrow.rs`: the build stops
+and says which waiver went stale.
+
+**`eligible` is the reason `cache.rs` can stay out.** Which files reach `collect`
+is now declared by each extractor and hashed with it (see [[survey-recipe]]);
+what is left in `cache.rs` is freshness, and freshness cannot change a pure
+`collect`'s answer — same bytes, same candidates. The day `collect` stops being
+pure, that waiver is wrong.
