@@ -5,6 +5,8 @@ pub mod cache;
 pub mod index;
 pub mod matching;
 pub mod narrow;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 pub mod walk;

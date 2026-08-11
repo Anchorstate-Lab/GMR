@@ -29,9 +29,10 @@ sqlx = { workspace = true, optional = true }
 
 # 测试跑一致性套件：两个后端各一遍。
 [dev-dependencies]
-gmr-survey = { path = ".", features = ["testkit"] }
+gmr-survey = { path = ".", features = ["sqlite", "testkit"] }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+sqlx = { workspace = true }
 
 [lints]
 workspace = true

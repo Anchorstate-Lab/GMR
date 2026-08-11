@@ -59,6 +59,11 @@ fn tree() -> Vec<Indexed> {
             "ha",
             vec![row(0, "a:four", &[("kind", "type"), ("name", "four")])],
         ),
+        file(
+            "bb.rs",
+            "hbb",
+            vec![row(0, "bb:five", &[("kind", "function"), ("name", "five")])],
+        ),
     ]
 }
 
@@ -81,7 +86,7 @@ async fn suite(index: &dyn Index) {
     index.write(&ast, &tree()).await.unwrap();
 
     let built = index.built(&ast).await.unwrap().expect("writing opens it");
-    assert_eq!((built.files, built.rows), (3, 4));
+    assert_eq!((built.files, built.rows), (4, 5));
     assert!(
         !built.whole(),
         "a generation is open until someone says the walk finished"
@@ -93,12 +98,13 @@ async fn suite(index: &dyn Index) {
             ("a.rs".to_owned(), "ha".to_owned()),
             ("b.rs".to_owned(), "hb".to_owned()),
             ("b/x.rs".to_owned(), "hx".to_owned()),
+            ("bb.rs".to_owned(), "hbb".to_owned()),
         ])
     );
 
     assert_eq!(
         ids(&index.rows(&ast, "").await.unwrap()),
-        ["a:four", "x:two", "x:three", "b:one"],
+        ["a:four", "x:two", "x:three", "b:one", "bb:five"],
         "rows come back in the order the writer's sort key put them in, and `b/x.rs` \
          sorts before `b.rs` because that is what walking the tree does — a backend \
          ordering by the raw path would put them the other way round, and `nth` would \
@@ -108,7 +114,9 @@ async fn suite(index: &dyn Index) {
     assert_eq!(
         ids(&index.rows(&ast, "b").await.unwrap()),
         ["x:two", "x:three"],
-        "a root selects what is under it; `b.rs` merely starts with the same letters"
+        "a root selects what is under it. `b.rs` and `bb.rs` both begin with the root's \
+         letters and neither is beneath it — a backend testing a plain prefix passes \
+         every other case in this suite and fails only here"
     );
 
     assert_eq!(
@@ -141,7 +149,7 @@ async fn suite(index: &dyn Index) {
             .await
             .unwrap()),
         ["x:two"],
-        "the root narrows the union as well as the rows"
+        "the root narrows the union as well as the rows, by the same rule"
     );
 
     let first = index.rows(&ast, "").await.unwrap();
@@ -176,19 +184,19 @@ async fn suite(index: &dyn Index) {
         "ha2",
         "writing the same path again replaces it rather than adding to it"
     );
-    assert_eq!(index.built(&ast).await.unwrap().unwrap().files, 3);
+    assert_eq!(index.built(&ast).await.unwrap().unwrap().files, 4);
 
     index.forget(&ast, &["b.rs".to_owned()]).await.unwrap();
     let built = index.built(&ast).await.unwrap().unwrap();
-    assert_eq!((built.files, built.rows), (2, 3));
+    assert_eq!((built.files, built.rows), (3, 4));
     assert!(!index.known(&ast).await.unwrap().contains_key("b.rs"));
 
     index.write(&addr, &tree()).await.unwrap();
     index.seal(&addr, at(9)).await.unwrap();
-    assert_eq!(index.built(&addr).await.unwrap().unwrap().files, 3);
+    assert_eq!(index.built(&addr).await.unwrap().unwrap().files, 4);
     assert_eq!(
         index.built(&ast).await.unwrap().unwrap().files,
-        2,
+        3,
         "two probes at the same paths are two indexes, not one"
     );
 
@@ -207,7 +215,7 @@ async fn suite(index: &dyn Index) {
     assert!(index.rows(&ast, "").await.unwrap().is_empty());
     assert_eq!(
         index.built(&addr).await.unwrap().unwrap().files,
-        3,
+        4,
         "discarding one generation leaves its neighbours alone"
     );
 }
@@ -215,4 +223,11 @@ async fn suite(index: &dyn Index) {
 #[tokio::test]
 async fn the_reference_implementation_holds() {
     suite(&gmr_survey::testkit::Remembered::new()).await;
+}
+
+#[tokio::test]
+async fn the_sqlite_backend_agrees_with_it() {
+    let index = gmr_survey::sqlite::open_in_memory().await.unwrap();
+    suite(&index).await;
+    index.close().await;
 }
