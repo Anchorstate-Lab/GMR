@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, sort_key};
+use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, Snapshot, sort_key};
 use gmr_survey::matching::Want;
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
@@ -37,6 +37,12 @@ fn want(pairs: &[(&str, &str)]) -> Want {
 
 fn ids(found: &[Located]) -> Vec<String> {
     found.iter().map(|l| l.row.id.clone()).collect()
+}
+
+fn seen(snapshot: Option<Snapshot>) -> Vec<String> {
+    ids(&snapshot
+        .expect("the generation was written, so it is there to read")
+        .rows)
 }
 
 fn tree() -> Vec<Indexed> {
@@ -103,7 +109,7 @@ async fn suite(index: &dyn Index) {
     );
 
     assert_eq!(
-        ids(&index.rows(&ast, "").await.unwrap()),
+        seen(index.rows(&ast, "").await.unwrap()),
         ["a:four", "x:two", "x:three", "b:one", "bb:five"],
         "rows come back in the order the writer's sort key put them in, and `b/x.rs` \
          sorts before `b.rs` because that is what walking the tree does — a backend \
@@ -112,7 +118,7 @@ async fn suite(index: &dyn Index) {
     );
 
     assert_eq!(
-        ids(&index.rows(&ast, "b").await.unwrap()),
+        seen(index.rows(&ast, "b").await.unwrap()),
         ["x:two", "x:three"],
         "a root selects what is under it. `b.rs` and `bb.rs` both begin with the root's \
          letters and neither is beneath it — a backend testing a plain prefix passes \
@@ -120,46 +126,59 @@ async fn suite(index: &dyn Index) {
     );
 
     assert_eq!(
-        ids(&index
-            .union(&ast, "", &want(&[("kind", "type")]))
-            .await
-            .unwrap()),
+        seen(
+            index
+                .union(&ast, "", &want(&[("kind", "type")]))
+                .await
+                .unwrap()
+        ),
         ["a:four", "x:three"],
         "the union keeps the order the rows were in"
     );
     assert_eq!(
-        ids(&index
-            .union(&ast, "", &want(&[("name", "one"), ("kind", "type")]))
-            .await
-            .unwrap()),
+        seen(
+            index
+                .union(&ast, "", &want(&[("name", "one"), ("kind", "type")]))
+                .await
+                .unwrap()
+        ),
         ["a:four", "x:three", "b:one"],
         "a row is in the union when it matches any one wanted pair, not all of them"
     );
+    let nothing = index
+        .union(&ast, "", &want(&[("name", "gone")]))
+        .await
+        .unwrap()
+        .expect("the generation is there; it is the coordinate that is not");
     assert!(
-        index
-            .union(&ast, "", &want(&[("name", "gone")]))
-            .await
-            .unwrap()
-            .is_empty(),
+        nothing.rows.is_empty(),
         "nothing matching is an empty union, not an error"
     );
+    assert!(
+        !nothing.whole(),
+        "an empty union out of a generation still being written says so. A caller that \
+         reads only the rows cannot tell that from `looked, and it is not there`, and \
+         those are the two answers this whole system exists to keep apart"
+    );
     assert_eq!(
-        ids(&index
-            .union(&ast, "b", &want(&[("kind", "function")]))
-            .await
-            .unwrap()),
+        seen(
+            index
+                .union(&ast, "b", &want(&[("kind", "function")]))
+                .await
+                .unwrap()
+        ),
         ["x:two"],
         "the root narrows the union as well as the rows, by the same rule"
     );
 
-    let first = index.rows(&ast, "").await.unwrap();
+    let first = index.rows(&ast, "").await.unwrap().unwrap();
     assert_eq!(
-        first[0].row.facts,
+        first.rows[0].row.facts,
         serde_json::json!({ "line": 0 }),
         "facts come back as they went in"
     );
     assert_eq!(
-        first[0].rel, "a.rs",
+        first.rows[0].rel, "a.rs",
         "a row knows which file it came out of"
     );
 
@@ -167,6 +186,18 @@ async fn suite(index: &dyn Index) {
     let built = index.built(&ast).await.unwrap().unwrap();
     assert_eq!(built.sealed_at, Some(at(5)));
     assert!(built.whole());
+    assert_eq!(
+        index
+            .rows(&ast, "")
+            .await
+            .unwrap()
+            .expect("still there")
+            .sealed_at,
+        Some(at(5)),
+        "how stale the answer is has to arrive with the answer. Asking `built` for it \
+         afterwards is a second call the caller can forget, and forgetting it is how a \
+         snapshot from last week gets reported as the state of the tree"
+    );
 
     index
         .write(&ast, &[file("a.rs", "ha2", vec![row(0, "a:renamed", &[])])])
@@ -210,9 +241,23 @@ async fn suite(index: &dyn Index) {
     listed.sort();
     assert_eq!(listed, ["addr-map", "ast-map"]);
 
+    let empty = Generation::of("prose-map", "v1");
+    index.write(&empty, &[]).await.unwrap();
+    let opened = index
+        .rows(&empty, "")
+        .await
+        .unwrap()
+        .expect("a generation somebody opened is readable, however little is in it");
+    assert!(opened.rows.is_empty());
+
     index.discard(&ast).await.unwrap();
     assert_eq!(index.built(&ast).await.unwrap(), None);
-    assert!(index.rows(&ast, "").await.unwrap().is_empty());
+    assert!(
+        index.rows(&ast, "").await.unwrap().is_none(),
+        "a generation nobody has built reads as nothing at all, not as an index that \
+         happens to be empty. Both used to come back as zero rows, and a probe cannot \
+         answer `it is not there` off the first one without inventing the answer"
+    );
     assert_eq!(
         index.built(&addr).await.unwrap().unwrap().files,
         4,

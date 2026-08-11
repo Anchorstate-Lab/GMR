@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::index::{Built, Generation, Index, IndexError, Indexed, Located, Row, under};
+use crate::index::{Built, Generation, Index, IndexError, Indexed, Located, Row, Snapshot, under};
 use crate::matching::Want;
 use crate::narrow::touches;
 
@@ -141,9 +141,12 @@ impl Index for Remembered {
         Ok(())
     }
 
-    async fn rows(&self, of: &Generation, root: &str) -> Result<Vec<Located>, IndexError> {
+    async fn rows(&self, of: &Generation, root: &str) -> Result<Option<Snapshot>, IndexError> {
         let held = guard(&self.held);
-        Ok(located(ordered(&held, of, root)))
+        Ok(held.opened.get(of).map(|sealed_at| Snapshot {
+            sealed_at: *sealed_at,
+            rows: located(ordered(&held, of, root)),
+        }))
     }
 
     async fn union(
@@ -151,12 +154,16 @@ impl Index for Remembered {
         of: &Generation,
         root: &str,
         want: &Want,
-    ) -> Result<Vec<Located>, IndexError> {
+    ) -> Result<Option<Snapshot>, IndexError> {
         let held = guard(&self.held);
-        let kept: Vec<_> = ordered(&held, of, root)
-            .into_iter()
-            .filter(|(_, _, row)| touches(&row.coord, want))
-            .collect();
-        Ok(located(kept))
+        Ok(held.opened.get(of).map(|sealed_at| Snapshot {
+            sealed_at: *sealed_at,
+            rows: located(
+                ordered(&held, of, root)
+                    .into_iter()
+                    .filter(|(_, _, row)| touches(&row.coord, want))
+                    .collect(),
+            ),
+        }))
     }
 }

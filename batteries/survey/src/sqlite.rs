@@ -14,7 +14,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row as _, SqlitePool};
 
-use crate::index::{Built, Fault, Generation, Index, IndexError, Indexed, Located, Row};
+use crate::index::{Built, Fault, Generation, Index, IndexError, Indexed, Located, Row, Snapshot};
 use crate::matching::Want;
 
 pub const SCHEMA_VERSION: i64 = 1;
@@ -226,6 +226,26 @@ fn found(row: &sqlx::sqlite::SqliteRow) -> Result<Located, IndexError> {
     })
 }
 
+fn stamped(row: &sqlx::sqlite::SqliteRow) -> Option<DateTime<Utc>> {
+    row.get::<Option<i64>, _>("sealed_at")
+        .and_then(|s| DateTime::from_timestamp(s, 0))
+}
+
+async fn opened(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    of: &Generation,
+) -> Result<Option<Snapshot>, IndexError> {
+    let row = sqlx::query("SELECT sealed_at FROM generation WHERE id = ?")
+        .bind(of.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db_err)?;
+    Ok(row.map(|r| Snapshot {
+        sealed_at: stamped(&r),
+        rows: Vec::new(),
+    }))
+}
+
 const READ: &str = "SELECT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
      FROM candidate c JOIN file f ON f.generation = c.generation AND f.rel = c.rel \
      WHERE c.generation = ?";
@@ -249,9 +269,7 @@ impl Index for SqliteIndex {
         Ok(row.map(|r| Built {
             files: r.get::<i64, _>("files") as u64,
             rows: r.get::<i64, _>("rows") as u64,
-            sealed_at: r
-                .get::<Option<i64>, _>("sealed_at")
-                .and_then(|s| DateTime::from_timestamp(s, 0)),
+            sealed_at: stamped(&r),
         }))
     }
 
@@ -394,9 +412,7 @@ impl Index for SqliteIndex {
                     Built {
                         files: r.get::<i64, _>("files") as u64,
                         rows: r.get::<i64, _>("rows") as u64,
-                        sealed_at: r
-                            .get::<Option<i64>, _>("sealed_at")
-                            .and_then(|s| DateTime::from_timestamp(s, 0)),
+                        sealed_at: stamped(r),
                     },
                 )
             })
@@ -420,11 +436,15 @@ impl Index for SqliteIndex {
         tx.commit().await.map_err(db_err)
     }
 
-    async fn rows(&self, of: &Generation, root: &str) -> Result<Vec<Located>, IndexError> {
+    async fn rows(&self, of: &Generation, root: &str) -> Result<Option<Snapshot>, IndexError> {
         let mut sql = String::from(READ);
         let narrowed = beneath(&mut sql, root);
         sql.push_str(TAIL);
 
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        let Some(snapshot) = opened(&mut tx, of).await? else {
+            return Ok(None);
+        };
         let mut query = sqlx::query(&sql).bind(of.as_str());
         if narrowed {
             query = query
@@ -432,13 +452,12 @@ impl Index for SqliteIndex {
                 .bind(root)
                 .bind(root.len() as i64);
         }
-        query
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db_err)?
-            .iter()
-            .map(found)
-            .collect()
+        let rows = query.fetch_all(&mut *tx).await.map_err(db_err)?;
+        tx.commit().await.map_err(db_err)?;
+        Ok(Some(Snapshot {
+            rows: rows.iter().map(found).collect::<Result<_, _>>()?,
+            ..snapshot
+        }))
     }
 
     async fn union(
@@ -446,10 +465,7 @@ impl Index for SqliteIndex {
         of: &Generation,
         root: &str,
         want: &Want,
-    ) -> Result<Vec<Located>, IndexError> {
-        if want.is_empty() {
-            return Ok(Vec::new());
-        }
+    ) -> Result<Option<Snapshot>, IndexError> {
         let mut sql = String::from(
             "SELECT DISTINCT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
              FROM posting p \
@@ -466,22 +482,30 @@ impl Index for SqliteIndex {
         sql.push_str(&format!(" AND ({})", pairs.join(" OR ")));
         sql.push_str(TAIL);
 
-        let mut query = sqlx::query(&sql).bind(of.as_str());
-        if narrowed {
-            query = query
-                .bind(root.len() as i64)
-                .bind(root)
-                .bind(root.len() as i64);
-        }
-        for (item, value) in want {
-            query = query.bind(item).bind(value);
-        }
-        query
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db_err)?
-            .iter()
-            .map(found)
-            .collect()
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        let Some(snapshot) = opened(&mut tx, of).await? else {
+            return Ok(None);
+        };
+        let rows = match want.is_empty() {
+            true => Vec::new(),
+            false => {
+                let mut query = sqlx::query(&sql).bind(of.as_str());
+                if narrowed {
+                    query = query
+                        .bind(root.len() as i64)
+                        .bind(root)
+                        .bind(root.len() as i64);
+                }
+                for (item, value) in want {
+                    query = query.bind(item).bind(value);
+                }
+                query.fetch_all(&mut *tx).await.map_err(db_err)?
+            }
+        };
+        tx.commit().await.map_err(db_err)?;
+        Ok(Some(Snapshot {
+            rows: rows.iter().map(found).collect::<Result<_, _>>()?,
+            ..snapshot
+        }))
     }
 }

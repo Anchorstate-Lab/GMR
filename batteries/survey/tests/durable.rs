@@ -43,7 +43,18 @@ async fn an_index_survives_the_process_that_wrote_it() {
     let built = second.built(&ast).await.unwrap().expect("it was written");
     assert_eq!((built.files, built.rows), (1, 1));
     assert_eq!(built.sealed_at, Some(at(0)));
-    assert_eq!(second.rows(&ast, "").await.unwrap().len(), 1);
+    let reread = second
+        .rows(&ast, "")
+        .await
+        .unwrap()
+        .expect("it was written");
+    assert_eq!(reread.rows.len(), 1);
+    assert_eq!(
+        reread.sealed_at,
+        Some(at(0)),
+        "the seal crosses the process boundary with the rows, or the next process reads \
+         a snapshot without knowing when it was taken"
+    );
     second.close().await;
 }
 

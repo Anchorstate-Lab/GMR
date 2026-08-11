@@ -84,6 +84,18 @@ pub struct Located {
     pub row: Row,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Snapshot {
+    pub sealed_at: Option<DateTime<Utc>>,
+    pub rows: Vec<Located>,
+}
+
+impl Snapshot {
+    pub fn whole(&self) -> bool {
+        self.sealed_at.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fault {
     Busy,
@@ -166,14 +178,14 @@ pub trait Index: Send + Sync {
 
     async fn discard(&self, of: &Generation) -> Result<(), IndexError>;
 
-    async fn rows(&self, of: &Generation, root: &str) -> Result<Vec<Located>, IndexError>;
+    async fn rows(&self, of: &Generation, root: &str) -> Result<Option<Snapshot>, IndexError>;
 
     async fn union(
         &self,
         of: &Generation,
         root: &str,
         want: &Want,
-    ) -> Result<Vec<Located>, IndexError>;
+    ) -> Result<Option<Snapshot>, IndexError>;
 }
 
 #[cfg(test)]
