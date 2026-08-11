@@ -78,7 +78,7 @@ async fn suite(index: &dyn Index) {
     );
     assert_eq!(
         index.seal(&ast, at(0)).await.unwrap_err().fault,
-        Fault::Absent,
+        Fault::Unopened,
         "sealing a generation that was never opened would record a completeness \
          nobody earned"
     );

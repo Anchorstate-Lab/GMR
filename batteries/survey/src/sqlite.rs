@@ -367,7 +367,7 @@ impl Index for SqliteIndex {
             .await
             .map_err(db_err)?;
         match done.rows_affected() {
-            0 => Err(IndexError::absent(of)),
+            0 => Err(IndexError::unopened(of)),
             _ => Ok(()),
         }
     }

@@ -89,7 +89,7 @@ pub enum Fault {
     Busy,
     Corrupt,
     Io,
-    Absent,
+    Unopened,
     Foreign,
     Other,
 }
@@ -109,9 +109,9 @@ impl IndexError {
         }
     }
 
-    pub fn absent(of: &Generation) -> Self {
+    pub fn unopened(of: &Generation) -> Self {
         Self::new(
-            Fault::Absent,
+            Fault::Unopened,
             format!(
                 "there is no index for {of}. A generation is opened by writing into it, and \
                  sealing one that was never opened would record a completeness nobody earned"

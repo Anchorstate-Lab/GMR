@@ -118,7 +118,7 @@ impl Index for Remembered {
                 *sealed_at = Some(at);
                 Ok(())
             }
-            None => Err(IndexError::absent(of)),
+            None => Err(IndexError::unopened(of)),
         }
     }
 
