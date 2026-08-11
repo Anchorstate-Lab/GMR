@@ -69,6 +69,7 @@ pub struct Cache {
 
 impl Cache {
     pub fn load(file: &Path, stamps: HashMap<String, String>) -> Self {
+        sweep(file);
         let (entries, fault) = match std::fs::read_to_string(file) {
             Ok(text) => match serde_json::from_str::<OnDisk>(&text) {
                 Ok(on_disk) => (on_disk.0, None),
@@ -161,8 +162,7 @@ impl Cache {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
 
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("cache");
-        let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+        let tmp = dir.join(format!("{}{}.tmp", scratch(path), std::process::id()));
         std::fs::write(&tmp, json).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
         std::fs::rename(&tmp, path).map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
@@ -176,6 +176,39 @@ impl Cache {
         self.file.as_ref()?;
         let mut flights = guard(&self.flights);
         Some(Arc::clone(flights.entry(scope.to_owned()).or_default()))
+    }
+}
+
+const ABANDONED_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
+
+fn scratch(file: &Path) -> String {
+    let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("cache");
+    format!(".{name}.")
+}
+
+fn abandoned(entry: &std::fs::DirEntry) -> bool {
+    entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > ABANDONED_AFTER)
+}
+
+fn sweep(file: &Path) {
+    let Some(dir) = file.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = scratch(file);
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let leftover = name
+            .to_str()
+            .is_some_and(|n| n.starts_with(&prefix) && n.ends_with(".tmp"));
+        if leftover && abandoned(&e) {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
 }
 
@@ -600,6 +633,46 @@ mod tests {
             calls.load(Ordering::SeqCst),
             1,
             "the rebuilt file has to be a hit, or nothing was actually repaired"
+        );
+    }
+
+    fn aged(path: &Path, by: std::time::Duration) {
+        let f = std::fs::File::options().write(true).open(path).unwrap();
+        let when = std::time::SystemTime::now() - by;
+        f.set_times(std::fs::FileTimes::new().set_modified(when))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_temporary_a_killed_process_left_behind_does_not_accumulate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let orphan = dir.path().join(".cache.json.999999.tmp");
+        std::fs::write(&orphan, "half a cache").unwrap();
+        aged(&orphan, ABANDONED_AFTER * 2);
+
+        Cache::load(&path, stamped());
+
+        assert!(
+            !orphan.exists(),
+            "replace writes to a per-process temporary and renames, so a process killed \
+             between the two leaves one behind and nobody else is named to remove it"
+        );
+    }
+
+    #[test]
+    fn a_temporary_another_process_is_still_writing_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let in_flight = dir.path().join(".cache.json.999998.tmp");
+        std::fs::write(&in_flight, "a write happening right now").unwrap();
+
+        Cache::load(&path, stamped());
+
+        assert!(
+            in_flight.exists(),
+            "a temporary seconds old belongs to a live writer; removing it would make its \
+             rename fail, which is worse than the disk space it was costing"
         );
     }
 

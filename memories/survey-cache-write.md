@@ -7,6 +7,8 @@ about:
   - batteries/survey/src/cache.rs#a_scan_writes_the_cache_file_once_not_once_per_file
   - batteries/survey/src/cache.rs#a_failed_scan_is_not_retried_by_the_next_caller
   - batteries/survey/src/cache.rs#a_corrupt_cache_still_scans_and_leaves_a_readable_file_behind
+  - batteries/survey/src/cache.rs#sweep
+  - batteries/survey/src/cache.rs#a_temporary_a_killed_process_left_behind_does_not_accumulate
 watch: [sig, logic]
 ---
 
@@ -44,6 +46,25 @@ function. Without the rename, that exit path corrupts the cache, and a corrupt
 cache is silently discarded on the next load, so the repository would quietly
 pay a full scan forever with nothing to read that said so. That is why `load`
 separates "no file yet" (fine, start empty) from "a file that will not parse".
+
+## Who removes the temporary nobody renamed
+
+The temporary carries the writing process's pid, and it has to: a single fixed
+name would let two processes interleave a write and a rename, and the file that
+landed would be half of one and half of the other — exactly the corruption the
+rename exists to prevent. The price of a per-process name is that a process
+killed between the write and the rename leaves a full serialisation behind that
+nobody is named to remove.
+
+`load` sweeps them, and skips any that is younger than an hour. A sweep with no
+such rule would delete the temporary a **live** writer is in the middle of, and
+its rename would then fail — trading disk space for a failed scan. Writing this
+file takes milliseconds, so an hour is six orders of magnitude of headroom, and
+the number only has to be far larger than a write, not close to anything.
+
+The sweep is silent when it cannot read the directory or a `modified` time.
+That is the one place in this file where silence is right: a leftover that
+survives another hour costs disk, and there is no answer it can make wrong.
 
 ## A file that will not parse is a fault, not a refusal
 
