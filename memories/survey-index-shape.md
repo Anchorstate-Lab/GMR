@@ -4,6 +4,7 @@ about:
   - batteries/survey/src/index.rs#under
   - batteries/survey/src/index.rs#Indexed
   - batteries/survey/src/index.rs#Index
+  - batteries/survey/src/index.rs#Snapshot
   - batteries/survey/src/index.rs#sort_key
   - batteries/survey/src/index.rs#the_sort_key_reproduces_the_order_the_walk_hands_files_over_in
   - batteries/survey/src/index.rs#sorting_the_same_paths_by_their_bytes_would_not_have_agreed
@@ -89,6 +90,43 @@ Checked red together: `sort_key` returning `rel` untouched fails all three —
 the invariant test, and both halves of the conformance suite, which keep their
 own hardcoded sequence and therefore still catch it on their own rather than
 following the helper into the same mistake.
+
+### The key can change the answer, and it is not yet in the closure
+
+[[survey-narrow]] states the line the closure is drawn on, and names the sort key
+on the hashed side: "what can change the answer is hashed: which files are
+eligible, when a cached entry is still fresh, **the sort key**, the aggregation."
+
+`sort_key` lives in `index.rs`, which `build.rs` waives whole, with the reason
+"storage contract; no extractor reads it". Measured: touching this file moves no
+probe version, touching `matching.rs`, `recipe.rs` or `walk.rs` moves all four.
+
+The reason is true today and false the day an extractor's writer calls
+`sort_key` — and a waiver is per file, so nobody re-reads that sentence when the
+file gains a function it no longer describes. The key belongs beside `walk`,
+which already defines the same order and is already hashed. It has to move in the
+same commit that gives it its first producer, because moving it is itself four
+version bumps.
+
+## A read says whether there is a snapshot, and when it was taken
+
+`rows` and `union` return `Option<Snapshot>`, not `Vec<Located>`. Two answers
+were indistinguishable in the bare vector, and both are the distinction this
+system exists to hold.
+
+**A generation nobody has built, and a generation built and empty**, both came
+back as zero rows. A probe reading the first and reporting `found:false` invents
+the answer — the index has not looked yet. `None` is now the first.
+
+**How stale the answer is** arrived through a second call. `built()` had the seal
+time, the reader had the rows, and nothing made anyone put them together.
+Forgetting a second call is free and silent, and a bounded-staleness contract is
+worth nothing if the staleness can be dropped on the floor.
+
+The SQLite backend takes both in one transaction. Two statements would let a
+concurrent `seal` land between them and report a half-written generation as
+whole; the opposite skew — an older seal time beside newer rows — only makes the
+answer look staler than it is, which is the safe direction.
 
 ## A write reopens a sealed generation
 

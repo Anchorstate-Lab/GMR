@@ -56,6 +56,20 @@ five thousand rounds, and every counter was green.
 Checked red by restoring the prefix generator: `gapped` is the only assertion
 that fails, which is the point — the other four could not have told you.
 
+### One rule, and the proof is attached to it
+
+`touches` takes the coordinate rather than the `Candidate` that carries it,
+because the index needed the same predicate over a `Row` and wrote its own copy —
+`index::touched`, body for body identical. Both files sit outside the version
+closure, so a drift between them would have moved no probe version and broken no
+test: this property would have gone on passing about a predicate the query no
+longer used.
+
+The chain only means something end to end. The SQL is held to
+`testkit::Remembered` by the conformance suite, `Remembered` calls `touches`, and
+`touches` is what the property below is about. The SQL is a third expression of
+the rule and always will be — holding it is exactly what conformance is for.
+
 `narrow` must stay a stable filter. `report` reads `nth` as an index into
 `tied`, and `tied` inherits the order it was given. Reordering here renames
 which object an anchor is about while nobody has touched the code — the failure

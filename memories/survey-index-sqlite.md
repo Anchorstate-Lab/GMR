@@ -4,7 +4,9 @@ about:
   - batteries/survey/src/sqlite.rs#raise
   - batteries/survey/src/sqlite.rs#raze
   - batteries/survey/src/sqlite.rs#beneath
+  - batteries/survey/src/sqlite.rs#strangers
   - batteries/survey/tests/durable.rs#an_index_this_build_cannot_read_is_rebuilt_rather_than_refused
+  - batteries/survey/tests/durable.rs#a_database_the_index_did_not_write_is_refused_rather_than_razed
 watch: [sig, logic]
 ---
 
@@ -42,6 +44,34 @@ we set out to avoid, arriving as leftovers instead of generations.
 It now enumerates `sqlite_master` and drops views, triggers, indexes and tables
 in that order, skipping the `sqlite_%` internals nobody may drop. "Everything I
 did not just create" is the only definition that stays true as the schema moves.
+
+## Razing is only free on a file this code owns
+
+Everything above is true of **an index**. `raze` ran on any database whose
+`user_version` was not 1, and returned `Ok`.
+
+Measured before the guard: a database holding one table `entry` with one row and
+`PRAGMA user_version = 7` — the shape of the journal — came back from
+`sqlite::open` as `Ok`, with its table gone and the four index tables in its
+place.
+
+The two are one filename apart. The journal is `.anchor/state/memory.db`, an
+index sits beside it, both crates export a function called `sqlite::open`, and
+both stamp the same `PRAGMA`. Nothing in the file said whose it was, so the
+sentence at the top of this note — "there is no copy to lose" — was a claim
+about the *index*, applied by the code to whatever it was pointed at.
+
+`strangers` answers "is this mine": a database holding tables, none of them
+`generation`, is refused with `Fault::Foreign`, naming what it found. An empty
+file still builds; a file this code wrote at any stamp still razes, which is what
+`an_index_this_build_cannot_read_is_rebuilt_rather_than_refused` keeps green.
+That test is also what pins the marker: rename the `generation` table in `SCHEMA`
+and the reopen in it stops recognising its own file and fails.
+
+The lock-free stamp check deliberately stays **ahead** of the guard. A foreign
+database whose `user_version` happens to be 1 is not razed either — it fails on
+its first query instead, which is the loud side — and checking before the fast
+path would cost a query on every open to catch a coincidence.
 
 ## The decision is inside the write lock
 

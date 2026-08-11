@@ -36,6 +36,33 @@ The original plan called for a separate `Fragment` type with an explicit
 making `Cache` generic over a per-probe fragment type. That is the real cost of
 paying this off, and why it was not paid at the time: nothing benefited yet.
 
+## The bill, measured
+
+The paragraph above argued this from the types. It has since been run, over this
+repository's own corpus, folding the whole fragment set against folding only the
+union of it:
+
+```
+name-map   SAME   union     6/52425   {"name":"gather"}
+           SAME   union     6/52425   {"name":"gather","scope":"batteries"}
+           DIFFER union     0/52425   {"scope":"batteries/survey"}
+              whole corpus: found=true  at={name:"A", scope:"batteries/survey"}  occurrences=2
+              union only:   found=false
+```
+
+So the failure is not "the fold cannot use an index". It is narrower and worse:
+**a key the fold derives cannot narrow the fold**. `scope` is computed from
+`file` while folding and appears in no fragment's coordinate, so a coordinate
+naming only `scope` selects nothing and the answer flips from `found:true` to
+`found:false` — silently, and only for that shape of position.
+
+Where the want does carry a fragment key, the fold over the union is the same
+answer, and 6 rows out of 52425 is what it costs instead.
+
+The rule that follows: **narrow on `want ∩ fragment coordinate keys`; where that
+intersection is empty, read the whole generation.** The fallback still skips the
+parse, which is what was expensive, so it is not the old cost coming back.
+
 ## The trigger
 
 > Separate the two types **before `narrow` gets its first caller**, not before.

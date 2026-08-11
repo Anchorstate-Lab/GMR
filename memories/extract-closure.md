@@ -46,6 +46,32 @@ A stale waiver is a hole nobody can see, so `shared_files` refuses to build when
 one names a file that is gone. Checked by renaming `narrow.rs`: the build stops
 and says which waiver went stale.
 
+## Which file moves which version, measured
+
+The algorithm here was recomputed outside the build and reproduced all four
+hashes byte for byte, so this is a measurement rather than a reading of the code:
+
+```
+matching.rs  HASHED -> all four      cache.rs   WAIVED -> none
+recipe.rs    HASHED -> all four      index.rs   WAIVED -> none
+walk.rs      HASHED -> all four      lib.rs     WAIVED -> none
+                                     narrow.rs  WAIVED -> none
+                                     sqlite.rs  WAIVED -> none
+                                     testkit.rs WAIVED -> none
+```
+
+The consequence worth writing down: **`look` lives in `recipe.rs`**, so the shape
+of the query — where candidates come from, in what order they are fetched — is
+inside all four closures. Changing it is a `rebase --all` in every repository
+using these probes, whether or not a single answer moves. Anything that will
+have to change when the index lands belongs in a waived file *before* then, and
+the switchover has to be one commit.
+
+Use `gmr probes list` to read the four versions; do not write a second
+implementation of this hash to check them, because a copy that drifts would
+answer confidently and wrongly about exactly the thing this file exists to make
+honest.
+
 **`eligible` is the reason `cache.rs` can stay out.** Which files reach `collect`
 is now declared by each extractor and hashed with it (see [[survey-recipe]]);
 what is left in `cache.rs` is freshness, and freshness cannot change a pure
