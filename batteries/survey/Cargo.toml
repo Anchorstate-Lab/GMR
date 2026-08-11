@@ -10,14 +10,28 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# ── 后端：一个 feature 一个，跟 gmr-store 同一个惯例。
+sqlite = ["dep:sqlx"]
+# 契约自带的参考实现。不是部署选项 —— 它撑不过进程重启。
+testkit = []
+
 [dependencies]
 gmr-probe = { path = "../../crates/gmr-probe" }
+async-trait = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+thiserror = { workspace = true }
+sqlx = { workspace = true, optional = true }
 
+# 测试跑一致性套件：两个后端各一遍。
 [dev-dependencies]
+gmr-survey = { path = ".", features = ["testkit"] }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

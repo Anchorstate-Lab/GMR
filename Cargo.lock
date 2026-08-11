@@ -600,11 +600,17 @@ dependencies = [
 name = "gmr-survey"
 version = "0.2.3"
 dependencies = [
+ "async-trait",
+ "chrono",
  "gmr-probe",
+ "gmr-survey",
  "serde",
  "serde_json",
  "sha2",
+ "sqlx",
  "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
