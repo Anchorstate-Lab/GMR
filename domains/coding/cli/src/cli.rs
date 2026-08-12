@@ -129,38 +129,11 @@ pub enum Command {
         env: Vec<String>,
     },
 
-    /// Look somewhere else. Needs --why, and the reason is sealed.
+    /// Change one criterion by hand: the probe, the transition table, the
+    /// terminal set, or the state itself — exactly one. Needs --why, and the
+    /// reason is sealed.
     #[command(hide = true)]
-    Reprobe {
-        key: String,
-        /// The probe to look with, by name.
-        #[arg(long)]
-        probe: String,
-        #[arg(long, default_value = "{}")]
-        params: String,
-        #[arg(long)]
-        why: String,
-    },
-
-    /// Change what counts as a change. Needs --why, and the reason is sealed.
-    #[command(hide = true)]
-    Retransition {
-        key: String,
-        #[arg(long = "rule", value_name = "GUARD => NEW_STATE", required = true)]
-        rules: Vec<String>,
-        #[arg(long)]
-        why: String,
-    },
-
-    /// Change what is irreversible. Needs --why, and the reason is sealed.
-    #[command(hide = true)]
-    Reterminal {
-        key: String,
-        #[arg(long = "terminal", value_delimiter = ',', required = true)]
-        terminal: Vec<String>,
-        #[arg(long)]
-        why: String,
-    },
+    Revise(ReviseArgs),
 
     /// Recapture against the instrument this build has. Needs --why, and the
     /// reason is sealed.
@@ -170,16 +143,6 @@ pub enum Command {
         /// Every anchor standing on a reading a different instrument took.
         #[arg(long)]
         all: bool,
-        #[arg(long)]
-        why: String,
-    },
-
-    /// Move the state directly. Needs --why, and the reason is sealed.
-    #[command(hide = true)]
-    Restate {
-        key: String,
-        #[arg(long)]
-        state: String,
         #[arg(long)]
         why: String,
     },
@@ -312,6 +275,29 @@ pub struct OpenArgs {
     pub supersedes: Option<String>,
     #[arg(long, requires = "supersedes")]
     pub why: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct ReviseArgs {
+    pub key: String,
+    /// Look somewhere else, by probe name.
+    #[arg(long)]
+    pub probe: Option<String>,
+    #[arg(long, default_value = "{}")]
+    pub params: String,
+    /// Change what counts as a change.
+    #[arg(long = "rule", value_name = "GUARD => NEW_STATE")]
+    pub rules: Vec<String>,
+    /// Change what is irreversible.
+    #[arg(long = "terminal", value_delimiter = ',')]
+    pub terminal: Vec<String>,
+    /// Move the state directly, as a JSON object. Never derived from a
+    /// declaration — there is no declared `state` facet to diff against, so
+    /// this is the one always-manual form.
+    #[arg(long)]
+    pub state: Option<String>,
+    #[arg(long)]
+    pub why: String,
 }
 
 #[cfg(test)]

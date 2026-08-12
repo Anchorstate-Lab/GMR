@@ -178,22 +178,8 @@ async fn served(
             verbs::accept::run(&rt, &root, key, why, asked, all, json).await
         }
         Command::Read { key } => verbs::read::run(&rt, key, json).await,
-        Command::Reprobe {
-            key,
-            probe,
-            params,
-            why,
-        } => verbs::reprobe::run(&rt, &root, key, probe, params, why, json).await,
-        Command::Retransition { key, rules, why } => {
-            verbs::retransition::run(&rt, key, rules, why, json).await
-        }
-        Command::Reterminal { key, terminal, why } => {
-            verbs::reterminal::run(&rt, key, terminal, why, json).await
-        }
+        Command::Revise(args) => verbs::revise::run(&rt, &root, args, json).await,
         Command::Rebase { keys, all, why } => verbs::rebase::run(&rt, keys, all, why, json).await,
-        Command::Restate { key, state, why } => {
-            verbs::restate::run(&rt, key, state, why, json).await
-        }
         Command::Bind {
             path,
             anchors,

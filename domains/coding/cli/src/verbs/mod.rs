@@ -19,11 +19,8 @@ pub mod publish;
 pub mod read;
 pub mod reaffirm;
 pub mod rebase;
-pub mod reprobe;
 pub mod requeue;
-pub mod restate;
-pub mod reterminal;
-pub mod retransition;
+pub mod revise;
 pub mod status;
 pub mod sync;
 
