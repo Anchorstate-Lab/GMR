@@ -6,7 +6,7 @@ use crate::error::CliError;
 use crate::probes::Catalog;
 use crate::rules;
 use crate::verbs::sealed;
-use crate::verbs::sync::{AnchorDecl, Context, DEFAULT_FILE, differs, merged, read_declared};
+use crate::verbs::sync::{self, AnchorDecl, Context, DEFAULT_FILE, read_declared};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum What {
@@ -57,15 +57,12 @@ async fn pending(
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, &ctx.catalog)?;
-    let decl = merged(&declared, &notes)
-        .into_iter()
-        .find(|d| d.key == key.as_str())
-        .cloned();
+    let scanned = crate::memories::scan(root, &ctx.catalog)?;
+    let decls = sync::merged(&declared, &scanned.notes);
 
-    let facets = match &decl {
-        Some(d) => differs(&view.anchor, d, &ctx)?,
-        None => Vec::new(),
+    let (facets, decl) = match sync::standing(&view, &decls, &scanned, &ctx)? {
+        sync::Standing::Drifted { decl, facets } => (facets, Some(decl.clone())),
+        _ => (Vec::new(), None),
     };
 
     Ok((
@@ -109,19 +106,14 @@ async fn declaration_drifted(rt: &Runtime, root: &Path) -> Result<Vec<AnchorKey>
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, &ctx.catalog)?;
-    let decls = merged(&declared, &notes);
-
-    let mut out = Vec::new();
-    for view in rt.read_all().await? {
-        let Some(d) = decls.iter().find(|d| d.key == view.key.as_str()) else {
-            continue;
-        };
-        if !view.closed && !differs(&view.anchor, d, &ctx)?.is_empty() {
-            out.push(view.key.clone());
-        }
-    }
-    Ok(out)
+    let scanned = crate::memories::scan(root, &ctx.catalog)?;
+    let decls = sync::merged(&declared, &scanned.notes);
+    let views = rt.read_all().await?;
+    Ok(sync::audit(&views, &decls, &scanned, &ctx)?
+        .drifted
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect())
 }
 
 pub async fn run(

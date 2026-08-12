@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use gmr::{
-    Anchor, AnchorKey, OpenRequest, ProbeRef, Ref, Retain, RunSettings, Runtime, State, Transitions,
+    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Ref, Retain, RunSettings, Runtime, State,
+    Transitions,
 };
 use serde::Deserialize;
 
@@ -393,6 +394,76 @@ pub fn differs(
         facets.push("terminal");
     }
     Ok(facets)
+}
+
+/// Where one live anchor stands against the declaration its key resolves to.
+pub enum Standing<'a> {
+    Matches,
+    Drifted {
+        decl: &'a AnchorDecl,
+        facets: Vec<&'static str>,
+    },
+    Unreadable {
+        reason: String,
+    },
+    Undeclared,
+}
+
+/// Classify one anchor against `decls` (see `merged`) and `scanned` (see `memories::scan`).
+/// `Unreadable` takes priority over `Undeclared`: a memory that named this anchor but whose
+/// note this run could not read is not the same fact as no note naming it at all.
+pub fn standing<'a>(
+    view: &AnchorView,
+    decls: &[&'a AnchorDecl],
+    scanned: &crate::memories::Scanned,
+    ctx: &Context,
+) -> Result<Standing<'a>, CliError> {
+    match decls.iter().find(|d| d.key == view.key.as_str()) {
+        Some(decl) => {
+            let facets = differs(&view.anchor, decl, ctx)?;
+            Ok(match facets.is_empty() {
+                true => Standing::Matches,
+                false => Standing::Drifted { decl, facets },
+            })
+        }
+        None => match scanned.blocked_key(view.key.as_str()) {
+            Some(f) => Ok(Standing::Unreadable { reason: f.line() }),
+            None if !view.memories.is_empty() => Ok(Standing::Undeclared),
+            None => Ok(Standing::Matches),
+        },
+    }
+}
+
+#[derive(Default)]
+pub struct Audit {
+    pub drifted: Vec<(AnchorKey, String)>,
+    pub unreadable: Vec<(AnchorKey, String)>,
+    pub undeclared: Vec<AnchorKey>,
+}
+
+/// The one walk of "declared vs. live" that `check`, `doctor`, `status` and `accept` each
+/// used to do independently — see `memories/cli-criteria-audit.md` for why that cost a bug.
+pub fn audit<'a>(
+    views: impl IntoIterator<Item = &'a AnchorView>,
+    decls: &[&AnchorDecl],
+    scanned: &crate::memories::Scanned,
+    ctx: &Context,
+) -> Result<Audit, CliError> {
+    let mut out = Audit::default();
+    for view in views {
+        if view.closed {
+            continue;
+        }
+        match standing(view, decls, scanned, ctx)? {
+            Standing::Matches => {}
+            Standing::Drifted { facets, .. } => {
+                out.drifted.push((view.key.clone(), facets.join(" · ")))
+            }
+            Standing::Unreadable { reason } => out.unreadable.push((view.key.clone(), reason)),
+            Standing::Undeclared => out.undeclared.push(view.key.clone()),
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

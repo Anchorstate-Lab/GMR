@@ -1,8 +1,10 @@
 use std::path::Path;
 
-use gmr::Runtime;
+use gmr::{AnchorKey, Runtime};
 
 use crate::error::CliError;
+use crate::probes::Catalog;
+use crate::verbs::sync::{self, Context, DEFAULT_FILE, read_declared};
 
 fn unresolvable(rt: &Runtime, views: &[&gmr::AnchorView]) -> Vec<String> {
     views
@@ -16,21 +18,18 @@ fn versioning_is_broken(root: &Path) -> bool {
     !root.join(".git").exists()
 }
 
+/// Same walk as `check.rs#criteria`'s `undeclared` bucket, run over `live` doctor already
+/// has in hand instead of a per-key async re-read: see `memories/cli-doctor-run.md`.
 pub fn undeclared(
     root: &Path,
+    catalog: Catalog,
     live: &[&gmr::AnchorView],
     scanned: &crate::memories::Scanned,
-) -> Result<Vec<String>, CliError> {
-    use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
+) -> Result<Vec<AnchorKey>, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let decls = merged(&declared, &scanned.notes);
-    Ok(live
-        .iter()
-        .filter(|v| !v.memories.is_empty())
-        .filter(|v| !decls.iter().any(|d| d.key == v.key.as_str()))
-        .filter(|v| scanned.blocked_key(v.key.as_str()).is_none())
-        .map(|v| v.key.to_string())
-        .collect())
+    let decls = sync::merged(&declared, &scanned.notes);
+    let ctx = Context { catalog };
+    Ok(sync::audit(live.iter().copied(), &decls, scanned, &ctx)?.undeclared)
 }
 
 pub async fn run(
@@ -60,7 +59,8 @@ pub async fn run(
     let catalog = crate::probes::Catalog::load(root)?;
     let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
     let scanned = crate::memories::scan(root, &catalog)?;
-    let undeclared = undeclared(root, &live, &scanned)?;
+    let undeclared_keys = undeclared(root, catalog, &live, &scanned)?;
+    let undeclared: Vec<&str> = undeclared_keys.iter().map(|k| k.as_str()).collect();
     let mut faults = scanned.faults;
     faults.extend(watch);
     faults.sort_by(|a, b| (b.weight, &a.note, a.code).cmp(&(a.weight, &b.note, b.code)));

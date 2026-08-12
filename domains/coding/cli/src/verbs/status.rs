@@ -4,7 +4,7 @@ use gmr::{AnchorView, Runtime};
 
 use crate::error::CliError;
 use crate::probes::Catalog;
-use crate::verbs::sync::{Context, DEFAULT_FILE, differs, merged, read_declared};
+use crate::verbs::sync::{self, Audit, Context, DEFAULT_FILE, read_declared};
 
 fn axes_line(view: &AnchorView) -> Option<String> {
     let v = view.state.as_value().get("v")?.as_object()?;
@@ -52,29 +52,16 @@ pub async fn run(
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
     let scanned = crate::memories::scan(root, &ctx.catalog)?;
-    let decls = merged(&declared, &scanned.notes);
+    let decls = sync::merged(&declared, &scanned.notes);
+    let Audit {
+        drifted,
+        unreadable,
+        undeclared,
+    } = sync::audit(live.iter().copied(), &decls, &scanned, &ctx)?;
 
     let mut rows = Vec::new();
-    let mut drifted = Vec::new();
-    let mut unreadable = Vec::new();
     for view in &live {
         let shape = crate::shapes::name_of(&view.anchor.transitions).unwrap_or("custom");
-        match decls.iter().find(|d| d.key == view.key.as_str()) {
-            Some(decl) => {
-                let facets = differs(&view.anchor, decl, &ctx)?;
-                if !facets.is_empty() {
-                    drifted.push((view.key.to_string(), facets.join(" · ")));
-                }
-            }
-            None => {
-                if let Some(f) = scanned
-                    .blocked()
-                    .find(|f| f.key.as_deref() == Some(view.key.as_str()))
-                {
-                    unreadable.push((view.key.to_string(), f.line()));
-                }
-            }
-        }
         let memories: Vec<(String, bool)> = view
             .memories
             .iter()
@@ -108,6 +95,7 @@ pub async fn run(
                 "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
                     "anchor": k, "reason": r
                 })).collect::<Vec<_>>(),
+                "criteria_undeclared": undeclared,
             })
         );
         return Ok(0);
@@ -168,6 +156,15 @@ pub async fn run(
         );
         for (key, reason) in &unreadable {
             println!("  ?! {key}  ({reason})");
+        }
+    }
+    if !undeclared.is_empty() {
+        println!(
+            "\n{} anchors are supervised by no note this build can read:",
+            undeclared.len()
+        );
+        for key in &undeclared {
+            println!("  ?? {key}");
         }
     }
     Ok(0)

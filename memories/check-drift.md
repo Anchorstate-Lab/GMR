@@ -1,17 +1,21 @@
 ---
 about:
+  - domains/coding/cli/src/verbs/sync.rs#Standing
+  - domains/coding/cli/src/verbs/sync.rs#Audit
+  - domains/coding/cli/src/verbs/sync.rs#standing
+  - domains/coding/cli/src/verbs/sync.rs#audit
   - domains/coding/cli/src/verbs/check.rs#criteria
-  - domains/coding/cli/src/verbs/check.rs#Criteria
-  - domains/coding/cli/src/verbs/mod.rs#swapped
   - domains/coding/cli/src/verbs/doctor.rs#undeclared
+  - domains/coding/cli/src/verbs/mod.rs#swapped
 watch: [sig, logic]
 ---
 
 # check has to say when it does not hold itself
 
 Four things can void the conclusions check printed above, with different causes and
-different remedies, so they are four reports. Three come out of one pass over the
-anchors (`Criteria`) and one is measured separately:
+different remedies, so they are four reports. Three come out of one classification
+(`sync::standing`, batched over a view set by `sync::audit`) and one is measured
+separately:
 
 | | says | remedy |
 |---|---|---|
@@ -24,9 +28,10 @@ All print last, each carrying its own remedy verb.
 
 ## An anchor whose note is gone is not an anchor that agrees
 
-The three `Criteria` reports are the three ways one loop arm can fail to find a
-declaration for a key that is in the journal. Two of them are loud. The third
-was a bare `continue`: delete the note, and the anchor kept its journal, kept
+`Standing::{Drifted, Unreadable, Undeclared}` are the three ways `sync::standing`
+can fail to find a clean match for a key that is in the journal. Two of them are
+loud. The third used to be a bare `continue` in a copy of this loop that lived
+inside `check.rs` alone: delete the note, and the anchor kept its journal, kept
 being observed, kept answering — while `differs` was never called on it, because
 there was nothing left to compare against. Deleting a note is how an anchor
 stops being supervised without anybody closing it, and until this report existed
@@ -37,6 +42,19 @@ it was the quietest way to do it.
 still fetch — which is exactly why it keeps working and why nothing complained.
 The predicate is therefore "has memories, and no declaration", and `gmr anchor`
 cannot trip it because it writes the note it declares from.
+
+`check`, `doctor`, `status` and `accept` each used to run this same "declared vs.
+live" walk as an independent, hand-written copy — and the fix for `undeclared`
+above had to be written once for `check.rs` and, in a separate commit, a second
+time for `doctor.rs`, because they were never the same function to begin with. A
+third divergence (an unrouted note reported by `doctor` as deleted rather than
+unreadable) landed and was fixed the same way, again separately. `sync::standing`
+classifies one anchor; `sync::audit` batches it over a view set. `check` still
+fetches its views with a per-key `rt.read` (it may be given a subset of keys),
+`doctor`/`status` pass in the `live` slice they already hold from `rt.read_all`,
+and `accept` calls `standing` directly for a single anchor's `Pending` facets —
+but all four now go through the one classification, so a fourth divergence of
+the same kind cannot happen silently again.
 
 # When the criteria are drifting, nothing check said above counts
 

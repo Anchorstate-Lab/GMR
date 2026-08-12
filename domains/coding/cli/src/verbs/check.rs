@@ -1,56 +1,28 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, Observed, Runtime};
+use gmr::{AnchorKey, AnchorView, Observed, Runtime};
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
 use crate::probes::Catalog;
-use crate::verbs::sync::{Context, DEFAULT_FILE, differs, merged, read_declared};
-
-type Facets = Vec<(AnchorKey, String)>;
-
-#[derive(Default)]
-struct Criteria {
-    drifted: Facets,
-    unreadable: Facets,
-    undeclared: Vec<AnchorKey>,
-}
+use crate::verbs::sync::{self, Audit, Context, DEFAULT_FILE, read_declared};
 
 async fn criteria(
     rt: &Runtime,
     root: &Path,
     catalog: Catalog,
     keys: &[AnchorKey],
-) -> Result<Criteria, CliError> {
+) -> Result<Audit, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
     let scanned = crate::memories::scan(root, &catalog)?;
-    let decls = merged(&declared, &scanned.notes);
+    let decls = sync::merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
 
-    let mut out = Criteria::default();
+    let mut views: Vec<AnchorView> = Vec::with_capacity(keys.len());
     for key in keys {
-        let Some(decl) = decls.iter().find(|d| d.key == key.as_str()) else {
-            match scanned.blocked_key(key.as_str()) {
-                Some(f) => out.unreadable.push((key.clone(), f.line())),
-                None => {
-                    let view = rt.read(key).await?;
-                    if !view.closed && !view.memories.is_empty() {
-                        out.undeclared.push(key.clone());
-                    }
-                }
-            }
-            continue;
-        };
-        let view = rt.read(key).await?;
-        if view.closed {
-            continue;
-        }
-        let facets = differs(&view.anchor, decl, &ctx)?;
-        if !facets.is_empty() {
-            out.drifted.push((key.clone(), facets.join(" · ")));
-        }
+        views.push(rt.read(key).await?);
     }
-    Ok(out)
+    sync::audit(&views, &decls, &scanned, &ctx)
 }
 
 pub async fn run(
@@ -65,7 +37,7 @@ pub async fn run(
     };
     let catalog = Catalog::load(root)?;
     let (subs, unwatchable) = Subscriptions::load(root, &catalog)?;
-    let Criteria {
+    let Audit {
         drifted,
         unreadable,
         undeclared,

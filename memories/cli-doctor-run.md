@@ -26,15 +26,16 @@ informational (exit 0) because they can be entirely normal states
 (criteria written before implementation, a probe temporarily failing)
 rather than something misconfigured.
 
-`undeclared` is computed by `doctor.rs#undeclared`, a second walk over the
-same `decls` `check.rs#criteria` builds for its own `undeclared` report —
-duplicated because doctor already has `live: &[AnchorView]` in hand and
-computing over that is cheaper than the async re-read per key `criteria`
-does. The one fact both walks must not diverge on is "is this key named by
-a blocking fault" (an `unrouted` `about:` is `unreadable`, not
-`undeclared` — the note is right there, it just failed to route). That
-fact is not re-derived twice: both call `Scanned::blocked_key`, so a note
-that fails to route cannot be misreported as one that was never written.
+`undeclared` is computed by `doctor.rs#undeclared`, which now calls the one
+classifier both `doctor` and `check.rs#criteria` share — see
+[[check-drift]] for `sync::standing`/`sync::audit`. What doctor still keeps
+for itself is *which views it hands in*: it already has `live: &[AnchorView]`
+from `rt.read_all`, so it passes that slice straight to `sync::audit`, where
+`check.rs#criteria` does an async `rt.read` per key (it may be asked about a
+subset of keys `read_all` would not give it). The classification — is this
+key drifted, unreadable, or undeclared — is one function either way, so the
+two callers cannot again disagree on the answer, only on how many anchors
+they're asking about.
 
 ## When this changes, ask
 
