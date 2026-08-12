@@ -9,26 +9,38 @@ use crate::verbs::sync::{Context, DEFAULT_FILE, differs, merged, read_declared};
 
 type Facets = Vec<(AnchorKey, String)>;
 
-async fn drifted(
+#[derive(Default)]
+struct Criteria {
+    drifted: Facets,
+    unreadable: Facets,
+    undeclared: Vec<AnchorKey>,
+}
+
+async fn criteria(
     rt: &Runtime,
     root: &Path,
     catalog: Catalog,
     keys: &[AnchorKey],
-) -> Result<(Facets, Facets), CliError> {
+) -> Result<Criteria, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
     let scanned = crate::memories::scan(root, &catalog)?;
     let decls = merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
 
-    let mut drifted = Vec::new();
-    let mut unreadable = Vec::new();
+    let mut out = Criteria::default();
     for key in keys {
         let Some(decl) = decls.iter().find(|d| d.key == key.as_str()) else {
-            if let Some(f) = scanned
+            match scanned
                 .blocked()
                 .find(|f| f.key.as_deref() == Some(key.as_str()))
             {
-                unreadable.push((key.clone(), f.line()));
+                Some(f) => out.unreadable.push((key.clone(), f.line())),
+                None => {
+                    let view = rt.read(key).await?;
+                    if !view.closed && !view.memories.is_empty() {
+                        out.undeclared.push(key.clone());
+                    }
+                }
             }
             continue;
         };
@@ -38,10 +50,10 @@ async fn drifted(
         }
         let facets = differs(&view.anchor, decl, &ctx)?;
         if !facets.is_empty() {
-            drifted.push((key.clone(), facets.join(" · ")));
+            out.drifted.push((key.clone(), facets.join(" · ")));
         }
     }
-    Ok((drifted, unreadable))
+    Ok(out)
 }
 
 pub async fn run(
@@ -56,7 +68,11 @@ pub async fn run(
     };
     let catalog = Catalog::load(root)?;
     let (subs, unwatchable) = Subscriptions::load(root, &catalog)?;
-    let (drifted, unreadable) = drifted(rt, root, catalog, &keys).await?;
+    let Criteria {
+        drifted,
+        unreadable,
+        undeclared,
+    } = criteria(rt, root, catalog, &keys).await?;
     let swapped = super::swapped(rt, &keys).await?;
 
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<String>)> = Vec::new();
@@ -100,6 +116,7 @@ pub async fn run(
         || !unseen.is_empty()
         || !drifted.is_empty()
         || !unreadable.is_empty()
+        || !undeclared.is_empty()
         || !unwatchable.is_empty()
         || !swapped.is_empty();
 
@@ -122,6 +139,7 @@ pub async fn run(
                 "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
                     "anchor": k, "reason": r
                 })).collect::<Vec<_>>(),
+                "criteria_undeclared": undeclared,
                 "watch_invalid": unwatchable.iter().map(|f| serde_json::json!({
                     "note": f.note, "key": f.key, "code": f.code, "detail": f.detail
                 })).collect::<Vec<_>>(),
@@ -156,6 +174,7 @@ pub async fn run(
                 && unclaimed.is_empty()
                 && drifted.is_empty()
                 && unreadable.is_empty()
+                && undeclared.is_empty()
                 && unwatchable.is_empty()
                 && swapped.is_empty() =>
         {
@@ -201,6 +220,23 @@ pub async fn run(
             println!("  ?! {key}  ({reason})");
         }
         println!("\n     gmr sync   shows the same reason against the note that named it");
+    }
+
+    if !undeclared.is_empty() {
+        println!(
+            "\n{} of {} are supervised by no note this build can read.\n\
+             A memory is bound to each, so they were declared once — and no note in\n\
+             `memories/` declares them now. They are still observed, but their criteria\n\
+             are compared against nothing, so a declaration that drifted away from them\n\
+             cannot be reported: deleting the note is how an anchor stops being watched\n\
+             without anybody closing it.",
+            undeclared.len(),
+            keys.len()
+        );
+        for key in &undeclared {
+            println!("  ?? {key}");
+        }
+        println!("\n     gmr close   if it has served its purpose, or write the note again");
     }
 
     if !unwatchable.is_empty() {

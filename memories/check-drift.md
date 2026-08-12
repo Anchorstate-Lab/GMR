@@ -1,16 +1,42 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/check.rs#drifted
+  - domains/coding/cli/src/verbs/check.rs#criteria
+  - domains/coding/cli/src/verbs/check.rs#Criteria
   - domains/coding/cli/src/verbs/mod.rs#swapped
+  - domains/coding/cli/src/verbs/doctor.rs#undeclared
 watch: [sig, logic]
 ---
 
 # check has to say when it does not hold itself
 
-Two things can void the conclusions check printed above, with different causes and
-different remedies, so they are two reports: `drifted` says the **criteria** do not
-hold; `swapped` says the **readings** are not comparable. Both print last, each
-carrying its own remedy verb.
+Four things can void the conclusions check printed above, with different causes and
+different remedies, so they are four reports. Three come out of one pass over the
+anchors (`Criteria`) and one is measured separately:
+
+| | says | remedy |
+|---|---|---|
+| `drifted` | the **criteria** do not hold | `accept --criteria` |
+| `unreadable` | a note names this coordinate and this build could not turn it into a declaration | fix the coordinate |
+| `undeclared` | a memory is bound and **no note declares it at all** | `close`, or write the note again |
+| `swapped` | the **readings** are not comparable | `rebase` |
+
+All print last, each carrying its own remedy verb.
+
+## An anchor whose note is gone is not an anchor that agrees
+
+The three `Criteria` reports are the three ways one loop arm can fail to find a
+declaration for a key that is in the journal. Two of them are loud. The third
+was a bare `continue`: delete the note, and the anchor kept its journal, kept
+being observed, kept answering — while `differs` was never called on it, because
+there was nothing left to compare against. Deleting a note is how an anchor
+stops being supervised without anybody closing it, and until this report existed
+it was the quietest way to do it.
+
+`barren` is not the same thing and does not cover it: barren is an anchor with
+**no memory bound at all**. This one has a memory, bound at a version git can
+still fetch — which is exactly why it keeps working and why nothing complained.
+The predicate is therefore "has memories, and no declaration", and `gmr anchor`
+cannot trip it because it writes the note it declares from.
 
 # When the criteria are drifting, nothing check said above counts
 

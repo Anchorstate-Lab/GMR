@@ -463,7 +463,11 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         assert_eq!(blocked.len(), 1);
         assert_eq!(blocked[0].note, "memories/bad.md");
         assert_eq!(blocked[0].key, None);
-        assert!(blocked[0].line().contains("bad.md"), "{}", blocked[0].line());
+        assert!(
+            blocked[0].line().contains("bad.md"),
+            "{}",
+            blocked[0].line()
+        );
     }
 
     #[test]

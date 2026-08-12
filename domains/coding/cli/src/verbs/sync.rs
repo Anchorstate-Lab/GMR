@@ -155,7 +155,7 @@ pub async fn run(
     let mut warnings = Vec::new();
 
     let mut scheduled = 0;
-    for decl in merged(&declared, &notes) {
+    for decl in merged(&declared, notes) {
         let key = AnchorKey::new(decl.key.clone());
         if !dry_run && rt.ensure_scheduled(&key).await? {
             scheduled += 1;
@@ -201,7 +201,7 @@ pub async fn run(
         opened.push(decl.key.clone());
     }
 
-    let (bound, renamed) = align_bindings(rt, &notes, dry_run).await?;
+    let (bound, renamed) = align_bindings(rt, notes, dry_run).await?;
 
     if json {
         println!(

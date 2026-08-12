@@ -16,6 +16,22 @@ fn versioning_is_broken(root: &Path) -> bool {
     !root.join(".git").exists()
 }
 
+pub fn undeclared(
+    root: &Path,
+    live: &[&gmr::AnchorView],
+    notes: &[crate::memories::Note],
+) -> Result<Vec<String>, CliError> {
+    use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
+    let declared = read_declared(root, DEFAULT_FILE)?;
+    let decls = merged(&declared, notes);
+    Ok(live
+        .iter()
+        .filter(|v| !v.memories.is_empty())
+        .filter(|v| !decls.iter().any(|d| d.key == v.key.as_str()))
+        .map(|v| v.key.to_string())
+        .collect())
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
@@ -42,16 +58,21 @@ pub async fn run(
     let provider_warnings = rt.memory().provider_warnings();
     let catalog = crate::probes::Catalog::load(root)?;
     let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
-    let mut faults = crate::memories::scan(root, &catalog)?.faults;
+    let scanned = crate::memories::scan(root, &catalog)?;
+    let undeclared = undeclared(root, &live, &scanned.notes)?;
+    let mut faults = scanned.faults;
     faults.extend(watch);
     faults.sort_by(|a, b| (b.weight, &a.note, a.code).cmp(&(a.weight, &b.note, b.code)));
     let (breaking, advisory): (Vec<_>, Vec<_>) = faults.iter().partition(|f| f.breaks());
-    let exit_code =
-        if stranded.is_empty() && provider_warnings.is_empty() && breaking.is_empty() {
-            0
-        } else {
-            1
-        };
+    let exit_code = if stranded.is_empty()
+        && provider_warnings.is_empty()
+        && breaking.is_empty()
+        && undeclared.is_empty()
+    {
+        0
+    } else {
+        1
+    };
     let states: Vec<String> = live
         .iter()
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))
@@ -63,7 +84,8 @@ pub async fn run(
             serde_json::json!({
                 "anchors": views.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
-                "stranded": stranded, "content_versioning": !no_git,
+                "stranded": stranded, "undeclared": undeclared,
+                "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
                 "notes": faults.iter().map(|f| serde_json::json!({
                     "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
@@ -99,6 +121,12 @@ pub async fn run(
         println!(
             "barren    {}\n          <- observing a position where nobody has written a memory",
             barren.join(", ")
+        );
+    }
+    if !undeclared.is_empty() {
+        println!(
+            "undeclared {}\n           <- a memory is bound to this anchor and no note declares it any more, so nothing compares its criteria against anything. The note was deleted or its coordinate edited away",
+            undeclared.join(", ")
         );
     }
     for f in &breaking {

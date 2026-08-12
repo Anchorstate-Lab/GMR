@@ -276,6 +276,31 @@ out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 0 ] || fail "check should be 0 after accept, got $code" "$out"
 
+# Deleting the note is how an anchor stops being supervised without anybody
+# closing it. The anchor keeps its journal, keeps being observed, keeps
+# answering -- and nothing compares its criteria against anything, because
+# there is no declaration left to compare against. That used to be a `continue`
+# nobody could see.
+step "an anchor no note declares any more says so"
+mv "$repo/memories/session-rotate.md" "$repo/session-rotate.md.away"
+set +e
+out=$("$gmr" --repo "$repo" check 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] || fail "an anchor nothing declares should not report a clean run" "$out"
+echo "$out" | grep -q 'supervised by no note' \
+    || fail "the orphaned anchor was skipped in silence" "$out"
+echo "$out" | grep -q "$key" || fail "did not name which anchor lost its note" "$out"
+
+set +e
+out=$("$gmr" --repo "$repo" doctor 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] || fail "doctor called a repository healthy while an anchor had no note" "$out"
+echo "$out" | grep -q 'undeclared' || fail "doctor did not report the anchor as undeclared" "$out"
+
+mv "$repo/session-rotate.md.away" "$repo/memories/session-rotate.md"
+"$gmr" --repo "$repo" check "$key" >/dev/null \
+    || fail "putting the note back did not restore the anchor to a clean check"
+
 # When a letter is mistyped, what it says has to be "there is no such anchor",
 # and it has to point at the closest one -- not "the lease is held by someone
 # else", which reports our failure as a state of the world.
