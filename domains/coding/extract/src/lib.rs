@@ -108,21 +108,18 @@ pub fn recipe(name: &str) -> Option<&'static gmr_survey::Recipe> {
     RECIPES.into_iter().find(|r| r.name == name)
 }
 
-pub fn for_extension(ext: &str) -> Option<&'static str> {
-    let reachable: Vec<&Vocabulary> = vocabularies().filter(|v| addressable(v.at)).collect();
-
-    if let Some(v) = reachable
-        .iter()
+pub fn declares(ext: &str) -> Option<&'static str> {
+    vocabularies()
+        .filter(|v| addressable(v.at))
         .find(|v| matches!(v.reads, Reads::Extensions(exts) if exts.contains(&ext)))
-    {
-        return Some(v.name);
-    }
+        .map(|v| v.name)
+}
 
-    let mut catchall = reachable
-        .iter()
-        .filter(|v| matches!(v.reads, Reads::Anything));
-    let first = catchall.next()?;
-    match catchall.next() {
+pub fn catchall() -> Option<&'static str> {
+    let mut anything =
+        vocabularies().filter(|v| addressable(v.at) && matches!(v.reads, Reads::Anything));
+    let first = anything.next()?;
+    match anything.next() {
         None => Some(first.name),
         Some(_) => None,
     }
@@ -252,8 +249,8 @@ mod tests {
             .collect();
         assert!(
             catchall.len() <= 1,
-            "for_extension derives its fallback by finding the one addressable probe that \
-             reads anything; two candidates ({catchall:?}) means the fallback is decided by \
+            "`catchall` derives the fallback by finding the one addressable probe that reads \
+             anything; two candidates ({catchall:?}) means the fallback is decided by \
              iteration order instead of being provably unique"
         );
     }
@@ -268,31 +265,25 @@ mod tests {
              of `at`, not be excluded by an empty `reads` list somebody remembered to leave \
              blank"
         );
-        assert_ne!(
-            for_extension("an-extension-only-name-map-would-otherwise-catch"),
-            Some("name-map")
-        );
+        assert_ne!(catchall(), Some("name-map"));
     }
 
     #[test]
-    fn for_extension_now_answers_for_what_used_to_be_opaque() {
-        assert_eq!(for_extension("ts"), Some("ast-map"));
+    fn what_a_probe_declares_and_what_merely_catches_the_rest_are_asked_separately() {
+        assert_eq!(declares("ts"), Some("ast-map"));
         assert_eq!(
-            for_extension("md"),
+            declares("md"),
             Some("prose-map"),
             "prose-map's eligible rule was always `.md`; its routing table just never said so"
         );
         assert_eq!(
-            for_extension("sh"),
-            Some("addr-map"),
-            "no probe declares .sh, but addr-map's eligible rule is `true` for every path, \
-             and it is the only addressable probe that does — so it is the fallback, derived \
-             rather than named"
+            declares("sh"),
+            None,
+            "no builtin declares .sh. Answering `addr-map` here would fold the catchall into \
+             the same answer as a declaration, and a caller holding a probe that does declare \
+             .sh could never be asked before the fallback"
         );
-        assert_eq!(
-            for_extension("literally-anything-unlisted"),
-            Some("addr-map")
-        );
+        assert_eq!(catchall(), Some("addr-map"));
     }
 
     struct Fixture {

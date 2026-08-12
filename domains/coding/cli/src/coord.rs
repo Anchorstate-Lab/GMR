@@ -189,7 +189,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["path", "fingerprint"], facts = ["b
             "no probe declares `.proto`, but addr-map's own eligible rule is `true` for \
              every path and it is the only addressable builtin that says so — so it is the \
              derived fallback rather than a refusal. This coordinate used to be refused; \
-             see coding-extract's for_extension for where the fallback is derived",
+             see coding-extract's catchall for where the fallback is derived",
         );
         assert_eq!(
             routed.position,
@@ -198,19 +198,16 @@ obs = { schema = "gmr.probe-coord.v1", at = ["path", "fingerprint"], facts = ["b
     }
 
     #[test]
-    fn a_declared_probe_is_shadowed_by_the_builtin_catchall_on_its_own_extension() {
+    fn a_probe_that_names_an_extension_outranks_the_catchall_whoever_declared_it() {
         let (_d, c) = catalog();
         let routed = route("vendor/blob.bin", None, &c).unwrap();
         assert_eq!(
-            routed.probe, "addr-map",
-            "`blob-map` in this fixture declares `handles = [\"bin\"]`, but Catalog::\
-             for_extension tries the builtin roster first — a rule that predates this \
-             fallback and already shadowed a declared probe on any extension a builtin \
-             claimed. addr-map now claims every extension nothing more specific claims, so \
-             a declared probe can no longer be reached through `about:` shorthand for an \
-             extension the catchall would otherwise answer for. It is still reachable \
-             through the explicit `anchors:` form, which names a probe rather than \
-             inferring one from the extension",
+            routed.probe, "blob-map",
+            "`blob-map` declares `handles = [\"bin\"]` and the catchall declares nothing in \
+             particular, so the specific one answers. Asking the builtin roster first as a \
+             whole put a declared probe behind a fallback that claims every extension — the \
+             repository would install an instrument, get the fingerprint of the whole file \
+             instead, and be told nothing"
         );
     }
 

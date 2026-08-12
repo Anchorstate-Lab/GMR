@@ -333,7 +333,7 @@ impl Catalog {
     }
 
     pub fn for_extension(&self, ext: &str) -> Option<String> {
-        coding_extract::for_extension(ext)
+        coding_extract::declares(ext)
             .map(str::to_owned)
             .or_else(|| {
                 self.scripts
@@ -342,6 +342,7 @@ impl Catalog {
                     .map(|(n, _)| n.clone())
             })
             .or_else(|| self.recipes.for_extension(ext).map(str::to_owned))
+            .or_else(|| coding_extract::catchall().map(str::to_owned))
     }
 
     pub fn scripts(&self) -> impl Iterator<Item = (&str, &ScriptDecl)> {
