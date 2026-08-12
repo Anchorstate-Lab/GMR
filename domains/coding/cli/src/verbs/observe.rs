@@ -16,7 +16,7 @@ pub async fn run(
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
-    let subs = Subscriptions::load(root, &Catalog::load(root)?)?;
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?)?;
 
     let mut moved = 0;
     let mut handed = 0;

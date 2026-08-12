@@ -55,7 +55,7 @@ pub async fn run(
         None => rt.anchors().await?,
     };
     let catalog = Catalog::load(root)?;
-    let subs = Subscriptions::load(root, &catalog)?;
+    let (subs, unwatchable) = Subscriptions::load(root, &catalog)?;
     let (drifted, unreadable) = drifted(rt, root, catalog, &keys).await?;
     let swapped = super::swapped(rt, &keys).await?;
 
@@ -100,6 +100,7 @@ pub async fn run(
         || !unseen.is_empty()
         || !drifted.is_empty()
         || !unreadable.is_empty()
+        || !unwatchable.is_empty()
         || !swapped.is_empty();
 
     if json {
@@ -120,6 +121,9 @@ pub async fn run(
                 })).collect::<Vec<_>>(),
                 "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
                     "anchor": k, "reason": r
+                })).collect::<Vec<_>>(),
+                "watch_invalid": unwatchable.iter().map(|u| serde_json::json!({
+                    "note": u.note, "reason": u.reason
                 })).collect::<Vec<_>>(),
                 "instrument_swapped": swapped.iter().map(|(k, v)| serde_json::json!({
                     "anchor": k, "versions": v
@@ -152,6 +156,7 @@ pub async fn run(
                 && unclaimed.is_empty()
                 && drifted.is_empty()
                 && unreadable.is_empty()
+                && unwatchable.is_empty()
                 && swapped.is_empty() =>
         {
             println!("{} anchors, nothing moved.", keys.len())
@@ -196,6 +201,20 @@ pub async fn run(
             println!("  ?! {key}  ({reason})");
         }
         println!("\n     gmr sync   shows the same reason against the note that named it");
+    }
+
+    if !unwatchable.is_empty() {
+        println!(
+            "\n{} notes declare a `watch:` this run cannot make sense of:",
+            unwatchable.len()
+        );
+        for u in &unwatchable {
+            println!("  ?! {}  ({})", u.note, u.reason);
+        }
+        println!(
+            "\nEach of these is unwatched until fixed — not known to have drifted, just \
+             never checked."
+        );
     }
 
     if !swapped.is_empty() {

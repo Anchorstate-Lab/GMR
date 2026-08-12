@@ -8,7 +8,7 @@ use crate::probes::Catalog;
 
 pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError> {
     let p = rt.pass().await?;
-    let subs = Subscriptions::load(root, &Catalog::load(root)?)?;
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?)?;
 
     let mut moved = Vec::new();
     let mut unclaimed = Vec::new();
