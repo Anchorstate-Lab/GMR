@@ -51,8 +51,8 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let crate::memories::Scanned { notes, broken, .. } = crate::memories::scan(root, &ctx.catalog)?;
-    let decls = merged(&declared, &notes);
+    let scanned = crate::memories::scan(root, &ctx.catalog)?;
+    let decls = merged(&declared, &scanned.notes);
 
     let mut rows = Vec::new();
     let mut drifted = Vec::new();
@@ -67,11 +67,11 @@ pub async fn run(
                 }
             }
             None => {
-                if let Some(b) = broken
-                    .iter()
-                    .find(|b| b.key.as_deref() == Some(view.key.as_str()))
+                if let Some(f) = scanned
+                    .blocked()
+                    .find(|f| f.key.as_deref() == Some(view.key.as_str()))
                 {
-                    unreadable.push((view.key.to_string(), b.reason.clone()));
+                    unreadable.push((view.key.to_string(), f.line()));
                 }
             }
         }

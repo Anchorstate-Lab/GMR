@@ -5,8 +5,16 @@ use gmr::State;
 use serde_json::Value;
 
 use crate::error::CliError;
+use crate::memories::{Fault, Note, Weight};
 use crate::probes::Catalog;
 use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
+
+fn declaring(notes: &[Note], key: &str) -> String {
+    notes
+        .iter()
+        .find(|n| n.wants.iter().any(|w| w.key() == key))
+        .map_or_else(|| DEFAULT_FILE.to_owned(), |n| n.path.clone())
+}
 
 pub fn axes_set(state: &State) -> Option<Vec<String>> {
     let v = state.as_value().get("v").and_then(Value::as_object)?;
@@ -23,17 +31,12 @@ pub struct Subscriptions {
     per_note: BTreeMap<String, Vec<String>>,
 }
 
-pub struct Unwatchable {
-    pub note: String,
-    pub reason: String,
-}
-
 impl Subscriptions {
-    pub fn load(root: &Path, catalog: &Catalog) -> Result<(Self, Vec<Unwatchable>), CliError> {
+    pub fn load(root: &Path, catalog: &Catalog) -> Result<(Self, Vec<Fault>), CliError> {
         let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, catalog)?;
         let declared = read_declared(root, DEFAULT_FILE)?;
 
-        let mut broken = Vec::new();
+        let mut faults = Vec::new();
         let mut axes_by_anchor: BTreeMap<&str, Vec<&'static str>> = BTreeMap::new();
         for decl in merged(&declared, &notes) {
             let Some(name) = &decl.shape else { continue };
@@ -41,9 +44,12 @@ impl Subscriptions {
                 Ok(shape) => {
                     axes_by_anchor.insert(&decl.key, crate::shapes::axes_of(shape));
                 }
-                Err(e) => broken.push(Unwatchable {
-                    note: decl.key.clone(),
-                    reason: e.to_string(),
+                Err(e) => faults.push(Fault {
+                    note: declaring(&notes, &decl.key),
+                    key: Some(decl.key.clone()),
+                    code: "unknown-shape",
+                    detail: format!("`{}`: {e}", decl.key),
+                    weight: Weight::Breaks,
                 }),
             }
         }
@@ -56,13 +62,16 @@ impl Subscriptions {
                     continue;
                 };
                 if let Some(bad) = watch.iter().find(|w| !axes.contains(&w.as_str())) {
-                    broken.push(Unwatchable {
+                    faults.push(Fault {
                         note: note.path.clone(),
-                        reason: format!(
+                        key: Some(want.key().to_owned()),
+                        code: "watch-invalid",
+                        detail: format!(
                             "`watch: {bad}` names no axis of `{}`; it has {}",
                             want.key(),
                             axes.join(" · ")
                         ),
+                        weight: Weight::Breaks,
                     });
                     continue 'note;
                 }
@@ -70,7 +79,7 @@ impl Subscriptions {
             per_note.insert(note.path.clone(), watch.clone());
         }
 
-        Ok((Self { per_note }, broken))
+        Ok((Self { per_note }, faults))
     }
 
     pub fn delivers(
@@ -194,9 +203,9 @@ mod tests {
         assert_eq!(broken.len(), 1);
         assert_eq!(broken[0].note, "memories/bad.md");
         assert!(
-            broken[0].reason.contains("not_a_real_axis"),
+            broken[0].detail.contains("not_a_real_axis"),
             "{}",
-            broken[0].reason
+            broken[0].detail
         );
 
         let roster = crate::shapes::get("roster").ok();
@@ -204,6 +213,32 @@ mod tests {
         assert!(
             subs.delivers(roster, "memories/good.md", &moved_roll, true),
             "the well-formed note in the same load still narrows correctly"
+        );
+    }
+
+    #[test]
+    fn a_shape_this_build_does_not_ship_names_the_file_to_edit_not_the_anchor() {
+        let (d, c) = world(&[
+            ("src/a.rs", "fn a() {}"),
+            (
+                "memories/custom.md",
+                "---\nanchors:\n  - key: custom::thing\n    probe: ast-map\n    \
+                 position: { file: src/a.rs }\n    shape: no-such-shape\n---\n",
+            ),
+        ]);
+        let (_, faults) = Subscriptions::load(d.path(), &c).unwrap();
+        assert_eq!(faults.len(), 1);
+        assert_eq!(
+            faults[0].note, "memories/custom.md",
+            "the column a person reads to know what to open. It used to hold the anchor key, \
+             because this failure had a record type of its own whose `note` field nobody had \
+             to fill with a note"
+        );
+        assert_eq!(faults[0].key.as_deref(), Some("custom::thing"));
+        assert_eq!(
+            faults[0].code, "unknown-shape",
+            "an unknown shape has nothing to do with `watch:`, and was reported under \
+             `watch-invalid` for as long as the two shared one record"
         );
     }
 }

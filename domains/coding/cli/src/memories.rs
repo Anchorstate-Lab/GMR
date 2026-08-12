@@ -128,17 +128,33 @@ fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, String> {
         .map_err(|e| format!("frontmatter is not valid YAML: {e}"))
 }
 
-pub struct Broken {
-    pub note: String,
-    pub key: Option<String>,
-    pub reason: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Weight {
+    Advisory,
+    Breaks,
+    Blocks,
 }
 
-pub struct Lint {
+pub struct Fault {
     pub note: String,
+    pub key: Option<String>,
     pub code: &'static str,
     pub detail: String,
-    pub breaks: bool,
+    pub weight: Weight,
+}
+
+impl Fault {
+    pub fn breaks(&self) -> bool {
+        self.weight >= Weight::Breaks
+    }
+
+    pub fn blocks(&self) -> bool {
+        self.weight == Weight::Blocks
+    }
+
+    pub fn line(&self) -> String {
+        format!("{}: {}", self.note, self.detail)
+    }
 }
 
 fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
@@ -158,53 +174,42 @@ fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
     routed.probe == spec.probe && spec.position.as_ref() == Some(&routed.position)
 }
 
-fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Broken>, Vec<Lint>) {
-    let mut broken = Vec::new();
-    let mut lint = Vec::new();
+fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
+    let mut faults = Vec::new();
+    let at = |code, detail, weight| Fault {
+        note: rel.to_owned(),
+        key: None,
+        code,
+        detail,
+        weight,
+    };
 
     let text = match std::fs::read_to_string(root.join(rel)) {
         Ok(t) => t,
         Err(e) => {
-            broken.push(Broken {
-                note: rel.to_owned(),
-                key: None,
-                reason: format!("cannot read `{rel}`: {e}"),
-            });
-            lint.push(Lint {
-                note: rel.to_owned(),
-                code: "unreadable",
-                detail: format!("cannot read this file: {e}"),
-                breaks: true,
-            });
-            return (None, broken, lint);
+            faults.push(at(
+                "unreadable",
+                format!("cannot read this file: {e}"),
+                Weight::Blocks,
+            ));
+            return (None, faults);
         }
     };
     let fm = match frontmatter_of(&text) {
         Ok(Some(fm)) => fm,
         Ok(None) => {
-            lint.push(Lint {
-                note: rel.to_owned(),
-                code: "unclaimed",
-                detail: "no frontmatter, so this note names no anchor and nothing observes \
-                         whether what it says still holds"
+            faults.push(at(
+                "unclaimed",
+                "no frontmatter, so this note names no anchor and nothing observes whether \
+                 what it says still holds"
                     .to_owned(),
-                breaks: true,
-            });
-            return (None, broken, lint);
+                Weight::Breaks,
+            ));
+            return (None, faults);
         }
         Err(reason) => {
-            broken.push(Broken {
-                note: rel.to_owned(),
-                key: None,
-                reason: format!("{rel}: {reason}"),
-            });
-            lint.push(Lint {
-                note: rel.to_owned(),
-                code: "malformed",
-                detail: reason,
-                breaks: true,
-            });
-            return (None, broken, lint);
+            faults.push(at("malformed", reason, Weight::Blocks));
+            return (None, faults);
         }
     };
 
@@ -212,55 +217,48 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Brok
     let about = fm.about.map(OneOrMany::into_vec).unwrap_or_default();
     let subscribes = fm.watch.is_some() || fm.shape.is_some();
     if about.is_empty() && fm.anchors.is_empty() && subscribes {
-        lint.push(Lint {
-            note: rel.to_owned(),
-            code: "unclaimed",
-            detail: "`watch:` / `shape:` with no `about:` and no `anchors:` — they say how to \
-                     observe an anchor this note never names, so nothing observes whether what \
-                     it says still holds. An empty `anchors:` is how a note claims nothing on \
-                     purpose"
+        faults.push(at(
+            "unclaimed",
+            "`watch:` / `shape:` with no `about:` and no `anchors:` — they say how to observe \
+             an anchor this note never names, so nothing observes whether what it says still \
+             holds. An empty `anchors:` is how a note claims nothing on purpose"
                 .to_owned(),
-            breaks: true,
-        });
+            Weight::Breaks,
+        ));
     }
     for about in about {
         match from_about(&about, catalog, fm.shape.as_deref()) {
             Ok(decl) => wants.push(Want::Declared(Box::new(decl))),
-            Err(e) => {
-                lint.push(Lint {
-                    note: rel.to_owned(),
-                    code: "unrouted",
-                    detail: e.to_string(),
-                    breaks: true,
-                });
-                broken.push(Broken {
-                    note: rel.to_owned(),
-                    key: Some(about),
-                    reason: format!("{rel}: {e}"),
-                });
-            }
+            Err(e) => faults.push(Fault {
+                key: Some(about),
+                ..at("unrouted", e.to_string(), Weight::Blocks)
+            }),
         }
     }
     for entry in fm.anchors {
         match &entry {
-            Entry::Existing(key) => lint.push(Lint {
-                note: rel.to_owned(),
-                code: "bare-key",
-                detail: format!(
-                    "`{key}` binds without declaring; nothing else in this repo declares \
-                     anchors, so this one exists only if something already opened it"
-                ),
-                breaks: true,
+            Entry::Existing(key) => faults.push(Fault {
+                key: Some(key.clone()),
+                ..at(
+                    "bare-key",
+                    format!(
+                        "`{key}` binds without declaring; nothing else in this repo declares \
+                         anchors, so this one exists only if something already opened it"
+                    ),
+                    Weight::Breaks,
+                )
             }),
-            Entry::Declared(spec) if superfluous(spec, catalog) => lint.push(Lint {
-                note: rel.to_owned(),
-                code: "long-hand",
-                detail: format!(
-                    "`{}` states exactly what the coordinate already routes to; \
-                     `about: {}` says the same thing",
-                    spec.key, spec.key
-                ),
-                breaks: false,
+            Entry::Declared(spec) if superfluous(spec, catalog) => faults.push(Fault {
+                key: Some(spec.key.clone()),
+                ..at(
+                    "long-hand",
+                    format!(
+                        "`{}` states exactly what the coordinate already routes to; \
+                         `about: {}` says the same thing",
+                        spec.key, spec.key
+                    ),
+                    Weight::Advisory,
+                )
             }),
             Entry::Declared(_) => {}
         }
@@ -269,38 +267,44 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Brok
             Entry::Declared(spec) => Want::Declared(Box::new(from_spec(*spec))),
         });
     }
-    lint.extend(tombstones(rel, &text));
+    faults.extend(tombstones(rel, &text));
 
     let note = (!wants.is_empty()).then(|| Note {
         path: rel.to_owned(),
         wants,
         watch: fm.watch,
     });
-    (note, broken, lint)
+    (note, faults)
 }
 
-fn tombstones(rel: &str, text: &str) -> Option<Lint> {
+fn tombstones(rel: &str, text: &str) -> Option<Fault> {
     let named: Vec<String> = crate::shapes::RETIRED
         .iter()
         .filter(|w| text.contains(&format!("`{w}`")))
         .map(|w| format!("`{w}`"))
         .collect();
-    (!named.is_empty()).then(|| Lint {
+    (!named.is_empty()).then(|| Fault {
         note: rel.to_owned(),
+        key: None,
         code: "retired",
         detail: format!(
             "names {}, which this build no longer has — stale, or deliberately \
              recording what it buried; only you can tell those apart",
             named.join(" ")
         ),
-        breaks: false,
+        weight: Weight::Advisory,
     })
 }
 
 pub struct Scanned {
     pub notes: Vec<Note>,
-    pub broken: Vec<Broken>,
-    pub lint: Vec<Lint>,
+    pub faults: Vec<Fault>,
+}
+
+impl Scanned {
+    pub fn blocked(&self) -> impl Iterator<Item = &Fault> {
+        self.faults.iter().filter(|f| f.blocks())
+    }
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
@@ -309,19 +313,13 @@ pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
     rels.sort();
 
     let mut notes = Vec::new();
-    let mut broken = Vec::new();
-    let mut lint = Vec::new();
+    let mut faults = Vec::new();
     for rel in rels {
-        let (note, mut b, mut l) = note_of(root, &rel, catalog);
+        let (note, mut f) = note_of(root, &rel, catalog);
         notes.extend(note);
-        broken.append(&mut b);
-        lint.append(&mut l);
+        faults.append(&mut f);
     }
-    Ok(Scanned {
-        notes,
-        broken,
-        lint,
-    })
+    Ok(Scanned { notes, faults })
 }
 
 fn walk(root: &Path, at: &Path, out: &mut Vec<String>) -> Result<(), CliError> {
@@ -446,7 +444,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         let (d, r) = world(&[("memories/plain.md", "# just prose\n")]);
         let scanned = scan(d.path(), &r).unwrap();
         assert!(scanned.notes.is_empty());
-        assert!(scanned.broken.is_empty());
+        assert!(scanned.blocked().next().is_none());
     }
 
     #[test]
@@ -461,14 +459,11 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             1,
             "one note in the same scan is malformed, but the other still becomes an anchor"
         );
-        assert_eq!(scanned.broken.len(), 1);
-        assert_eq!(scanned.broken[0].note, "memories/bad.md");
-        assert_eq!(scanned.broken[0].key, None);
-        assert!(
-            scanned.broken[0].reason.contains("bad.md"),
-            "{}",
-            scanned.broken[0].reason
-        );
+        let blocked: Vec<_> = scanned.blocked().collect();
+        assert_eq!(blocked.len(), 1);
+        assert_eq!(blocked[0].note, "memories/bad.md");
+        assert_eq!(blocked[0].key, None);
+        assert!(blocked[0].line().contains("bad.md"), "{}", blocked[0].line());
     }
 
     #[test]
@@ -479,9 +474,10 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         )]);
         let scanned = scan(d.path(), &r).unwrap();
         assert!(scanned.notes.is_empty());
-        assert_eq!(scanned.broken.len(), 1);
+        let blocked: Vec<_> = scanned.blocked().collect();
+        assert_eq!(blocked.len(), 1);
         assert_eq!(
-            scanned.broken[0].key.as_deref(),
+            blocked[0].key.as_deref(),
             Some("src/a.ts#thing"),
             "the about string is the key an anchor would have opened under, and it is known \
              before routing succeeds — losing it here is losing the only thing that could \
@@ -497,12 +493,12 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         )]);
         let scanned = scan(d.path(), &r).unwrap();
         assert_eq!(
-            scanned.broken.len(),
+            scanned.blocked().count(),
             1,
             "sync/check/status/accept read this — it decides which anchors open"
         );
         let unrouted: Vec<_> = scanned
-            .lint
+            .faults
             .iter()
             .filter(|l| l.code == "unrouted")
             .collect();
@@ -513,13 +509,12 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
              because scan and lint were two independent walks and only one of them called \
              coord::route on `about:` at all"
         );
-        assert!(unrouted[0].breaks);
         assert!(
-            scanned.broken[0].reason.contains(&unrouted[0].detail),
-            "the two entries describe the same failure — {} vs {}",
-            scanned.broken[0].reason,
-            unrouted[0].detail
+            unrouted[0].blocks(),
+            "one record, weighed once: `blocks` is what stopped a want from existing and what              sync/check/status join on, `breaks` is what doctor exits 1 for. They used to be              two structs carrying the same failure under two spellings, and only a person              comparing them could tell they had not drifted apart"
         );
+        assert!(unrouted[0].breaks());
+        assert_eq!(scanned.blocked().count(), 1);
     }
 
     #[test]
@@ -539,8 +534,8 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         );
     }
 
-    fn lint(d: &std::path::Path, r: &Catalog) -> Result<Vec<Lint>, CliError> {
-        Ok(scan(d, r)?.lint)
+    fn lint(d: &std::path::Path, r: &Catalog) -> Result<Vec<Fault>, CliError> {
+        Ok(scan(d, r)?.faults)
     }
 
     fn codes(d: &std::path::Path, r: &Catalog) -> Vec<(String, &'static str)> {
@@ -581,7 +576,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "one note's frontmatter fails to parse; the other, well-formed one is not \
              swept into the same failure and draws no complaint of its own"
         );
-        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+        assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 
     #[test]
@@ -591,7 +586,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             codes(d.path(), &r),
             vec![("memories/loose.md".to_owned(), "unclaimed")]
         );
-        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+        assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 
     #[test]
@@ -609,7 +604,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
              anywhere. Its author believes it is watched, and `watch:` alone reads exactly \
              like it would if it were"
         );
-        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+        assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 
     #[test]
@@ -622,7 +617,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             codes(d.path(), &r),
             vec![("memories/x.md".to_owned(), "bare-key")]
         );
-        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+        assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 
     #[test]
@@ -639,7 +634,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             found = found.iter().map(|l| l.code).collect::<Vec<_>>()
         );
         assert_eq!(found[0].code, "long-hand");
-        assert!(!found[0].breaks);
+        assert!(!found[0].breaks());
         assert!(found[0].detail.contains("about: src/auth.ts#createSession"));
     }
 

@@ -41,18 +41,17 @@ pub async fn run(
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
     let catalog = crate::probes::Catalog::load(root)?;
-    let notes = crate::memories::scan(root, &catalog)?.lint;
-    let (malformed, advisory): (Vec<_>, Vec<_>) = notes.iter().partition(|l| l.breaks);
-    let (_, unwatchable) = crate::delivery::Subscriptions::load(root, &catalog)?;
-    let exit_code = if stranded.is_empty()
-        && provider_warnings.is_empty()
-        && malformed.is_empty()
-        && unwatchable.is_empty()
-    {
-        0
-    } else {
-        1
-    };
+    let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
+    let mut faults = crate::memories::scan(root, &catalog)?.faults;
+    faults.extend(watch);
+    faults.sort_by(|a, b| (b.weight, &a.note, a.code).cmp(&(a.weight, &b.note, b.code)));
+    let (breaking, advisory): (Vec<_>, Vec<_>) = faults.iter().partition(|f| f.breaks());
+    let exit_code =
+        if stranded.is_empty() && provider_warnings.is_empty() && breaking.is_empty() {
+            0
+        } else {
+            1
+        };
     let states: Vec<String> = live
         .iter()
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))
@@ -66,11 +65,9 @@ pub async fn run(
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
-                "notes": notes.iter().map(|l| serde_json::json!({
-                    "note": l.note, "code": l.code, "detail": l.detail, "breaks": l.breaks,
-                })).collect::<Vec<_>>(),
-                "watch_invalid": unwatchable.iter().map(|u| serde_json::json!({
-                    "note": u.note, "reason": u.reason,
+                "notes": faults.iter().map(|f| serde_json::json!({
+                    "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
+                    "breaks": f.breaks(), "blocks": f.blocks(),
                 })).collect::<Vec<_>>(),
             })
         );
@@ -104,20 +101,14 @@ pub async fn run(
             barren.join(", ")
         );
     }
-    for l in &malformed {
+    for f in &breaking {
         println!(
             "note      {}  {}\n          <- {}",
-            l.note, l.code, l.detail
+            f.note, f.code, f.detail
         );
     }
-    for l in &advisory {
-        println!("{:9} {}\n          <- {}", l.code, l.note, l.detail);
-    }
-    for u in &unwatchable {
-        println!(
-            "note      {}  watch-invalid\n          <- {}",
-            u.note, u.reason
-        );
+    for f in &advisory {
+        println!("{:9} {}\n          <- {}", f.code, f.note, f.detail);
     }
     if !stranded.is_empty() {
         println!(

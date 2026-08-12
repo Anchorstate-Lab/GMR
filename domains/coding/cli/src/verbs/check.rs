@@ -16,19 +16,19 @@ async fn drifted(
     keys: &[AnchorKey],
 ) -> Result<(Facets, Facets), CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let crate::memories::Scanned { notes, broken, .. } = crate::memories::scan(root, &catalog)?;
-    let decls = merged(&declared, &notes);
+    let scanned = crate::memories::scan(root, &catalog)?;
+    let decls = merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
 
     let mut drifted = Vec::new();
     let mut unreadable = Vec::new();
     for key in keys {
         let Some(decl) = decls.iter().find(|d| d.key == key.as_str()) else {
-            if let Some(b) = broken
-                .iter()
-                .find(|b| b.key.as_deref() == Some(key.as_str()))
+            if let Some(f) = scanned
+                .blocked()
+                .find(|f| f.key.as_deref() == Some(key.as_str()))
             {
-                unreadable.push((key.clone(), b.reason.clone()));
+                unreadable.push((key.clone(), f.line()));
             }
             continue;
         };
@@ -122,8 +122,8 @@ pub async fn run(
                 "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
                     "anchor": k, "reason": r
                 })).collect::<Vec<_>>(),
-                "watch_invalid": unwatchable.iter().map(|u| serde_json::json!({
-                    "note": u.note, "reason": u.reason
+                "watch_invalid": unwatchable.iter().map(|f| serde_json::json!({
+                    "note": f.note, "key": f.key, "code": f.code, "detail": f.detail
                 })).collect::<Vec<_>>(),
                 "instrument_swapped": swapped.iter().map(|(k, v)| serde_json::json!({
                     "anchor": k, "versions": v
@@ -208,8 +208,8 @@ pub async fn run(
             "\n{} notes declare a `watch:` this run cannot make sense of:",
             unwatchable.len()
         );
-        for u in &unwatchable {
-            println!("  ?! {}  ({})", u.note, u.reason);
+        for f in &unwatchable {
+            println!("  ?! {}  ({})", f.note, f.detail);
         }
         println!(
             "\nEach of these is unwatched until fixed — not known to have drifted, just \
