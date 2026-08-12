@@ -19,11 +19,22 @@ rather than running a second `memories.is_empty()` scan over the same
 instead of two that could quietly drift apart from each other.
 
 The exit code is not "anything at all worth mentioning" — it is
-specifically `stranded`, `provider_warnings`, or `malformed` notes: those
-three mean something declared or expected is not actually working.
-`absent`/`barren`/`unseen` are informational (exit 0) because they can be
-entirely normal states (criteria written before implementation, a probe
-temporarily failing) rather than something misconfigured.
+specifically `stranded`, `provider_warnings`, `malformed` notes, or
+`undeclared` (see [[check-drift]]): those four mean something declared or
+expected is not actually working. `absent`/`barren`/`unseen` are
+informational (exit 0) because they can be entirely normal states
+(criteria written before implementation, a probe temporarily failing)
+rather than something misconfigured.
+
+`undeclared` is computed by `doctor.rs#undeclared`, a second walk over the
+same `decls` `check.rs#criteria` builds for its own `undeclared` report —
+duplicated because doctor already has `live: &[AnchorView]` in hand and
+computing over that is cheaper than the async re-read per key `criteria`
+does. The one fact both walks must not diverge on is "is this key named by
+a blocking fault" (an `unrouted` `about:` is `unreadable`, not
+`undeclared` — the note is right there, it just failed to route). That
+fact is not re-derived twice: both call `Scanned::blocked_key`, so a note
+that fails to route cannot be misreported as one that was never written.
 
 ## When this changes, ask
 

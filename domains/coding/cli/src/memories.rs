@@ -305,6 +305,10 @@ impl Scanned {
     pub fn blocked(&self) -> impl Iterator<Item = &Fault> {
         self.faults.iter().filter(|f| f.blocks())
     }
+
+    pub fn blocked_key(&self, key: &str) -> Option<&Fault> {
+        self.blocked().find(|f| f.key.as_deref() == Some(key))
+    }
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {

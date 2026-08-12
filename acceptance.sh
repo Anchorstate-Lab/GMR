@@ -301,6 +301,35 @@ mv "$repo/session-rotate.md.away" "$repo/memories/session-rotate.md"
 "$gmr" --repo "$repo" check "$key" >/dev/null \
     || fail "putting the note back did not restore the anchor to a clean check"
 
+# A note that fails to route is not the same fact as no note at all: the note
+# is right there naming the anchor, so this is `unreadable` (fix the
+# coordinate), not `undeclared` (write the note again) -- two different
+# causes with two different remedies. doctor computed "undeclared" as a
+# second walk that did not know about blocked faults, so it folded this case
+# into the wrong one; check, which does know, did not.
+step "a note that fails to route is unreadable, not undeclared"
+printf '%s\n' '---' "about: $key" 'shape: not-a-real-shape' '---' '' \
+    'rotation must complete before the write' > "$note"
+set +e
+out=$("$gmr" --repo "$repo" check "$key" 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] || fail "an unrouted coordinate should not report a clean check" "$out"
+echo "$out" | grep -q 'could not read' \
+    || fail "an unrouted coordinate should be reported as unreadable" "$out"
+echo "$out" | grep -q 'supervised by no note' \
+    && fail "an unrouted coordinate is not the same as no note at all" "$out"
+
+set +e
+out=$("$gmr" --repo "$repo" doctor 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] || fail "doctor called a repository healthy while a note fails to route" "$out"
+echo "$out" | grep -q "undeclared.*$key" \
+    && fail "doctor mistook an unrouted note for a deleted one" "$out"
+
+printf '%s\n' '---' "about: $key" '---' '' 'rotation must complete before the write' > "$note"
+"$gmr" --repo "$repo" check "$key" >/dev/null \
+    || fail "fixing the shape did not restore the anchor to a clean check"
+
 # When a letter is mistyped, what it says has to be "there is no such anchor",
 # and it has to point at the closest one -- not "the lease is held by someone
 # else", which reports our failure as a state of the world.

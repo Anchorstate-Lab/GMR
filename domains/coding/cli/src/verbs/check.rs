@@ -30,10 +30,7 @@ async fn criteria(
     let mut out = Criteria::default();
     for key in keys {
         let Some(decl) = decls.iter().find(|d| d.key == key.as_str()) else {
-            match scanned
-                .blocked()
-                .find(|f| f.key.as_deref() == Some(key.as_str()))
-            {
+            match scanned.blocked_key(key.as_str()) {
                 Some(f) => out.unreadable.push((key.clone(), f.line())),
                 None => {
                     let view = rt.read(key).await?;

@@ -19,15 +19,16 @@ fn versioning_is_broken(root: &Path) -> bool {
 pub fn undeclared(
     root: &Path,
     live: &[&gmr::AnchorView],
-    notes: &[crate::memories::Note],
+    scanned: &crate::memories::Scanned,
 ) -> Result<Vec<String>, CliError> {
     use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let decls = merged(&declared, notes);
+    let decls = merged(&declared, &scanned.notes);
     Ok(live
         .iter()
         .filter(|v| !v.memories.is_empty())
         .filter(|v| !decls.iter().any(|d| d.key == v.key.as_str()))
+        .filter(|v| scanned.blocked_key(v.key.as_str()).is_none())
         .map(|v| v.key.to_string())
         .collect())
 }
@@ -59,7 +60,7 @@ pub async fn run(
     let catalog = crate::probes::Catalog::load(root)?;
     let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
     let scanned = crate::memories::scan(root, &catalog)?;
-    let undeclared = undeclared(root, &live, &scanned.notes)?;
+    let undeclared = undeclared(root, &live, &scanned)?;
     let mut faults = scanned.faults;
     faults.extend(watch);
     faults.sort_by(|a, b| (b.weight, &a.note, a.code).cmp(&(a.weight, &b.note, b.code)));
