@@ -40,12 +40,7 @@ fn choose(args: &ReviseArgs) -> Result<What, CliError> {
     }
 }
 
-pub async fn run(
-    rt: &Runtime,
-    root: &Path,
-    args: ReviseArgs,
-    json: bool,
-) -> Result<i32, CliError> {
+pub async fn run(rt: &Runtime, root: &Path, args: ReviseArgs, json: bool) -> Result<i32, CliError> {
     let what = choose(&args)?;
     let key = super::resolve_one(rt, &args.key).await?;
 
@@ -180,7 +175,12 @@ pub async fn run(
 mod tests {
     use super::*;
 
-    fn args(probe: Option<&str>, rules: &[&str], terminal: &[&str], state: Option<&str>) -> ReviseArgs {
+    fn args(
+        probe: Option<&str>,
+        rules: &[&str],
+        terminal: &[&str],
+        state: Option<&str>,
+    ) -> ReviseArgs {
         ReviseArgs {
             key: "k".to_owned(),
             probe: probe.map(str::to_owned),
