@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use crate::error::CliError;
 use crate::probes::Catalog;
 
-const WHOLE: &[&str] = &["file", "path"];
+const WHOLE: [&str; 2] = coding_extract::WHOLE;
 const PART: &[&str] = &["name", "heading"];
 const PREFERENCE: &[&str] = &["contract", "fingerprint", "roster"];
 
@@ -35,7 +35,7 @@ fn position_for(coord: &str, at: &[String], probe: &str) -> Result<Value, CliErr
     };
 
     let mut out = Map::new();
-    let whole_key = slot(at, WHOLE).ok_or_else(|| {
+    let whole_key = slot(at, &WHOLE).ok_or_else(|| {
         CliError(format!(
             "probe `{probe}` names no whole to point at; its coordinate is {}",
             at.join(" · ")
@@ -174,17 +174,44 @@ obs = { schema = "gmr.probe-coord.v1", at = ["path", "fingerprint"], facts = ["b
 
     #[test]
     fn a_part_a_probe_has_no_slot_for_is_refused_by_name() {
-        let (_d, c) = catalog();
-        let e = route("vendor/blob.bin#thing", None, &c).unwrap_err();
+        let at: Vec<String> = ["path", "fingerprint"].map(str::to_owned).into();
+        let e = position_for("vendor/blob.bin#thing", &at, "blob-map").unwrap_err();
         assert!(e.to_string().contains("no coordinate item"), "{e}");
         assert!(e.to_string().contains("fingerprint"), "{e}");
     }
 
     #[test]
-    fn an_extension_no_probe_reads_is_refused_by_name() {
+    fn an_extension_no_builtin_or_declared_probe_names_still_falls_to_the_derived_catchall() {
         let (_d, c) = catalog();
-        let e = route("schema/a.proto", None, &c).unwrap_err();
-        assert!(e.to_string().contains(".proto"), "{e}");
+        let routed = route("schema/a.proto", None, &c).unwrap();
+        assert_eq!(
+            routed.probe, "addr-map",
+            "no probe declares `.proto`, but addr-map's own eligible rule is `true` for \
+             every path and it is the only addressable builtin that says so — so it is the \
+             derived fallback rather than a refusal. This coordinate used to be refused; \
+             see coding-extract's for_extension for where the fallback is derived",
+        );
+        assert_eq!(
+            routed.position,
+            serde_json::json!({ "path": "schema/a.proto" })
+        );
+    }
+
+    #[test]
+    fn a_declared_probe_is_shadowed_by_the_builtin_catchall_on_its_own_extension() {
+        let (_d, c) = catalog();
+        let routed = route("vendor/blob.bin", None, &c).unwrap();
+        assert_eq!(
+            routed.probe, "addr-map",
+            "`blob-map` in this fixture declares `handles = [\"bin\"]`, but Catalog::\
+             for_extension tries the builtin roster first — a rule that predates this \
+             fallback and already shadowed a declared probe on any extension a builtin \
+             claimed. addr-map now claims every extension nothing more specific claims, so \
+             a declared probe can no longer be reached through `about:` shorthand for an \
+             extension the catchall would otherwise answer for. It is still reachable \
+             through the explicit `anchors:` form, which names a probe rather than \
+             inferring one from the extension",
+        );
     }
 
     #[test]

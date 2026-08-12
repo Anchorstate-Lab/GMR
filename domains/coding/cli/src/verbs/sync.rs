@@ -143,7 +143,7 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
 
-    let notes = crate::memories::scan(root, &ctx.catalog)?;
+    let crate::memories::Scanned { notes, broken } = crate::memories::scan(root, &ctx.catalog)?;
 
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
@@ -211,9 +211,12 @@ pub async fn run(
                 "resettled": resettled,
                 "bound": bound, "renamed": renamed,
                 "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
+                "broken": broken.iter().map(|b| serde_json::json!({
+                    "note": b.note, "key": b.key, "reason": b.reason,
+                })).collect::<Vec<_>>(),
             })
         );
-        return Ok(0);
+        return Ok(i32::from(!broken.is_empty()));
     }
 
     println!(
@@ -227,6 +230,16 @@ pub async fn run(
     );
     for w in &warnings {
         println!("  ! {w}");
+    }
+    if !broken.is_empty() {
+        println!(
+            "\n{} notes named an anchor that could not become one — everything else in \
+             this repo synced anyway:",
+            broken.len()
+        );
+        for b in &broken {
+            println!("  ! {}", b.reason);
+        }
     }
     if !drifted_criteria.is_empty() {
         println!(
@@ -293,7 +306,7 @@ pub async fn run(
             println!("  ~= {k}");
         }
     }
-    Ok(0)
+    Ok(i32::from(!broken.is_empty()))
 }
 
 async fn align_bindings(

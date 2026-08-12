@@ -21,12 +21,24 @@ use gmr_survey::{Cache, Halt};
 use gmr_transport::inproc::{ExtractError, Reach, Registered};
 use serde_json::Value;
 
+pub const WHOLE: [&str; 2] = ["file", "path"];
+
+pub fn addressable(at: &[&str]) -> bool {
+    at.iter().any(|k| WHOLE.contains(k))
+}
+
+#[derive(Clone, Copy)]
+pub enum Reads {
+    Extensions(&'static [&'static str]),
+    Anything,
+}
+
 pub struct Vocabulary {
     pub name: &'static str,
     pub schema: &'static str,
     pub at: &'static [&'static str],
     pub facts: &'static [&'static str],
-    pub handles: &'static [&'static str],
+    pub reads: Reads,
 }
 
 type Probe = fn(&Path, &Value, &Cache, &Budget) -> Result<Value, Halt>;
@@ -41,9 +53,9 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
                 "shape",
             ],
             facts: &["body", "line"],
-            handles: &[
+            reads: Reads::Extensions(&[
                 "rs", "ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "py", "pyi", "go",
-            ],
+            ]),
         },
         ast::probe,
         env!("GMR_EXTRACTOR_AST"),
@@ -54,7 +66,7 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
             schema: SCHEMA,
             at: &["path", "name", "fingerprint"],
             facts: &["bytes"],
-            handles: &[],
+            reads: Reads::Anything,
         },
         addr::probe,
         env!("GMR_EXTRACTOR_ADDR"),
@@ -65,7 +77,7 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
             schema: SCHEMA,
             at: &["name", "scope"],
             facts: &["occurrences", "file_count", "files", "first"],
-            handles: &[],
+            reads: Reads::Anything,
         },
         name::probe,
         env!("GMR_EXTRACTOR_NAME"),
@@ -76,7 +88,7 @@ const PROBES: [(Vocabulary, Probe, &str); 4] = [
             schema: SCHEMA,
             at: &["file", "heading", "fingerprint"],
             facts: &["line", "lines"],
-            handles: &[],
+            reads: Reads::Extensions(&["md"]),
         },
         prose::probe,
         env!("GMR_EXTRACTOR_PROSE"),
@@ -97,9 +109,23 @@ pub fn recipe(name: &str) -> Option<&'static gmr_survey::Recipe> {
 }
 
 pub fn for_extension(ext: &str) -> Option<&'static str> {
-    vocabularies()
-        .find(|v| v.handles.contains(&ext))
-        .map(|v| v.name)
+    let reachable: Vec<&Vocabulary> = vocabularies().filter(|v| addressable(v.at)).collect();
+
+    if let Some(v) = reachable
+        .iter()
+        .find(|v| matches!(v.reads, Reads::Extensions(exts) if exts.contains(&ext)))
+    {
+        return Some(v.name);
+    }
+
+    let mut catchall = reachable
+        .iter()
+        .filter(|v| matches!(v.reads, Reads::Anything));
+    let first = catchall.next()?;
+    match catchall.next() {
+        None => Some(first.name),
+        Some(_) => None,
+    }
 }
 
 fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
@@ -187,9 +213,86 @@ mod tests {
     }
 
     #[test]
-    fn one_probe_owns_the_extensions_about_routes_by() {
+    fn a_probes_reads_rule_is_never_wider_or_narrower_than_its_own_eligible() {
+        for v in vocabularies().filter(|v| addressable(v.at)) {
+            let recipe = recipe(v.name).unwrap();
+            match v.reads {
+                Reads::Extensions(exts) => {
+                    for ext in exts {
+                        assert!(
+                            (recipe.eligible)(&format!("x.{ext}")),
+                            "`{}` claims .{ext} in its routing table, but its own eligible \
+                             rule rejects a file with that extension",
+                            v.name
+                        );
+                    }
+                    assert!(
+                        !(recipe.eligible)("x.an-extension-declared-nowhere"),
+                        "`{}` declares a closed set of extensions, but its eligible rule \
+                         accepts one that is not in it — the routing table would then be \
+                         narrower than what the probe actually reads",
+                        v.name
+                    );
+                }
+                Reads::Anything => assert!(
+                    (recipe.eligible)("x.an-extension-declared-nowhere"),
+                    "`{}` claims to read anything, but its own eligible rule rejects an \
+                     arbitrary extension",
+                    v.name
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn at_most_one_addressable_probe_may_read_anything() {
+        let catchall: Vec<&str> = vocabularies()
+            .filter(|v| addressable(v.at) && matches!(v.reads, Reads::Anything))
+            .map(|v| v.name)
+            .collect();
+        assert!(
+            catchall.len() <= 1,
+            "for_extension derives its fallback by finding the one addressable probe that \
+             reads anything; two candidates ({catchall:?}) means the fallback is decided by \
+             iteration order instead of being provably unique"
+        );
+    }
+
+    #[test]
+    fn a_probe_with_no_whole_to_point_at_is_never_the_derived_fallback() {
+        let name_map = vocabularies().find(|v| v.name == "name-map").unwrap();
+        assert!(
+            !addressable(name_map.at),
+            "name-map's coordinate is (name, scope) with no `file` or `path` slot, so a \
+             person pointing at a whole file can never mean this probe — it has to fall out \
+             of `at`, not be excluded by an empty `reads` list somebody remembered to leave \
+             blank"
+        );
+        assert_ne!(
+            for_extension("an-extension-only-name-map-would-otherwise-catch"),
+            Some("name-map")
+        );
+    }
+
+    #[test]
+    fn for_extension_now_answers_for_what_used_to_be_opaque() {
         assert_eq!(for_extension("ts"), Some("ast-map"));
-        assert_eq!(for_extension("md"), None);
+        assert_eq!(
+            for_extension("md"),
+            Some("prose-map"),
+            "prose-map's eligible rule was always `.md`; its routing table just never said so"
+        );
+        assert_eq!(
+            for_extension("sh"),
+            Some("addr-map"),
+            "no probe declares .sh, but addr-map's eligible rule is `true` for every path, \
+             and it is the only addressable probe that does — so it is the fallback, derived \
+             rather than named"
+        );
+        assert_eq!(
+            for_extension("literally-anything-unlisted"),
+            Some("addr-map")
+        );
     }
 
     struct Fixture {

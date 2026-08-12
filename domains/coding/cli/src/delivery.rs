@@ -25,7 +25,7 @@ pub struct Subscriptions {
 
 impl Subscriptions {
     pub fn load(root: &Path, catalog: &Catalog) -> Result<Self, CliError> {
-        let notes = crate::memories::scan(root, catalog)?;
+        let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, catalog)?;
         let declared = read_declared(root, DEFAULT_FILE)?;
 
         let mut axes_by_anchor: BTreeMap<&str, Vec<&'static str>> = BTreeMap::new();

@@ -45,7 +45,7 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             "probe": v.name,
             "kind": "builtin",
             "version": builtin[&gmr::ProbeName::new(v.name)].version,
-            "handles": v.handles,
+            "handles": reads_json(v.reads),
             "obs": { "schema": v.schema, "at": v.at, "facts": v.facts },
         }));
     }
@@ -97,6 +97,13 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
         }
     }
     Ok(0)
+}
+
+fn reads_json(reads: coding_extract::Reads) -> serde_json::Value {
+    match reads {
+        coding_extract::Reads::Extensions(exts) => serde_json::json!(exts),
+        coding_extract::Reads::Anything => serde_json::json!("*"),
+    }
 }
 
 fn join(v: &serde_json::Value) -> String {

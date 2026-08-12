@@ -7,20 +7,29 @@ use crate::error::CliError;
 use crate::probes::Catalog;
 use crate::verbs::sync::{Context, DEFAULT_FILE, differs, merged, read_declared};
 
+type Facets = Vec<(AnchorKey, String)>;
+
 async fn drifted(
     rt: &Runtime,
     root: &Path,
     catalog: Catalog,
     keys: &[AnchorKey],
-) -> Result<Vec<(AnchorKey, String)>, CliError> {
+) -> Result<(Facets, Facets), CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let notes = crate::memories::scan(root, &catalog)?;
+    let crate::memories::Scanned { notes, broken } = crate::memories::scan(root, &catalog)?;
     let decls = merged(&declared, &notes);
     let ctx = Context { catalog };
 
-    let mut out = Vec::new();
+    let mut drifted = Vec::new();
+    let mut unreadable = Vec::new();
     for key in keys {
         let Some(decl) = decls.iter().find(|d| d.key == key.as_str()) else {
+            if let Some(b) = broken
+                .iter()
+                .find(|b| b.key.as_deref() == Some(key.as_str()))
+            {
+                unreadable.push((key.clone(), b.reason.clone()));
+            }
             continue;
         };
         let view = rt.read(key).await?;
@@ -29,10 +38,10 @@ async fn drifted(
         }
         let facets = differs(&view.anchor, decl, &ctx)?;
         if !facets.is_empty() {
-            out.push((key.clone(), facets.join(" · ")));
+            drifted.push((key.clone(), facets.join(" · ")));
         }
     }
-    Ok(out)
+    Ok((drifted, unreadable))
 }
 
 pub async fn run(
@@ -47,7 +56,7 @@ pub async fn run(
     };
     let catalog = Catalog::load(root)?;
     let subs = Subscriptions::load(root, &catalog)?;
-    let drifted = drifted(rt, root, catalog, &keys).await?;
+    let (drifted, unreadable) = drifted(rt, root, catalog, &keys).await?;
     let swapped = super::swapped(rt, &keys).await?;
 
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<String>)> = Vec::new();
@@ -90,6 +99,7 @@ pub async fn run(
         || !unclaimed.is_empty()
         || !unseen.is_empty()
         || !drifted.is_empty()
+        || !unreadable.is_empty()
         || !swapped.is_empty();
 
     if json {
@@ -107,6 +117,9 @@ pub async fn run(
                 })).collect::<Vec<_>>(),
                 "criteria_drifted": drifted.iter().map(|(k, f)| serde_json::json!({
                     "anchor": k, "facets": f
+                })).collect::<Vec<_>>(),
+                "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
+                    "anchor": k, "reason": r
                 })).collect::<Vec<_>>(),
                 "instrument_swapped": swapped.iter().map(|(k, v)| serde_json::json!({
                     "anchor": k, "versions": v
@@ -138,6 +151,7 @@ pub async fn run(
             if unseen.is_empty()
                 && unclaimed.is_empty()
                 && drifted.is_empty()
+                && unreadable.is_empty()
                 && swapped.is_empty() =>
         {
             println!("{} anchors, nothing moved.", keys.len())
@@ -166,6 +180,22 @@ pub async fn run(
             println!("  != {key}  ({facets})");
         }
         println!("\n     gmr accept --all --criteria --why '...'");
+    }
+
+    if !unreadable.is_empty() {
+        println!(
+            "\n{} of {} stand on a declaration this run could not read.\n\
+             A memory named these as its coordinate, and something about that coordinate\n\
+             — a broken frontmatter, a probe nothing here can route to — kept it from\n\
+             becoming a declaration this run could compare against. These are not known\n\
+             to have drifted; they are unwatched until the coordinate is fixed.",
+            unreadable.len(),
+            keys.len()
+        );
+        for (key, reason) in &unreadable {
+            println!("  ?! {key}  ({reason})");
+        }
+        println!("\n     gmr sync   shows the same reason against the note that named it");
     }
 
     if !swapped.is_empty() {

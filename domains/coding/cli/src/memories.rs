@@ -111,13 +111,13 @@ fn from_spec(spec: Spec) -> AnchorDecl {
     }
 }
 
-fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, CliError> {
+fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, String> {
     let rest = match text.strip_prefix("---\n") {
         Some(r) => r,
         None => return Ok(None),
     };
     let Some(end) = rest.find("\n---") else {
-        return Err(CliError("frontmatter is never closed by `---`".into()));
+        return Err("frontmatter is never closed by `---`".to_owned());
     };
     let body = &rest[..end];
     if body.trim().is_empty() {
@@ -125,21 +125,51 @@ fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, CliError> {
     }
     serde_yaml_ng::from_str(body)
         .map(Some)
-        .map_err(|e| CliError(format!("frontmatter is not valid YAML: {e}")))
+        .map_err(|e| format!("frontmatter is not valid YAML: {e}"))
 }
 
-fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> Result<Option<Note>, CliError> {
-    let text = std::fs::read_to_string(root.join(rel))
-        .map_err(|e| CliError(format!("cannot read `{rel}`: {e}")))?;
-    let Some(fm) = frontmatter_of(&text).map_err(|e| CliError(format!("{rel}: {e}")))? else {
-        return Ok(None);
+pub struct Broken {
+    pub note: String,
+    pub key: Option<String>,
+    pub reason: String,
+}
+
+fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Broken>) {
+    let mut broken = Vec::new();
+    let text = match std::fs::read_to_string(root.join(rel)) {
+        Ok(t) => t,
+        Err(e) => {
+            broken.push(Broken {
+                note: rel.to_owned(),
+                key: None,
+                reason: format!("cannot read `{rel}`: {e}"),
+            });
+            return (None, broken);
+        }
+    };
+    let fm = match frontmatter_of(&text) {
+        Ok(Some(fm)) => fm,
+        Ok(None) => return (None, broken),
+        Err(reason) => {
+            broken.push(Broken {
+                note: rel.to_owned(),
+                key: None,
+                reason: format!("{rel}: {reason}"),
+            });
+            return (None, broken);
+        }
     };
 
     let mut wants = Vec::new();
     for about in fm.about.map(OneOrMany::into_vec).unwrap_or_default() {
-        let decl = from_about(&about, catalog, fm.shape.as_deref())
-            .map_err(|e| CliError(format!("{rel}: {e}")))?;
-        wants.push(Want::Declared(Box::new(decl)));
+        match from_about(&about, catalog, fm.shape.as_deref()) {
+            Ok(decl) => wants.push(Want::Declared(Box::new(decl))),
+            Err(e) => broken.push(Broken {
+                note: rel.to_owned(),
+                key: Some(about),
+                reason: format!("{rel}: {e}"),
+            }),
+        }
     }
     for entry in fm.anchors {
         wants.push(match entry {
@@ -148,14 +178,12 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> Result<Option<Note>, Cl
         });
     }
 
-    match wants.is_empty() {
-        true => Ok(None),
-        false => Ok(Some(Note {
-            path: rel.to_owned(),
-            wants,
-            watch: fm.watch,
-        })),
-    }
+    let note = (!wants.is_empty()).then(|| Note {
+        path: rel.to_owned(),
+        wants,
+        watch: fm.watch,
+    });
+    (note, broken)
 }
 
 pub struct Lint {
@@ -189,18 +217,40 @@ pub fn lint(root: &Path, catalog: &Catalog) -> Result<Vec<Lint>, CliError> {
 
     let mut out = Vec::new();
     for rel in rels {
-        let text = std::fs::read_to_string(root.join(&rel))
-            .map_err(|e| CliError(format!("cannot read `{rel}`: {e}")))?;
-        let Some(fm) = frontmatter_of(&text).map_err(|e| CliError(format!("{rel}: {e}")))? else {
-            out.push(Lint {
-                note: rel,
-                code: "unclaimed",
-                detail: "no frontmatter, so this note names no anchor and nothing observes \
-                         whether what it says still holds"
-                    .to_owned(),
-                breaks: true,
-            });
-            continue;
+        let text = match std::fs::read_to_string(root.join(&rel)) {
+            Ok(t) => t,
+            Err(e) => {
+                out.push(Lint {
+                    note: rel,
+                    code: "unreadable",
+                    detail: format!("cannot read this file: {e}"),
+                    breaks: true,
+                });
+                continue;
+            }
+        };
+        let fm = match frontmatter_of(&text) {
+            Ok(Some(fm)) => fm,
+            Ok(None) => {
+                out.push(Lint {
+                    note: rel,
+                    code: "unclaimed",
+                    detail: "no frontmatter, so this note names no anchor and nothing \
+                             observes whether what it says still holds"
+                        .to_owned(),
+                    breaks: true,
+                });
+                continue;
+            }
+            Err(reason) => {
+                out.push(Lint {
+                    note: rel,
+                    code: "malformed",
+                    detail: reason,
+                    breaks: true,
+                });
+                continue;
+            }
         };
         for entry in &fm.anchors {
             match entry {
@@ -249,18 +299,24 @@ fn tombstones(rel: &str, text: &str) -> Option<Lint> {
     })
 }
 
-pub fn scan(root: &Path, catalog: &Catalog) -> Result<Vec<Note>, CliError> {
+pub struct Scanned {
+    pub notes: Vec<Note>,
+    pub broken: Vec<Broken>,
+}
+
+pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
     let mut rels = Vec::new();
     walk(root, &root.join(NOTES_DIR), &mut rels)?;
     rels.sort();
 
     let mut notes = Vec::new();
+    let mut broken = Vec::new();
     for rel in rels {
-        if let Some(note) = note_of(root, &rel, catalog)? {
-            notes.push(note);
-        }
+        let (note, mut b) = note_of(root, &rel, catalog);
+        notes.extend(note);
+        broken.append(&mut b);
     }
-    Ok(notes)
+    Ok(Scanned { notes, broken })
 }
 
 fn walk(root: &Path, at: &Path, out: &mut Vec<String>) -> Result<(), CliError> {
@@ -312,7 +368,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "memories/auth.md",
             "---\nabout: src/auth.ts#createSession\n---\n\n# note\n",
         )]);
-        let notes = scan(d.path(), &r).unwrap();
+        let notes = scan(d.path(), &r).unwrap().notes;
         assert_eq!(notes.len(), 1);
 
         let Want::Declared(decl) = &notes[0].wants[0] else {
@@ -333,7 +389,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "memories/auth.md",
             "---\nabout: src/auth.ts#createSession\nshape: contract\nwatch: [logic]\n---\n",
         )]);
-        let notes = scan(d.path(), &r).unwrap();
+        let notes = scan(d.path(), &r).unwrap().notes;
         assert_eq!(
             notes[0].watch.as_deref(),
             Some(["logic".to_owned()].as_ref())
@@ -348,7 +404,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     #[test]
     fn a_coordinate_with_no_part_watches_the_whole_files_roster() {
         let (d, r) = world(&[("memories/a.md", "---\nabout: src/a.ts\n---\n")]);
-        let notes = scan(d.path(), &r).unwrap();
+        let notes = scan(d.path(), &r).unwrap().notes;
         assert!(notes[0].watch.is_none());
 
         let Want::Declared(decl) = &notes[0].wants[0] else {
@@ -364,30 +420,68 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "memories/x.md",
             "---\nanchors:\n  - surface::gmr-core\n  - modules::gmr-core\n---\n",
         )]);
-        let notes = scan(d.path(), &r).unwrap();
+        let notes = scan(d.path(), &r).unwrap().notes;
         let keys: Vec<_> = notes[0].wants.iter().map(Want::key).collect();
         assert_eq!(keys, vec!["surface::gmr-core", "modules::gmr-core"]);
         assert!(matches!(notes[0].wants[0], Want::Existing(_)));
     }
 
     #[test]
-    fn an_extension_no_probe_reads_is_refused_by_name() {
+    fn an_extension_no_probe_reads_falls_to_the_derived_catchall() {
         let (d, r) = world(&[("memories/x.md", "---\nabout: schema/a.proto\n---\n")]);
-        let e = scan(d.path(), &r).unwrap_err();
-        assert!(e.to_string().contains(".proto"), "{e}");
+        let notes = scan(d.path(), &r).unwrap().notes;
+        let Want::Declared(decl) = &notes[0].wants[0] else {
+            panic!("expected a declared anchor");
+        };
+        assert_eq!(decl.probe, "addr-map");
     }
 
     #[test]
     fn a_note_without_frontmatter_is_not_a_note() {
         let (d, r) = world(&[("memories/plain.md", "# just prose\n")]);
-        assert!(scan(d.path(), &r).unwrap().is_empty());
+        let scanned = scan(d.path(), &r).unwrap();
+        assert!(scanned.notes.is_empty());
+        assert!(scanned.broken.is_empty());
     }
 
     #[test]
-    fn unclosed_frontmatter_names_the_file() {
-        let (d, r) = world(&[("memories/bad.md", "---\nabout: a.rs\n")]);
-        let e = scan(d.path(), &r).unwrap_err();
-        assert!(e.to_string().contains("bad.md"), "{e}");
+    fn unclosed_frontmatter_is_broken_but_does_not_stop_the_scan() {
+        let (d, r) = world(&[
+            ("memories/bad.md", "---\nabout: a.rs\n"),
+            ("memories/good.md", "---\nabout: src/a.ts\n---\n"),
+        ]);
+        let scanned = scan(d.path(), &r).unwrap();
+        assert_eq!(
+            scanned.notes.len(),
+            1,
+            "one note in the same scan is malformed, but the other still becomes an anchor"
+        );
+        assert_eq!(scanned.broken.len(), 1);
+        assert_eq!(scanned.broken[0].note, "memories/bad.md");
+        assert_eq!(scanned.broken[0].key, None);
+        assert!(
+            scanned.broken[0].reason.contains("bad.md"),
+            "{}",
+            scanned.broken[0].reason
+        );
+    }
+
+    #[test]
+    fn a_broken_about_coordinate_still_names_the_key_it_would_have_been() {
+        let (d, r) = world(&[(
+            "memories/x.md",
+            "---\nabout: src/a.ts#thing\nshape: not-a-real-shape\n---\n",
+        )]);
+        let scanned = scan(d.path(), &r).unwrap();
+        assert!(scanned.notes.is_empty());
+        assert_eq!(scanned.broken.len(), 1);
+        assert_eq!(
+            scanned.broken[0].key.as_deref(),
+            Some("src/a.ts#thing"),
+            "the about string is the key an anchor would have opened under, and it is known \
+             before routing succeeds — losing it here is losing the only thing that could \
+             later match this failure back to a journal entry"
+        );
     }
 
     #[test]
@@ -396,7 +490,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "memories/x.md",
             "---\nanchors:\n  - key: surface::auth\n    probe: ast-map\n    shape: roster\n    position: { file: src/auth.ts, kind: function }\n---\n",
         )]);
-        let notes = scan(d.path(), &r).unwrap();
+        let notes = scan(d.path(), &r).unwrap().notes;
         let Want::Declared(decl) = &notes[0].wants[0] else {
             panic!("expected a declared anchor");
         };
@@ -428,6 +522,24 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     fn a_note_that_deliberately_claims_nothing_is_left_alone() {
         let (d, r) = world(&[("memories/README.md", "---\nanchors:\n---\n\n# how to\n")]);
         assert!(codes(d.path(), &r).is_empty());
+    }
+
+    #[test]
+    fn a_malformed_frontmatter_is_caught_rather_than_stopping_the_whole_lint() {
+        let (d, r) = world(&[
+            ("memories/bad.md", "---\nabout: [unterminated\n---\n"),
+            (
+                "memories/auth.md",
+                "---\nabout: src/auth.ts#createSession\n---\n",
+            ),
+        ]);
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("memories/bad.md".to_owned(), "malformed")],
+            "one note's frontmatter fails to parse; the other, well-formed one is not \
+             swept into the same failure and draws no complaint of its own"
+        );
+        assert!(lint(d.path(), &r).unwrap()[0].breaks);
     }
 
     #[test]

@@ -57,7 +57,7 @@ async fn pending(
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let notes = crate::memories::scan(root, &ctx.catalog)?;
+    let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, &ctx.catalog)?;
     let decl = merged(&declared, &notes)
         .into_iter()
         .find(|d| d.key == key.as_str())
@@ -109,7 +109,7 @@ async fn declaration_drifted(rt: &Runtime, root: &Path) -> Result<Vec<AnchorKey>
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let notes = crate::memories::scan(root, &ctx.catalog)?;
+    let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, &ctx.catalog)?;
     let decls = merged(&declared, &notes);
 
     let mut out = Vec::new();

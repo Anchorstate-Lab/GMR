@@ -51,17 +51,28 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let notes = crate::memories::scan(root, &ctx.catalog)?;
+    let crate::memories::Scanned { notes, broken } = crate::memories::scan(root, &ctx.catalog)?;
     let decls = merged(&declared, &notes);
 
     let mut rows = Vec::new();
     let mut drifted = Vec::new();
+    let mut unreadable = Vec::new();
     for view in &live {
         let shape = crate::shapes::name_of(&view.anchor.transitions).unwrap_or("custom");
-        if let Some(decl) = decls.iter().find(|d| d.key == view.key.as_str()) {
-            let facets = differs(&view.anchor, decl, &ctx)?;
-            if !facets.is_empty() {
-                drifted.push((view.key.to_string(), facets.join(" · ")));
+        match decls.iter().find(|d| d.key == view.key.as_str()) {
+            Some(decl) => {
+                let facets = differs(&view.anchor, decl, &ctx)?;
+                if !facets.is_empty() {
+                    drifted.push((view.key.to_string(), facets.join(" · ")));
+                }
+            }
+            None => {
+                if let Some(b) = broken
+                    .iter()
+                    .find(|b| b.key.as_deref() == Some(view.key.as_str()))
+                {
+                    unreadable.push((view.key.to_string(), b.reason.clone()));
+                }
             }
         }
         let memories: Vec<(String, bool)> = view
@@ -92,7 +103,12 @@ pub async fn run(
             .collect();
         println!(
             "{}",
-            serde_json::json!({ "anchors": out, "criteria_drifted": drifted })
+            serde_json::json!({
+                "anchors": out, "criteria_drifted": drifted,
+                "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
+                    "anchor": k, "reason": r
+                })).collect::<Vec<_>>(),
+            })
         );
         return Ok(0);
     }
@@ -143,6 +159,15 @@ pub async fn run(
         for (key, facets) in &drifted {
             println!("  != {key}  ({facets})");
             println!("     gmr accept {key} --criteria --why '...'");
+        }
+    }
+    if !unreadable.is_empty() {
+        println!(
+            "\n{} anchors whose declaration this run could not read:",
+            unreadable.len()
+        );
+        for (key, reason) in &unreadable {
+            println!("  ?! {key}  ({reason})");
         }
     }
     Ok(0)
