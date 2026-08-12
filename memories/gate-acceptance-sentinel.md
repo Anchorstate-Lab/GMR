@@ -1,7 +1,5 @@
 ---
-about:
-  - tools/gate.py#check_acceptance_intact
-  - acceptance.sh#step
+about: tools/gate.py#check_acceptance_intact
 watch: [sig, logic]
 ---
 
@@ -51,6 +49,30 @@ which runs in a different job, asserts the *mechanism* rather than the outcome:
 - the number it greps for equals the count of `step ` calls in the script
 
 All four were checked red before being kept.
+
+## `acceptance.sh#step` is not in `about:`, and should not go back
+
+It was, once, alongside `check_acceptance_intact`, sharing this note's
+`watch: [sig, logic]`. No probe here parses shell, so the coordinate never
+routed — until the routing table stopped being a hand-kept list of extensions
+and started deriving a fallback from what each probe actually declares it
+reads (see `coding_extract::for_extension`). `addr-map` reads anything, so
+`acceptance.sh#step` started routing to it, with `position: {"path":
+"acceptance.sh", "name": "step"}`. `addr-map`'s `name` is a file's own
+basename, not a symbol inside it, so that position can never be true — it
+would have sat as a permanently `absent` anchor, present in every listing and
+answering nothing, which is a worse failure than the loud refusal it replaced.
+
+The claim this note makes — that the sentinel is real and the gate checks
+it — is fully carried by `check_acceptance_intact` alone: its own body reads
+`acceptance.sh`'s text to verify the sentinel line, the `step()` count, and
+the workflow's grep, so a change to *what it verifies* already moves this
+note's watched axes. What it cannot see — someone editing `acceptance.sh`
+itself in a way that still satisfies today's checks but breaks the intent —
+is exactly the gap this note's own words describe: "`gate.py` cannot run
+`acceptance.sh` ... so it can only guarantee that something else will." That
+something else is `check.rs`'s own test suite, not a second GMR coordinate
+standing in for a probe that does not exist.
 
 ## When this changes, ask
 
