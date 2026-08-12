@@ -209,7 +209,21 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Brok
     };
 
     let mut wants = Vec::new();
-    for about in fm.about.map(OneOrMany::into_vec).unwrap_or_default() {
+    let about = fm.about.map(OneOrMany::into_vec).unwrap_or_default();
+    let subscribes = fm.watch.is_some() || fm.shape.is_some();
+    if about.is_empty() && fm.anchors.is_empty() && subscribes {
+        lint.push(Lint {
+            note: rel.to_owned(),
+            code: "unclaimed",
+            detail: "`watch:` / `shape:` with no `about:` and no `anchors:` — they say how to \
+                     observe an anchor this note never names, so nothing observes whether what \
+                     it says still holds. An empty `anchors:` is how a note claims nothing on \
+                     purpose"
+                .to_owned(),
+            breaks: true,
+        });
+    }
+    for about in about {
         match from_about(&about, catalog, fm.shape.as_deref()) {
             Ok(decl) => wants.push(Want::Declared(Box::new(decl))),
             Err(e) => {
@@ -576,6 +590,24 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         assert_eq!(
             codes(d.path(), &r),
             vec![("memories/loose.md".to_owned(), "unclaimed")]
+        );
+        assert!(lint(d.path(), &r).unwrap()[0].breaks);
+    }
+
+    #[test]
+    fn a_watch_with_nothing_to_watch_is_as_unclaimed_as_no_frontmatter_at_all() {
+        let (d, r) = world(&[("memories/watched.md", "---\nwatch: [sig]\n---\n\n# note\n")]);
+        assert!(
+            scan(d.path(), &r).unwrap().notes.is_empty(),
+            "it declares nothing, so it binds nothing"
+        );
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("memories/watched.md".to_owned(), "unclaimed")],
+            "a note whose frontmatter parses but names no coordinate used to be the one \
+             failure nothing reported: not an anchor, not a complaint, not a line of output \
+             anywhere. Its author believes it is watched, and `watch:` alone reads exactly \
+             like it would if it were"
         );
         assert!(lint(d.path(), &r).unwrap()[0].breaks);
     }
