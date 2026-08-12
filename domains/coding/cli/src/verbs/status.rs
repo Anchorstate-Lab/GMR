@@ -35,6 +35,7 @@ pub async fn run(
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
+    let named = key.is_some();
     let views = match &key {
         Some(k) => {
             let mut out = Vec::new();
@@ -45,7 +46,7 @@ pub async fn run(
         }
         None => rt.read_all().await?,
     };
-    let live: Vec<&AnchorView> = views.iter().filter(|v| !v.closed).collect();
+    let live: Vec<&AnchorView> = views.iter().filter(|v| named || !v.closed).collect();
 
     let ctx = Context {
         catalog: Catalog::load(root)?,

@@ -18,8 +18,6 @@ fn versioning_is_broken(root: &Path) -> bool {
     !root.join(".git").exists()
 }
 
-/// Same walk as `check.rs#criteria`'s `undeclared` bucket, run over `live` doctor already
-/// has in hand instead of a per-key async re-read: see `memories/cli-doctor-run.md`.
 pub fn undeclared(
     root: &Path,
     catalog: Catalog,

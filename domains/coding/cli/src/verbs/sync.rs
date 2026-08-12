@@ -396,7 +396,6 @@ pub fn differs(
     Ok(facets)
 }
 
-/// Where one live anchor stands against the declaration its key resolves to.
 pub enum Standing<'a> {
     Matches,
     Drifted {
@@ -409,9 +408,6 @@ pub enum Standing<'a> {
     Undeclared,
 }
 
-/// Classify one anchor against `decls` (see `merged`) and `scanned` (see `memories::scan`).
-/// `Unreadable` takes priority over `Undeclared`: a memory that named this anchor but whose
-/// note this run could not read is not the same fact as no note naming it at all.
 pub fn standing<'a>(
     view: &AnchorView,
     decls: &[&'a AnchorDecl],
@@ -441,8 +437,6 @@ pub struct Audit {
     pub undeclared: Vec<AnchorKey>,
 }
 
-/// The one walk of "declared vs. live" that `check`, `doctor`, `status` and `accept` each
-/// used to do independently — see `memories/cli-criteria-audit.md` for why that cost a bug.
 pub fn audit<'a>(
     views: impl IntoIterator<Item = &'a AnchorView>,
     decls: &[&AnchorDecl],
