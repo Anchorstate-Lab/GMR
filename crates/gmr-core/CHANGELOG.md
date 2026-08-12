@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Zongming-He/GMR/compare/v0.2.1...v0.3.0) - 2026-08-12
+
+### Other
+
+- raise the schema to v7 for a per-anchor probe budget, and climb into it
+- release v0.2.3 ([#3](https://github.com/Zongming-He/GMR/pull/3))
+- release v0.2.1 ([#2](https://github.com/Zongming-He/GMR/pull/2))
+- zero comments; the remaining eighteen become memories or fold into one
+- re-anchor gmr-core at definition granularity, comments become memories
+- give string_newtype!'s try_new a structured error, not String
+- make canonicalization honestly fallible instead of panicking
+
 ## [0.2.3](https://github.com/Zongming-He/GMR/compare/v0.2.2...v0.2.3) - 2026-08-08
 
 ### Other
