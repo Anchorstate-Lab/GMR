@@ -73,9 +73,10 @@ handles source and 129 of them are. The rest were read, hashed, handed to
 the read, so they are not touched at all.
 
 `eligible` belongs to the extractor and therefore to its earned version, which
-is not a stylistic choice: [[survey-cache-scope]] warns that `Vocabulary.handles`
-lives in `lib.rs`, outside the closure, and that using it as a scan filter would
-repeat that incident. A predicate that decides which files reach `collect`
+is not a stylistic choice: [[survey-cache-scope]] warns that `Vocabulary.reads`
+(the extension list, or `Reads::Anything` — see [[extract-vocabulary]]) lives in
+`lib.rs`, outside the closure, and that using it as a scan filter would repeat
+that incident. A predicate that decides which files reach `collect`
 decides what the answer can contain, so it is exactly the kind of input Rule 5
 means by *earned*.
 

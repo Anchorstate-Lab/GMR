@@ -23,8 +23,12 @@ match, silently.
 ## Why `Vocabulary` is deliberately outside the closure
 
 What it constrains is **which shapes can be fed to this probe**, not what the probe
-**derives**. Changing one `handles` extension changes the result of no observation
-whatsoever, and should not turn over every `fact_address` in the repository.
+**derives**. Changing one `reads` extension — or flipping a probe between
+`Reads::Extensions(&[...])` and `Reads::Anything` — changes the result of no
+observation whatsoever, and should not turn over every `fact_address` in the
+repository. (`reads` used to be a plain `handles: &[&str]`, where an empty
+list stood for "reads anything"; `Reads::Anything` made that state explicit
+instead of implicit — see [[extract-routing]].)
 
 The price is that it can drift apart from the candidate table: `Vocabulary` is
 written in this file, while the candidates are built inside the closure. When they
