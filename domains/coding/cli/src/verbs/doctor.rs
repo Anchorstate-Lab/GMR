@@ -40,9 +40,15 @@ pub async fn run(
     let stranded = unresolvable(rt, &live);
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
-    let notes = crate::memories::lint(root, &crate::probes::Catalog::load(root)?)?;
+    let catalog = crate::probes::Catalog::load(root)?;
+    let notes = crate::memories::scan(root, &catalog)?.lint;
     let (malformed, advisory): (Vec<_>, Vec<_>) = notes.iter().partition(|l| l.breaks);
-    let exit_code = if stranded.is_empty() && provider_warnings.is_empty() && malformed.is_empty() {
+    let (_, unwatchable) = crate::delivery::Subscriptions::load(root, &catalog)?;
+    let exit_code = if stranded.is_empty()
+        && provider_warnings.is_empty()
+        && malformed.is_empty()
+        && unwatchable.is_empty()
+    {
         0
     } else {
         1
@@ -62,6 +68,9 @@ pub async fn run(
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
                 "notes": notes.iter().map(|l| serde_json::json!({
                     "note": l.note, "code": l.code, "detail": l.detail, "breaks": l.breaks,
+                })).collect::<Vec<_>>(),
+                "watch_invalid": unwatchable.iter().map(|u| serde_json::json!({
+                    "note": u.note, "reason": u.reason,
                 })).collect::<Vec<_>>(),
             })
         );
@@ -103,6 +112,12 @@ pub async fn run(
     }
     for l in &advisory {
         println!("{:9} {}\n          <- {}", l.code, l.note, l.detail);
+    }
+    for u in &unwatchable {
+        println!(
+            "note      {}  watch-invalid\n          <- {}",
+            u.note, u.reason
+        );
     }
     if !stranded.is_empty() {
         println!(

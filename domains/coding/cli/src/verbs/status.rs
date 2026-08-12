@@ -51,7 +51,7 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let crate::memories::Scanned { notes, broken } = crate::memories::scan(root, &ctx.catalog)?;
+    let crate::memories::Scanned { notes, broken, .. } = crate::memories::scan(root, &ctx.catalog)?;
     let decls = merged(&declared, &notes);
 
     let mut rows = Vec::new();

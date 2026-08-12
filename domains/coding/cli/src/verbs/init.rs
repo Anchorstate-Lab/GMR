@@ -163,6 +163,11 @@ pub fn run(root: &Path, json: bool, global: bool) -> Result<i32, CliError> {
                 .join(" · ")
         );
     }
+    println!(
+        "\nThis is a snapshot of what is here today. Once memories name coordinates of \
+         their own, `gmr doctor` is where a routing failure, a broken frontmatter, or a \
+         `watch:` this build cannot make sense of keeps showing up — not just once, here."
+    );
 
     if skill_written {
         println!("\nskill doc written to {}", skill_target.display());

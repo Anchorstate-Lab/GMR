@@ -16,7 +16,7 @@ async fn drifted(
     keys: &[AnchorKey],
 ) -> Result<(Facets, Facets), CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let crate::memories::Scanned { notes, broken } = crate::memories::scan(root, &catalog)?;
+    let crate::memories::Scanned { notes, broken, .. } = crate::memories::scan(root, &catalog)?;
     let decls = merged(&declared, &notes);
     let ctx = Context { catalog };
 

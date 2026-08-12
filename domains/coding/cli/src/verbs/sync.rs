@@ -143,7 +143,7 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
 
-    let crate::memories::Scanned { notes, broken } = crate::memories::scan(root, &ctx.catalog)?;
+    let crate::memories::Scanned { notes, broken, .. } = crate::memories::scan(root, &ctx.catalog)?;
 
     let existing = rt.anchors().await?;
     let mut opened = Vec::new();
