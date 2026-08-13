@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.0...v0.3.1) - 2026-08-13
+
+### Other
+
+- release v0.3.0
+- release v0.2.3 ([#3](https://github.com/Anchorstate-Lab/GMR/pull/3))
+- release v0.2.1 ([#2](https://github.com/Anchorstate-Lab/GMR/pull/2))
+- anchor claude_code.rs's comments as memory, join clean zone
+- apply cargo fmt to pre-existing drift
+- Extract the file-read shape shared by Git and ClaudeMemory providers
+- Fix review findings on the agent-entry-point commit
+- Add agent entry point: bundled SKILL.md and a Claude Code memory provider
+- provider-git -> batteries/provider with git as an opt-in feature
+
 ## [0.3.0](https://github.com/Zongming-He/GMR/releases/tag/v0.3.0) - 2026-08-12
 
 ### Other
