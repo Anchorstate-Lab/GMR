@@ -1,33 +1,87 @@
-# GMR — Grounded Memory Runtime
+<p align="center">
+  <a href="https://github.com/Anchorstate-Lab/GMR">
+    <img src="docs/images/GMR%20-%20Grounded%20Memory%20Runtime.png" alt="GMR — Grounded Memory Runtime">
+  </a>
+</p>
 
-> Track subjective judgments by anchoring them to recomputable observations in your repository.
+> Keep agent memory grounded in the facts it depends on.
 
-GMR is a lightweight runtime for binding notes to facts, replaying the observation
-that generated them, and warning you when the world moves along a direction you
-declared.
+GMR is a grounding layer between agent memory and changing reality. It keeps memories attached to the facts they depend on, detects when those facts drift, and surfaces affected memories before they become stale assumptions.
 
 ## What it is
 
-GMR is a CLI tool that helps you:
+GMR turns a memory into a grounded, observable relationship.
 
-- attach a judgment or note to an observable part of a repository
-- keep that judgment bound to a reproducible observation
-- detect when the relevant world state has changed
-- return the notes bound to anchors that moved
+Instead of storing a note as an isolated piece of information, GMR records:
 
-It is not a linter or rule engine. It is a runtime for anchoring notes to
-observable state and preserving that binding over time.
+* What the memory is about — the code, interface, configuration, or other observable target
+* What to watch — the properties or changes that matter to the memory
+* How to observe it — a reproducible probe with a known version
+* What changed — a journaled transition from the previous state
+
+When the observed state crosses a declared transition, the anchor moves and GMR returns the memories bound to it.
+
+In other words:
+
+```
+Memory
+  ↓
+"What does this depend on?"
+  ↓
+Anchor
+  ↓
+"What should we watch?"
+  ↓
+Observation
+  ↓
+"Did it change?"
+  ↓
+Surface the memory
+```
+
+GMR does not store a copy of the world or decide whether a judgment is correct. It maintains the relationship between a judgment and the observable state it depends on.
 
 ## Why use it
 
-Use GMR when you want to make a manual judgment accountable:
+Use GMR when your agent’s memories can outlive the facts that created them.
 
-- a contract should still hold after a refactor
-- a behavioural assumption should still be true after code changes
-- a note should be surfaced again when the thing it depends on moves
+This matters when:
 
-GMR keeps the judgment attached to the fact it depends on and reports if that
-fact changes.
+* Code changes — an architectural decision may no longer apply after a refactor
+* APIs evolve — an assumption about an interface can become invalid after a contract change
+* Configuration changes — a memory based on a deployment or runtime setting can become stale
+* Behavior changes — an observed system behavior may no longer match the reason behind an old decision
+* Agents work over long-lived projects — memories accumulated weeks or months ago may silently drift away from the current codebase
+
+Without GMR:
+```
+Fact at T1
+   ↓
+Memory created
+   ↓
+Fact changes at T2
+   ↓
+Memory remains
+   ↓
+Agent retrieves stale memory
+```
+With GMR:
+```
+Fact at T1
+   ↓
+Memory + Anchor
+   ↓
+Fact changes at T2
+   ↓
+Anchor detects the change <-
+   ↓
+Memory is surfaced again
+   ↓
+Agent re-evaluates it
+```
+The key use case is simple:
+
+If a memory would become questionable when some part of the world changes, that memory is a good candidate for GMR.
 
 ## Install
 
