@@ -54,7 +54,7 @@ This matters when:
 * Agents work over long-lived projects — memories accumulated weeks or months ago may silently drift away from the current codebase
 
 Without GMR:
-```
+``` 
 Fact at T1
    ↓
 Memory created
@@ -90,7 +90,7 @@ If a memory would become questionable when some part of the world changes, that 
 If the npm packages are published, install the wrapper package:
 
 ```sh
-npm install -g @zongming_he/gmr
+npm install -g @anchorstate-lab/gmr
 ```
 
 The npm wrapper will load the matching platform bundle, if available.

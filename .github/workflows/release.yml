@@ -147,10 +147,10 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           map_target() {
             case "$1" in
-                x86_64-unknown-linux-gnu) echo "@zongming_he/gmr-linux-x64" ;;
-                aarch64-unknown-linux-gnu) echo "@zongming_he/gmr-linux-arm64" ;;
-                x86_64-apple-darwin) echo "@zongming_he/gmr-darwin-x64" ;;
-                aarch64-apple-darwin) echo "@zongming_he/gmr-darwin-arm64" ;;
+                x86_64-unknown-linux-gnu) echo "@anchorstate-lab/gmr-linux-x64" ;;
+                aarch64-unknown-linux-gnu) echo "@anchorstate-lab/gmr-linux-arm64" ;;
+                x86_64-apple-darwin) echo "@anchorstate-lab/gmr-darwin-x64" ;;
+                aarch64-apple-darwin) echo "@anchorstate-lab/gmr-darwin-arm64" ;;
                 *) echo "" ;;
               esac
           }

@@ -7,7 +7,7 @@
 # Honours GMR_VERSION (default: latest) and GMR_PREFIX (default: ~/.local).
 set -eu
 
-repo=${GMR_REPO:-Zongming-He/gmr}
+repo=${GMR_REPO:-Anchorstate-Lab/GMR}
 version=${GMR_VERSION:-latest}
 prefix=${GMR_PREFIX:-$HOME/.local}
 

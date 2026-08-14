@@ -2,7 +2,7 @@
 set -eu
 
 # Usage: create_platform_npm.sh <tarball> <npm_package_name> <version> <outdir>
-# Example: create_platform_npm.sh artifacts/gmr-x86_64-unknown-linux-gnu.tar.gz @zongming_he/gmr-linux-x64 0.1.0 out
+# Example: create_platform_npm.sh artifacts/gmr-x86_64-unknown-linux-gnu.tar.gz @anchorstate-lab/gmr-linux-x64 0.1.0 out
 
 tarball=$1
 pkgname=$2

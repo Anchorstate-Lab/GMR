@@ -1,14 +1,14 @@
 {
-  "name": "@zongming_he/gmr",
+  "name": "@anchorstate-lab/gmr",
   "version": "0.1.0",
   "description": "Attach judgment to recomputable observations",
   "license": "MIT",
   "bin": { "gmr": "bin/gmr.js" },
   "files": ["bin/gmr.js"],
   "optionalDependencies": {
-    "@zongming_he/gmr-darwin-arm64": "0.1.0",
-    "@zongming_he/gmr-darwin-x64": "0.1.0",
-    "@zongming_he/gmr-linux-arm64": "0.1.0",
-    "@zongming_he/gmr-linux-x64": "0.1.0"
+    "@anchorstate-lab/gmr-darwin-arm64": "0.1.0",
+    "@anchorstate-lab/gmr-darwin-x64": "0.1.0",
+    "@anchorstate-lab/gmr-linux-arm64": "0.1.0",
+    "@anchorstate-lab/gmr-linux-x64": "0.1.0"
   }
 }
