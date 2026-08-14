@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.1...v0.3.2) - 2026-08-14
+
+### Other
+
+- release v0.3.1 ([#5](https://github.com/Anchorstate-Lab/GMR/pull/5))
+- release v0.3.0
+- the budget reaches the work, so cancellation stops being decorative
+- a call carries a budget, and giving up on the race now cancels the work
+- release v0.2.3 ([#3](https://github.com/Anchorstate-Lab/GMR/pull/3))
+- release v0.2.1 ([#2](https://github.com/Anchorstate-Lab/GMR/pull/2))
+- anchor its comments as memory, join the clean zone
+- make canonicalization honestly fallible instead of panicking
+- an artifact has two hashes, and only one of them is the rule
+- a user's probe is a file in their own repository
+- the extractors are the domain's, linked in, versioned by their closure
+- the file walk and the coordinate match, with no language in them
+- verifiability says whether the closure is complete, not who checked the bytes
+- the declaration slot holds a name; the transport answers what it stands for
+- recipe layer: anchors name a probe, not a machine-local hash
+- 制品间接层：声明与派生分家，宿主 env 降级为 Declared
+- transport-shell -> batteries/transport with shell as an opt-in feature
+
 ## [0.3.1](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.0...v0.3.1) - 2026-08-13
 
 ### Other
