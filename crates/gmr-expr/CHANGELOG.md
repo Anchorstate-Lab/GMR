@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/Anchorstate-Lab/GMR/compare/v0.2.1...v0.3.1) - 2026-08-13
+
+### Other
+
+- release v0.3.0
+- release v0.2.3 ([#4](https://github.com/Anchorstate-Lab/GMR/pull/4))
+- release v0.2.1 ([#2](https://github.com/Anchorstate-Lab/GMR/pull/2))
+- anchor its comments as memory, join the clean zone
+
 ## [0.3.0](https://github.com/Zongming-He/GMR/compare/v0.2.1...v0.3.0) - 2026-08-12
 
 ### Other
