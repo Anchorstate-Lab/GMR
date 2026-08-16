@@ -14,6 +14,52 @@ fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn carries(node: tree_sitter::Node, field: Option<&str>) -> bool {
+    !node.is_extra() && (node.is_named() || field.is_some())
+}
+
+fn spell(node: tree_sitter::Node, src: &str, skip: Option<usize>, out: &mut Vec<String>) -> bool {
+    if skip == Some(node.id()) {
+        return true;
+    }
+    if node.child_count() == 0 {
+        if let Some(t) = src.get(node.byte_range()) {
+            out.push(t.to_owned());
+        }
+        return false;
+    }
+    if node.is_named() {
+        out.push(node.kind().to_owned());
+    }
+    let before = out.len();
+    let mut dropped = false;
+    for i in 0..node.child_count() as u32 {
+        let Some(child) = node.child(i) else { continue };
+        if carries(child, node.field_name_for_child(i)) {
+            dropped |= spell(child, src, skip, out);
+        }
+    }
+    if out.len() == before
+        && !dropped
+        && let Some(t) = src.get(node.byte_range())
+    {
+        out.push(squeeze(t));
+    }
+    dropped
+}
+
+fn canonical(node: tree_sitter::Node, src: &str) -> String {
+    let mut out = Vec::new();
+    spell(node, src, None, &mut out);
+    out.join(" ")
+}
+
+fn canonical_without(node: tree_sitter::Node, src: &str, skip: Option<usize>) -> String {
+    let mut out = Vec::new();
+    spell(node, src, skip, &mut out);
+    out.join(" ")
+}
+
 fn named_by_parent<'t>(
     table: &lang::Table,
     node: tree_sitter::Node<'t>,
@@ -71,13 +117,13 @@ fn members(node: tree_sitter::Node, src: &str) -> (String, String) {
     let mut walk = body.walk();
     let (mut declared, mut implemented) = (Vec::new(), Vec::new());
     for m in body.named_children(&mut walk) {
-        let inner = m.child_by_field_name("body");
-        let head = inner.map_or(m.end_byte(), |b| b.start_byte());
-        if let Some(t) = src.get(m.start_byte()..head) {
-            declared.push(squeeze(t));
+        if m.is_extra() {
+            continue;
         }
-        if let Some(t) = inner.and_then(|b| src.get(b.byte_range())) {
-            implemented.push(squeeze(t));
+        let inner = m.child_by_field_name("body");
+        declared.push(canonical_without(m, src, inner.map(|b| b.id())));
+        if let Some(b) = inner {
+            implemented.push(canonical(b, src));
         }
     }
     (declared.join("; "), implemented.join(" "))
@@ -164,18 +210,19 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
             true => members(node, src),
             false => (String::new(), String::new()),
         };
+        let shape = |n: tree_sitter::Node| canonical(n, src);
         let mut sig = Vec::new();
         let mut walk = node.walk();
         sig.extend(
             node.children(&mut walk)
                 .filter(|c| table.shape_kinds.contains(&c.kind()))
-                .map(text),
+                .map(shape),
         );
         sig.extend(
             table
                 .shape_fields
                 .iter()
-                .filter_map(|f| node.child_by_field_name(f).map(text)),
+                .filter_map(|f| node.child_by_field_name(f).map(shape)),
         );
         if !declared.is_empty() {
             sig.push(declared);
@@ -186,7 +233,7 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
                 .body_fields
                 .iter()
                 .find_map(|f| node.child_by_field_name(f))
-                .map(text)
+                .map(shape)
                 .unwrap_or_default(),
         };
         let vis = visibility(table, node, &name, &text);
@@ -254,6 +301,135 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
 mod tests {
     use super::*;
 
+    fn reading(rel: &str, src: &str) -> (String, String) {
+        let mut out = Vec::new();
+        collect(rel, src.as_bytes(), &mut out).unwrap();
+        let c = out
+            .iter()
+            .find(|c| {
+                c.coord
+                    .get("kind")
+                    .is_some_and(|k| k == "function" || k == "type")
+            })
+            .unwrap_or_else(|| panic!("nothing anchorable in {src:?}"));
+        (
+            c.coord["shape"].clone(),
+            c.facts["body"].as_str().unwrap_or_default().to_owned(),
+        )
+    }
+
+    fn same(label: &str, a: &str, b: &str) {
+        assert_eq!(reading("t.rs", a), reading("t.rs", b), "{label}");
+    }
+
+    fn differs(label: &str, a: &str, b: &str) {
+        assert_ne!(
+            reading("t.rs", a),
+            reading("t.rs", b),
+            "{label}: a real difference was normalised away"
+        );
+    }
+
+    #[test]
+    fn what_a_formatter_may_change_does_not_move_the_reading() {
+        same(
+            "the parameter list wraps",
+            "fn f(\n    a: A,\n    b: B,\n) -> R { g() }",
+            "fn f(a: A, b: B) -> R { g() }",
+        );
+        same(
+            "a trailing comma appears",
+            "fn f(a: A, b: B,) {}",
+            "fn f(a: A, b: B) {}",
+        );
+        same(
+            "the body is re-indented",
+            "fn f() {\n        let x = 1;\n        g(x);\n}",
+            "fn f() { let x = 1; g(x); }",
+        );
+        same(
+            "a comment lands in the signature",
+            "fn f(/* which one */ a: A) {}",
+            "fn f(a: A) {}",
+        );
+        same(
+            "a comment lands in the body",
+            "fn f() { // why\n g(); }",
+            "fn f() { g(); }",
+        );
+        same(
+            "a struct's fields wrap",
+            "struct S {\n    a: A,\n    b: B,\n}",
+            "struct S { a: A, b: B }",
+        );
+    }
+
+    #[test]
+    fn what_the_compiler_would_see_differently_still_moves_the_reading() {
+        differs(
+            "the parameters swap places",
+            "fn f(a: A, b: B) {}",
+            "fn f(b: B, a: A) {}",
+        );
+        differs(
+            "a parameter is added",
+            "fn f(a: A) {}",
+            "fn f(a: A, b: B) {}",
+        );
+        differs("a type changes", "fn f(a: A) {}", "fn f(a: B) {}");
+        differs("a parameter is renamed", "fn f(a: A) {}", "fn f(z: A) {}");
+        differs(
+            "a type becomes a reference",
+            "fn f(a: A) {}",
+            "fn f(a: &A) {}",
+        );
+        differs(
+            "a binding becomes mutable",
+            "fn f(a: A) {}",
+            "fn f(mut a: A) {}",
+        );
+        differs("a return type appears", "fn f() {}", "fn f() -> R {}");
+        differs("a generic appears", "fn f(a: A) {}", "fn f<T>(a: A) {}");
+        differs(
+            "an operator changes",
+            "fn f() { let x = a + b; }",
+            "fn f() { let x = a - b; }",
+        );
+        differs(
+            "whitespace inside a string literal changes",
+            "fn f() { g(\"a  b\"); }",
+            "fn f() { g(\"a b\"); }",
+        );
+        differs(
+            "a statement leaves the body",
+            "fn f() { g(); h(); }",
+            "fn f() { g(); }",
+        );
+    }
+
+    #[test]
+    fn a_node_whose_whole_content_is_one_bare_word_keeps_that_word() {
+        assert_ne!(
+            reading("t.ts", "function f(x: number) {}").0,
+            reading("t.ts", "function f(x: string) {}").0,
+            "predefined types are single bare tokens; dropping them merges every one of them"
+        );
+    }
+
+    #[test]
+    fn the_same_rule_holds_where_the_notation_is_not_rust() {
+        assert_eq!(
+            reading("t.py", "def f(\n    a,\n    b,\n): pass").0,
+            reading("t.py", "def f(a, b): pass").0,
+            "python wraps a parameter list too"
+        );
+        assert_ne!(
+            reading("t.py", "def f(a, b): pass").0,
+            reading("t.py", "def f(a, *, b): pass").0,
+            "keyword-only is a different promise, not a re-layout"
+        );
+    }
+
     fn roomy() -> Budget {
         Budget::within(std::time::Duration::from_secs(600), 1 << 24)
     }
@@ -294,7 +470,7 @@ mod tests {
         let v = at(
             &d,
             json!({"file": "a.rs", "kind": "function", "name": "gone",
-                   "shape": "(x: u8) u8"}),
+                   "shape": "parameters parameter x u8 u8"}),
         );
         assert_eq!(v["missed"], json!(["name"]));
         assert_eq!(v["candidates"], 1);
@@ -321,10 +497,13 @@ mod tests {
         let v = at(
             &d,
             json!({"file": "a.rs", "kind": "function", "name": "alpha",
-                   "shape": "(x: u8) u8"}),
+                   "shape": "parameters parameter x u8 u8"}),
         );
         assert_eq!(v["missed"], json!(["shape"]));
-        assert_eq!(v["at"]["shape"], "(x: u8, y: u8) u8");
+        assert_eq!(
+            v["at"]["shape"],
+            "parameters parameter x u8 parameter y u8 u8"
+        );
     }
 
     #[test]
@@ -469,10 +648,16 @@ mod tests {
         let v = at(
             &d,
             json!({"file": "a.ts", "kind": "function", "name": "alpha",
-                   "shape": "(x: number) : number"}),
+                   "shape": "formal_parameters required_parameter x \
+                             type_annotation predefined_type number \
+                             type_annotation predefined_type number"}),
         );
         assert_eq!(v["missed"], json!(["shape"]));
-        assert_eq!(v["at"]["shape"], "(x: number) : string");
+        assert_eq!(
+            v["at"]["shape"],
+            "formal_parameters required_parameter x type_annotation predefined_type number \
+             type_annotation predefined_type string"
+        );
     }
 
     #[test]
