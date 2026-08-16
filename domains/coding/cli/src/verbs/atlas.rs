@@ -12,6 +12,16 @@ use crate::probes::Catalog;
 
 pub const DEFAULT_OUT: &str = ".anchor/output/atlas.html";
 
+const LOGO: &[u8] = include_bytes!("../../assets/logo.png");
+
+fn logo() -> String {
+    use base64::Engine;
+    format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(LOGO)
+    )
+}
+
 fn anchor_id(key: &str) -> String {
     format!("anchor:{key}")
 }
@@ -194,13 +204,14 @@ pub async fn run(
         .count();
     let references = edges.len() - bindings;
 
-    let repo = root.file_name().map_or_else(
+    let repo: String = root.file_name().map_or_else(
         || root.display().to_string(),
         |n| n.to_string_lossy().into(),
     );
     let graph = Graph {
-        title: format!("{repo} atlas"),
-        subtitle: format!("{} anchors · {memory_count} memories", views.len()),
+        title: "GMR Atlas".to_owned(),
+        subtitle: format!("{repo} · {} anchors · {memory_count} memories", views.len()),
+        logo: Some(logo()),
         nodes,
         edges,
     };

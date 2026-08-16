@@ -35,14 +35,11 @@ pub fn render(graph: &Graph) -> Result<String, AtlasError> {
     out.push_str("\n</style>\n</head>\n<body>\n");
 
     out.push_str("<header class=\"bar\">\n<div class=\"brand\">\n");
-    out.push_str(
-        "<svg class=\"mark\" viewBox=\"0 0 34 22\" aria-hidden=\"true\">\
-         <path d=\"M23 2.5 L31 11 L23 19.5 L15 11 Z\" fill=\"none\" stroke=\"currentColor\" \
-         stroke-width=\"1.7\"/>\
-         <circle cx=\"7.5\" cy=\"11\" r=\"5.5\" fill=\"none\" stroke=\"currentColor\" \
-         stroke-width=\"1.7\"/><line x1=\"13\" y1=\"11\" x2=\"15.4\" y2=\"11\" \
-         stroke=\"currentColor\" stroke-width=\"1.7\"/></svg>\n",
-    );
+    if let Some(logo) = &graph.logo {
+        out.push_str("<img class=\"mark\" alt=\"\" src=\"");
+        out.push_str(&escape_text(logo));
+        out.push_str("\">\n");
+    }
     out.push_str("<div class=\"brand-text\"><h1>");
     out.push_str(&escape_text(&graph.title));
     out.push_str("</h1><p>");
@@ -51,14 +48,16 @@ pub fn render(graph: &Graph) -> Result<String, AtlasError> {
 
     out.push_str("<main class=\"stage\">\n");
     out.push_str(
-        "<aside class=\"rail\">\n\
+        "<aside class=\"rail\" id=\"rail\">\n\
          <div class=\"rail-head\">\
          <input id=\"q\" class=\"search\" type=\"search\" placeholder=\"filter by name or path\" \
          autocomplete=\"off\" aria-label=\"filter by name or path\">\
          <div class=\"chips tones\" id=\"tones\"></div>\
          </div>\n\
          <div class=\"list\" id=\"list\" role=\"listbox\" aria-label=\"anchors\"></div>\n\
-         </aside>\n",
+         </aside>\n\
+         <div class=\"grip\" id=\"grip-rail\" role=\"separator\" aria-orientation=\"vertical\" \
+         tabindex=\"0\" aria-label=\"resize the anchor list\"></div>\n",
     );
     out.push_str(
         "<section class=\"canvas\">\n<div id=\"cy\"></div>\n\
@@ -67,7 +66,11 @@ pub fn render(graph: &Graph) -> Result<String, AtlasError> {
          <button class=\"refit\" id=\"refit\" type=\"button\">Fit</button>\n\
          </section>\n",
     );
-    out.push_str("<aside class=\"panel\" id=\"panel\"></aside>\n</main>\n");
+    out.push_str(
+        "<div class=\"grip\" id=\"grip-panel\" role=\"separator\" aria-orientation=\"vertical\" \
+         tabindex=\"0\" aria-label=\"resize the memory panel\"></div>\n\
+         <aside class=\"panel\" id=\"panel\"></aside>\n</main>\n",
+    );
 
     out.push_str("<script id=\"atlas-data\" type=\"application/json\">");
     out.push_str(&data);
@@ -94,6 +97,7 @@ mod tests {
         Graph {
             title: "Atlas".to_owned(),
             subtitle: "test".to_owned(),
+            logo: None,
             nodes: vec![
                 Node::new("a:x", "x", Kind::Anchor, Tone::Notice).badge("drifted"),
                 Node::new("m:y", "y", Kind::Memory, Tone::Calm),
@@ -108,10 +112,17 @@ mod tests {
         assert!(html.contains("cytoscape"), "cytoscape is not inlined");
         assert!(html.contains("fcose"), "the layout is not inlined");
 
-        for fetches in ["<script src", "<link ", "<img ", "@import", "url(http"] {
+        for reaches_out in [
+            "<script src",
+            "<link ",
+            "src=\"http",
+            "src=\"/",
+            "@import",
+            "url(http",
+        ] {
             assert!(
-                !html.contains(fetches),
-                "the page would go and fetch `{fetches}`, which a file:// open cannot serve"
+                !html.contains(reaches_out),
+                "the page would go and fetch `{reaches_out}`, which a file:// open cannot serve"
             );
         }
     }
@@ -141,6 +152,23 @@ mod tests {
         g.title = "a <b>bold</b> repo".to_owned();
         let html = render(&g).unwrap();
         assert!(html.contains("<title>a &lt;b&gt;bold&lt;/b&gt; repo</title>"));
+    }
+
+    #[test]
+    fn a_logo_rides_along_in_the_page_instead_of_being_pointed_at() {
+        let mut g = graph();
+        g.logo = Some("data:image/png;base64,AAAA".to_owned());
+        let html = render(&g).unwrap();
+        assert!(
+            html.contains("src=\"data:image/png;base64,AAAA\""),
+            "{}",
+            &html[..400]
+        );
+
+        assert!(
+            !render(&graph()).unwrap().contains("<img"),
+            "a page given no logo should not draw an empty one"
+        );
     }
 
     #[test]

@@ -123,10 +123,10 @@ input {
 }
 
 .mark {
-  width: 34px;
-  height: 22px;
-  color: var(--accent);
+  height: 30px;
+  width: auto;
   flex: 0 0 auto;
+  display: block;
 }
 
 .brand-text h1 {
@@ -192,7 +192,7 @@ input {
 }
 
 .rail {
-  flex: 0 0 306px;
+  flex: 0 0 auto;
   width: 306px;
   display: flex;
   flex-direction: column;
@@ -434,6 +434,35 @@ input {
   background: var(--ground);
 }
 
+.grip {
+  flex: 0 0 5px;
+  width: 5px;
+  cursor: col-resize;
+  background: var(--line);
+  position: relative;
+  touch-action: none;
+}
+
+.grip::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.grip:hover,
+.grip.dragging {
+  background: var(--accent);
+}
+
+.grip:focus-visible {
+  outline-offset: -2px;
+}
+
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
 #cy {
   position: absolute;
   inset: 0;
@@ -511,7 +540,7 @@ input {
 }
 
 .panel {
-  flex: 0 0 396px;
+  flex: 0 0 auto;
   width: 396px;
   overflow-y: auto;
   background: var(--surface);
@@ -748,18 +777,6 @@ input {
   margin: 0 0 10px;
 }
 
-@media (max-width: 1180px) {
-  .rail {
-    flex-basis: 250px;
-    width: 250px;
-  }
-
-  .panel {
-    flex-basis: 330px;
-    width: 330px;
-  }
-}
-
 @media (max-width: 900px) {
   body {
     overflow: auto;
@@ -772,9 +789,13 @@ input {
   .rail,
   .panel {
     flex: 0 0 auto;
-    width: 100%;
+    width: 100% !important;
     border: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .grip {
+    display: none;
   }
 
   .list {

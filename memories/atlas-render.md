@@ -8,10 +8,13 @@ watch: [sig, logic]
 # A page that is opened from a path has no second chance to fetch anything
 
 The output is opened as a `file://` URL. There is no origin, no server and often
-no network, so every library, the stylesheet and the script are inlined rather
-than linked. A CDN reference would not fail loudly here — it would produce a page
-that looks like it loaded and simply has no graph on it, which is the failure
-shape this project refuses everywhere else.
+no network, so every library, the stylesheet, the script and the caller's logo
+are inlined rather than linked — the logo as a `data:` URI, which is a reference
+that resolves to bytes already in the file rather than a fetch. A CDN reference
+would not fail loudly here; it would produce a page that looks like it loaded and
+simply has no graph on it, which is the failure shape this project refuses
+everywhere else. The test does not forbid `<img`, it forbids a `src` that points
+anywhere a file:// open cannot follow.
 
 The data is embedded with every `<` rewritten to its JSON escape. `<` can only
 occur inside a JSON string, so the rewrite is lossless, and without it any memory

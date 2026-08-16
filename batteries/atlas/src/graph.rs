@@ -120,6 +120,8 @@ impl Edge {
 pub struct Graph {
     pub title: String,
     pub subtitle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
 }

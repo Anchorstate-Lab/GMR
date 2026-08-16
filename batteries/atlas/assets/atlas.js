@@ -683,6 +683,61 @@
     cy.fit(undefined, 40);
   });
 
+  function drags(gripId, paneId, fromLeft) {
+    var grip = document.getElementById(gripId);
+    var pane = document.getElementById(paneId);
+    var held = null;
+
+    function widthFrom(x) {
+      var box = document.querySelector(".stage").getBoundingClientRect();
+      var raw = fromLeft ? x - box.left : box.right - x;
+      return Math.max(190, Math.min(raw, box.width - 320));
+    }
+
+    function apply(px) {
+      pane.style.width = px + "px";
+      cy.resize();
+    }
+
+    grip.addEventListener("pointerdown", function (ev) {
+      held = ev.pointerId;
+      grip.setPointerCapture(held);
+      grip.classList.add("dragging");
+      document.body.classList.add("resizing");
+      ev.preventDefault();
+    });
+
+    grip.addEventListener("pointermove", function (ev) {
+      if (held === null) return;
+      apply(widthFrom(ev.clientX));
+    });
+
+    function release() {
+      if (held === null) return;
+      grip.releasePointerCapture(held);
+      held = null;
+      grip.classList.remove("dragging");
+      document.body.classList.remove("resizing");
+      cy.resize();
+    }
+    grip.addEventListener("pointerup", release);
+    grip.addEventListener("pointercancel", release);
+
+    grip.addEventListener("keydown", function (ev) {
+      var step = ev.shiftKey ? 48 : 16;
+      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      var now = pane.getBoundingClientRect().width;
+      var toward = ev.key === "ArrowRight" ? step : -step;
+      var box = document.querySelector(".stage").getBoundingClientRect();
+      var next = fromLeft ? now + toward : now - toward;
+      apply(Math.max(190, Math.min(next, box.width - 320)));
+      ev.preventDefault();
+    });
+  }
+
+  drags("grip-rail", "rail", true);
+  drags("grip-panel", "panel", false);
+
   var search = document.getElementById("q");
   search.addEventListener("input", function () {
     state.query = search.value.trim().toLowerCase();

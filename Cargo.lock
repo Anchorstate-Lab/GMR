@@ -210,6 +210,7 @@ name = "coding-anchor"
 version = "0.3.2"
 dependencies = [
  "async-trait",
+ "base64",
  "chrono",
  "clap",
  "coding-extract",
