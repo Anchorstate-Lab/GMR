@@ -509,6 +509,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gmr-atlas"
+version = "0.3.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "gmr-content"
 version = "0.3.2"
 dependencies = [

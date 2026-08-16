@@ -111,6 +111,13 @@ path              = "batteries/survey"
 forbidden_default = ["io"]  # 索引后端是 feature：默认 feature 集里不许有数据库或运行时
 
 [[member]]
+name              = "gmr-atlas"
+layer             = "battery"
+kind              = "package"
+path              = "batteries/atlas"
+forbidden         = ["io"]
+
+[[member]]
 name  = "coding-extract"
 layer = "domain"
 kind  = "package"

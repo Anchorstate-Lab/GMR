@@ -47,6 +47,7 @@ CLEAN_ZONES = [
     "crates/gmr-store",
     "crates/gmr-runtime",
     "batteries/survey",
+    "batteries/atlas",
     "batteries/provider",
     "batteries/transport",
     "domains/coding/extract",

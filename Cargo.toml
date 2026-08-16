@@ -10,6 +10,7 @@ members = [
     "batteries/transport",
     "batteries/provider",
     "batteries/survey",
+    "batteries/atlas",
     "domains/coding/extract",
     "domains/coding/cli",
 ]
