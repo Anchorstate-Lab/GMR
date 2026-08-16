@@ -5,6 +5,7 @@ mod delivery;
 mod error;
 mod memories;
 mod probes;
+mod prose;
 mod render;
 mod rules;
 mod shapes;
@@ -158,6 +159,7 @@ async fn served(
         }
         Command::Status { key } => verbs::status::run(&rt, &root, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, key, json).await,
+        Command::Atlas { out } => verbs::atlas::run(&rt, &root, out, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init { .. } => unreachable!("init was handled above"),

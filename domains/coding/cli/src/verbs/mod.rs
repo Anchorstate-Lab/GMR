@@ -1,5 +1,6 @@
 pub mod accept;
 pub mod anchor;
+pub mod atlas;
 pub mod bind;
 pub mod check;
 pub mod close;

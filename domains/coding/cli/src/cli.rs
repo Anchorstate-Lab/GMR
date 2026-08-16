@@ -67,6 +67,15 @@ pub enum Command {
     #[command(display_order = 3)]
     Check { key: Option<String> },
 
+    /// Write every anchor, every memory and what binds them as one HTML page.
+    #[command(display_order = 5)]
+    Atlas {
+        /// Where the page goes. Defaults to .anchor/output/atlas.html, which
+        /// git ignores along with the rest of .anchor/.
+        #[arg(long)]
+        out: Option<String>,
+    },
+
     /// Build every declared probe recipe and install it for this machine.
     #[command(subcommand)]
     #[command(hide = true)]

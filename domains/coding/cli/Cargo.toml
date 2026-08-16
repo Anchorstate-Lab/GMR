@@ -17,6 +17,7 @@ gmr = { path = "../../../crates/gmr", features = ["sqlite"] }
 gmr-transport = { path = "../../../batteries/transport", features = ["shell", "inproc", "script"] }
 gmr-provider = { path = "../../../batteries/provider", features = ["git", "claude-code"] }
 gmr-survey = { path = "../../../batteries/survey" }
+gmr-atlas = { path = "../../../batteries/atlas" }
 # 域自己的抽取器 —— 链接进来，不 exec
 coding-extract = { path = "../extract" }
 
@@ -29,6 +30,7 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 tempfile.workspace = true
 serde_yaml_ng = "0.10.0"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
 [lints]
 workspace = true
