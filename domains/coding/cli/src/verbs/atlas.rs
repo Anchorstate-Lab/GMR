@@ -21,26 +21,28 @@ fn memory_id(external_id: &str) -> String {
 }
 
 fn label_of(key: &str) -> String {
-    match key.split_once('#') {
-        Some((_, name)) => name.to_owned(),
-        None => key
-            .rsplit_once('/')
-            .map_or_else(|| key.to_owned(), |(_, base)| base.to_owned()),
+    if let Some((_, name)) = key.split_once('#') {
+        return name.to_owned();
     }
+    if let Some((_, rest)) = key.split_once("::") {
+        return rest.to_owned();
+    }
+    key.rsplit_once('/')
+        .map_or_else(|| key.to_owned(), |(_, base)| base.to_owned())
 }
 
-fn group_of(key: &str) -> String {
-    let path = key.split_once('#').map_or(key, |(p, _)| p);
+fn trail_of(key: &str) -> Vec<String> {
+    let (path, names_a_definition) = key
+        .split_once('#')
+        .map_or((key, false), |(path, _)| (path, true));
     if let Some((head, _)) = path.split_once("::") {
-        return head.to_owned();
+        return vec![head.to_owned()];
     }
-    let mut parts = path.split('/');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some("crates" | "batteries"), Some(name), _) => name.to_owned(),
-        (Some("domains"), Some(domain), Some(part)) => format!("{domain}-{part}"),
-        (Some(head), _, _) if !head.is_empty() => head.to_owned(),
-        _ => "other".to_owned(),
+    let mut trail: Vec<String> = path.split('/').map(str::to_owned).collect();
+    if !names_a_definition {
+        trail.pop();
     }
+    trail
 }
 
 fn anchor_tone(view: &AnchorView, delivering: bool, unclaimed: bool) -> Tone {
@@ -72,7 +74,7 @@ fn memory_tone(m: &MemoryView) -> (Tone, Option<&'static str>) {
 fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
     let key = view.key.to_string();
     let mut node = Node::new(anchor_id(&key), label_of(&key), Kind::Anchor, tone)
-        .group(group_of(&key))
+        .under(trail_of(&key))
         .fact("probe", view.anchor.probe.name.to_string())
         .fact("sightings", view.sightings.to_string());
     if let Some(status) = view.status.as_ref() {
@@ -242,23 +244,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_group_is_the_package_the_coordinate_lives_in() {
+    fn a_definition_hangs_under_every_directory_and_the_file_it_lives_in() {
         assert_eq!(
-            group_of("crates/gmr-core/src/addr.rs#write_array"),
-            "gmr-core"
+            trail_of("crates/gmr-core/src/addr.rs#write_array"),
+            ["crates", "gmr-core", "src", "addr.rs"]
         );
-        assert_eq!(group_of("batteries/survey/src/cache.rs#scan"), "survey");
-        assert_eq!(
-            group_of("domains/coding/cli/src/verbs/sync.rs#run"),
-            "coding-cli"
-        );
-        assert_eq!(group_of("tools/gate.py#check_acceptance_intact"), "tools");
     }
 
     #[test]
-    fn a_key_that_is_not_a_path_groups_by_what_it_names_instead() {
-        assert_eq!(group_of("layer::gmr-core"), "layer");
-        assert_eq!(group_of("doctrine::decisions"), "doctrine");
+    fn a_whole_file_hangs_under_its_directories_and_is_itself_the_leaf() {
+        assert_eq!(
+            trail_of("crates/gmr-core/src/addr.rs"),
+            ["crates", "gmr-core", "src"]
+        );
+        assert_eq!(label_of("crates/gmr-core/src/addr.rs"), "addr.rs");
+    }
+
+    #[test]
+    fn a_key_that_is_not_a_path_keeps_its_namespace_as_the_only_level() {
+        assert_eq!(trail_of("layer::gmr-core"), ["layer"]);
+        assert_eq!(label_of("layer::gmr-core"), "gmr-core");
+        assert_eq!(trail_of("doctrine::decisions"), ["doctrine"]);
+        assert_eq!(label_of("doctrine::decisions"), "decisions");
     }
 
     fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
@@ -352,6 +359,15 @@ mod tests {
             "write_array"
         );
         assert_eq!(label_of("crates/gmr-core/src/addr.rs"), "addr.rs");
-        assert_eq!(label_of("doctrine::decisions"), "doctrine::decisions");
+    }
+
+    #[test]
+    fn nothing_a_row_shows_repeats_what_its_ancestors_already_say() {
+        let key = "crates/gmr-core/src/addr.rs#write_array";
+        let trail = trail_of(key);
+        assert!(
+            !trail.contains(&label_of(key)),
+            "the leaf would say again what the branch above it already says"
+        );
     }
 }

@@ -28,6 +28,15 @@ words are for *what*.
 memories, bindings and links are shapes the substrate has for every domain, not
 vocabulary any one domain chose.
 
+`under` is an ancestry, not a path. It is a list of labels because splitting a
+string on `/` would be this layer deciding that coordinates are file paths —
+true for the coding domain and for nothing else it is supposed to serve. The
+caller says what a node hangs under and this layer draws however many levels it
+was given; a domain whose coordinates have no hierarchy passes one level, or
+none. What the tree does with that ancestry — folding a chain of only-children
+into one row, carrying the worst descendant tone up so a collapsed branch cannot
+hide an alarm — is drawing, and stays here.
+
 There is deliberately no legend field. The page collects the `(badge, tone)`
 pairs the nodes actually carry, so the legend is a projection of the data rather
 than a second copy of it — the same reason `reason` is derived and not stored

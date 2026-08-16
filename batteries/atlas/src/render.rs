@@ -55,7 +55,6 @@ pub fn render(graph: &Graph) -> Result<String, AtlasError> {
          <div class=\"rail-head\">\
          <input id=\"q\" class=\"search\" type=\"search\" placeholder=\"filter by name or path\" \
          autocomplete=\"off\" aria-label=\"filter by name or path\">\
-         <div class=\"chips\" id=\"chips\"></div>\
          <div class=\"chips tones\" id=\"tones\"></div>\
          </div>\n\
          <div class=\"list\" id=\"list\" role=\"listbox\" aria-label=\"anchors\"></div>\n\

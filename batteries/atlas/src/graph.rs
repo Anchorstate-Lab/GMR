@@ -48,8 +48,8 @@ pub struct Node {
     pub tone: Tone,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub badge: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub under: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -64,7 +64,7 @@ impl Node {
             kind,
             tone,
             badge: None,
-            group: None,
+            under: Vec::new(),
             detail: None,
             facts: Vec::new(),
         }
@@ -77,8 +77,12 @@ impl Node {
     }
 
     #[must_use]
-    pub fn group(mut self, group: impl Into<String>) -> Self {
-        self.group = Some(group.into());
+    pub fn under<I, S>(mut self, trail: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.under = trail.into_iter().map(Into::into).collect();
         self
     }
 

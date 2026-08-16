@@ -48,13 +48,12 @@
 
   var state = {
     selected: null,
-    groups: new Set(),
+    collapsed: new Set(),
     tones: new Set(),
     query: ""
   };
 
   function matchesFilters(node) {
-    if (state.groups.size && !(node.group && state.groups.has(node.group))) return false;
     if (state.tones.size && !state.tones.has(node.tone)) return false;
     if (state.query) {
       var hay = (node.id + " " + node.label + " " + (node.badge || "")).toLowerCase();
@@ -204,7 +203,7 @@
       });
       if (!m.neighbours.length) pass[m.id] = matchesFilters(m);
     });
-    var anyFilter = state.groups.size || state.tones.size || state.query;
+    var anyFilter = state.tones.size || state.query;
     cy.batch(function () {
       cy.nodes().forEach(function (n) {
         n.toggleClass("dim", Boolean(anyFilter) && !pass[n.id()]);
@@ -232,9 +231,16 @@
 
   function select(id, focus) {
     state.selected = id && byId[id] ? id : null;
+    if (state.selected && ancestry[state.selected]) {
+      ancestry[state.selected].forEach(function (step) {
+        state.collapsed.delete(step);
+      });
+    }
     highlight(state.selected ? byId[state.selected] : null);
     renderPanel();
     renderList();
+    var picked = listEl.querySelector('.row[aria-selected="true"]');
+    if (picked) picked.scrollIntoView({ block: "nearest" });
     if (focus && state.selected) {
       var target = cy.getElementById(state.selected);
       cy.animate(
@@ -252,57 +258,169 @@
     return d;
   }
 
+  function branch(name, id) {
+    return { name: name, id: id, kids: new Map(), leaves: [], rank: 99, held: 0, shown: 0 };
+  }
+
+  function fold(node, root) {
+    node.kids.forEach(function (kid) {
+      fold(kid, false);
+    });
+    if (root) return;
+    while (node.kids.size === 1 && node.leaves.length === 0) {
+      var only = node.kids.values().next().value;
+      node.name = node.name + "/" + only.name;
+      node.id = only.id;
+      node.kids = only.kids;
+      node.leaves = only.leaves;
+    }
+  }
+
+  function settle(node) {
+    var rank = 99;
+    var held = node.leaves.length;
+    node.leaves.forEach(function (leaf) {
+      rank = Math.min(rank, TONE_RANK[leaf.tone]);
+    });
+    node.kids.forEach(function (kid) {
+      settle(kid);
+      rank = Math.min(rank, kid.rank);
+      held += kid.held;
+    });
+    node.rank = rank;
+    node.held = held;
+  }
+
+  function grow() {
+    var root = branch("", "");
+    anchors.forEach(function (a) {
+      var at = root;
+      (a.under || []).forEach(function (step) {
+        if (!at.kids.has(step)) {
+          at.kids.set(step, branch(step, (at.id ? at.id + "/" : "") + step));
+        }
+        at = at.kids.get(step);
+      });
+      at.leaves.push(a);
+    });
+    fold(root, true);
+    settle(root);
+    return root;
+  }
+
+  function shut(node, into) {
+    if (node.leaves.length > 0 && node.id) into.add(node.id);
+    node.kids.forEach(function (kid) {
+      shut(kid, into);
+    });
+  }
+
+  function trace(node, above, into) {
+    var here = node.id ? above.concat([node.id]) : above;
+    node.leaves.forEach(function (leaf) {
+      into[leaf.id] = here;
+    });
+    node.kids.forEach(function (kid) {
+      trace(kid, here, into);
+    });
+  }
+
+  var tree = grow();
+  shut(tree, state.collapsed);
+  var ancestry = Object.create(null);
+  trace(tree, [], ancestry);
+
+  function mark(node) {
+    var shown = 0;
+    node.kids.forEach(function (kid) {
+      shown += mark(kid);
+    });
+    node.leaves.forEach(function (leaf) {
+      if (matchesFilters(leaf)) shown += 1;
+    });
+    node.shown = shown;
+    return shown;
+  }
+
+  function isOpen(node) {
+    return Boolean(state.query) || !state.collapsed.has(node.id);
+  }
+
+  function twig(node, depth) {
+    var open = isOpen(node);
+    var row = el("button", "twig");
+    row.type = "button";
+    row.style.paddingLeft = 7 + depth * 11 + "px";
+    row.setAttribute("aria-expanded", String(open));
+    row.appendChild(el("span", "twist", open ? "▾" : "▸"));
+    row.appendChild(el("span", "twig-name", node.name));
+    if (node.rank < TONE_RANK.calm) {
+      var d = el("span", "dot");
+      d.style.background = toneColor[TONE_ORDER[node.rank]];
+      d.title = TONE_ORDER[node.rank];
+      row.appendChild(d);
+    }
+    row.appendChild(el("span", "count", String(node.shown)));
+    row.addEventListener("click", function () {
+      if (state.collapsed.has(node.id)) state.collapsed.delete(node.id);
+      else state.collapsed.add(node.id);
+      renderList();
+    });
+    return row;
+  }
+
+  function leaf(a, depth) {
+    var row = el("button", "row");
+    row.type = "button";
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(state.selected === a.id));
+    row.style.paddingLeft = 9 + depth * 11 + "px";
+    row.appendChild(toneDot(a));
+    var text = el("div", "row-text");
+    text.appendChild(el("div", "row-name", a.label));
+    row.appendChild(text);
+    row.title = a.id.replace(/^anchor:/, "");
+    var tail = el("div", "row-tail");
+    if (a.badge) tail.appendChild(el("span", "badge t-" + a.tone, a.badge));
+    var bound = neighboursOf(a, "memory").length;
+    if (bound > 1) tail.appendChild(el("span", "count", String(bound)));
+    row.appendChild(tail);
+    row.addEventListener("click", function () {
+      select(a.id, true);
+    });
+    return row;
+  }
+
+  function spread(host, node, depth) {
+    Array.from(node.kids.values())
+      .filter(function (kid) {
+        return kid.shown > 0;
+      })
+      .sort(function (x, y) {
+        return x.name.localeCompare(y.name);
+      })
+      .forEach(function (kid) {
+        host.appendChild(twig(kid, depth));
+        if (isOpen(kid)) spread(host, kid, depth + 1);
+      });
+    node.leaves
+      .filter(matchesFilters)
+      .sort(function (x, y) {
+        var t = TONE_RANK[x.tone] - TONE_RANK[y.tone];
+        return t !== 0 ? t : x.label.localeCompare(y.label);
+      })
+      .forEach(function (a) {
+        host.appendChild(leaf(a, depth));
+      });
+  }
+
   function renderList() {
-    var shown = visibleAnchors();
     listEl.textContent = "";
-    if (!shown.length) {
+    if (mark(tree) === 0) {
       listEl.appendChild(el("div", "empty", "No anchor matches these filters."));
       return;
     }
-    var grouped = new Map();
-    shown.forEach(function (a) {
-      var g = a.group || "ungrouped";
-      if (!grouped.has(g)) grouped.set(g, []);
-      grouped.get(g).push(a);
-    });
-    Array.from(grouped.keys())
-      .sort()
-      .forEach(function (g) {
-        var rows = grouped.get(g).sort(function (x, y) {
-          var t = TONE_RANK[x.tone] - TONE_RANK[y.tone];
-          return t !== 0 ? t : x.label.localeCompare(y.label);
-        });
-        var head = el("div", "group-head");
-        head.appendChild(el("span", null, g));
-        head.appendChild(el("span", null, String(rows.length)));
-        listEl.appendChild(head);
-        rows.forEach(function (a) {
-          var row = el("button", "row");
-          row.type = "button";
-          row.setAttribute("role", "option");
-          row.setAttribute("aria-selected", String(state.selected === a.id));
-          row.appendChild(toneDot(a));
-          var text = el("div", "row-text");
-          text.appendChild(el("div", "row-name", a.label));
-          var sub = a.id.replace(/^anchor:/, "");
-          if (sub !== a.label) {
-            var subEl = el("div", "row-sub", sub);
-            subEl.title = sub;
-            text.appendChild(subEl);
-          }
-          row.title = sub;
-          row.appendChild(text);
-          var tail = el("div", "row-tail");
-          if (a.badge) tail.appendChild(el("span", "badge t-" + a.tone, a.badge));
-          var bound = neighboursOf(a, "memory").length;
-          if (bound > 1) tail.appendChild(el("span", "count", String(bound)));
-          row.appendChild(tail);
-          row.addEventListener("click", function () {
-            select(a.id, true);
-          });
-          listEl.appendChild(row);
-        });
-      });
+    spread(listEl, tree, 0);
   }
 
   var panelEl = document.getElementById("panel");
@@ -528,30 +646,6 @@
   }
 
   function renderChips() {
-    var host = document.getElementById("chips");
-    host.textContent = "";
-    var groups = new Map();
-    anchors.forEach(function (a) {
-      var g = a.group || "ungrouped";
-      groups.set(g, (groups.get(g) || 0) + 1);
-    });
-    Array.from(groups.keys())
-      .sort()
-      .forEach(function (g) {
-        var chip = el("button", "chip");
-        chip.type = "button";
-        chip.setAttribute("aria-pressed", String(state.groups.has(g)));
-        chip.appendChild(document.createTextNode(g));
-        chip.appendChild(el("span", "n", String(groups.get(g))));
-        chip.addEventListener("click", function () {
-          if (state.groups.has(g)) state.groups.delete(g);
-          else state.groups.add(g);
-          chip.setAttribute("aria-pressed", String(state.groups.has(g)));
-          applyFilters();
-        });
-        host.appendChild(chip);
-      });
-
     var toneHost = document.getElementById("tones");
     toneHost.textContent = "";
     var toneCounts = {};
