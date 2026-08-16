@@ -173,6 +173,12 @@ whose declaration no longer matches their live criteria, and anchors
 standing on a reading a different probe instrument took — resolve those
 (see `accept --criteria` and `rebase` below) before trusting a quiet result.
 
+Reformatting does not count as a change. A signature and a body are read from
+the parse tree, not from the source text, so rewrapping a parameter list,
+adding a trailing comma, re-indenting or writing a comment leaves every anchor
+where it was. Run your formatter freely; what `check` reports is something a
+compiler would also see.
+
 ### 4. Accept what you find
 
 ```sh
@@ -192,9 +198,27 @@ gmr --repo /path/to/project status --json
 
 `status` reports every anchor, its axes, and the notes bound to it. Reads only.
 
+### 6. Read the whole graph at once
+
+```sh
+gmr --repo /path/to/project atlas
+```
+
+`atlas` writes every anchor, every memory and what binds them to
+`.anchor/output/atlas.html` — one self-contained file that opens straight from
+disk, with nothing fetched over the network. The rail on the left is the
+repository tree, the middle is the anchor–memory graph, and the right panel is
+the memory text for whatever you pick in either. Colour says how loudly
+something is asking to be looked at, so a branch you have collapsed still shows
+that something under it moved. `--out <path>` writes it elsewhere.
+
+Anchors and memories are many-to-many — one memory can be about nine
+coordinates, one coordinate can carry three memories — and that is the shape
+this page exists to make readable.
+
 ## Common commands
 
-The front door — six verbs `gmr --help` shows:
+The front door — seven verbs `gmr --help` shows:
 
 - `init` — set up `.anchor/`, install bundled probes, write the skill doc
 - `anchor` — watch a coordinate and write the memory that goes with it
@@ -202,6 +226,7 @@ The front door — six verbs `gmr --help` shows:
 - `check` — did anything move on an axis a memory asked about?
 - `accept` — take what an anchor now shows as the new baseline, or take a
   changed declaration's criteria (`--baseline` / `--criteria` / `--all --criteria`)
+- `atlas` — write the whole anchor–memory graph as one HTML page
 - `close` — retire an anchor permanently
 
 Everything else still works, reachable through `gmr help <name>`:
