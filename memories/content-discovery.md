@@ -1,9 +1,8 @@
 ---
 about:
   - crates/gmr-content/src/lib.rs#MemorySource
-  - crates/gmr-content/src/lib.rs#Declaring
+  - crates/gmr-content/src/lib.rs#MemoryStore
   - crates/gmr-content/src/lib.rs#Record
-  - crates/gmr-content/src/lib.rs#Claim
 watch: [sig, logic]
 ---
 
@@ -39,68 +38,65 @@ answering `Ok(None)` is authoritative about a record being gone, and
 acts on. Treating a short listing as a set of dead references would produce
 a screenful of records to delete that are all still there.
 
-## Declaring is a second trait, because it was a returned "I have none"
+## `MemoryStore` is what a battery hands back
 
-Some stores let a record say what it is about: markdown frontmatter is
-exactly that. Most do not, and requiring it would push adoption onto whether
-someone can change the agent that writes their memories — memories are often
-written by a different agent entirely, and mem0's own update path makes no
-promise about metadata surviving. Declarations for such stores go through
-`gmr bind`, which is the base primitive anyway: the binding table has always
-been the authority on which anchors a record is about.
+The one contract, plus whichever capabilities that backend has. It exists
+because "can this store be enumerated" was knowledge held by whoever wired
+the store up, and that knowledge was three hand-written branches in one
+`main.rs` — each a different shape, so the fourth backend was going to be a
+copy of the third.
 
-`Claim` used to be a field on `Record`, and a store with no notion of a
-declaration returned `Silent` for every one of its records. That is the
-shape D3 removed from `History` — **an absent capability expressed as a
-value every caller has to handle** — and it grew back here unnoticed.
+Configuration deliberately is *not* uniform: a git store needs a repository
+root, a mem0 store needs a key and a scope. That asymmetry is the domain
+deciding which store to talk to, which is the decision this crate declines
+to make. What is uniform is the return type.
 
-What it cost was measured rather than argued. Pointed at a store that
-declares nothing, the domain read 147 records, produced zero anchors, and
-`sync` and `check` both exited 0: a repository supervising nothing, with
-every gate green. The callers were all handling `Silent` correctly. There
-was simply nothing in "this record says nothing" to distinguish from "this
-store has no way to say anything", and the second is a misconfiguration
-while the first is ordinary.
+## Declaring left, and what would bring it back
 
-So `Claim` moved onto `Declaring`, and `Record` no longer carries one. A
-store that does not declare does not implement the trait, and the
-declaration path cannot be handed it at all. `Silent` keeps its original and
-now unambiguous meaning: within a store that does declare, this particular
-record declares nothing.
+There was a `Declaring` trait here, for stores whose records can say what
+they are about — markdown frontmatter is exactly that. It had one
+implementation, in the domain, and after `name_of` moved out, not one call
+site dispatched through it: every caller held the concrete type. A trait in
+the base that no base crate calls, no battery implements, and nobody
+dispatches on, is the base carrying a domain's vocabulary.
 
-**`declared()` hands the record and its claim together, in one call.** The
-first cut split them — `records()` then `claim_of(&record)` — and that lost
-whatever the first call could not read: a file that would not open and an
-empty file both arrive as no bytes. The only thing left to tell them apart
-from is the store itself, read a second time, with emptiness standing in as
-the flag that says "ask again". A source learns both facts in the same pass;
-a contract that separates them makes every implementation re-derive one of
-them. See [[cli-notes-source]] for the syscall this cost.
+`MemorySource` earns the same address that `Declaring` did not: two
+implementations across two layers, and `gmr memories` dispatches on it. The
+contrast is the test, and it is worth applying to the next capability
+someone wants to add here.
 
-## `Declaring` is synchronous, and that is its whole admission test
+`Claim` and `Stated` are domain types now (see [[cli-notes-source]]). What
+they encode did not change and neither did why:
 
-Its methods take no `Budget` and return no future, so a store reachable
-only across a network cannot implement it. That is deliberate and it is the
-one place where the control plane and the data plane are separated by the
-compiler rather than by a rule someone has to remember.
+- `Claim` was once a field on `Record`, and a store with no notion of a
+  declaration returned `Silent` for every record it had. That is the shape
+  D3 removed from `History` — **an absent capability expressed as a value
+  every caller has to handle**. Measured before it was fixed: pointed at a
+  store that declares nothing, the domain read 147 records, produced zero
+  anchors, and `sync` and `check` both exited 0. Every caller was handling
+  `Silent` correctly; there was simply nothing in "this record says nothing"
+  to tell apart from "this store cannot say anything", and the second is a
+  misconfiguration while the first is an ordinary day.
+- The record and its claim arrive **together**. Split into `records()` then
+  `claim_of(&record)`, the second call sees only bytes, so a file that would
+  not open and an empty file both arrive as none — and the diagnosis has to
+  be recovered by reading the store a second time.
+- It is **synchronous and takes no `Budget`**, so a store reachable only
+  across a network cannot declare. `Grounding::Unreachable` covers a store
+  that will not answer for a record's *content*: D6 keeps it out of every
+  exit code, `read` reports it, the anchor is still judged. There is no
+  equivalent for a store that will not answer about which anchors *exist* —
+  without that answer there is no roster to judge at all. Measured, with the
+  declarations in a remote store and the store stopped: `read` exited 0 and
+  reported each binding unreachable; `check` and `doctor` exited 2. Exit 2
+  was the right code; what was wrong was that declarations could be put
+  somewhere unreachable at all.
 
-The reason is a failure with no good handling. `Grounding::Unreachable`
-covers a store that will not answer for a record's *content*: D6 puts it in
-the bucket that never turns red, `read` reports it, and the anchor is still
-judged. There is no equivalent for a store that will not answer about which
-anchors *exist* — without that answer there is no roster to judge, so
-`check` and `doctor` can only fail outright. Measured, with the declarations
-in a remote store and the store stopped: `read` exited 0 and reported each
-binding as unreachable; `check` and `doctor` exited 2.
-
-Exit 2 was the correct code. What was wrong was that the declarations could
-be put somewhere unreachable at all.
-
-`Malformed` exists so the one case that *can* be wrong stays wrong loudly.
-A source that finds a claim it cannot parse must not silently downgrade to
-`Silent` — that would turn a typo in frontmatter into "this note declares
-nothing", which is a lint the domain already publishes under `unclaimed`
-and would then be reporting for the wrong reason.
+**What brings the trait back here: a second store that can declare, in a
+battery.** A git-backed local memory directory (Letta Code's MemFS is one)
+is the shape to expect. When it arrives the trait belongs in this crate
+again, and the three properties above are what it has to keep — the third
+one especially, because it is the only one a compiler can hold.
 
 ## When this changes, ask
 
@@ -112,11 +108,11 @@ Does `Silent` acquire a meaning beyond "this record says nothing"? It once
 also meant "this store cannot say anything", and the two are a
 misconfiguration and an ordinary day.
 
-Does `Declaring` split back into "give me the records" and "now tell me
-about this one"? The second call can only see what the first one managed to
-carry, and what it cannot carry is exactly the failures worth reporting.
+Does a capability arrive here with one implementation and no dispatch? That
+is what `Declaring` was, and the answer is that it lives where its one
+implementation lives until a second one turns up somewhere this crate can
+see.
 
-Does `Declaring` gain an `async` method, or a `Budget`? That is the moment
-the anchor roster becomes something a network can withhold, and no exit code
-can express that usefully — see [[cli-notes-source]] for why the one
-implementation was already synchronous before the contract required it.
+Does `MemoryStore` grow a field that only one backend can fill? It carries
+capabilities, and a capability nobody else can have is that backend's own
+business, not a slot everyone else leaves empty.

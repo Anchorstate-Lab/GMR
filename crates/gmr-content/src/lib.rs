@@ -81,13 +81,6 @@ pub trait History: Send + Sync {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Claim {
-    Says(serde_json::Value),
-    Silent,
-    Malformed(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
     pub reference: Ref,
     pub version: Version,
@@ -130,16 +123,4 @@ impl MemoryStore {
     pub fn source(&self) -> Option<&dyn MemorySource> {
         self.source.as_deref()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Declared {
-    pub record: Record,
-    pub claim: Claim,
-}
-
-pub trait Declaring: Send + Sync {
-    fn provider(&self) -> &ProviderId;
-
-    fn declared(&self) -> Result<Vec<Declared>, ContentError>;
 }

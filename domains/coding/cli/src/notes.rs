@@ -2,13 +2,24 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use gmr::probe::Budget;
-use gmr::{
-    Claim, ContentError, Declared, Declaring, MemorySource, ProviderId, Record, Ref, Version,
-};
+use gmr::{ContentError, MemorySource, ProviderId, Record, Ref, Version};
 
 use crate::error::CliError;
 
 const RESOLVED_THROUGH: &str = "git";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Claim {
+    Says(serde_json::Value),
+    Silent,
+    Malformed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stated {
+    pub record: Record,
+    pub claim: Claim,
+}
 
 pub struct Notes {
     root: PathBuf,
@@ -34,7 +45,7 @@ impl Notes {
         Some(inside.strip_suffix(".md").unwrap_or(inside).to_owned())
     }
 
-    fn walked(&self) -> Result<Vec<Declared>, CliError> {
+    pub fn declared(&self) -> Result<Vec<Stated>, CliError> {
         let mut rels = Vec::new();
         walk(&self.root, &self.root.join(&self.dir), &mut rels)?;
         rels.sort();
@@ -62,7 +73,7 @@ impl Notes {
                     }
                     Err(why) => (Vec::new(), Claim::Malformed(why)),
                 };
-                Declared {
+                Stated {
                     record: Record {
                         reference: Ref::new(self.id.as_str(), rel),
                         version,
@@ -75,16 +86,6 @@ impl Notes {
     }
 }
 
-impl Declaring for Notes {
-    fn provider(&self) -> &ProviderId {
-        &self.id
-    }
-
-    fn declared(&self) -> Result<Vec<Declared>, ContentError> {
-        self.walked().map_err(|e| ContentError::new(e.to_string()))
-    }
-}
-
 #[async_trait]
 impl MemorySource for Notes {
     fn provider(&self) -> &ProviderId {
@@ -92,7 +93,12 @@ impl MemorySource for Notes {
     }
 
     async fn list(&self, _budget: &Budget) -> Result<Vec<Record>, ContentError> {
-        Ok(self.declared()?.into_iter().map(|d| d.record).collect())
+        Ok(self
+            .declared()
+            .map_err(|e| ContentError::new(e.to_string()))?
+            .into_iter()
+            .map(|d| d.record)
+            .collect())
     }
 }
 

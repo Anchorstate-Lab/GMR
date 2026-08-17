@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use gmr::{Claim, Declared, Declaring, Ref};
+use gmr::Ref;
+
+use crate::notes::{Claim, Stated};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -181,7 +183,7 @@ fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
 }
 
 fn claims_of(
-    declared: &Declared,
+    declared: &Stated,
     source: &crate::notes::Notes,
     catalog: &Catalog,
 ) -> (Option<Note>, Vec<Fault>) {

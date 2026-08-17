@@ -1,8 +1,9 @@
 ---
 about:
   - domains/coding/cli/src/notes.rs#Notes
+  - domains/coding/cli/src/notes.rs#Claim
+  - domains/coding/cli/src/notes.rs#Stated
   - domains/coding/cli/src/notes.rs#declared
-  - domains/coding/cli/src/notes.rs#walked
   - domains/coding/cli/src/notes.rs#name_of
   - domains/coding/cli/src/notes.rs#versions_of
   - domains/coding/cli/src/memories.rs#claims_of
@@ -32,26 +33,29 @@ through is its YAML frontmatter. It hands that grid over as an opaque
 domain with a completely different vocabulary, and it is the same line
 [[content-discovery]] draws for every source.
 
-## It implements both traits, and only one of them is asynchronous
+## One of the two ways in is a trait, and the other is not
 
-`MemorySource::list` is `async` because a store may be across a network.
-This one is a directory. `Declaring::declared` is synchronous for the same
-reason the inherent method that preceded it was: routing the declaration
-path through an async trait would have made `Subscriptions::load` async, and
-with it five call chains, to await a filesystem walk that never yields.
+`MemorySource::list` is a trait method and `async`, because a store may be
+across a network and `gmr memories` dispatches over every store that can
+list. `declared()` is inherent and synchronous: it has one implementation —
+this one — and every caller holds `Notes` concretely.
 
-What used to be a local convenience is now the contract ([[content-discovery]]).
-The observation that a directory needs no `await` turned out to be the same
-observation as "declarations must not be able to go out of reach" — so the
-signature that was chosen to avoid an infectious `async` is the one that now
-makes a remote declaring source impossible to write.
+It was briefly a `Declaring` trait in `gmr-content`. Nothing dispatched on
+it, so what the base was holding was this domain's vocabulary; the trait
+went, the types came here, and [[content-discovery]] records what would
+bring it back.
+
+Synchronous is not an accident of having only one implementation. Routing
+the declaration path through an async trait would make `Subscriptions::load`
+async, and with it five call chains, to await a filesystem walk that never
+yields — and, the reason that outlives this file, a declaration a network
+can withhold leaves no roster to judge at all.
 
 ## The name is a property of the address, and this file owns the address
 
-`name_of` is an inherent method, not part of `Declaring`. What a record
-should be *called* is neither retrieval nor discovery, and the contract it
-briefly sat on is the base's — a display name in `gmr-content` would have
-been the domain's rendering vocabulary living one layer below the domain.
+What a record should be *called* is neither retrieval nor discovery. `name_of`
+sat on a base trait for one commit, which put this domain's rendering
+vocabulary one layer below the domain.
 
 It takes a `Ref`, not a `Record`, because rendering has an address in
 hand and nothing else. Requiring a record would have meant a full scan every
@@ -89,17 +93,17 @@ a wrong one, so this refuses and says why.
 
 ## The record and what it says are produced in one pass
 
-`walked` reads a file, hashes it, and reads its frontmatter while it still
+`declared` reads a file, hashes it, and reads its frontmatter while it still
 has the read error in hand — so a file it cannot open becomes
 `Malformed("cannot read this file")` at the point that fact is known.
 
-`Declaring` briefly had this as two calls, `records` then `claim_of`, and
-the second one had only bytes to work from: an unreadable file and an empty
-one both arrived as none. The diagnosis was recovered by re-opening the file
-from `claim_of` whenever the bytes were empty — a second syscall, a window
-between the two reads where the answer could change, and emptiness pressed
-into service as a failure flag. One call removes all three, and
-[[content-discovery]] carries the same reasoning for the contract.
+This was briefly two calls, `records` then `claim_of`, and the second one
+had only bytes to work from: an unreadable file and an empty one both
+arrived as none. The diagnosis was recovered by re-opening the file whenever
+the bytes were empty — a second syscall, a window between the two reads
+where the answer could change, and emptiness pressed into service as a
+failure flag. One call removes all three, and [[content-discovery]] carries
+the same reasoning for the contract that briefly imposed the split.
 
 ## A key present with no value is not the same as a key that is absent
 
