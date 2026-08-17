@@ -20,6 +20,7 @@ use clap::Parser;
 use gmr::Runtime;
 use gmr_provider::claude_code::ClaudeMemory;
 use gmr_provider::git::Git;
+use gmr_provider::mem0::{Mem0, Scope};
 use gmr_transport::inproc::InProcess;
 use gmr_transport::script::Script;
 use gmr_transport::shell::Shell;
@@ -29,6 +30,20 @@ use error::CliError;
 
 pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
     probes::store_dir(root)
+}
+
+fn mem0(api_key: &str) -> Result<Mem0, gmr::ContentError> {
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let scope = Scope {
+        user_id: env("MEM0_USER_ID"),
+        agent_id: env("MEM0_AGENT_ID"),
+        app_id: env("MEM0_APP_ID"),
+    };
+    let provider = Mem0::new(api_key, scope)?;
+    Ok(match env("MEM0_BASE_URL") {
+        Some(base) => provider.based_at(base),
+        None => provider,
+    })
 }
 
 fn stale_journal_guard(root: &std::path::Path, state: &std::path::Path) -> Result<(), CliError> {
@@ -147,6 +162,15 @@ async fn served(
         Err(e) => {
             eprintln!("gmr: claude-code memory provider unavailable: {e}");
             builder = builder.provider_warning("claude-code", e.to_string());
+        }
+    }
+    if let Some(key) = std::env::var_os("MEM0_API_KEY") {
+        match mem0(&key.to_string_lossy()) {
+            Ok(p) => builder = builder.provider(Arc::new(p)),
+            Err(e) => {
+                eprintln!("gmr: mem0 provider unavailable: {e}");
+                builder = builder.provider_warning("mem0", e.to_string());
+            }
         }
     }
     let rt = builder.build();

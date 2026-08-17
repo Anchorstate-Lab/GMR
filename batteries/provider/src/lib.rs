@@ -11,6 +11,9 @@ pub mod git;
 #[cfg(feature = "claude-code")]
 pub mod claude_code;
 
+#[cfg(feature = "mem0")]
+pub mod mem0;
+
 #[cfg(any(feature = "git", feature = "claude-code"))]
 pub(crate) fn spend(budget: &gmr_probe::Budget) -> Result<(), gmr_content::ContentError> {
     budget

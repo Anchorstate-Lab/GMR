@@ -82,6 +82,16 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 
 `reaffirm` and `cobound` take the same `--provider`. `link` takes `--from-provider` and `--to-provider` separately, because the two ends may sit in different stores — a memory in one store can contradict a memory in another, and saying so should not require moving either of them.
 
+### mem0
+
+Set `MEM0_API_KEY` and the scope (`MEM0_USER_ID`, optionally `MEM0_AGENT_ID` / `MEM0_APP_ID`) before running any verb, and a `mem0` provider registers itself. With no key set, nothing registers and nothing complains — not using mem0 is not a misconfiguration.
+
+Then `gmr bind <memory-uuid> --anchors <key> --provider mem0`. **The uuid is the whole reference**; mem0 keeps it stable when it updates a memory in place, so a binding survives the memory being rewritten — that rewrite is exactly what GMR is there to tell you about.
+
+GMR only ever reads mem0. It does not write memories, metadata or anything else back, so a memory's `metadata` is never treated as saying which anchor it is about — declarations go through `gmr bind`. `gmr read` on a rewritten mem0 memory shows what it said at binding time, rebuilt from mem0's own change log.
+
+Two things worth knowing when reading a report about mem0 records: mem0's own consolidation can delete a memory that contradicts something newer, and that shows up as `gone` (worth acting on — the binding now points at nothing). Its store being unreachable shows up as `unreachable`, which is never counted against an exit code, because nobody holding this repository can fix it.
+
 ## Don't
 
 - Don't hand-edit `.anchor/anchors.toml`, `.anchor/probes.toml`, or anything under `.anchor/state/` — go through the verbs so the journal stays the one source of truth.

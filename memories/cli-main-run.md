@@ -58,6 +58,21 @@ builder via `provider_warning` (see [[runtime-provider-warning]]) rather
 than only `eprintln!`'d, so a `--json` caller (or `gmr doctor`) has a way
 to learn about it too.
 
+mem0 differs from that on purpose. **Absence of `MEM0_API_KEY` registers
+nothing and warns about nothing** — not using mem0 is not a
+misconfiguration, and a warning on every run for a store the reader has
+never heard of is noise that teaches people to stop reading warnings. A key
+that *is* set and then fails to build a provider is the `ClaudeMemory` case
+again: warn, record on the builder, carry on. The line is "did the person
+ask for this store", and only an env var can answer it.
+
+Registering mem0 means this binary links `reqwest`. That is why
+`gmr-provider` keeps `mem0` off by default and this crate turns it on:
+the battery stays free of io in its default feature set — which
+`architecture.toml`'s `forbidden_default` mechanically checks — while the
+shipped binary, whose whole job is to be assembled for a domain, carries
+it. See [[provider-mem0]].
+
 ## When this changes, ask
 
 Does a new verb that never touches the journal still get dispatched only

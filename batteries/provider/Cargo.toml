@@ -11,6 +11,9 @@ gmr-core = { path = "../../crates/gmr-core", optional = true }
 gmr-content = { path = "../../crates/gmr-content", optional = true }
 gmr-probe = { path = "../../crates/gmr-probe", optional = true }
 async-trait = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
@@ -22,6 +25,12 @@ default = []
 #    惯例。加 mem0 / Claude 原生记忆 = 加一个 feature + 一个模块。
 git = ["dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait"]
 claude-code = ["dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait"]
+# mem0 走网络，所以它带 reqwest —— architecture.toml 把 reqwest 归在 io，
+# 而 gmr-provider 的 forbidden_default 禁 io，于是这一条只能是非默认 feature。
+mem0 = [
+    "dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait",
+    "dep:serde", "dep:serde_json", "dep:reqwest",
+]
 
 [lints]
 workspace = true
