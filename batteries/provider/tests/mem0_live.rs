@@ -115,3 +115,30 @@ async fn an_id_that_was_never_there_is_never_answered_with_content() {
         ),
     }
 }
+
+#[tokio::test]
+#[ignore = "needs a real mem0: MEM0_API_KEY, or MEM0_BASE_URL for a self-hosted one"]
+async fn a_mem0_out_of_reach_never_reads_as_a_record_being_gone() {
+    let (provider, deployment, budget) = addressed();
+    let scope = Scope::user(std::env::var("MEM0_USER_ID").unwrap());
+    let unreachable = Mem0::self_hosted("http://127.0.0.1:9", None, scope).unwrap();
+
+    let records = provider.list(&budget).await.expect("listing the scope");
+    let Some(first) = records.first() else {
+        println!("{deployment}: nothing in this scope to ask about");
+        return;
+    };
+
+    let answer = unreachable
+        .fetch(&first.reference.external_id, &budget)
+        .await;
+
+    assert!(
+        answer.is_err(),
+        "a record the live store just listed came back from an unreachable one as {answer:?}. \
+         `Ok(None)` is the world's answer and becomes a dead reference a reader is told to \
+         delete; a store that will not answer is our failure, which D6 keeps out of every \
+         exit code. This is the half of the conformance suite mem0 cannot run offline, \
+         because building a corpus would mean writing into it and this battery cannot"
+    );
+}

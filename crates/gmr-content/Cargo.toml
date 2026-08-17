@@ -6,6 +6,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# 契约自带的一致性套件，跟 gmr-store 的 testkit 同一个惯例。
+# 它验的是类型表达不了的那两条：版本追踪什么，Ok(None) 主张什么。
+testkit = []
+
 [dependencies]
 gmr-core = { path = "../gmr-core" }
 # Budget 是所有对外调用共用的预算词汇，暂住 gmr-probe；出现第三个使用者

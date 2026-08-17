@@ -16,8 +16,10 @@ serde_json = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
+gmr-content = { path = "../../crates/gmr-content", features = ["testkit"] }
 tokio = { workspace = true }
 tempfile = { workspace = true }
+async-trait = { workspace = true }
 
 [features]
 default = []

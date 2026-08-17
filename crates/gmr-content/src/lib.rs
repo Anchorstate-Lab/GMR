@@ -14,6 +14,9 @@
 //! its admission test: a store reachable only over a network cannot
 //! implement it.
 
+#[cfg(feature = "testkit")]
+pub mod testkit;
+
 use async_trait::async_trait;
 use gmr_core::{ExternalId, ProviderId, Ref, Version};
 use gmr_probe::Budget;

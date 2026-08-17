@@ -189,7 +189,8 @@ pub async fn run(
         opened.push(decl.key.clone());
     }
 
-    let (binds, bound, renamed) = align_bindings(rt, notes).await?;
+    let (binds, bound, renamed) =
+        align_bindings(rt, notes, &crate::memories::declaring(root)).await?;
     steps.extend(
         binds
             .into_iter()
@@ -360,6 +361,7 @@ enum Step {
 async fn align_bindings(
     rt: &Runtime,
     notes: &[crate::memories::Note],
+    source: &dyn gmr::Declaring,
 ) -> Result<(Vec<Binding>, Vec<String>, Vec<String>), CliError> {
     let mut planned = Vec::new();
     let mut bound = Vec::new();
@@ -367,7 +369,7 @@ async fn align_bindings(
 
     for note in notes {
         let reference = note.reference.clone();
-        let named = reference.external_id.as_str();
+        let named = crate::memories::shown(&reference, source);
         let mut want: Vec<AnchorKey> = note
             .wants
             .iter()
@@ -411,7 +413,7 @@ async fn align_bindings(
         if settled {
             continue;
         }
-        bound.push(named.to_owned());
+        bound.push(named);
         planned.push((reference, want, version));
     }
     Ok((planned, bound, renamed))
@@ -549,10 +551,17 @@ mod tests {
             watch: None,
         }];
 
-        let (plan, bound, _) = align_bindings(&rt, &notes).await.unwrap();
+        let source = crate::notes::Notes::at(dir.path(), "memories");
+        let (plan, bound, _) = align_bindings(&rt, &notes, &source).await.unwrap();
 
         assert_eq!(plan.len(), 1);
-        assert_eq!(bound, vec!["memories/a.md".to_owned()]);
+        assert_eq!(
+            bound,
+            vec!["a".to_owned()],
+            "sync names a note the way every other verb does — its name, not the address \
+             some store keeps it at. Two verbs spelling the same note differently is how a \
+             reader learns to distrust both"
+        );
         assert!(
             rt.memory().binding_of(&reference).await.unwrap().is_none(),
             "resolution has to finish before the first write, because the journal is \

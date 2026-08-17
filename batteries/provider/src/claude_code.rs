@@ -18,8 +18,7 @@ impl ClaudeMemory {
         })
     }
 
-    #[cfg(test)]
-    fn at(memory_dir: impl Into<PathBuf>) -> Self {
+    pub fn at(memory_dir: impl Into<PathBuf>) -> Self {
         Self {
             root: memory_dir.into(),
             id: ProviderId::new("claude-code"),

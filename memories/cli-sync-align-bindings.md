@@ -58,6 +58,12 @@ it applying the plan and finding the binding afterwards. The second looks
 redundant and is not: without it the first would pass just as well against a
 fixture that could never bind at all.
 
+It takes the declaring source for one reason: to name a note the way its
+author does rather than by the address a store happens to keep it at. Every
+other verb had already been moved to that ([[cli-notes-source]]); leaving
+this one printing paths would have meant two verbs spelling the same note
+differently, which teaches a reader to trust neither.
+
 ## When this changes, ask
 
 Does the new code call `rt.bind` unconditionally instead of comparing
