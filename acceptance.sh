@@ -95,11 +95,11 @@ printf -- '---\nabout: src/auth.ts#createSession\n---\n\n# A session is only cre
 
 out=$("$gmr" --repo "$repo" sync)
 echo "$out" | grep -q "1 anchors opened" || fail "the note did not open an anchor" "$out"
-echo "$out" | grep -q "memories/auth.md" || fail "the note was not bound" "$out"
+echo "$out" | grep -q -- "+ auth" || fail "the note was not bound" "$out"
 
 # A second run must write nothing: the binding table only grows, never changes.
 out=$("$gmr" --repo "$repo" sync)
-echo "$out" | grep -q "memories/auth.md" && fail "sync is not idempotent, it appended the binding again" "$out"
+echo "$out" | grep -q -- "+ auth" && fail "sync is not idempotent, it appended the binding again" "$out"
 
 step "observe: the world has not moved"
 set +e
@@ -122,7 +122,7 @@ set -e
 [ "$code" -eq 1 ] || fail "the exit code should be 1 when the world moved, got $code" "$out"
 echo "$out" | grep -q "moved" || fail "did not report moved" "$out"
 # This line is the acceptance criterion itself: the fact moved, the note came back.
-echo "$out" | grep -q "memories/auth.md" \
+echo "$out" | grep -q -- "→ auth" \
     || fail "the anchor moved but the note bound to it was not handed back — this is the whole value of the product" "$out"
 
 step "pass --json: the shape an agent loop reads"
@@ -134,7 +134,7 @@ set +e
 out=$("$gmr" --repo "$repo" pass --json); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "pass should exit 1 when an anchor moved, got $code" "$out"
-echo "$out" | grep -q '"memories":\["memories/auth.md"\]' \
+echo "$out" | grep -q '"memories":\["git:memories/auth.md"\]' \
     || fail "pass --json did not hand the note back" "$out"
 
 # ── A probe the user wrote: a fact that is not in the code ───────────────────
@@ -173,7 +173,7 @@ set +e
 out=$("$gmr" --repo "$repo" observe); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "the deploy moved to another commit, the exit code should be 1, got $code" "$out"
-echo "$out" | grep -q "memories/deploy.md" \
+echo "$out" | grep -q -- "→ deploy" \
     || fail "anchored a fact that is invisible in the source, but the note did not come back" "$out"
 
 # ── The front door: one coordinate in, one vector out ────────────────────────

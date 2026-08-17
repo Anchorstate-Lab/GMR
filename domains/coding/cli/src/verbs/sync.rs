@@ -144,12 +144,19 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
 
-    let scanned = crate::memories::scan(root, &ctx.catalog)?;
+    let mut scanned = crate::memories::scan(root, &ctx.catalog)?;
+    let existing = rt.anchors().await?;
+    scanned.accounted_for(
+        declared
+            .anchor
+            .iter()
+            .map(|d| d.key.as_str())
+            .chain(existing.iter().map(AnchorKey::as_str)),
+    );
     let notes = &scanned.notes;
     let breaking: Vec<&crate::memories::Fault> =
         scanned.faults.iter().filter(|f| f.breaks()).collect();
 
-    let existing = rt.anchors().await?;
     let mut steps = Vec::new();
     let mut opened = Vec::new();
     let mut drifted_criteria = Vec::new();
@@ -361,7 +368,7 @@ enum Step {
 async fn align_bindings(
     rt: &Runtime,
     notes: &[crate::memories::Note],
-    source: &dyn gmr::Declaring,
+    source: &crate::notes::Notes,
 ) -> Result<(Vec<Binding>, Vec<String>, Vec<String>), CliError> {
     let mut planned = Vec::new();
     let mut bound = Vec::new();

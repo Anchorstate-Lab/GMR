@@ -56,7 +56,6 @@ pub async fn run(
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
-    let source = crate::memories::declaring(root);
     let keys = match key {
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
@@ -102,7 +101,7 @@ pub async fn run(
             key.clone(),
             status,
             crate::render::diagnosis(view.facts.as_ref()),
-            super::observe::shown_all(&memories, &source),
+            super::observe::addressed_all(&memories),
         ));
     }
 

@@ -13,6 +13,11 @@
 //! `Declaring` is synchronous and takes no `Budget`. That is the whole of
 //! its admission test: a store reachable only over a network cannot
 //! implement it.
+//!
+//! It hands a record and what that record says in one call, because a source
+//! learns both in the same pass. Split across two calls, whatever the first
+//! one could not read has to be rediscovered by the second — and the only
+//! thing left to rediscover it from is the filesystem, a second time.
 
 #[cfg(feature = "testkit")]
 pub mod testkit;
@@ -117,12 +122,14 @@ pub trait MemorySource: Send + Sync {
     async fn list(&self, budget: &Budget) -> Result<Vec<Record>, ContentError>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Declared {
+    pub record: Record,
+    pub claim: Claim,
+}
+
 pub trait Declaring: Send + Sync {
     fn provider(&self) -> &ProviderId;
 
-    fn records(&self) -> Result<Vec<Record>, ContentError>;
-
-    fn claim_of(&self, record: &Record) -> Claim;
-
-    fn name_of(&self, reference: &Ref) -> Option<String>;
+    fn declared(&self) -> Result<Vec<Declared>, ContentError>;
 }

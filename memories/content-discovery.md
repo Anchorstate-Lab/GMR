@@ -62,11 +62,20 @@ was simply nothing in "this record says nothing" to distinguish from "this
 store has no way to say anything", and the second is a misconfiguration
 while the first is ordinary.
 
-So `Claim` moved onto `Declaring::claim_of`, and `Record` no longer carries
-one. A store that does not declare does not implement the trait, and the
+So `Claim` moved onto `Declaring`, and `Record` no longer carries one. A
+store that does not declare does not implement the trait, and the
 declaration path cannot be handed it at all. `Silent` keeps its original and
 now unambiguous meaning: within a store that does declare, this particular
 record declares nothing.
+
+**`declared()` hands the record and its claim together, in one call.** The
+first cut split them — `records()` then `claim_of(&record)` — and that lost
+whatever the first call could not read: a file that would not open and an
+empty file both arrive as no bytes. The only thing left to tell them apart
+from is the store itself, read a second time, with emptiness standing in as
+the flag that says "ask again". A source learns both facts in the same pass;
+a contract that separates them makes every implementation re-derive one of
+them. See [[cli-notes-source]] for the syscall this cost.
 
 ## `Declaring` is synchronous, and that is its whole admission test
 
@@ -102,6 +111,10 @@ base cannot answer without making a domain's decision for it.
 Does `Silent` acquire a meaning beyond "this record says nothing"? It once
 also meant "this store cannot say anything", and the two are a
 misconfiguration and an ordinary day.
+
+Does `Declaring` split back into "give me the records" and "now tell me
+about this one"? The second call can only see what the first one managed to
+carry, and what it cannot carry is exactly the failures worth reporting.
 
 Does `Declaring` gain an `async` method, or a `Budget`? That is the moment
 the anchor roster becomes something a network can withhold, and no exit code

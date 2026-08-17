@@ -1,8 +1,8 @@
 ---
 about:
   - domains/coding/cli/src/notes.rs#Notes
-  - domains/coding/cli/src/notes.rs#records
-  - domains/coding/cli/src/notes.rs#claim_of
+  - domains/coding/cli/src/notes.rs#declared
+  - domains/coding/cli/src/notes.rs#walked
   - domains/coding/cli/src/notes.rs#name_of
   - domains/coding/cli/src/notes.rs#versions_of
   - domains/coding/cli/src/memories.rs#claims_of
@@ -35,7 +35,7 @@ domain with a completely different vocabulary, and it is the same line
 ## It implements both traits, and only one of them is asynchronous
 
 `MemorySource::list` is `async` because a store may be across a network.
-This one is a directory. `Declaring::records` is synchronous for the same
+This one is a directory. `Declaring::declared` is synchronous for the same
 reason the inherent method that preceded it was: routing the declaration
 path through an async trait would have made `Subscriptions::load` async, and
 with it five call chains, to await a filesystem walk that never yields.
@@ -48,7 +48,12 @@ makes a remote declaring source impossible to write.
 
 ## The name is a property of the address, and this file owns the address
 
-`name_of` takes a `Ref`, not a `Record`, because rendering has an address in
+`name_of` is an inherent method, not part of `Declaring`. What a record
+should be *called* is neither retrieval nor discovery, and the contract it
+briefly sat on is the base's — a display name in `gmr-content` would have
+been the domain's rendering vocabulary living one layer below the domain.
+
+It takes a `Ref`, not a `Record`, because rendering has an address in
 hand and nothing else. Requiring a record would have meant a full scan every
 time a memory is printed, which is on the path of `read` — so the name would
 have cost a directory walk per line.
@@ -66,23 +71,35 @@ alternative — inventing a name from a uuid — is the mistake
 subprocess per note on all of those paths. `git hash-object -- a b c`
 answers for every path in one call, so it stays one subprocess per scan.
 
-When git cannot run at all, versions fall back to a content hash. **That
-fallback is not there to be right** — in a repository without git nothing
-can bind anyway, because the git provider cannot version anything either.
-It is there so that linting notes still works somewhere git does not, which
-is a supported degraded mode `doctor` already reports.
+**When git cannot version a path, the scan fails rather than versioning it
+some other way.** There used to be a content-hash fallback here, defended as
+a degraded mode for repositories without git. Two things were wrong with it.
+`git hash-object` needs no repository — it hashes a file wherever it is run —
+so the case it was written for was not the one it fired in; what it actually
+covered was git missing from `PATH`, where the git provider cannot version
+anything either and nothing can be bound at all.
 
-## An unreadable file survived the split by re-reading it
+Worse, it made one provider answer with two version schemes. `sync` stamps a
+binding with the version this source computed, and `read` compares that
+against the version `Git::fetch` computes. Fall back once and the stored
+version is a sha256 that `git hash-object` will never produce again: every
+note reports as rewritten, forever, with a bound version nothing can
+retrieve. A version arrived at a second way is not a degraded answer, it is
+a wrong one, so this refuses and says why.
 
-`records` used to compute the claim while it had the read error in hand, so
-a file it could not open became `Malformed("cannot read this file")`. Split
-apart, `claim_of` sees only bytes, and an unreadable file and an empty one
-both arrive as none.
+## The record and what it says are produced in one pass
 
-Rather than lose that diagnosis, `claim_of` asks the filesystem again — but
-only when the bytes are empty, which is nearly never. An empty note is
-`Silent`, which is correct; an unopenable one names why. Failing the whole
-scan instead would have made one bad file hide every lint in the repository.
+`walked` reads a file, hashes it, and reads its frontmatter while it still
+has the read error in hand — so a file it cannot open becomes
+`Malformed("cannot read this file")` at the point that fact is known.
+
+`Declaring` briefly had this as two calls, `records` then `claim_of`, and
+the second one had only bytes to work from: an unreadable file and an empty
+one both arrived as none. The diagnosis was recovered by re-opening the file
+from `claim_of` whenever the bytes were empty — a second syscall, a window
+between the two reads where the answer could change, and emptiness pressed
+into service as a failure flag. One call removes all three, and
+[[content-discovery]] carries the same reasoning for the contract.
 
 ## A key present with no value is not the same as a key that is absent
 

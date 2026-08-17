@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gmr::{AnchorView, Before, Declaring, Grounding, MemoryView, Runtime, Sighting};
+use gmr::{AnchorView, Before, Grounding, MemoryView, Runtime, Sighting};
 use gmr_atlas::{Edge, EdgeKind, Graph, Kind, Node, Tone};
 
 use crate::delivery::Subscriptions;
@@ -105,7 +105,7 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
     node
 }
 
-fn memory_node(m: &MemoryView, source: &dyn Declaring, detail: Option<String>) -> Node {
+fn memory_node(m: &MemoryView, source: &crate::notes::Notes, detail: Option<String>) -> Node {
     let external = m.reference.external_id.to_string();
     let label = crate::memories::shown(&m.reference, source);
     let (tone, badge) = memory_tone(m);

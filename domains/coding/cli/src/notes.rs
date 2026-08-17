@@ -15,7 +15,9 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use gmr::probe::Budget;
-use gmr::{Claim, ContentError, Declaring, MemorySource, ProviderId, Record, Ref, Version};
+use gmr::{
+    Claim, ContentError, Declared, Declaring, MemorySource, ProviderId, Record, Ref, Version,
+};
 
 use crate::error::CliError;
 
@@ -36,7 +38,16 @@ impl Notes {
         }
     }
 
-    fn walked(&self) -> Result<Vec<Record>, CliError> {
+    pub fn name_of(&self, reference: &Ref) -> Option<String> {
+        if reference.provider != self.id {
+            return None;
+        }
+        let rel = reference.external_id.as_str();
+        let inside = rel.strip_prefix(&format!("{}/", self.dir))?;
+        Some(inside.strip_suffix(".md").unwrap_or(inside).to_owned())
+    }
+
+    fn walked(&self) -> Result<Vec<Declared>, CliError> {
         let mut rels = Vec::new();
         walk(&self.root, &self.root.join(&self.dir), &mut rels)?;
         rels.sort();
@@ -51,15 +62,27 @@ impl Notes {
             .collect();
 
         let paths: Vec<&str> = read.iter().map(|(rel, _)| rel.as_str()).collect();
-        let versions = versions_of(&self.root, &paths, &read);
+        let versions = versions_of(&self.root, &paths)?;
 
         Ok(read
             .into_iter()
             .zip(versions)
-            .map(|((rel, body), version)| Record {
-                reference: Ref::new(self.id.as_str(), rel),
-                version,
-                bytes: body.map(String::into_bytes).unwrap_or_default(),
+            .map(|((rel, body), version)| {
+                let (bytes, claim) = match body {
+                    Ok(text) => {
+                        let claim = stated_in(&text);
+                        (text.into_bytes(), claim)
+                    }
+                    Err(why) => (Vec::new(), Claim::Malformed(why)),
+                };
+                Declared {
+                    record: Record {
+                        reference: Ref::new(self.id.as_str(), rel),
+                        version,
+                        bytes,
+                    },
+                    claim,
+                }
             })
             .collect())
     }
@@ -70,27 +93,8 @@ impl Declaring for Notes {
         &self.id
     }
 
-    fn records(&self) -> Result<Vec<Record>, ContentError> {
+    fn declared(&self) -> Result<Vec<Declared>, ContentError> {
         self.walked().map_err(|e| ContentError::new(e.to_string()))
-    }
-
-    fn claim_of(&self, record: &Record) -> Claim {
-        let rel = record.reference.external_id.as_str();
-        if record.bytes.is_empty()
-            && let Err(e) = std::fs::read_to_string(self.root.join(rel))
-        {
-            return Claim::Malformed(format!("cannot read this file: {e}"));
-        }
-        stated_in(&String::from_utf8_lossy(&record.bytes))
-    }
-
-    fn name_of(&self, reference: &Ref) -> Option<String> {
-        if reference.provider != self.id {
-            return None;
-        }
-        let rel = reference.external_id.as_str();
-        let inside = rel.strip_prefix(&format!("{}/", self.dir))?;
-        Some(inside.strip_suffix(".md").unwrap_or(inside).to_owned())
     }
 }
 
@@ -101,24 +105,21 @@ impl MemorySource for Notes {
     }
 
     async fn list(&self, _budget: &Budget) -> Result<Vec<Record>, ContentError> {
-        Declaring::records(self)
+        Ok(self.declared()?.into_iter().map(|d| d.record).collect())
     }
 }
 
-fn versions_of(
-    root: &Path,
-    paths: &[&str],
-    read: &[(String, Result<String, String>)],
-) -> Vec<Version> {
-    if let Ok(hashes) = gmr_provider::git::blob_versions(root, paths) {
-        return hashes.into_iter().map(Version::new).collect();
-    }
-    read.iter()
-        .map(|(_, body)| {
-            let bytes = body.as_ref().map(String::as_bytes).unwrap_or_default();
-            Version::new(gmr::core::content_hash_of_bytes(bytes).into_inner())
+fn versions_of(root: &Path, paths: &[&str]) -> Result<Vec<Version>, CliError> {
+    gmr_provider::git::blob_versions(root, paths)
+        .map(|hashes| hashes.into_iter().map(Version::new).collect())
+        .map_err(|e| {
+            CliError(format!(
+                "cannot version the notes through `{RESOLVED_THROUGH}`: {e}.\n\
+                 A version computed some other way would not be the one this provider hands \
+                 back when the note is read, so every binding stamped with it reports the note \
+                 as rewritten forever"
+            ))
         })
-        .collect()
 }
 
 fn stated_in(text: &str) -> Claim {
@@ -172,10 +173,10 @@ mod tests {
         let dir = world(files);
         let notes = Notes::at(dir.path(), "memories");
         notes
-            .records()
+            .declared()
             .unwrap()
             .into_iter()
-            .map(|r| (r.reference.external_id.to_string(), notes.claim_of(&r)))
+            .map(|d| (d.record.reference.external_id.to_string(), d.claim))
             .collect()
     }
 
@@ -227,16 +228,38 @@ mod tests {
         assert_eq!(names, vec!["memories/a.md", "memories/deeper/c.md"]);
     }
 
-    #[test]
-    fn a_version_is_produced_even_where_git_cannot_run() {
-        let dir = world(&[("memories/a.md", "---\nabout: x\n---")]);
-        let records = Notes::at(dir.path(), "memories").records().unwrap();
+    #[tokio::test]
+    async fn a_notes_version_is_the_one_its_provider_will_hand_back() {
+        use gmr::ContentProvider;
 
-        assert!(
-            !records[0].version.as_str().is_empty(),
-            "a tempdir is not a git repository, so the batch hash-object cannot run. The \
-             fallback is not there to be right — nothing can bind without git either — it \
-             is there so linting notes still works in a repository that has no git"
+        let dir = world(&[("memories/a.md", "---\nabout: x\n---")]);
+        let declared = Notes::at(dir.path(), "memories").declared().unwrap();
+        let read = gmr_provider::git::Git::new(dir.path())
+            .fetch(
+                &gmr::ExternalId::new("memories/a.md"),
+                &Budget::within(std::time::Duration::from_secs(30), usize::MAX),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            declared[0].record.version, read.version,
+            "sync stamps a binding with the version this source computed and `read` compares \
+             it against the version the provider computes. Two ways of arriving at a version \
+             means one repository state where they disagree, and there every note reports as \
+             rewritten with a bound version nothing can retrieve"
+        );
+    }
+
+    #[test]
+    fn notes_that_cannot_be_versioned_are_refused_rather_than_versioned_some_other_way() {
+        let dir = world(&[("memories/a.md", "---\nabout: x\n---")]);
+        std::os::unix::fs::symlink("/nowhere/at/all", dir.path().join("memories/b.md")).unwrap();
+
+        Notes::at(dir.path(), "memories").declared().expect_err(
+            "when git cannot version a path there is no second way to compute one that the \
+             provider would also arrive at, so the honest answer is to refuse",
         );
     }
 }

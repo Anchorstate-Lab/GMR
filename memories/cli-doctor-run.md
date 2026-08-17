@@ -60,6 +60,11 @@ key drifted, unreadable, or undeclared — is one function either way, so the
 two callers cannot again disagree on the answer, only on how many anchors
 they're asking about.
 
+`run` also resolves the `bare-key` lint before weighing it, with the keys
+`anchors.toml` declares and the keys already open — the check `claims_of`
+cannot make from inside one note. Both verbs do this, because both gate on
+`breaks()`; see [[cli-sync-run]] for what the unresolved version cost.
+
 ## When this changes, ask
 
 Does the new signal answer yes to "someone holding this repository can make

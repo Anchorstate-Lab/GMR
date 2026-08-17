@@ -47,6 +47,21 @@ under the other. Measured: 147 notes in, zero anchors out, `sync` exit 0.
 Two verbs disagreeing about what counts as broken is worse than either
 answer being wrong, because the quieter one is the one people automate.
 
+## A lint that cannot see the answer is asked again where it can
+
+`bare-key` says a key "binds without declaring; nothing else in this repo
+declares anchors". `claims_of` cannot check that second clause — it has one
+note and a probe catalog, not `anchors.toml` and not the open anchors. So
+the scan reports every bare key, and `run` calls `Scanned::accounted_for`
+with the keys `anchors.toml` declares and the keys already open.
+
+Raising the exit code to `breaks()` is what made this matter. Before, the
+false positive was advisory noise; after, a repository doing exactly what
+the front door documents — a hand-written script probe declared in
+`anchors.toml`, a note binding to it by bare key — exited 1 from `sync` with
+the anchor opened and the note bound, on a lint whose own sentence was
+false. `doctor` resolves it the same way for the same reason.
+
 ## When this changes, ask
 
 Does a new kind of "changed since last sync" get reported under drift,

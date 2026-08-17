@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{Claim, Declaring, Record, Ref};
+use gmr::{Claim, Declared, Declaring, Ref};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -14,10 +14,14 @@ pub fn declaring(root: &Path) -> crate::notes::Notes {
     crate::notes::Notes::at(root, NOTES_DIR)
 }
 
-pub fn shown(reference: &Ref, source: &dyn Declaring) -> String {
+pub fn shown(reference: &Ref, source: &crate::notes::Notes) -> String {
     source
         .name_of(reference)
-        .unwrap_or_else(|| reference.external_id.to_string())
+        .unwrap_or_else(|| addressed(reference))
+}
+
+pub fn addressed(reference: &Ref) -> String {
+    format!("{}:{}", reference.provider, reference.external_id)
 }
 
 #[derive(Debug, Deserialize)]
@@ -177,10 +181,11 @@ fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
 }
 
 fn claims_of(
-    record: &Record,
-    source: &dyn Declaring,
+    declared: &Declared,
+    source: &crate::notes::Notes,
     catalog: &Catalog,
 ) -> (Option<Note>, Vec<Fault>) {
+    let record = &declared.record;
     let named = shown(&record.reference, source);
     let rel = named.as_str();
     let text = String::from_utf8_lossy(&record.bytes);
@@ -193,7 +198,7 @@ fn claims_of(
         weight,
     };
 
-    let claimed = source.claim_of(record);
+    let claimed = declared.claim.clone();
     let said = match &claimed {
         Claim::Silent => {
             faults.push(at(
@@ -319,17 +324,24 @@ impl Scanned {
     pub fn blocked_key(&self, key: &str) -> Option<&Fault> {
         self.blocked().find(|f| f.key.as_deref() == Some(key))
     }
+
+    pub fn accounted_for<'a>(&mut self, keys: impl Iterator<Item = &'a str>) {
+        let known: std::collections::BTreeSet<&str> = keys.collect();
+        self.faults.retain(|f| {
+            f.code != "bare-key" || !f.key.as_deref().is_some_and(|k| known.contains(k))
+        });
+    }
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
     of(&declaring(root), catalog)
 }
 
-pub fn of(source: &dyn Declaring, catalog: &Catalog) -> Result<Scanned, CliError> {
-    let records = source.records()?;
+pub fn of(source: &crate::notes::Notes, catalog: &Catalog) -> Result<Scanned, CliError> {
+    let declared = source.declared()?;
     let mut notes = Vec::new();
     let mut faults = Vec::new();
-    for record in &records {
+    for record in &declared {
         let (note, mut f) = claims_of(record, source, catalog);
         notes.extend(note);
         faults.append(&mut f);
@@ -362,6 +374,41 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         }
         let catalog = Catalog::load(dir.path()).unwrap();
         (dir, catalog)
+    }
+
+    #[test]
+    fn a_bare_key_that_something_else_declares_is_not_a_fault() {
+        let (d, r) = world(&[(
+            "memories/deploy.md",
+            "---\nanchors:\n  - deploy::staging\n---\n",
+        )]);
+        let mut scanned = scan(d.path(), &r).unwrap();
+
+        assert!(
+            scanned.faults.iter().any(|f| f.code == "bare-key"),
+            "the scan cannot know what declares a key, so it reports every bare one"
+        );
+
+        scanned.accounted_for(["deploy::staging"].into_iter());
+
+        assert!(
+            !scanned.faults.iter().any(|f| f.code == "bare-key"),
+            "`anchors.toml` declaring the key, or an anchor already standing under it, is \
+             exactly what the lint says is missing. Left standing it makes `sync` exit 1 on a \
+             repository whose script probe and note are both correct"
+        );
+    }
+
+    #[test]
+    fn a_record_this_source_did_not_name_still_says_which_store_it_is_in() {
+        let (d, _) = world(&[]);
+        let source = declaring(d.path());
+
+        assert_eq!(
+            shown(&Ref::new("mem0", "4f3a91e2-8c7d"), &source),
+            "mem0:4f3a91e2-8c7d"
+        );
+        assert_eq!(shown(&Ref::new("git", "memories/auth.md"), &source), "auth");
     }
 
     #[test]

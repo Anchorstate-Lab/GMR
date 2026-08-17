@@ -1,4 +1,4 @@
-use gmr::{AnchorView, Before, Declaring, Grounding};
+use gmr::{AnchorView, Before, Grounding};
 use serde_json::Value;
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
@@ -32,7 +32,7 @@ pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
     })
 }
 
-pub fn anchor(v: &AnchorView, source: &dyn Declaring) -> String {
+pub fn anchor(v: &AnchorView, source: &crate::notes::Notes) -> String {
     let mut out = String::new();
     let head = match v.status.as_ref() {
         Some(s) => format!("{}  [{s}]", v.key),

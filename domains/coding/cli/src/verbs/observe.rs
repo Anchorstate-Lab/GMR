@@ -53,7 +53,7 @@ pub async fn run(
             };
             report.push(serde_json::json!({
                 "anchor": key, "observed": word, "detail": detail,
-                "state": state, "memories": shown_all(&memories, &source),
+                "state": state, "memories": addressed_all(&memories),
             }));
         } else if word != "still" {
             match &detail {
@@ -110,8 +110,6 @@ pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {
     }
 }
 
-pub(crate) fn shown_all(refs: &[gmr::Ref], source: &dyn gmr::Declaring) -> Vec<String> {
-    refs.iter()
-        .map(|r| crate::memories::shown(r, source))
-        .collect()
+pub(crate) fn addressed_all(refs: &[gmr::Ref]) -> Vec<String> {
+    refs.iter().map(crate::memories::addressed).collect()
 }

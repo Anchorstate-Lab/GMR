@@ -117,7 +117,16 @@ pub async fn run(
     let provider_warnings = rt.memory().provider_warnings();
     let catalog = crate::probes::Catalog::load(root)?;
     let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
-    let scanned = crate::memories::scan(root, &catalog)?;
+    let mut scanned = crate::memories::scan(root, &catalog)?;
+    scanned.accounted_for(
+        read_declared(root, DEFAULT_FILE)?
+            .anchor
+            .iter()
+            .map(|d| d.key.as_str())
+            .chain(views.iter().map(|v| v.key.as_str()))
+            .collect::<Vec<_>>()
+            .into_iter(),
+    );
     let undeclared_keys = undeclared(root, catalog, &live, &scanned)?;
     let undeclared: Vec<&str> = undeclared_keys.iter().map(|k| k.as_str()).collect();
     let mut faults = scanned.faults;
