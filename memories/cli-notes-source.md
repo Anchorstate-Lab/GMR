@@ -74,6 +74,19 @@ That difference was caught by the criterion this refactor was held to —
 after — and by nothing else. It is the reason that criterion is worth the
 trouble of capturing a baseline first.
 
+## The source names the provider once, and nothing re-derives it
+
+`Notes` stamps each record with the `Ref` it resolves through, and
+`claims_of` carries that `Ref` onto the `Note` rather than reducing it to a
+path. The provider used to be a constant in the domain, re-attached
+downstream — which is the same value in a repository with one source and
+the wrong value in a repository with two.
+
+Naming it here is not the same hardcoding moved: this file is what decides
+that notes are files in a git working tree, so which provider resolves them
+is its own fact to state. What was wrong before was a *second* place
+claiming to know it. See [[cli-sync-align-bindings]] for what that cost.
+
 ## When this changes, ask
 
 Does `Notes` start interpreting what it reads — routing a coordinate,

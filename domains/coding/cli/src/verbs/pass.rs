@@ -24,7 +24,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     if json {
         let rows: Vec<_> = moved
             .iter()
-            .map(|(key, memories)| serde_json::json!({ "anchor": key, "memories": memories }))
+            .map(|(key, memories)| serde_json::json!({ "anchor": key, "memories": super::observe::shown_all(memories) }))
             .collect();
         println!(
             "{}",
@@ -58,7 +58,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             }
             println!("  {key}");
             for m in memories {
-                println!("    → {m}");
+                println!("    → {}", crate::render::shown(m));
             }
         }
         super::observe::report_unclaimed(&unclaimed);

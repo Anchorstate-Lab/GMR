@@ -150,11 +150,7 @@ pub async fn run(
 
     for view in &views {
         let shape = crate::shapes::of(&view.anchor.transitions);
-        let bound: Vec<String> = view
-            .memories
-            .iter()
-            .map(|m| m.reference.external_id.to_string())
-            .collect();
+        let bound: Vec<gmr::Ref> = view.memories.iter().map(|m| m.reference.clone()).collect();
         let delivering = bound
             .iter()
             .any(|note| subs.delivers(shape, note, &view.state, false));

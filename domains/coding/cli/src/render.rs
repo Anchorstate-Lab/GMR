@@ -1,5 +1,9 @@
-use gmr::{AnchorView, Before, Grounding};
+use gmr::{AnchorView, Before, Grounding, Ref};
 use serde_json::Value;
+
+pub fn shown(reference: &Ref) -> String {
+    reference.external_id.to_string()
+}
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
     let facts = facts?.as_value();
@@ -55,7 +59,7 @@ pub fn anchor(v: &AnchorView) -> String {
 
     for m in &v.memories {
         let mark = if m.grounded { "*" } else { "?" };
-        out.push_str(&format!("  {mark} {}", m.reference.external_id));
+        out.push_str(&format!("  {mark} {}", shown(&m.reference)));
         out.push_str(&grounding(&m.grounding));
         if !m.grounded {
             out.push_str("  ungrounded");

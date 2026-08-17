@@ -76,7 +76,7 @@ pub async fn run(
             key.clone(),
             status,
             crate::render::diagnosis(view.facts.as_ref()),
-            memories,
+            super::observe::shown_all(&memories),
         ));
     }
 

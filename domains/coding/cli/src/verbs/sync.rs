@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use gmr::{
-    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Ref, Retain, RunSettings, Runtime, State,
+    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Retain, RunSettings, Runtime, State,
     Transitions,
 };
 use serde::Deserialize;
@@ -345,7 +345,8 @@ async fn align_bindings(
     let mut renamed = Vec::new();
 
     for note in notes {
-        let reference = Ref::new(crate::memories::NOTES_PROVIDER, note.path.clone());
+        let reference = note.reference.clone();
+        let named = reference.external_id.as_str();
         let mut want: Vec<AnchorKey> = note
             .wants
             .iter()
@@ -366,8 +367,7 @@ async fn align_bindings(
             }
             if let Some(rename) = ambiguous(&had, &want, &closed) {
                 renamed.push(format!(
-                    "{}: dropped {}, gained {}",
-                    note.path,
+                    "{named}: dropped {}, gained {}",
                     rename.joined(&rename.dropped),
                     rename.joined(&rename.gained)
                 ));
@@ -376,7 +376,11 @@ async fn align_bindings(
         }
 
         let version = rt.current_version(&reference).await?.ok_or_else(|| {
-            CliError(format!("no content provider could version `{}`", note.path))
+            CliError(format!(
+                "no content provider could version `{named}` — nothing registered as `{}` \
+                 can resolve it",
+                reference.provider
+            ))
         })?;
         let settled = current.is_some_and(|r| {
             let mut had = r.binding.anchors.clone();
@@ -386,10 +390,11 @@ async fn align_bindings(
         if settled {
             continue;
         }
+        let named = named.to_owned();
         if !dry_run {
             rt.bind(reference, want, version).await?;
         }
-        bound.push(note.path.clone());
+        bound.push(named);
     }
     Ok((bound, renamed))
 }

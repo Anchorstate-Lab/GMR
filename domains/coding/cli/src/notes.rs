@@ -6,6 +6,10 @@
 //! YAML frontmatter. It reads that grid and hands it over untouched — what
 //! `about` or `watch` mean is not its business, which is why the same file
 //! could serve a domain with an entirely different vocabulary.
+//!
+//! It names the provider its records resolve through, once, here. Everything
+//! downstream carries the `Ref` it stamps rather than rebuilding one from a
+//! constant of its own.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +18,8 @@ use gmr::probe::Budget;
 use gmr::{Claim, ContentError, MemorySource, ProviderId, Record, Ref, Version};
 
 use crate::error::CliError;
+
+const RESOLVED_THROUGH: &str = "git";
 
 pub struct Notes {
     root: PathBuf,
@@ -26,7 +32,7 @@ impl Notes {
         Self {
             root: root.to_path_buf(),
             dir: dir.to_owned(),
-            id: ProviderId::new(crate::memories::NOTES_PROVIDER),
+            id: ProviderId::new(RESOLVED_THROUGH),
         }
     }
 

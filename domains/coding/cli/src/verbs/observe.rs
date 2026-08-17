@@ -52,7 +52,7 @@ pub async fn run(
             };
             report.push(serde_json::json!({
                 "anchor": key, "observed": word, "detail": detail,
-                "state": state, "memories": memories,
+                "state": state, "memories": shown_all(&memories),
             }));
         } else if word != "still" {
             match &detail {
@@ -60,7 +60,7 @@ pub async fn run(
                 None => println!("{key}  {word}"),
             }
             for m in &memories {
-                println!("    → {m}");
+                println!("    → {}", crate::render::shown(m));
             }
         }
     }
@@ -84,7 +84,7 @@ pub(crate) async fn delivered(
     to: &State,
     moved: bool,
     unclaimed: &mut Vec<AnchorKey>,
-) -> Result<Vec<String>, CliError> {
+) -> Result<Vec<gmr::Ref>, CliError> {
     let bound = super::memories_on(rt, key).await?;
     if bound.is_empty() {
         if moved {
@@ -107,4 +107,8 @@ pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {
     for k in unclaimed {
         println!("  ? {k}");
     }
+}
+
+pub(crate) fn shown_all(refs: &[gmr::Ref]) -> Vec<String> {
+    refs.iter().map(crate::render::shown).collect()
 }

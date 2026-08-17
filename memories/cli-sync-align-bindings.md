@@ -20,8 +20,31 @@ before `rt.bind`, and they refuse for different reasons: `settled` declines
 to write a row that would say nothing new, `ambiguous` declines to write a
 row nobody has authorised.
 
+## The reference is the source's, not one this function builds
+
+The address a note is bound at used to be assembled here, out of a global
+constant naming one provider and the note's path. It is now
+`note.reference` — the `Ref` the source stamped on the record it handed
+over, carried through untouched.
+
+The difference is invisible while one store exists, because a constant and
+a carried value produce the same bytes. It stops being invisible the moment
+a second source appears: the constant keeps naming the first one, so every
+record from the second is looked up in a store that has never heard of it.
+The symptom is this function refusing to bind anything, blaming a provider
+that is working fine.
+
+That is the shape of the defect, not just one instance of it — the same
+"throw the answer away and re-derive it from a constant" appeared again in
+the subscription lookup ([[delivery-standing]]) and in how a note's name was
+spelled. A `Ref` handed down is the fix in all three.
+
 ## When this changes, ask
 
 Does the new code call `rt.bind` unconditionally instead of comparing
 against the current binding first? Every sync run would then add a row,
 even when nothing about the note's anchors or version actually moved.
+
+Does anything here start constructing a `Ref` rather than cloning the one
+the note arrived with? Whatever it constructs it from is a second opinion
+about where a record lives, and the source already gave the first.

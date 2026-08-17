@@ -42,6 +42,19 @@ longer infers the kind of shape from whether the `state` has a `v` — that is
 structural typing, and under it a hand-written-rules anchor and a table shape are
 indistinguishable.
 
+## A subscription is keyed by a `Ref`, not by a bare id
+
+`delivers` takes the note's full address — provider and external id —
+because a subscription belongs to one record in one store. Keyed by the
+bare id, a note in a second store silently inherits the narrowing of a note
+it merely shares a name with.
+
+That failure is worth spelling out because of how it looks: the memory
+simply stops being handed back, which is indistinguishable from the axis
+not having moved. Nothing prints, nothing turns red, and the anchor reads
+as settled. It is the quietest way this repository can fail, which is why
+the case has its own test rather than resting on the type change alone.
+
 ## When this changes, ask
 
 Adding an axis → ask: **after a person has seen this bit lit, is there anything left

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{Claim, Record};
+use gmr::{Claim, Record, Ref};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -9,8 +9,6 @@ use crate::probes::Catalog;
 use crate::verbs::sync::AnchorDecl;
 
 pub const NOTES_DIR: &str = "memories";
-
-pub const NOTES_PROVIDER: &str = "git";
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -88,7 +86,7 @@ impl Want {
 
 #[derive(Debug)]
 pub struct Note {
-    pub path: String,
+    pub reference: Ref,
     pub wants: Vec<Want>,
     pub watch: Option<Vec<String>>,
 }
@@ -266,7 +264,7 @@ fn claims_of(record: &Record, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
     faults.extend(tombstones(rel, &text));
 
     let note = (!wants.is_empty()).then(|| Note {
-        path: rel.to_owned(),
+        reference: record.reference.clone(),
         wants,
         watch: fm.watch,
     });
