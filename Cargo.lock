@@ -527,6 +527,7 @@ dependencies = [
  "async-trait",
  "gmr-core",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

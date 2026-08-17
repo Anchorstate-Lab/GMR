@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use gmr_content::{ContentError, ContentProvider, Fetched, History};
@@ -69,6 +70,45 @@ impl History for Versioned {
         version: &Version,
     ) -> Result<Option<Vec<u8>>, ContentError> {
         Ok(self.history.lock().unwrap().get(version.as_str()).cloned())
+    }
+}
+
+struct Counted {
+    root: PathBuf,
+    id: ProviderId,
+    fetch_at_calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl ContentProvider for Counted {
+    fn provider(&self) -> &ProviderId {
+        &self.id
+    }
+
+    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+        let path = self.root.join(id.as_str());
+        if !path.exists() {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&path).map_err(|e| ContentError::new(e.to_string()))?;
+        Ok(Some(Fetched {
+            version: Version::new(gmr_core::content_hash_of_bytes(&bytes).into_inner()),
+            bytes,
+        }))
+    }
+}
+
+#[async_trait]
+impl History for Counted {
+    async fn fetch_at(
+        &self,
+        _id: &ExternalId,
+        _version: &Version,
+    ) -> Result<Option<Vec<u8>>, ContentError> {
+        self.fetch_at_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(Some(
+            b"a caller that got here was never supposed to".to_vec(),
+        ))
     }
 }
 
@@ -540,5 +580,46 @@ async fn a_store_that_will_not_answer_is_reported_not_read_as_nothing_happened()
         "a provider that cannot be reached used to leave `rewritten` false, so this walk \
          emitted nothing at all and `gmr edges` told the reader everything was fine. \
          Not knowing is a standing condition of its own: {standing:?}"
+    );
+}
+
+#[tokio::test]
+async fn declining_to_offer_history_means_fetch_at_is_never_reached() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let w = {
+        let calls = Arc::clone(&calls);
+        World::with(move |root| {
+            Arc::new(Counted {
+                root,
+                id: ProviderId::new("git"),
+                fetch_at_calls: calls,
+            })
+        })
+    };
+    w.memory("a.md", "Original wording.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    w.memory("a.md", "Edited wording.");
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "this type does implement History, but reports none through history(). A capability \
+         expressed by a trait is only honest if declining it actually stops the call — the \
+         shape before this one asked every provider and let it answer \"I have none\", which \
+         is a different guarantee and a weaker one"
+    );
+    assert!(
+        matches!(
+            view.memories[0].grounding,
+            Grounding::Rewritten {
+                before: Before::NoHistory,
+                ..
+            }
+        ),
+        "and the reader learns why there is no before from history() alone: {:?}",
+        view.memories[0].grounding
     );
 }

@@ -8,7 +8,9 @@ pub use gmr_store as store;
 #[cfg(feature = "sqlite")]
 pub use gmr_store::sqlite;
 
-pub use gmr_content::{ContentError, ContentErrorCode, ContentProvider, Fetched, History};
+pub use gmr_content::{
+    Claim, ContentError, ContentErrorCode, ContentProvider, Fetched, History, MemorySource, Record,
+};
 pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, CanonicalizeError, Change, ChangeKind, ContentHash,
     Derivation, Entry, Expr, ExternalId, Facts, FailureCode, Kind, Link, LinkKind, NewtypeError,
