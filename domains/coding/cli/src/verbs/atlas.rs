@@ -1,5 +1,3 @@
-//! Every anchor and every memory this repository holds, as one page on disk.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

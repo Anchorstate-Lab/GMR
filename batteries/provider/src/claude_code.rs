@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched};
+use gmr_content::{ContentError, ContentProvider, Fetched, MemoryStore};
 use gmr_core::{ExternalId, ProviderId, Version, content_hash_of_bytes};
 use gmr_probe::Budget;
 
@@ -24,6 +24,12 @@ impl ClaudeMemory {
             id: ProviderId::new("claude-code"),
         }
     }
+}
+
+pub fn store(project_root: impl AsRef<Path>) -> Result<MemoryStore, ContentError> {
+    Ok(MemoryStore::new(std::sync::Arc::new(ClaudeMemory::new(
+        project_root,
+    )?)))
 }
 
 fn memory_dir(project_root: &Path) -> Result<PathBuf, ContentError> {

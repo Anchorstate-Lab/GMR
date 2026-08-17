@@ -12,6 +12,7 @@ pub mod health;
 pub mod import;
 pub mod init;
 pub mod link;
+pub mod memories;
 pub mod observe;
 pub mod open;
 pub mod pass;

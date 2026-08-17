@@ -1,12 +1,3 @@
-//! A mem0 that lives in memory, so a remote backend can be held to the same
-//! suite the local ones are.
-//!
-//! It answers the platform routes over a map instead of a socket. What it is
-//! for is the two judgements no type can express — what a version tracks and
-//! what `Ok(None)` claims — and those are decided by this crate's own code
-//! either way. A second backend that talks over a network copies this file's
-//! shape rather than writing a parallel set of assertions by hand.
-
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 

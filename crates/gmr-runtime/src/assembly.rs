@@ -38,6 +38,10 @@ impl Runtime {
         self.scheduler.policy()
     }
 
+    pub fn content_budget(&self) -> gmr_probe::Budget {
+        self.scheduler.policy().content_budget()
+    }
+
     pub async fn anchors(&self) -> Result<Vec<gmr_core::AnchorKey>, RuntimeError> {
         self.log.anchors().await
     }

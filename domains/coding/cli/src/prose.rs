@@ -1,5 +1,3 @@
-//! A memory is markdown with `[[other-memory]]` in it, and this is where that is known.
-
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd, html};
 
 fn options() -> Options {

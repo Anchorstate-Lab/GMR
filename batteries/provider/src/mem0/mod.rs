@@ -1,21 +1,12 @@
-//! mem0 as a content provider, a history and a discovery source.
-//!
-//! The seam this module talks through offers `get` and nothing else, so
-//! "GMR never writes into mem0" is not a rule anyone has to keep — there is
-//! no method here that could.
-//!
-//! There are two mem0s behind one name: the managed platform and the
-//! self-hosted server, which disagree about routes, about the header a key
-//! travels in, and about how "there is no such memory" is spelled.
-//! `Deployment` is the one place that knows which one is being addressed.
-
 mod http;
 
 #[cfg(feature = "testkit")]
 pub mod testkit;
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched, History, MemorySource, Record};
+use gmr_content::{
+    ContentError, ContentProvider, Fetched, History, MemorySource, MemoryStore, Record,
+};
 use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
 use gmr_probe::Budget;
 use serde::Deserialize;
@@ -199,6 +190,11 @@ impl Mem0 {
     pub fn named(mut self, id: impl Into<String>) -> Self {
         self.id = ProviderId::new(id);
         self
+    }
+
+    pub fn store(self) -> MemoryStore {
+        let shared = std::sync::Arc::new(self);
+        MemoryStore::new(shared.clone()).listing(shared)
     }
 
     #[cfg(any(test, feature = "testkit"))]

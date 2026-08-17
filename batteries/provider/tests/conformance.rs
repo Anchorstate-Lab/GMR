@@ -1,9 +1,3 @@
-//! Every backend in this crate, held to the same two invariants.
-//!
-//! They are the ones no type can express: what a `Version` tracks, and what
-//! `Ok(None)` claims. A capability a store lacks needs no test here — it is
-//! a trait it does not implement, and the compiler keeps that.
-
 #![cfg(any(feature = "git", feature = "claude-code", feature = "testkit"))]
 
 use std::path::Path;

@@ -1,9 +1,3 @@
-//! What an extractor is, factored out of the four that already exist, and the
-//! body all four of their `probe` functions were separate copies of.
-//!
-//! Nothing calls this yet. It lands ahead of the extractors that will use it so
-//! the shape can be argued about before four version bumps ride on it.
-
 use std::path::Path;
 
 use gmr_probe::Budget;

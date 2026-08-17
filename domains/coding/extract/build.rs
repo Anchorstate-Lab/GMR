@@ -1,13 +1,3 @@
-//! Each extractor's version, hashed over exactly what can change its output.
-//!
-//! Not the binary's bytes: those move with the platform and the compiler while
-//! the behaviour stands still, and a machine-local version can never be
-//! compared against another machine's journal.
-//!
-//! Not the module source alone either. A grammar bump changes how the same
-//! source parses, which is precisely "the logic changed and the version did
-//! not" — so the locked versions of what each one parses with are in the hash.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

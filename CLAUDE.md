@@ -50,10 +50,11 @@ It is not read by any GMR code – not by probes, anchors, logs, or distribution
 
 Rationale: comments and memories are two copies that diverge, and nothing detects the drift. Memories are monitored by anchors and alert on code changes; comments are not. Leaving one comment is leaving a drift path that will never be caught.
 
-Two exceptions (neither are “comments”):
+One exception, and it is not a “comment”:
 
-- `//!` module headers – describe “what this file is”, not “why”.
 - `///` in `cli.rs` for clap – those are `--help` text, user‑facing strings that happen to use comment syntax. Removing them removes help.
+
+`//!` module headers were an exception once. They stopped being one: a header saying “what this file is” drifts into saying “why”, and nothing observes it when it does. Whatever a header wanted to say belongs in a memory anchored to the code it is about.
 
 This rule lives in `tools/gate.py` under “no comments in the clean zones”, not in this prose – prose only applies when read, but no anchor fires when comments creep back.  
 Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `tools/gate.py`, which is the list itself – do not restate it here, or this paragraph becomes a second copy that drifts.

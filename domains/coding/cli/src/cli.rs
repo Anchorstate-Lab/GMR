@@ -70,6 +70,13 @@ pub enum Command {
         memory: Option<String>,
     },
 
+    /// What each memory store here will show you, and which of it is bound. Reads only.
+    Memories {
+        /// Only this store. Default: every store in this binary that can list.
+        #[arg(long)]
+        provider: Option<String>,
+    },
+
     /// What is being watched, on which axes, with which memories. Reads only.
     #[command(display_order = 2)]
     Status { key: Option<String> },
@@ -345,9 +352,21 @@ mod tests {
         let cli = Cli::parse_from(["gmr", "--repo", ".", "check"]);
         let policy = gmr::Policy::default();
         for (flag, from_cli, from_policy) in [
-            ("--probe-budget-ms", cli.probe_budget_ms, policy.probe_budget_ms),
-            ("--content-call-ms", cli.content_call_ms, policy.content_call_ms),
-            ("--content-total-ms", cli.content_total_ms, policy.content_total_ms),
+            (
+                "--probe-budget-ms",
+                cli.probe_budget_ms,
+                policy.probe_budget_ms,
+            ),
+            (
+                "--content-call-ms",
+                cli.content_call_ms,
+                policy.content_call_ms,
+            ),
+            (
+                "--content-total-ms",
+                cli.content_total_ms,
+                policy.content_total_ms,
+            ),
         ] {
             assert_eq!(
                 from_cli, from_policy,

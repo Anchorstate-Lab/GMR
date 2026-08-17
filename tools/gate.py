@@ -213,7 +213,7 @@ def check_comments_clean():
             continue
         for n, line in enumerate((ROOT / f).read_text().splitlines(), 1):
             stripped = line.lstrip()
-            if stripped.startswith("//") and not stripped.startswith("//!"):
+            if stripped.startswith("//"):
                 errors.append(f"{f}:{n}  {stripped[:60]}")
     if errors:
         return ["say it with an anchor, not a comment:"] + errors

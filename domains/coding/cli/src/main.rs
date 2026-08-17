@@ -11,6 +11,7 @@ mod render;
 mod rules;
 mod shapes;
 mod skill;
+mod stores;
 mod verbs;
 
 use std::path::PathBuf;
@@ -19,9 +20,6 @@ use std::sync::Arc;
 
 use clap::Parser;
 use gmr::Runtime;
-use gmr_provider::claude_code::ClaudeMemory;
-use gmr_provider::git::Git;
-use gmr_provider::mem0::{Mem0, Scope};
 use gmr_transport::inproc::InProcess;
 use gmr_transport::script::Script;
 use gmr_transport::shell::Shell;
@@ -31,20 +29,6 @@ use error::CliError;
 
 pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
     probes::store_dir(root)
-}
-
-fn mem0() -> Option<Result<Mem0, gmr::ContentError>> {
-    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-    let scope = Scope {
-        user_id: env("MEM0_USER_ID"),
-        agent_id: env("MEM0_AGENT_ID"),
-        app_id: env("MEM0_APP_ID"),
-    };
-    match (env("MEM0_BASE_URL"), env("MEM0_API_KEY")) {
-        (Some(base), key) => Some(Mem0::self_hosted(base, key, scope)),
-        (None, Some(key)) => Some(Mem0::platform(key, scope)),
-        (None, None) => None,
-    }
 }
 
 fn stale_journal_guard(root: &std::path::Path, state: &std::path::Path) -> Result<(), CliError> {
@@ -153,28 +137,22 @@ async fn served(
         .transport(Arc::new(InProcess::new(&root, linked.probes)))
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
-        .provider(Arc::new(Git::new(&root)))
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.queue()))
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))
         .links(Arc::new(store.links()));
-    match ClaudeMemory::new(&root) {
-        Ok(p) => builder = builder.provider(Arc::new(p)),
-        Err(e) => {
-            eprintln!("gmr: claude-code memory provider unavailable: {e}");
-            builder = builder.provider_warning("claude-code", e.to_string());
-        }
+    let stores = stores::assembled(&root);
+    for store in &stores.built {
+        builder = builder.provider(store.content());
     }
-    if let Some(built) = mem0() {
-        match built {
-            Ok(p) => builder = builder.provider(Arc::new(p)),
-            Err(e) => {
-                eprintln!("gmr: mem0 provider unavailable: {e}");
-                builder = builder.provider_warning("mem0", e.to_string());
-            }
-        }
+    for warning in &stores.warnings {
+        eprintln!(
+            "gmr: {} memory provider unavailable: {}",
+            warning.provider, warning.message
+        );
+        builder = builder.provider_warning(&warning.provider, &warning.message);
     }
     let rt = builder.build();
 
@@ -184,6 +162,7 @@ async fn served(
         Command::Anchor { coordinate, memory } => {
             verbs::anchor::run(&rt, &root, coordinate, memory, json).await
         }
+        Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, key, json).await,
         Command::Atlas { out } => verbs::atlas::run(&rt, &root, out, json).await,

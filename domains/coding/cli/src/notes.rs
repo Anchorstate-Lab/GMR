@@ -1,16 +1,3 @@
-//! `memories/**.md` as a `Declaring` source, and a `MemorySource` too.
-//!
-//! This lives in the domain rather than in a battery because everything it
-//! decides is a domain decision: which directory holds notes, that only
-//! `.md` counts, and that the grid a note speaks to GMR through is its
-//! YAML frontmatter. It reads that grid and hands it over untouched — what
-//! `about` or `watch` mean is not its business, which is why the same file
-//! could serve a domain with an entirely different vocabulary.
-//!
-//! It names the provider its records resolve through, once, here. Everything
-//! downstream carries the `Ref` it stamps rather than rebuilding one from a
-//! constant of its own.
-
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;

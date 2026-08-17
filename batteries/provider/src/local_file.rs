@@ -1,8 +1,3 @@
-//! Shared by every provider backed by a plain file on local disk: join
-//! root + id, check existence, read bytes. What counts as a version, and
-//! whether history is retrievable, differs per backend and stays there —
-//! this only owns the one mechanical step every such backend repeats.
-
 use std::path::Path;
 
 use gmr_content::ContentError;

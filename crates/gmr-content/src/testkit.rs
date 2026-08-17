@@ -1,13 +1,3 @@
-//! The two things a provider must get right that no type can express.
-//!
-//! Everything else a store owes is checked by the compiler: a capability it
-//! lacks is a trait it does not implement. What is left is the meaning of
-//! two answers — what a `Version` tracks, and what `Ok(None)` claims — and
-//! a backend passes or fails those the same way whatever it is talking to.
-//!
-//! A backend supplies a `Corpus`, which is the smallest world these can be
-//! asked in, and calls `conforms`.
-
 use std::time::Duration;
 
 use async_trait::async_trait;

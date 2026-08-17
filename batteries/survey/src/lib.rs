@@ -1,6 +1,3 @@
-//! `matching` is one opinionated fuzzy-coordinate algorithm; `walk` is the file
-//! tree traversal every extractor repeated. Neither knows a language.
-
 pub mod cache;
 pub mod index;
 pub mod matching;

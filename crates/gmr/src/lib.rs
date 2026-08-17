@@ -10,7 +10,7 @@ pub use gmr_store::sqlite;
 
 pub use gmr_content::{
     Claim, ContentError, ContentErrorCode, ContentProvider, Declared, Declaring, Fetched, History,
-    MemorySource, Record,
+    MemorySource, MemoryStore, Record,
 };
 pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, CanonicalizeError, Change, ChangeKind, ContentHash,

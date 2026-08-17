@@ -1,10 +1,3 @@
-//! Where derived candidates live between the scan that produced them and the
-//! query that reads them, and the bookkeeping that says whether they are whole.
-//!
-//! Nothing calls this yet. It lands ahead of the extractors that will use it so
-//! the two backends can be held against each other before anything depends on
-//! either.
-
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;

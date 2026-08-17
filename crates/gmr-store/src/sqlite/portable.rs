@@ -1,21 +1,3 @@
-//! Escape hatch across `schema::SCHEMA_VERSION` bumps.
-//!
-//! `migrate()` refuses to open a database stamped with a different schema
-//! version than this build — misreading one is worse than not opening it.
-//! That refusal has no counterpart: nothing lets the journal, which cannot be
-//! rebuilt from anything else, cross the boundary it just closed. Run
-//! `export_jsonl` with the *old* binary before upgrading; `import_jsonl` on
-//! the *new* binary replays it into a fresh store.
-//!
-//! `settings` and `queue` are deliberately not carried: they say how an
-//! anchor is run, not what it judged, so a plain `sync` reconstructs them —
-//! see `RunSettings`'s own doc comment for why that split exists.
-//!
-//! Row bodies stay `serde_json::Value` rather than the typed `Entry` /
-//! `Binding` from gmr-core. Round-tripping through the strict type would
-//! defeat the point: a file the old binary writes has to stay readable by a
-//! new binary whose `Entry` enum may have grown a variant since.
-
 use std::io::{BufRead, Write};
 
 use serde::{Deserialize, Serialize};

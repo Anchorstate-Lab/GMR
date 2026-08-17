@@ -1,8 +1,3 @@
-//! The postings union: the only candidates a coordinate can possibly select.
-//!
-//! Nothing calls this yet. It lands ahead of the query that will use it so the
-//! equivalence property below exists before anything depends on it.
-
 use std::collections::BTreeMap;
 
 use crate::matching::{Candidate, Want};

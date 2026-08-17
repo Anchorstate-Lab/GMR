@@ -1,10 +1,3 @@
-//! The coding domain's extractors: what counts as a function in Rust, how a
-//! Markdown section is fingerprinted, which files a name occurs in.
-//!
-//! Language knowledge lives here rather than in a battery because it is a
-//! domain's, and it is linked rather than executed because a version earned
-//! from the semantic closure means the same thing either way.
-
 mod addr;
 mod ast;
 mod lang;

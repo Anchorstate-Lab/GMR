@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched, History};
+use gmr_content::{ContentError, ContentProvider, Fetched, History, MemoryStore};
 use gmr_core::{ExternalId, ProviderId, Version};
 use gmr_probe::Budget;
 
@@ -18,6 +18,10 @@ impl Git {
             id: ProviderId::new("git"),
         }
     }
+}
+
+pub fn store(root: impl Into<PathBuf>) -> MemoryStore {
+    MemoryStore::new(std::sync::Arc::new(Git::new(root)))
 }
 
 #[async_trait]

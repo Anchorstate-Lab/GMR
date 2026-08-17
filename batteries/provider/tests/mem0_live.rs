@@ -1,26 +1,3 @@
-//! A canary for mem0's wire shape, not a test of this crate's logic.
-//!
-//! Everything decidable without a network — version derivation, history
-//! reconstruction, both absence spellings, the routes each deployment
-//! mounts, listing and pagination — is tested in the module itself against
-//! a fake. What is left here is the one thing a fake cannot check: that a
-//! real mem0 still answers the way this battery reads it.
-//!
-//! One criterion set, run against whichever deployment the environment
-//! names, because the point is that both are the same store to GMR:
-//!
-//!     # the managed platform
-//!     MEM0_API_KEY=... MEM0_USER_ID=... \
-//!         cargo test -p gmr-provider --features mem0 -- --ignored --nocapture
-//!
-//!     # a self-hosted server: `docker compose up` in mem0's own server/
-//!     MEM0_BASE_URL=http://localhost:8888 MEM0_USER_ID=... \
-//!         cargo test -p gmr-provider --features mem0 -- --ignored --nocapture
-//!
-//! It is `#[ignore]` because it needs somebody else's service being up. Run
-//! it deliberately, after a mem0 release or when a user reports something
-//! this crate's own tests all say is impossible.
-
 #![cfg(feature = "mem0")]
 
 use gmr_content::{ContentProvider, MemorySource};
