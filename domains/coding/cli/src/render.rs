@@ -1,4 +1,4 @@
-use gmr::AnchorView;
+use gmr::{AnchorView, Before, Grounding};
 use serde_json::Value;
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
@@ -56,19 +56,37 @@ pub fn anchor(v: &AnchorView) -> String {
     for m in &v.memories {
         let mark = if m.grounded { "*" } else { "?" };
         out.push_str(&format!("  {mark} {}", m.reference.external_id));
-        if m.rewritten {
-            out.push_str("  (rewritten since binding)");
-            if m.retrievable == Some(false) {
-                out.push_str(" bound version is no longer retrievable");
-            }
-        }
+        out.push_str(&grounding(&m.grounding));
         if !m.grounded {
             out.push_str("  ungrounded");
         }
-        if let Some(why) = &m.unavailable {
-            out.push_str(&format!("  unavailable: {why}"));
+        if m.content().is_some_and(|b| std::str::from_utf8(b).is_err()) {
+            out.push_str("  (not text; shown with replacement characters)");
         }
         out.push('\n');
     }
     out
+}
+
+fn grounding(g: &Grounding) -> String {
+    match g {
+        Grounding::Current { .. } => String::new(),
+        Grounding::Rewritten { before, .. } => {
+            format!("  (rewritten since binding){}", was(before))
+        }
+        Grounding::Gone => "  the provider says this record is gone".to_owned(),
+        Grounding::NoProvider { provider } => {
+            format!("  no provider named `{provider}` is registered in this binary")
+        }
+        Grounding::Unreachable { why, .. } => format!("  could not be reached: {why}"),
+    }
+}
+
+fn was(before: &Before) -> &'static str {
+    match before {
+        Before::Retrieved { .. } => "",
+        Before::NotRetained => " the bound version was not kept",
+        Before::NoHistory => " this provider keeps no history, so there is nothing to diff against",
+        Before::Unreachable { .. } => " and the bound version could not be reached",
+    }
 }

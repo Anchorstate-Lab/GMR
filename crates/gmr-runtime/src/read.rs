@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, Ref, Seq, State, StatusId, Version, scan,
+    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, State, StatusId,
+    Version, scan,
 };
 use serde::Serialize;
 
@@ -38,18 +40,70 @@ pub struct AnchorView {
 pub struct MemoryView {
     pub reference: Ref,
     pub bound_version: Version,
-    pub current_version: Option<Version>,
-    pub rewritten: bool,
-    pub content: Option<String>,
-    pub content_at_bind: Option<String>,
-    pub retrievable: Option<bool>,
     pub grounded: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unavailable: Option<String>,
     pub links: Vec<Link>,
     pub bound_at_seq: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale: Option<bool>,
+    pub grounding: Grounding,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "grounding", rename_all = "snake_case")]
+pub enum Grounding {
+    Current {
+        version: Version,
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+    },
+    Rewritten {
+        version: Version,
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+        before: Before,
+    },
+    Gone,
+    NoProvider {
+        provider: ProviderId,
+    },
+    Unreachable {
+        code: ContentErrorCode,
+        why: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "before", rename_all = "snake_case")]
+pub enum Before {
+    Retrieved {
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+    },
+    NotRetained,
+    NoHistory,
+    Unreachable {
+        code: ContentErrorCode,
+        why: String,
+    },
+}
+
+impl MemoryView {
+    pub fn content(&self) -> Option<&[u8]> {
+        match &self.grounding {
+            Grounding::Current { content, .. } | Grounding::Rewritten { content, .. } => {
+                Some(content)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn rewritten(&self) -> bool {
+        matches!(self.grounding, Grounding::Rewritten { .. })
+    }
+}
+
+fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&String::from_utf8_lossy(bytes))
 }
 
 impl Runtime {

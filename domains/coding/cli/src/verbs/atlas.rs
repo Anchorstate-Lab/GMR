@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gmr::{AnchorView, MemoryView, Runtime, Sighting};
+use gmr::{AnchorView, Before, Grounding, MemoryView, Runtime, Sighting};
 use gmr_atlas::{Edge, EdgeKind, Graph, Kind, Node, Tone};
 
 use crate::delivery::Subscriptions;
@@ -68,16 +68,16 @@ fn anchor_tone(view: &AnchorView, delivering: bool, unclaimed: bool) -> Tone {
 }
 
 fn memory_tone(m: &MemoryView) -> (Tone, Option<&'static str>) {
-    if m.unavailable.is_some() || m.content.is_none() {
-        (Tone::Alarm, Some("unreadable"))
-    } else if !m.grounded {
-        (Tone::Alarm, Some("ungrounded"))
-    } else if m.rewritten && m.retrievable == Some(false) {
-        (Tone::Alarm, Some("bound version lost"))
-    } else if m.rewritten {
-        (Tone::Notice, Some("rewritten since binding"))
-    } else {
-        (Tone::Calm, None)
+    match &m.grounding {
+        Grounding::Gone => (Tone::Alarm, Some("gone")),
+        Grounding::NoProvider { .. } => (Tone::Alarm, Some("no provider")),
+        Grounding::Unreachable { .. } => (Tone::Alarm, Some("unreachable")),
+        _ if !m.grounded => (Tone::Alarm, Some("ungrounded")),
+        Grounding::Rewritten { before, .. } => match before {
+            Before::Retrieved { .. } => (Tone::Notice, Some("rewritten since binding")),
+            _ => (Tone::Alarm, Some("bound version lost")),
+        },
+        Grounding::Current { .. } => (Tone::Calm, None),
     }
 }
 
@@ -119,8 +119,16 @@ fn memory_node(m: &MemoryView, detail: Option<String>) -> Node {
     if m.stale == Some(true) {
         node = node.fact("bound at", "before this anchor's latest entry");
     }
-    if let Some(why) = &m.unavailable {
-        node = node.fact("unavailable", why.clone());
+    match &m.grounding {
+        Grounding::Gone => node = node.fact("gone", "the provider says this record is gone"),
+        Grounding::NoProvider { provider } => {
+            node = node.fact(
+                "no provider",
+                format!("`{provider}` is not registered here"),
+            );
+        }
+        Grounding::Unreachable { why, .. } => node = node.fact("unreachable", why.clone()),
+        _ => {}
     }
     node
 }
@@ -167,7 +175,9 @@ pub async fn run(
                 EdgeKind::Binding,
             ));
             memories.entry(external).or_insert_with(|| {
-                let detail = m.content.as_deref().map(crate::prose::to_html);
+                let detail = m
+                    .content()
+                    .map(|b| crate::prose::to_html(&String::from_utf8_lossy(b)));
                 memory_node(m, detail)
             });
         }
@@ -179,11 +189,11 @@ pub async fn run(
             .iter()
             .flat_map(|v| &v.memories)
             .find(|m| m.reference.external_id.as_str() == external)
-            .and_then(|m| m.content.as_deref())
+            .and_then(gmr::MemoryView::content)
         else {
             continue;
         };
-        for target in crate::prose::wikilinks(body) {
+        for target in crate::prose::wikilinks(&String::from_utf8_lossy(body)) {
             if target == *external || !memories.contains_key(&target) {
                 continue;
             }
@@ -283,13 +293,21 @@ mod tests {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
             bound_version: gmr::Version::new("v1"),
-            current_version: None,
-            rewritten,
-            content: Some("body".to_owned()),
-            content_at_bind: None,
-            retrievable: None,
+            grounding: if rewritten {
+                Grounding::Rewritten {
+                    version: gmr::Version::new("v2"),
+                    content: b"body".to_vec(),
+                    before: Before::Retrieved {
+                        content: b"was".to_vec(),
+                    },
+                }
+            } else {
+                Grounding::Current {
+                    version: gmr::Version::new("v1"),
+                    content: b"body".to_vec(),
+                }
+            },
             grounded,
-            unavailable: None,
             links: Vec::new(),
             bound_at_seq: None,
             stale,

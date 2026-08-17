@@ -7,7 +7,7 @@ use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
-use gmr_runtime::{OpenRequest, Runtime, Standing};
+use gmr_runtime::{Before, Grounding, OpenRequest, Runtime, Standing};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
@@ -72,6 +72,21 @@ impl History for Versioned {
     }
 }
 
+struct Broken {
+    id: ProviderId,
+}
+
+#[async_trait]
+impl ContentProvider for Broken {
+    fn provider(&self) -> &ProviderId {
+        &self.id
+    }
+
+    async fn fetch(&self, _id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+        Err(ContentError::new("the store did not answer"))
+    }
+}
+
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
@@ -79,16 +94,25 @@ struct World {
 
 impl World {
     fn new(keeps_history: bool) -> Self {
+        Self::with(|root| Arc::new(Versioned::new(root, keeps_history)))
+    }
+
+    fn unreachable() -> Self {
+        Self::with(|_| {
+            Arc::new(Broken {
+                id: ProviderId::new("git"),
+            })
+        })
+    }
+
+    fn with(provider: impl FnOnce(PathBuf) -> Arc<dyn ContentProvider>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("memories")).unwrap();
         std::fs::write(dir.path().join("world.json"), r#"{"x":1}"#).unwrap();
         let bindings = Arc::new(MemoryBindings::default());
         let runtime = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
-            .provider(Arc::new(Versioned::new(
-                dir.path().to_path_buf(),
-                keeps_history,
-            )))
+            .provider(provider(dir.path().to_path_buf()))
             .journal(Arc::new(MemoryJournal::default()))
             .bindings(bindings.clone())
             .sealer(bindings.clone())
@@ -120,6 +144,17 @@ impl World {
                 },
                 supersedes: None,
             })
+            .await
+            .unwrap();
+    }
+
+    async fn bind_at(&self, name: &str, anchors: &[&str], version: &str) {
+        self.runtime
+            .bind(
+                Ref::new("git", format!("memories/{name}")),
+                anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
+                Version::new(version),
+            )
             .await
             .unwrap();
     }
@@ -161,24 +196,27 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
-    assert!(m.rewritten, "rewritten since binding");
-    assert_eq!(m.retrievable, Some(true));
+    let Grounding::Rewritten {
+        content, before, ..
+    } = &m.grounding
+    else {
+        panic!("expected a rewritten grounding, got {:?}", m.grounding);
+    };
     assert_eq!(
-        m.content_at_bind.as_deref(),
-        Some("The anchor module roster is the contract itself."),
+        before,
+        &Before::Retrieved {
+            content: b"The anchor module roster is the contract itself.".to_vec()
+        },
         "judging whether it still says the same thing requires both before and after"
     );
-    assert_eq!(
-        m.content.as_deref(),
-        Some("Changed claim: the roster is only a shadow.")
-    );
+    assert_eq!(content, b"Changed claim: the roster is only a shadow.");
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
         after.standing.iter().flatten().any(|e| matches!(
             e,
             Standing::Rewritten {
-                retrievable: Some(true),
+                before: Before::Retrieved { .. },
                 ..
             }
         )),
@@ -196,7 +234,7 @@ async fn reaffirming_clears_rewritten_without_touching_anchors() {
 
     w.memory("a.md", "Just a typo fix, nothing structural.");
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
-    assert!(view.memories[0].rewritten, "content moved since bind");
+    assert!(view.memories[0].rewritten(), "content moved since bind");
 
     let reference = Ref::new("git", "memories/a.md");
     let bytes = std::fs::read(w.dir.path().join("memories/a.md")).unwrap();
@@ -208,7 +246,7 @@ async fn reaffirming_clears_rewritten_without_touching_anchors() {
 
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     assert!(
-        !view.memories[0].rewritten,
+        !view.memories[0].rewritten(),
         "reaffirm re-stamped the version, so it's no longer stale"
     );
     assert_eq!(
@@ -243,13 +281,17 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
 
     let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
-    assert!(m.rewritten);
-    assert_eq!(
-        m.retrievable,
-        Some(false),
-        "unreachable after history rewrite"
+    assert!(
+        matches!(
+            m.grounding,
+            Grounding::Rewritten {
+                before: Before::NoHistory,
+                ..
+            }
+        ),
+        "this provider does not implement History at all, which is a different fact from a version it failed to keep: {:?}",
+        m.grounding
     );
-    assert_eq!(m.content_at_bind, None);
 
     assert!(
         w.runtime
@@ -262,11 +304,11 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
             .any(|e| matches!(
                 e,
                 Standing::Rewritten {
-                    retrievable: Some(false),
+                    before: Before::NoHistory,
                     ..
                 }
             )),
-        "unretrievable bound versions must still be reported; the before/after question can no longer be answered"
+        "a rewrite must still be reported when the before cannot be shown; the anchor moved either way"
     );
 }
 
@@ -362,8 +404,8 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         "it was carried along but gets no guarantee, so that must be visible"
     );
     assert_eq!(
-        by_id("memories/loose.md").content.as_deref(),
-        Some("This one is not anchored, but the one above links to it.")
+        by_id("memories/loose.md").content(),
+        Some(b"This one is not anchored, but the one above links to it.".as_slice())
     );
 }
 
@@ -447,4 +489,56 @@ async fn a_registered_provider_that_has_no_such_record_still_answers_none() {
         .expect("reaching the provider worked; it simply has nothing under that id");
 
     assert!(version.is_none(), "this half is the world's answer");
+}
+
+#[tokio::test]
+async fn a_version_the_provider_did_not_keep_is_not_the_same_as_a_provider_that_keeps_nothing() {
+    let w = World::new(true);
+    w.memory("a.md", "Original wording.");
+    w.open("a").await;
+    w.bind_at("a.md", &["a"], "a-version-this-provider-never-recorded")
+        .await;
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let m = &view.memories[0];
+
+    assert!(
+        matches!(
+            m.grounding,
+            Grounding::Rewritten {
+                before: Before::NotRetained,
+                ..
+            }
+        ),
+        "this provider does implement History; it simply has nothing under that version. \
+         Reporting it as NoHistory would send the reader to fix the wrong thing — one is \
+         a property of the backend, the other of this one binding: {:?}",
+        m.grounding
+    );
+}
+
+#[tokio::test]
+async fn a_store_that_will_not_answer_is_reported_not_read_as_nothing_happened() {
+    let w = World::unreachable();
+    w.memory("a.md", "Original wording.");
+    w.open("a").await;
+    w.bind_at("a.md", &["a"], "whatever-was-stamped").await;
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    assert!(
+        matches!(view.memories[0].grounding, Grounding::Unreachable { .. }),
+        "{:?}",
+        view.memories[0].grounding
+    );
+
+    let standing = w.runtime.changed_since(0, None).await.unwrap().standing;
+    assert!(
+        standing
+            .iter()
+            .flatten()
+            .any(|e| matches!(e, Standing::Unreachable { .. })),
+        "a provider that cannot be reached used to leave `rewritten` false, so this walk \
+         emitted nothing at all and `gmr edges` told the reader everything was fine. \
+         Not knowing is a standing condition of its own: {standing:?}"
+    );
 }

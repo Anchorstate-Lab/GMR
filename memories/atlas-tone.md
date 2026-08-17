@@ -36,6 +36,14 @@ only the exceptions shout. Note the test that a status behind any *other* tone i
 echoed verbatim, in a script this build has no business understanding: whatever
 the domain called it is what gets drawn.
 
+`memory_tone` reads `Grounding` for the same reason: it is one value the
+substrate owns, and matching it exhaustively means a variant added there
+cannot fall silently into a default colour. It used to test a combination
+of `unavailable.is_some()`, `content.is_none()` and `retrievable ==
+Some(false)` — three fields that could disagree, and did (see
+[[runtime-grounding]]), so the page could paint a memory alarming for a
+reason that was not actually true of it.
+
 `stale` deliberately carries no tone. Nothing else in the tree treats it as
 something to act on, and it holds for every memory bound before the last
 observation — which, after any `observe`, is nearly all of them (see

@@ -22,6 +22,12 @@ record carried in via `MemoryLens::carry_linked` (see
 [[runtime-carry-linked]]) — a linked-in record was never bound to this
 anchor at all, so "moved since bound" has no meaning for it.
 
+Everything about *whether the record still says what it said* lives in one
+field, `MemoryView.grounding`, and is written up in [[runtime-grounding]].
+`stale` and `grounding` answer different questions and neither implies the
+other: `stale` is about this anchor moving, `grounding` is about the record
+moving.
+
 ## When this changes, ask
 
 Is `view.stale` still computed only for records actually bound to this
