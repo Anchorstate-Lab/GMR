@@ -39,6 +39,25 @@ That is the shape of the defect, not just one instance of it — the same
 the subscription lookup ([[delivery-standing]]) and in how a note's name was
 spelled. A `Ref` handed down is the fix in all three.
 
+## It resolves; it does not write
+
+`align_bindings` returns a plan and performs no writes. The journal is
+append-only, so "atomic" cannot mean rollback — it can only mean *resolve
+everything first, and write the first row only once nothing can still fail*.
+
+That distinction was not academic. With writes interleaved, a sync that
+failed while versioning the last note left every anchor before it open and
+nothing bound: 346 anchors, zero memories. Both `check` and `doctor` read
+that state as fine — an anchor with no memory yet is what `gmr anchor`
+without `-m` produces on purpose, so neither verb has grounds to complain.
+The half-finished state is invisible precisely because each half of it is
+individually legitimate.
+
+There is a test asserting the plan is not written, and a second assertion in
+it applying the plan and finding the binding afterwards. The second looks
+redundant and is not: without it the first would pass just as well against a
+fixture that could never bind at all.
+
 ## When this changes, ask
 
 Does the new code call `rt.bind` unconditionally instead of comparing
@@ -48,3 +67,7 @@ even when nothing about the note's anchors or version actually moved.
 Does anything here start constructing a `Ref` rather than cloning the one
 the note arrived with? Whatever it constructs it from is a second opinion
 about where a record lives, and the source already gave the first.
+
+Does a write move back into the resolving loop — a `bind`, an `open`, a
+settings change? Every one of them turns a later failure into a repository
+half-synced, and this repository cannot see that state.

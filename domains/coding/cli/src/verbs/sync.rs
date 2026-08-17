@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use gmr::{
-    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Retain, RunSettings, Runtime, State,
-    Transitions,
+    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Ref, Retain, RunSettings, Runtime, State,
+    Transitions, Version,
 };
 use serde::Deserialize;
 
@@ -146,21 +146,19 @@ pub async fn run(
 
     let scanned = crate::memories::scan(root, &ctx.catalog)?;
     let notes = &scanned.notes;
-    let blocked: Vec<&crate::memories::Fault> = scanned.blocked().collect();
+    let breaking: Vec<&crate::memories::Fault> =
+        scanned.faults.iter().filter(|f| f.breaks()).collect();
 
     let existing = rt.anchors().await?;
+    let mut steps = Vec::new();
     let mut opened = Vec::new();
     let mut drifted_criteria = Vec::new();
     let mut swapped = Vec::new();
     let mut resettled = Vec::new();
-    let mut warnings = Vec::new();
 
-    let mut scheduled = 0;
     for decl in merged(&declared, notes) {
         let key = AnchorKey::new(decl.key.clone());
-        if !dry_run && rt.ensure_scheduled(&key).await? {
-            scheduled += 1;
-        }
+        steps.push(Step::Schedule(key.clone()));
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
             let facets = differs(&view.anchor, decl, &ctx)?;
@@ -173,36 +171,50 @@ pub async fn run(
                 swapped.push(decl.key.clone());
             }
             if rt.settings_for(&key).await? != decl.settings() {
-                if !dry_run {
-                    rt.set_settings(&key, &decl.settings()).await?;
-                }
+                steps.push(Step::Resettle(key, decl.settings()));
                 resettled.push(decl.key.clone());
             }
             continue;
         }
         decl.check_contract(&ctx)?;
-        if dry_run {
-            opened.push(decl.key.clone());
-            continue;
-        }
-        let result = rt
-            .open(OpenRequest {
-                key: key.clone(),
-                probe: decl.to_probe(&ctx)?,
-                transitions: decl.to_transitions()?,
-                terminal: rules::terminal(&decl.terminal),
-                initial: decl.initial(),
-                settings: decl.settings(),
-                supersedes: None,
-            })
-            .await?;
-        for w in result.warnings {
-            warnings.push(format!("{key}: {w}"));
-        }
+        steps.push(Step::Open(Box::new(OpenRequest {
+            key,
+            probe: decl.to_probe(&ctx)?,
+            transitions: decl.to_transitions()?,
+            terminal: rules::terminal(&decl.terminal),
+            initial: decl.initial(),
+            settings: decl.settings(),
+            supersedes: None,
+        })));
         opened.push(decl.key.clone());
     }
 
-    let (bound, renamed) = align_bindings(rt, notes, dry_run).await?;
+    let (binds, bound, renamed) = align_bindings(rt, notes).await?;
+    steps.extend(
+        binds
+            .into_iter()
+            .map(|(reference, anchors, version)| Step::Bind(reference, anchors, version)),
+    );
+
+    let mut warnings = Vec::new();
+    let mut scheduled = 0;
+    if !dry_run {
+        for step in steps {
+            match step {
+                Step::Schedule(key) => scheduled += usize::from(rt.ensure_scheduled(&key).await?),
+                Step::Resettle(key, settings) => rt.set_settings(&key, &settings).await?,
+                Step::Open(request) => {
+                    let key = request.key.clone();
+                    for w in rt.open(*request).await?.warnings {
+                        warnings.push(format!("{key}: {w}"));
+                    }
+                }
+                Step::Bind(reference, anchors, version) => {
+                    rt.bind(reference, anchors, version).await?;
+                }
+            }
+        }
+    }
 
     if json {
         println!(
@@ -214,12 +226,12 @@ pub async fn run(
                 "resettled": resettled,
                 "bound": bound, "renamed": renamed,
                 "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
-                "broken": blocked.iter().map(|f| serde_json::json!({
+                "broken": breaking.iter().map(|f| serde_json::json!({
                     "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
                 })).collect::<Vec<_>>(),
             })
         );
-        return Ok(i32::from(!blocked.is_empty()));
+        return Ok(i32::from(!breaking.is_empty()));
     }
 
     println!(
@@ -234,13 +246,13 @@ pub async fn run(
     for w in &warnings {
         println!("  ! {w}");
     }
-    if !blocked.is_empty() {
+    if !breaking.is_empty() {
         println!(
-            "\n{} notes named an anchor that could not become one — everything else in \
+            "\n{} notes did not become the anchor they meant to — everything else in \
              this repo synced anyway:",
-            blocked.len()
+            breaking.len()
         );
-        for f in &blocked {
+        for f in &breaking {
             println!("  ! {}", f.line());
         }
     }
@@ -309,7 +321,7 @@ pub async fn run(
             println!("  ~= {k}");
         }
     }
-    Ok(i32::from(!blocked.is_empty()))
+    Ok(i32::from(!breaking.is_empty()))
 }
 
 struct Rename {
@@ -336,11 +348,20 @@ fn ambiguous(had: &[AnchorKey], want: &[AnchorKey], closed: &[AnchorKey]) -> Opt
     (!dropped.is_empty() && !gained.is_empty()).then_some(Rename { dropped, gained })
 }
 
+type Binding = (Ref, Vec<AnchorKey>, Version);
+
+enum Step {
+    Schedule(AnchorKey),
+    Resettle(AnchorKey, RunSettings),
+    Open(Box<OpenRequest>),
+    Bind(Ref, Vec<AnchorKey>, Version),
+}
+
 async fn align_bindings(
     rt: &Runtime,
     notes: &[crate::memories::Note],
-    dry_run: bool,
-) -> Result<(Vec<String>, Vec<String>), CliError> {
+) -> Result<(Vec<Binding>, Vec<String>, Vec<String>), CliError> {
+    let mut planned = Vec::new();
     let mut bound = Vec::new();
     let mut renamed = Vec::new();
 
@@ -390,13 +411,10 @@ async fn align_bindings(
         if settled {
             continue;
         }
-        let named = named.to_owned();
-        if !dry_run {
-            rt.bind(reference, want, version).await?;
-        }
-        bound.push(named);
+        bound.push(named.to_owned());
+        planned.push((reference, want, version));
     }
-    Ok((bound, renamed))
+    Ok((planned, bound, renamed))
 }
 
 pub fn differs(
@@ -484,6 +502,75 @@ pub fn audit<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gmr::{ContentProvider, ExternalId, Fetched, ProviderId};
+
+    struct Versions(ProviderId);
+
+    #[async_trait::async_trait]
+    impl ContentProvider for Versions {
+        fn provider(&self) -> &ProviderId {
+            &self.0
+        }
+
+        async fn fetch(
+            &self,
+            _id: &ExternalId,
+            _budget: &gmr::probe::Budget,
+        ) -> Result<Option<Fetched>, gmr::ContentError> {
+            Ok(Some(Fetched {
+                version: Version::new("v1"),
+                bytes: Vec::new(),
+            }))
+        }
+    }
+
+    async fn runtime(dir: &std::path::Path) -> (Runtime, gmr::sqlite::SqliteStore) {
+        let store = gmr::sqlite::open(dir.join("memory.db")).await.unwrap();
+        let rt = Runtime::builder()
+            .journal(std::sync::Arc::new(store.journal()))
+            .bindings(std::sync::Arc::new(store.bindings()))
+            .sealer(std::sync::Arc::new(store.bindings()))
+            .links(std::sync::Arc::new(store.links()))
+            .queue(std::sync::Arc::new(store.queue()))
+            .settings(std::sync::Arc::new(store.queue()))
+            .provider(std::sync::Arc::new(Versions(ProviderId::new("git"))))
+            .build();
+        (rt, store)
+    }
+
+    #[tokio::test]
+    async fn resolving_a_binding_does_not_write_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (rt, store) = runtime(dir.path()).await;
+        let reference = Ref::new("git", "memories/a.md");
+        let notes = vec![crate::memories::Note {
+            reference: reference.clone(),
+            wants: vec![crate::memories::Want::Existing("some::key".to_owned())],
+            watch: None,
+        }];
+
+        let (plan, bound, _) = align_bindings(&rt, &notes).await.unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(bound, vec!["memories/a.md".to_owned()]);
+        assert!(
+            rt.memory().binding_of(&reference).await.unwrap().is_none(),
+            "resolution has to finish before the first write, because the journal is \
+             append-only and there is no rollback. Writing as it went is how a sync that \
+             failed on the last note left 346 anchors open with nothing bound to them — a \
+             state `check` and `doctor` both read as perfectly fine"
+        );
+
+        for (reference, anchors, version) in plan {
+            rt.bind(reference, anchors, version).await.unwrap();
+        }
+        assert!(
+            rt.memory().binding_of(&reference).await.unwrap().is_some(),
+            "and the plan really does bind when applied — without this the assertion above \
+             would pass just as well against a fixture that could never bind at all"
+        );
+        store.close().await;
+    }
 
     fn keys(names: &[&str]) -> Vec<AnchorKey> {
         names.iter().map(|n| AnchorKey::new(*n)).collect()
