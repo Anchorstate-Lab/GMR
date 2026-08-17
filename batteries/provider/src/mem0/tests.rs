@@ -158,6 +158,30 @@ async fn a_listing_says_nothing_about_what_each_record_is_about() {
 }
 
 #[tokio::test]
+async fn an_answer_without_the_text_is_refused_not_read_as_an_empty_memory() {
+    let provider = mem0(Canned::new().on("/v1/memories/m-1/", 200, r#"{"id":"m-1"}"#));
+
+    provider
+        .fetch(&ExternalId::new("m-1"), &plenty())
+        .await
+        .expect_err(
+            "mem0 renaming or dropping the field the text arrives in must be refused. Read as \
+             an empty memory it hashes to a stable version, so every record reports as current \
+             and empty and nothing anywhere says the store stopped being understood",
+        );
+}
+
+#[tokio::test]
+async fn a_listing_without_the_records_is_refused_not_read_as_an_empty_store() {
+    let provider = mem0(Canned::new().on("/v1/memories/?user_id=u1", 200, r#"{"next":null}"#));
+
+    provider.list(&plenty()).await.expect_err(
+        "a listing whose shape we no longer understand must be refused. Read as zero records it \
+         is indistinguishable from a scope that is genuinely empty",
+    );
+}
+
+#[tokio::test]
 async fn a_listing_cut_short_by_the_budget_is_an_error_not_a_short_list() {
     let provider = mem0(Canned::new().on(
         "/v1/memories/?user_id=u1",

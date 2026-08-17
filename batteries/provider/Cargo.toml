@@ -16,6 +16,8 @@ serde_json = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
+# 一致性套件对每个后端各跑一遍，所以自己的测试得把每个后端都打开。
+gmr-provider = { path = ".", features = ["git", "claude-code", "mem0", "testkit"] }
 gmr-content = { path = "../../crates/gmr-content", features = ["testkit"] }
 tokio = { workspace = true }
 tempfile = { workspace = true }
@@ -33,6 +35,9 @@ mem0 = [
     "dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait",
     "dep:serde", "dep:serde_json", "dep:reqwest",
 ]
+# 一个住在内存里的 mem0，让走网络的后端也能跑本地后端跑的那套一致性套件。
+# 不是部署选项 —— 跟 gmr-store 的 testkit 同一个惯例。
+testkit = ["mem0"]
 
 [lints]
 workspace = true

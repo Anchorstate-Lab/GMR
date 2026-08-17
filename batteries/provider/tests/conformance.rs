@@ -4,7 +4,7 @@
 //! `Ok(None)` claims. A capability a store lacks needs no test here — it is
 //! a trait it does not implement, and the compiler keeps that.
 
-#![cfg(any(feature = "git", feature = "claude-code"))]
+#![cfg(any(feature = "git", feature = "claude-code", feature = "testkit"))]
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -80,4 +80,52 @@ async fn claude_code_conforms() {
         |root| gmr_provider::claude_code::ClaudeMemory::at(root),
     );
     conforms(&corpus).await.unwrap();
+}
+
+#[cfg(feature = "testkit")]
+struct Remote {
+    store: gmr_provider::mem0::testkit::Memories,
+    provider: gmr_provider::mem0::Mem0,
+    written: AtomicUsize,
+}
+
+#[cfg(feature = "testkit")]
+impl Remote {
+    fn new() -> Self {
+        let store = gmr_provider::mem0::testkit::Memories::new();
+        let provider = store.provider();
+        Self {
+            store,
+            provider,
+            written: AtomicUsize::new(0),
+        }
+    }
+}
+
+#[cfg(feature = "testkit")]
+#[async_trait]
+impl Corpus for Remote {
+    fn provider(&self) -> &dyn ContentProvider {
+        &self.provider
+    }
+
+    async fn holding(&self, bytes: &[u8]) -> ExternalId {
+        let id = format!("m-{}", self.written.fetch_add(1, Ordering::SeqCst));
+        self.store.holds(&id, &String::from_utf8_lossy(bytes));
+        ExternalId::new(id)
+    }
+
+    async fn never_held(&self) -> ExternalId {
+        ExternalId::new("m-nobody-stored-this")
+    }
+
+    async fn out_of_reach(&self) -> Box<dyn ContentProvider> {
+        Box::new(self.store.out_of_reach())
+    }
+}
+
+#[cfg(feature = "testkit")]
+#[tokio::test]
+async fn mem0_conforms() {
+    conforms(&Remote::new()).await.unwrap();
 }

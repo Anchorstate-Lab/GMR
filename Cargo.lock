@@ -621,6 +621,7 @@ dependencies = [
  "gmr-content",
  "gmr-core",
  "gmr-probe",
+ "gmr-provider",
  "reqwest",
  "serde",
  "serde_json",

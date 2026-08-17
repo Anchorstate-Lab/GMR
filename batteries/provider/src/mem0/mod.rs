@@ -11,6 +11,9 @@
 
 mod http;
 
+#[cfg(feature = "testkit")]
+pub mod testkit;
+
 use async_trait::async_trait;
 use gmr_content::{ContentError, ContentProvider, Fetched, History, MemorySource, Record};
 use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
@@ -198,7 +201,7 @@ impl Mem0 {
         self
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testkit"))]
     fn faked(http: Box<dyn Http>, scope: Scope, deployment: Deployment) -> Self {
         Self {
             id: ProviderId::new("mem0"),
@@ -238,13 +241,11 @@ fn refused(answer: &Answer, what: &str) -> ContentError {
 #[derive(Debug, Deserialize)]
 struct Memory {
     id: String,
-    #[serde(default)]
     memory: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct Page {
-    #[serde(default)]
     results: Vec<Memory>,
     #[serde(default)]
     next: Option<String>,
