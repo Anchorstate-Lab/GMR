@@ -59,14 +59,6 @@ impl ContentProvider for ClaudeMemory {
             bytes,
         }))
     }
-
-    async fn fetch_at(
-        &self,
-        _id: &ExternalId,
-        _version: &Version,
-    ) -> Result<Option<Vec<u8>>, ContentError> {
-        Ok(None)
-    }
 }
 
 #[cfg(test)]
@@ -123,18 +115,12 @@ mod tests {
         assert_ne!(v1, v2);
     }
 
-    #[tokio::test]
-    async fn fetch_at_honestly_reports_no_history() {
+    #[test]
+    fn this_provider_offers_no_history_at_all() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("note.md"), b"content").unwrap();
         let provider = ClaudeMemory::at(dir.path());
 
-        let bytes = provider
-            .fetch_at(&ExternalId::new("note.md"), &Version::new("any"))
-            .await
-            .unwrap();
-
-        assert!(bytes.is_none());
+        assert!(provider.history().is_none());
     }
 
     #[test]

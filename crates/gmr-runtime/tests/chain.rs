@@ -36,14 +36,6 @@ impl ContentProvider for Files {
             bytes,
         }))
     }
-
-    async fn fetch_at(
-        &self,
-        _id: &ExternalId,
-        _version: &Version,
-    ) -> Result<Option<Vec<u8>>, ContentError> {
-        Ok(None)
-    }
 }
 
 const MEMORY: &str = "\

@@ -46,6 +46,13 @@ pub trait ContentProvider: Send + Sync {
 
     async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError>;
 
+    fn history(&self) -> Option<&dyn History> {
+        None
+    }
+}
+
+#[async_trait]
+pub trait History: Send + Sync {
     async fn fetch_at(
         &self,
         id: &ExternalId,

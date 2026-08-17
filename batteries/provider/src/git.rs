@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched};
+use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{ExternalId, ProviderId, Version};
 
 pub struct Git {
@@ -37,6 +37,13 @@ impl ContentProvider for Git {
         }))
     }
 
+    fn history(&self) -> Option<&dyn History> {
+        Some(self)
+    }
+}
+
+#[async_trait]
+impl History for Git {
     async fn fetch_at(
         &self,
         _id: &ExternalId,

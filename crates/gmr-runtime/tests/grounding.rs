@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched};
+use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
@@ -56,14 +56,18 @@ impl ContentProvider for Versioned {
         }))
     }
 
+    fn history(&self) -> Option<&dyn History> {
+        self.keeps_history.then_some(self as &dyn History)
+    }
+}
+
+#[async_trait]
+impl History for Versioned {
     async fn fetch_at(
         &self,
         _id: &ExternalId,
         version: &Version,
     ) -> Result<Option<Vec<u8>>, ContentError> {
-        if !self.keeps_history {
-            return Ok(None);
-        }
         Ok(self.history.lock().unwrap().get(version.as_str()).cloned())
     }
 }

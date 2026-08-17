@@ -155,16 +155,19 @@ impl MemoryLens {
                 }
 
                 if view.rewritten {
-                    match provider
-                        .fetch_at(&binding.reference.external_id, &bound_version)
-                        .await
-                    {
-                        Ok(Some(bytes)) => {
-                            view.retrievable = Some(true);
-                            view.content_at_bind = String::from_utf8(bytes).ok();
-                        }
-                        Ok(None) => view.retrievable = Some(false),
-                        Err(e) => view.unavailable = Some(e.message),
+                    match provider.history() {
+                        None => view.retrievable = Some(false),
+                        Some(history) => match history
+                            .fetch_at(&binding.reference.external_id, &bound_version)
+                            .await
+                        {
+                            Ok(Some(bytes)) => {
+                                view.retrievable = Some(true);
+                                view.content_at_bind = String::from_utf8(bytes).ok();
+                            }
+                            Ok(None) => view.retrievable = Some(false),
+                            Err(e) => view.unavailable = Some(e.message),
+                        },
                     }
                 } else {
                     view.retrievable = Some(true);
