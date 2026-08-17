@@ -116,6 +116,17 @@ impl RuntimeBuilder {
     }
 
     pub fn build(self) -> Runtime {
+        let mut named: Vec<&gmr_core::ProviderId> = Vec::new();
+        for provider in &self.providers {
+            let id = provider.provider();
+            assert!(
+                !named.contains(&id),
+                "two providers are registered as `{id}`, and lookup takes the first match — \
+                 so every reference through `{id}` would silently resolve against one of them \
+                 and never the other. Give each instance its own name at assembly time"
+            );
+            named.push(id);
+        }
         Runtime {
             log: AnchorLog::new(self.journal.expect("a Journal is not optional")),
             observer: Observer::new(self.transports),
@@ -138,7 +149,50 @@ impl RuntimeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gmr_core::{ExternalId, ProviderId};
     use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
+
+    struct Named(ProviderId);
+
+    #[async_trait::async_trait]
+    impl ContentProvider for Named {
+        fn provider(&self) -> &ProviderId {
+            &self.0
+        }
+
+        async fn fetch(
+            &self,
+            _id: &ExternalId,
+            _budget: &gmr_probe::Budget,
+        ) -> Result<Option<gmr_content::Fetched>, gmr_content::ContentError> {
+            Ok(None)
+        }
+    }
+
+    fn assembled(providers: [&str; 2]) -> Runtime {
+        let bindings = Arc::new(MemoryBindings::default());
+        let mut builder = Runtime::builder()
+            .journal(Arc::new(MemoryJournal::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings.clone())
+            .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()));
+        for id in providers {
+            builder = builder.provider(Arc::new(Named(ProviderId::new(id))));
+        }
+        builder.build()
+    }
+
+    #[test]
+    #[should_panic(expected = "two providers are registered as `mem0`")]
+    fn two_providers_under_one_name_is_refused_at_assembly() {
+        assembled(["mem0", "mem0"]);
+    }
+
+    #[test]
+    fn two_instances_of_one_backend_under_different_names_are_fine() {
+        assembled(["mem0-work", "mem0-personal"]);
+    }
 
     #[test]
     fn a_provider_warning_reaches_the_built_runtime() {
