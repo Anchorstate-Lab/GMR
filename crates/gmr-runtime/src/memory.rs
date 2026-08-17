@@ -7,7 +7,8 @@ use serde::Serialize;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::read::{Before, Grounding, MemoryView};
-use gmr_content::ContentProvider;
+use gmr_content::{ContentError, ContentProvider};
+use gmr_probe::Budget;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderWarning {
@@ -100,14 +101,18 @@ impl MemoryLens {
             .find(|p| p.provider() == &reference.provider)
     }
 
-    pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
+    pub async fn current_version(
+        &self,
+        reference: &Ref,
+        budget: &Budget,
+    ) -> Result<Option<Version>, RuntimeError> {
         let Some(provider) = self.provider_for(reference) else {
             return Err(RuntimeError::NoProvider {
                 provider: reference.provider.clone(),
             });
         };
         Ok(provider
-            .fetch(&reference.external_id)
+            .fetch(&reference.external_id, budget)
             .await?
             .map(|f| f.version))
     }
@@ -115,6 +120,7 @@ impl MemoryLens {
     pub(crate) async fn fetch_memory(
         &self,
         record: BindingRecord,
+        budget: &Budget,
     ) -> Result<MemoryView, RuntimeError> {
         let BindingRecord {
             binding,
@@ -124,7 +130,9 @@ impl MemoryLens {
         Ok(MemoryView {
             links: self.links.links_of(&binding.reference).await?,
             grounded: !binding.anchors.is_empty(),
-            grounding: self.ground(&binding.reference, &bound_version).await,
+            grounding: self
+                .ground(&binding.reference, &bound_version, budget)
+                .await,
             reference: binding.reference,
             bound_version,
             bound_at_seq,
@@ -132,13 +140,20 @@ impl MemoryLens {
         })
     }
 
-    async fn ground(&self, reference: &Ref, bound_version: &Version) -> Grounding {
+    async fn ground(&self, reference: &Ref, bound_version: &Version, budget: &Budget) -> Grounding {
         let Some(provider) = self.provider_for(reference) else {
             return Grounding::NoProvider {
                 provider: reference.provider.clone(),
             };
         };
-        let fetched = match provider.fetch(&reference.external_id).await {
+        if budget.remaining().is_none() {
+            let e = spent();
+            return Grounding::Unreachable {
+                code: e.code,
+                why: e.message,
+            };
+        }
+        let fetched = match provider.fetch(&reference.external_id, budget).await {
             Err(e) => {
                 return Grounding::Unreachable {
                     code: e.code,
@@ -158,7 +173,7 @@ impl MemoryLens {
             None => Before::NoHistory,
             Some(history) => {
                 match history
-                    .fetch_at(&reference.external_id, bound_version)
+                    .fetch_at(&reference.external_id, bound_version, budget)
                     .await
                 {
                     Err(e) => Before::Unreachable {
@@ -180,6 +195,8 @@ impl MemoryLens {
     pub(crate) async fn carry_linked(
         &self,
         memories: &mut Vec<MemoryView>,
+        total: &Budget,
+        call: std::time::Duration,
     ) -> Result<(), RuntimeError> {
         let linked: Vec<Ref> = memories
             .iter()
@@ -193,8 +210,15 @@ impl MemoryLens {
             let Some(binding) = self.bindings.binding_of(&reference).await? else {
                 continue;
             };
-            memories.push(self.fetch_memory(binding).await?);
+            memories.push(self.fetch_memory(binding, &total.narrowed(call)).await?);
         }
         Ok(())
     }
+}
+
+fn spent() -> ContentError {
+    ContentError::spent(
+        "this read had a total budget for reaching content stores and it ran out before \
+         this record's turn; nothing was asked, so nothing is known about it",
+    )
 }

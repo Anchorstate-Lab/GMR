@@ -1,9 +1,12 @@
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
 use gmr_content::ContentErrorCode;
 use gmr_core::{
     Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, State, StatusId,
     Version, scan,
 };
+use gmr_probe::Budget;
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -108,7 +111,25 @@ fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> 
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
-        read(&self.log, &self.memory, key).await
+        let policy = self.scheduler.policy();
+        read(
+            &self.log,
+            &self.memory,
+            key,
+            &policy.content_budget(),
+            policy.content_call(),
+        )
+        .await
+    }
+
+    pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
+        let policy = self.scheduler.policy();
+        self.memory
+            .current_version(
+                reference,
+                &policy.content_budget().narrowed(policy.content_call()),
+            )
+            .await
     }
 
     pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
@@ -116,7 +137,14 @@ impl Runtime {
     }
 
     pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
-        read_all(&self.log, &self.memory).await
+        let policy = self.scheduler.policy();
+        read_all(
+            &self.log,
+            &self.memory,
+            &policy.content_budget(),
+            policy.content_call(),
+        )
+        .await
     }
 }
 
@@ -124,6 +152,8 @@ async fn read(
     log: &AnchorLog,
     memory: &MemoryLens,
     key: &AnchorKey,
+    total: &Budget,
+    call: Duration,
 ) -> Result<AnchorView, RuntimeError> {
     let entries = log.entries(key, 0).await?;
     let mut sightings: u64 = 0;
@@ -136,11 +166,11 @@ async fn read(
 
     let mut memories = Vec::new();
     for binding in memory.bindings_on(key).await? {
-        let mut view = memory.fetch_memory(binding).await?;
+        let mut view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
         view.stale = view.bound_at_seq.map(|seq| seq < s.head);
         memories.push(view);
     }
-    memory.carry_linked(&mut memories).await?;
+    memory.carry_linked(&mut memories, total, call).await?;
 
     let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
         Some(Outcome::Found { .. }) => Sighting::Found,
@@ -183,10 +213,15 @@ async fn cobound(memory: &MemoryLens, reference: &Ref) -> Result<Vec<Ref>, Runti
     Ok(out)
 }
 
-async fn read_all(log: &AnchorLog, memory: &MemoryLens) -> Result<Vec<AnchorView>, RuntimeError> {
+async fn read_all(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    total: &Budget,
+    call: Duration,
+) -> Result<Vec<AnchorView>, RuntimeError> {
     let mut out = Vec::new();
     for key in log.anchors().await? {
-        out.push(read(log, memory, &key).await?);
+        out.push(read(log, memory, &key, total, call).await?);
     }
     Ok(out)
 }

@@ -19,6 +19,12 @@ still meaningfully about this anchor" is a judgment call about relevance
 that the substrate has no basis to make; it belongs to the domain, not to
 this function.
 
+Records carried in this way draw from the same operation-wide budget as the
+bound ones — `carry_linked` takes the total and narrows a slice per record
+rather than minting its own (see [[content-budget]]). A second total here
+would mean a read could spend twice what its caller allowed, and the
+carried records are the half of the walk nobody explicitly asked for.
+
 ## When this changes, ask
 
 Does the new code let `carry_linked` recurse into a second hop, or does it

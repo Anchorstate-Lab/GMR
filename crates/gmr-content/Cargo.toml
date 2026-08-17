@@ -8,6 +8,9 @@ license.workspace = true
 
 [dependencies]
 gmr-core = { path = "../gmr-core" }
+# Budget 是所有对外调用共用的预算词汇，暂住 gmr-probe；出现第三个使用者
+# 时搬走。见 CLAUDE.md §5。
+gmr-probe = { path = "../gmr-probe" }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

@@ -99,6 +99,8 @@ async fn changed_since(
     status: Option<&StatusId>,
 ) -> Result<Edges, RuntimeError> {
     let now = Utc::now();
+    let total = policy.content_budget();
+    let call = policy.content_call();
     let mut edges = Vec::new();
     let mut standing = status.is_none().then(Vec::new);
     let mut head = cursor;
@@ -123,7 +125,7 @@ async fn changed_since(
             }
 
             for binding in memory.bindings_on(&key).await? {
-                let view = memory.fetch_memory(binding).await?;
+                let view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
                 let anchor = key.clone();
                 let reference = view.reference;
                 let bound_version = view.bound_version;

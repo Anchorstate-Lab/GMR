@@ -12,6 +12,7 @@
 
 use async_trait::async_trait;
 use gmr_core::{ExternalId, ProviderId, Ref, Version};
+use gmr_probe::Budget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fetched {
@@ -31,12 +32,14 @@ pub struct ContentError {
 #[non_exhaustive]
 pub enum ContentErrorCode {
     ProviderFailed,
+    BudgetSpent,
 }
 
 impl ContentErrorCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ProviderFailed => "provider_failed",
+            Self::BudgetSpent => "budget_spent",
         }
     }
 }
@@ -45,6 +48,13 @@ impl ContentError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             code: ContentErrorCode::ProviderFailed,
+            message: message.into(),
+        }
+    }
+
+    pub fn spent(message: impl Into<String>) -> Self {
+        Self {
+            code: ContentErrorCode::BudgetSpent,
             message: message.into(),
         }
     }
@@ -58,7 +68,11 @@ impl ContentError {
 pub trait ContentProvider: Send + Sync {
     fn provider(&self) -> &ProviderId;
 
-    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError>;
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError>;
 
     fn history(&self) -> Option<&dyn History> {
         None
@@ -71,6 +85,7 @@ pub trait History: Send + Sync {
         &self,
         id: &ExternalId,
         version: &Version,
+        budget: &Budget,
     ) -> Result<Option<Vec<u8>>, ContentError>;
 }
 
@@ -93,5 +108,5 @@ pub struct Record {
 pub trait MemorySource: Send + Sync {
     fn provider(&self) -> &ProviderId;
 
-    async fn list(&self) -> Result<Vec<Record>, ContentError>;
+    async fn list(&self, budget: &Budget) -> Result<Vec<Record>, ContentError>;
 }

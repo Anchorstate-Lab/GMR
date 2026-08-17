@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 gmr-core = { path = "../../crates/gmr-core", optional = true }
 gmr-content = { path = "../../crates/gmr-content", optional = true }
+gmr-probe = { path = "../../crates/gmr-probe", optional = true }
 async-trait = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -19,8 +20,8 @@ tempfile = { workspace = true }
 default = []
 # ── 后端：一个 feature 一个，跟 crates/gmr-store 的 sqlite feature 同一个
 #    惯例。加 mem0 / Claude 原生记忆 = 加一个 feature + 一个模块。
-git = ["dep:gmr-core", "dep:gmr-content", "dep:async-trait"]
-claude-code = ["dep:gmr-core", "dep:gmr-content", "dep:async-trait"]
+git = ["dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait"]
+claude-code = ["dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait"]
 
 [lints]
 workspace = true

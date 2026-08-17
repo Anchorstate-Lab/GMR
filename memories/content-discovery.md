@@ -23,6 +23,11 @@ so instances are constructed and held on the domain side, not registered on
 dropped because it created a second path deriving current versions, which
 is exactly what [[runtime-current-version]] exists to prevent.
 
+`list()` takes a budget like every other outbound call. Enumerating a
+remote store is the least bounded thing in this contract — it is the one
+call whose cost does not depend on how many bindings exist — so it is the
+last place to leave unbounded (see [[content-budget]]).
+
 ## `list()` is discovery help, not a roster of what exists
 
 A reference missing from `list()` is **not** `Gone`. mem0 filters by scope,

@@ -33,7 +33,10 @@ its owner cannot act on.
 
 `Unreachable` carries a typed `code` beside its human `why`, the same shape
 `ProbeError` and `ContentError` already use. The sentence is for a person;
-the code is for anything deciding what to do.
+the code is for anything deciding what to do. `BudgetSpent` is one of those
+codes: a record nobody had time to reach is not-knowing of exactly the same
+kind as a store that would not answer, and [[content-budget]] is why it
+arrives here rather than as its own state.
 
 ## `Before` distinguishes what the provider cannot do from what it did not keep
 

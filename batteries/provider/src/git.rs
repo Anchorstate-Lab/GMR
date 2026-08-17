@@ -4,6 +4,7 @@ use std::process::Command;
 use async_trait::async_trait;
 use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{ExternalId, ProviderId, Version};
+use gmr_probe::Budget;
 
 pub struct Git {
     root: PathBuf,
@@ -25,7 +26,12 @@ impl ContentProvider for Git {
         &self.id
     }
 
-    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
+        crate::spend(budget)?;
         let Some(bytes) = crate::local_file::read(&self.root, id)? else {
             return Ok(None);
         };
@@ -48,7 +54,9 @@ impl History for Git {
         &self,
         _id: &ExternalId,
         version: &Version,
+        budget: &Budget,
     ) -> Result<Option<Vec<u8>>, ContentError> {
+        crate::spend(budget)?;
         let out = Command::new("git")
             .args(["cat-file", "blob", version.as_str()])
             .current_dir(&self.root)

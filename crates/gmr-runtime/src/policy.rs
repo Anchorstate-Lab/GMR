@@ -13,6 +13,8 @@ pub struct Policy {
     pub stalled_staleness_secs: i64,
     pub probe_budget_ms: u64,
     pub probe_output_cap: usize,
+    pub content_call_ms: u64,
+    pub content_total_ms: u64,
 }
 
 impl Default for Policy {
@@ -27,6 +29,8 @@ impl Default for Policy {
             stalled_staleness_secs: 24 * 3600,
             probe_budget_ms: 30_000,
             probe_output_cap: 1024 * 1024,
+            content_call_ms: 5_000,
+            content_total_ms: 30_000,
         }
     }
 }
@@ -42,6 +46,14 @@ impl Policy {
             Duration::from_millis(self.probe_budget_ms),
             self.probe_output_cap,
         )
+    }
+
+    pub fn content_budget(&self) -> Budget {
+        Budget::within(Duration::from_millis(self.content_total_ms), usize::MAX)
+    }
+
+    pub fn content_call(&self) -> Duration {
+        Duration::from_millis(self.content_call_ms)
     }
 }
 

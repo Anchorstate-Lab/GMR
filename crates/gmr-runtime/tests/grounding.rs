@@ -8,6 +8,7 @@ use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
+use gmr_probe::Budget;
 use gmr_runtime::{Before, Grounding, OpenRequest, Runtime, Standing};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
@@ -40,7 +41,11 @@ impl ContentProvider for Versioned {
         &self.id
     }
 
-    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        _budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
         let path = self.root.join(id.as_str());
         if !path.exists() {
             return Ok(None);
@@ -68,6 +73,7 @@ impl History for Versioned {
         &self,
         _id: &ExternalId,
         version: &Version,
+        _budget: &Budget,
     ) -> Result<Option<Vec<u8>>, ContentError> {
         Ok(self.history.lock().unwrap().get(version.as_str()).cloned())
     }
@@ -85,7 +91,11 @@ impl ContentProvider for Counted {
         &self.id
     }
 
-    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        _budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
         let path = self.root.join(id.as_str());
         if !path.exists() {
             return Ok(None);
@@ -104,6 +114,7 @@ impl History for Counted {
         &self,
         _id: &ExternalId,
         _version: &Version,
+        _budget: &Budget,
     ) -> Result<Option<Vec<u8>>, ContentError> {
         self.fetch_at_calls.fetch_add(1, Ordering::SeqCst);
         Ok(Some(
@@ -122,8 +133,46 @@ impl ContentProvider for Broken {
         &self.id
     }
 
-    async fn fetch(&self, _id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+    async fn fetch(
+        &self,
+        _id: &ExternalId,
+        _budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
         Err(ContentError::new("the store did not answer"))
+    }
+}
+
+struct Refusing {
+    root: PathBuf,
+    id: ProviderId,
+    refuses: &'static str,
+}
+
+#[async_trait]
+impl ContentProvider for Refusing {
+    fn provider(&self) -> &ProviderId {
+        &self.id
+    }
+
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        _budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
+        if id.as_str().ends_with(self.refuses) {
+            return Err(ContentError::spent(
+                "this call's slice of the budget was gone",
+            ));
+        }
+        let path = self.root.join(id.as_str());
+        if !path.exists() {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&path).map_err(|e| ContentError::new(e.to_string()))?;
+        Ok(Some(Fetched {
+            version: Version::new(gmr_core::content_hash_of_bytes(&bytes).into_inner()),
+            bytes,
+        }))
     }
 }
 
@@ -146,11 +195,19 @@ impl World {
     }
 
     fn with(provider: impl FnOnce(PathBuf) -> Arc<dyn ContentProvider>) -> Self {
+        Self::budgeted(provider, gmr_runtime::Policy::default())
+    }
+
+    fn budgeted(
+        provider: impl FnOnce(PathBuf) -> Arc<dyn ContentProvider>,
+        policy: gmr_runtime::Policy,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("memories")).unwrap();
         std::fs::write(dir.path().join("world.json"), r#"{"x":1}"#).unwrap();
         let bindings = Arc::new(MemoryBindings::default());
         let runtime = Runtime::builder()
+            .policy(policy)
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .provider(provider(dir.path().to_path_buf()))
             .journal(Arc::new(MemoryJournal::default()))
@@ -498,16 +555,11 @@ async fn a_provider_nobody_registered_is_our_fault_not_the_worlds_answer() {
     let w = World::new(true);
     let unregistered = Ref::new("mem0", "some-uuid");
 
-    let err = w
-        .runtime
-        .memory()
-        .current_version(&unregistered)
-        .await
-        .expect_err(
-            "an unregistered provider used to come back as Ok(None), which reads exactly like \
+    let err = w.runtime.current_version(&unregistered).await.expect_err(
+        "an unregistered provider used to come back as Ok(None), which reads exactly like \
              the provider answering that the record is gone. Callers then told the user their \
              record did not exist, when the truth was that this binary cannot reach that store",
-        );
+    );
 
     assert_eq!(err.code(), "no_provider");
     assert!(
@@ -523,7 +575,6 @@ async fn a_registered_provider_that_has_no_such_record_still_answers_none() {
 
     let version = w
         .runtime
-        .memory()
         .current_version(&absent)
         .await
         .expect("reaching the provider worked; it simply has nothing under that id");
@@ -621,5 +672,92 @@ async fn declining_to_offer_history_means_fetch_at_is_never_reached() {
         ),
         "and the reader learns why there is no before from history() alone: {:?}",
         view.memories[0].grounding
+    );
+}
+
+#[tokio::test]
+async fn a_total_budget_already_spent_asks_the_store_nothing_at_all() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let w = {
+        let calls = Arc::clone(&calls);
+        World::budgeted(
+            move |root| {
+                Arc::new(Counted {
+                    root,
+                    id: ProviderId::new("git"),
+                    fetch_at_calls: calls,
+                })
+            },
+            gmr_runtime::Policy {
+                content_total_ms: 0,
+                ..Default::default()
+            },
+        )
+    };
+    w.memory("a.md", "Original wording.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+
+    assert!(
+        matches!(
+            view.memories[0].grounding,
+            Grounding::Unreachable {
+                code: gmr_content::ContentErrorCode::BudgetSpent,
+                ..
+            }
+        ),
+        "a spent total must read as not-knowing, never as the record being gone: {:?}",
+        view.memories[0].grounding
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "and it must not have been asked; the point of a total is to stop starting work"
+    );
+}
+
+#[tokio::test]
+async fn one_record_running_out_of_budget_does_not_take_the_others_with_it() {
+    let w = World::with(|root| {
+        Arc::new(Refusing {
+            root,
+            id: ProviderId::new("git"),
+            refuses: "slow.md",
+        })
+    });
+    w.memory("slow.md", "This one costs more than its share.");
+    w.memory("quick.md", "This one is right here.");
+    w.open("a").await;
+    w.bind("slow.md", &["a"]).await;
+    w.bind("quick.md", &["a"]).await;
+
+    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let by_id = |id: &str| {
+        view.memories
+            .iter()
+            .find(|m| m.reference.external_id.as_str() == id)
+            .unwrap_or_else(|| panic!("{id} missing: {:?}", view.memories))
+    };
+
+    assert!(
+        matches!(
+            by_id("memories/slow.md").grounding,
+            Grounding::Unreachable { .. }
+        ),
+        "{:?}",
+        by_id("memories/slow.md").grounding
+    );
+    assert!(
+        matches!(
+            by_id("memories/quick.md").grounding,
+            Grounding::Current { .. }
+        ),
+        "each record gets its own narrowed slice, so one of them giving up says nothing \
+         about the rest. The alternative — a breaker that trips after N failures — would \
+         make this record's answer depend on how many others happened to be walked first: \
+         {:?}",
+        by_id("memories/quick.md").grounding
     );
 }

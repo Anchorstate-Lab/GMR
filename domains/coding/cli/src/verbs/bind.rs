@@ -15,7 +15,6 @@ pub async fn run(
     }
     let reference = Ref::new(provider.clone(), path.clone());
     let version = rt
-        .memory()
         .current_version(&reference)
         .await?
         .ok_or_else(|| CliError(format!("`{provider}` has no record `{path}`")))?;

@@ -375,13 +375,9 @@ async fn align_bindings(
             }
         }
 
-        let version = rt
-            .memory()
-            .current_version(&reference)
-            .await?
-            .ok_or_else(|| {
-                CliError(format!("no content provider could version `{}`", note.path))
-            })?;
+        let version = rt.current_version(&reference).await?.ok_or_else(|| {
+            CliError(format!("no content provider could version `{}`", note.path))
+        })?;
         let settled = current.is_some_and(|r| {
             let mut had = r.binding.anchors.clone();
             had.sort();
