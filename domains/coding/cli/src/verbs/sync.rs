@@ -172,7 +172,8 @@ pub async fn run(
             if !facets.is_empty() {
                 drifted_criteria.push(format!("{} ({})", decl.key, facets.join(" · ")));
             }
-            if let (Some(was), Ok(now)) = (&view.derivation, rt.instrument(&view.anchor.probe))
+            if !view.closed
+                && let (Some(was), Ok(now)) = (&view.derivation, rt.instrument(&view.anchor.probe))
                 && was.version != now.version
             {
                 swapped.push(decl.key.clone());

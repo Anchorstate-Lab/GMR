@@ -51,33 +51,48 @@ linked into the binary (`InProcess`), a user's own script file
 [[runtime-assembly]] for why the resulting `Runtime` stays split by
 capability rather than becoming one grab-bag struct.
 
-`ClaudeMemory::new` failing is read-only and additive, not fatal: no
-Claude Code session running outside `~/.claude/projects/...` is a normal,
-expected absence, not a misconfiguration. The failure is recorded on the
-builder via `provider_warning` (see [[runtime-provider-warning]]) rather
-than only `eprintln!`'d, so a `--json` caller (or `gmr doctor`) has a way
-to learn about it too.
+Which stores get wired up is a list, not a sequence of branches, and it
+lives in `stores::assembled` rather than here. Each battery hands back a
+`MemoryStore` — the one contract plus whichever capabilities that backend
+has — so `served` only has to hang `content()` on the builder and turn a
+construction failure into a warning. See [[content-discovery]] for why
+"can this store be enumerated" travels as a value.
 
-mem0 differs from that on purpose. **Naming no mem0 registers nothing and
-warns about nothing** — not using mem0 is not a misconfiguration, and a
-warning on every run for a store the reader has never heard of is noise
-that teaches people to stop reading warnings. A mem0 that *is* named and
-then fails to build is the `ClaudeMemory` case again: warn, record on the
-builder, carry on. The line is "did the person ask for this store", and
-only an env var can answer it.
+It was three hand-written branches, each a different shape: git
+unconditional, `ClaudeMemory` a `Result`, mem0 an env guard around a
+`Result`. Adding a fourth backend meant copying the third and renaming it,
+and the difference between the shapes carried no meaning — only the order
+they were written in.
 
-Two env vars answer it, because there are two mem0s. `MEM0_BASE_URL` means
-a self-hosted server and selects that dialect; `MEM0_API_KEY` alone means
-the managed platform. A self-hosted server run with `AUTH_DISABLED` has no
-key at all, which is why registration cannot be gated on the key the way it
-once was, and why the key is optional on that branch and travels in a
-different header — see [[provider-mem0]].
+What each of them decides still matters and is unchanged:
 
-`MEM0_BASE_URL` used to mean "the platform dialect, pointed somewhere
-else", which is the one thing a reader setting it never means. Someone who
-sets it is running their own server, and that server mounts different
-routes; the old reading reached none of them while reporting that somebody
-else's service was unavailable.
+- A store that fails to construct is read-only and additive, not fatal. No
+  Claude Code session running outside `~/.claude/projects/...` is a normal,
+  expected absence, not a misconfiguration. The failure is recorded on the
+  builder via `provider_warning` (see [[runtime-provider-warning]]) rather
+  than only `eprintln!`'d, so a `--json` caller (or `gmr doctor`) has a way
+  to learn about it too.
+- **Naming no mem0 registers nothing and warns about nothing** — not using
+  mem0 is not a misconfiguration, and a warning on every run for a store
+  the reader has never heard of is noise that teaches people to stop
+  reading warnings. A mem0 that *is* named and then fails to build warns
+  like any other. The line is "did the person ask for this store", and only
+  an env var can answer it.
+- Two env vars answer it, because there are two mem0s. `MEM0_BASE_URL`
+  means a self-hosted server and selects that dialect; `MEM0_API_KEY` alone
+  means the managed platform. A self-hosted server run with `AUTH_DISABLED`
+  has no key at all, which is why registration cannot be gated on the key
+  the way it once was, and why the key is optional on that branch and
+  travels in a different header — see [[provider-mem0]].
+- `MEM0_BASE_URL` used to mean "the platform dialect, pointed somewhere
+  else", which is the one thing a reader setting it never means. Someone
+  who sets it is running their own server, and that server mounts different
+  routes; the old reading reached none of them while reporting that
+  somebody else's service was unavailable.
+
+`served` keeps the assembled list after building the runtime, because
+`gmr memories` dispatches over the stores that can list — the `Runtime`
+holds providers, not sources, and [[content-discovery]] says why.
 
 Registering mem0 means this binary links `reqwest`. That is why
 `gmr-provider` keeps `mem0` off by default and this crate turns it on:
@@ -93,3 +108,7 @@ after `Runtime::builder().build()`? That would pay for state directory
 creation and store opening it does not need. And does any new provider
 failure at startup only go to stderr, with no path onto the builder as a
 warning?
+
+Does a new backend get wired up here instead of in `stores::assembled`? A
+branch here is the shape that was just removed, and the next one after it
+will be a copy of this one.

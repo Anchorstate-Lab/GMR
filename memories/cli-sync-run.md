@@ -18,7 +18,11 @@ different responses:
   anchor's last recorded one (see [[runtime-instrument]]). That is not a
   criteria change — it is a baseline taken with a different ruler — and
   only a person can say whether the old baseline still counts (`gmr
-  rebase`).
+  rebase`). **Closed anchors are skipped**: finishing is irreversible, so
+  `rebase` refuses them, and reporting them here pointed the reader at a
+  command that would tell them the same list was empty. A warning naming a
+  remedy that does not apply is worse than no warning — it is how a list
+  people are supposed to act on becomes one they learn to scroll past.
 - **Resettling**: `retain`/`cadence_secs` differ from the declaration.
   These are not criteria at all (see [[anchor-RunSettings]]), so sync just
   applies them directly with `set_settings`, no human decision required.

@@ -32,10 +32,19 @@ stale installed SKILL.md all pass that test — a rebuild, an unbind, an
 edit, a re-init.
 
 A store that would not answer does not, and that is why `unreachable` is
-**not a field on `Verdict` at all**. Somebody else's service having a bad
-minute, or a total budget running out mid-walk (see [[content-budget]]),
-is not something a build can be failed over: the owner cannot act on it,
-so a red build only teaches them to stop reading the colour. The same goes
+**not a field on `Verdict` at all**. Nor is `never_asked`, which is the
+same answer with a different cause: the total content budget ran out before
+that record's turn, so nothing was asked and nothing is known. It gets its
+own line rather than sharing `unreachable`'s, because the reader needs to
+know that **what doctor printed above it is a partial view** — `never_asked`
+next to `bound` is the only thing on the page that says how much of the
+repository this run actually looked at. Raising `--content-total-ms` is the
+remedy, and it is not something a red build would have taught anyone.
+
+Somebody else's service having a bad minute, or a total budget running out
+mid-walk (see [[content-budget]]), is not something a build can be failed
+over: the owner cannot act on it, so a red build only teaches them to stop
+reading the colour. The same goes
 for the count of rewritten records that cannot show their before —
 [[runtime-grounding]]'s degraded but honest answer, worth printing and not
 worth failing on.
