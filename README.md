@@ -216,9 +216,34 @@ Anchors and memories are many-to-many — one memory can be about nine
 coordinates, one coordinate can carry three memories — and that is the shape
 this page exists to make readable.
 
+### 7. Memories that are not files in this repository
+
+`memories/*.md` is one store among several, not the only shape a memory can
+arrive in. GMR keeps the binding — which anchors a record is about — in its own
+table beside your store, and never writes into the store itself.
+
+```sh
+export MEM0_API_KEY=... MEM0_USER_ID=...
+gmr --repo /path/to/project memories --provider mem0
+gmr --repo /path/to/project bind <memory-uuid> --provider mem0 \
+    --anchors src/auth.ts#createSession
+```
+
+`memories` lists what a store will show and which of it is already bound —
+reach for it because a uuid is not something you can guess. The uuid is the
+whole reference, and mem0 keeps it stable when it rewrites a memory in place,
+so `gmr check` reports that rewrite the same way it reports a moved function.
+
+What each store owes is one contract; history and listing are capabilities a
+store either has or does not. Claude Code's own memory files, for instance,
+keep no history — so a rewritten record is still reported, you just re-read the
+whole thing instead of a diff. A store that will **not answer** and a record
+that is **gone** are reported as different things and only the second turns a
+build red: nobody holding this repository can fix somebody else's outage.
+
 ## Common commands
 
-The front door — seven verbs `gmr --help` shows:
+The front door — eight verbs `gmr --help` shows:
 
 - `init` — set up `.anchor/`, install bundled probes, write the skill doc
 - `anchor` — watch a coordinate and write the memory that goes with it
@@ -228,6 +253,10 @@ The front door — seven verbs `gmr --help` shows:
   changed declaration's criteria (`--baseline` / `--criteria` / `--all --criteria`)
 - `atlas` — write the whole anchor–memory graph as one HTML page
 - `close` — retire an anchor permanently
+- `memories` — what each memory store here will show you, and which of it is
+  already bound. On the front door because when your memories are not files,
+  it is the only way to find a reference to bind: a mem0 uuid is not something
+  you can guess at.
 
 Everything else still works, reachable through `gmr help <name>`:
 
