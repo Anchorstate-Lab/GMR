@@ -3,6 +3,7 @@ about:
   - domains/coding/cli/src/notes.rs#Notes
   - domains/coding/cli/src/notes.rs#records
   - domains/coding/cli/src/notes.rs#claim_of
+  - domains/coding/cli/src/notes.rs#name_of
   - domains/coding/cli/src/notes.rs#versions_of
   - domains/coding/cli/src/memories.rs#claims_of
   - domains/coding/cli/src/memories.rs#stated_or_empty
@@ -31,15 +32,32 @@ through is its YAML frontmatter. It hands that grid over as an opaque
 domain with a completely different vocabulary, and it is the same line
 [[content-discovery]] draws for every source.
 
-## The trait impl delegates to a synchronous method, and that is the point
+## It implements both traits, and only one of them is asynchronous
 
 `MemorySource::list` is `async` because a store may be across a network.
-This one is a directory. Routing `scan` through the async trait would have
-made `Subscriptions::load` async, and with it five call chains, to await a
-filesystem walk that never yields. So `records` is inherent and
-synchronous, `list` delegates to it, and the contract is still satisfied —
-demonstrably, since the impl exists and compiles against the same trait
-mem0 implements.
+This one is a directory. `Declaring::records` is synchronous for the same
+reason the inherent method that preceded it was: routing the declaration
+path through an async trait would have made `Subscriptions::load` async, and
+with it five call chains, to await a filesystem walk that never yields.
+
+What used to be a local convenience is now the contract ([[content-discovery]]).
+The observation that a directory needs no `await` turned out to be the same
+observation as "declarations must not be able to go out of reach" — so the
+signature that was chosen to avoid an infectious `async` is the one that now
+makes a remote declaring source impossible to write.
+
+## The name is a property of the address, and this file owns the address
+
+`name_of` takes a `Ref`, not a `Record`, because rendering has an address in
+hand and nothing else. Requiring a record would have meant a full scan every
+time a memory is printed, which is on the path of `read` — so the name would
+have cost a directory walk per line.
+
+It answers `None` for a reference from any other store. That is not a
+degenerate case: a repository whose notes are files can still bind memories
+in mem0, and those have no name here, so they print as their address. The
+alternative — inventing a name from a uuid — is the mistake
+[[atlas-prose]] documents, one layer up.
 
 ## Versions come from one batched `git hash-object`
 
@@ -53,6 +71,18 @@ fallback is not there to be right** — in a repository without git nothing
 can bind anyway, because the git provider cannot version anything either.
 It is there so that linting notes still works somewhere git does not, which
 is a supported degraded mode `doctor` already reports.
+
+## An unreadable file survived the split by re-reading it
+
+`records` used to compute the claim while it had the read error in hand, so
+a file it could not open became `Malformed("cannot read this file")`. Split
+apart, `claim_of` sees only bytes, and an unreadable file and an empty one
+both arrive as none.
+
+Rather than lose that diagnosis, `claim_of` asks the filesystem again — but
+only when the bytes are empty, which is nearly never. An empty note is
+`Silent`, which is correct; an unopenable one names why. Failing the whole
+scan instead would have made one bad file hide every lint in the repository.
 
 ## A key present with no value is not the same as a key that is absent
 

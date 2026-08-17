@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{Claim, Record, Ref};
+use gmr::{Claim, Declaring, Record, Ref};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -9,6 +9,16 @@ use crate::probes::Catalog;
 use crate::verbs::sync::AnchorDecl;
 
 pub const NOTES_DIR: &str = "memories";
+
+pub fn declaring(root: &Path) -> crate::notes::Notes {
+    crate::notes::Notes::at(root, NOTES_DIR)
+}
+
+pub fn shown(reference: &Ref, source: &dyn Declaring) -> String {
+    source
+        .name_of(reference)
+        .unwrap_or_else(|| reference.external_id.to_string())
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -166,8 +176,13 @@ fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
     routed.probe == spec.probe && spec.position.as_ref() == Some(&routed.position)
 }
 
-fn claims_of(record: &Record, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
-    let rel = record.reference.external_id.as_str();
+fn claims_of(
+    record: &Record,
+    source: &dyn Declaring,
+    catalog: &Catalog,
+) -> (Option<Note>, Vec<Fault>) {
+    let named = shown(&record.reference, source);
+    let rel = named.as_str();
     let text = String::from_utf8_lossy(&record.bytes);
     let mut faults = Vec::new();
     let at = |code, detail, weight| Fault {
@@ -178,7 +193,8 @@ fn claims_of(record: &Record, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
         weight,
     };
 
-    let said = match &record.claim {
+    let claimed = source.claim_of(record);
+    let said = match &claimed {
         Claim::Silent => {
             faults.push(at(
                 "unclaimed",
@@ -306,17 +322,15 @@ impl Scanned {
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
-    of(
-        &crate::notes::Notes::at(root, NOTES_DIR).records()?,
-        catalog,
-    )
+    of(&declaring(root), catalog)
 }
 
-pub fn of(records: &[Record], catalog: &Catalog) -> Result<Scanned, CliError> {
+pub fn of(source: &dyn Declaring, catalog: &Catalog) -> Result<Scanned, CliError> {
+    let records = source.records()?;
     let mut notes = Vec::new();
     let mut faults = Vec::new();
-    for record in records {
-        let (note, mut f) = claims_of(record, catalog);
+    for record in &records {
+        let (note, mut f) = claims_of(record, source, catalog);
         notes.extend(note);
         faults.append(&mut f);
     }
@@ -446,13 +460,14 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         );
         let blocked: Vec<_> = scanned.blocked().collect();
         assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].note, "memories/bad.md");
-        assert_eq!(blocked[0].key, None);
-        assert!(
-            blocked[0].line().contains("bad.md"),
-            "{}",
-            blocked[0].line()
+        assert_eq!(
+            blocked[0].note, "bad",
+            "a fault names the note the way its author does. The address a store happens to \
+             keep it at is the store's business, and for a store that addresses by uuid it \
+             is nothing a reader could act on"
         );
+        assert_eq!(blocked[0].key, None);
+        assert!(blocked[0].line().contains("bad"), "{}", blocked[0].line());
     }
 
     #[test]
@@ -561,7 +576,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         ]);
         assert_eq!(
             codes(d.path(), &r),
-            vec![("memories/bad.md".to_owned(), "malformed")],
+            vec![("bad".to_owned(), "malformed")],
             "one note's frontmatter fails to parse; the other, well-formed one is not \
              swept into the same failure and draws no complaint of its own"
         );
@@ -571,10 +586,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     #[test]
     fn a_note_with_no_frontmatter_names_no_anchor_and_is_caught() {
         let (d, r) = world(&[("memories/loose.md", "# just prose\n")]);
-        assert_eq!(
-            codes(d.path(), &r),
-            vec![("memories/loose.md".to_owned(), "unclaimed")]
-        );
+        assert_eq!(codes(d.path(), &r), vec![("loose".to_owned(), "unclaimed")]);
         assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 
@@ -587,7 +599,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         );
         assert_eq!(
             codes(d.path(), &r),
-            vec![("memories/watched.md".to_owned(), "unclaimed")],
+            vec![("watched".to_owned(), "unclaimed")],
             "a note whose frontmatter parses but names no coordinate used to be the one \
              failure nothing reported: not an anchor, not a complaint, not a line of output \
              anywhere. Its author believes it is watched, and `watch:` alone reads exactly \
@@ -602,10 +614,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "memories/x.md",
             "---\nanchors:\n  - some::key\n---\n\n# note\n",
         )]);
-        assert_eq!(
-            codes(d.path(), &r),
-            vec![("memories/x.md".to_owned(), "bare-key")]
-        );
+        assert_eq!(codes(d.path(), &r), vec![("x".to_owned(), "bare-key")]);
         assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 

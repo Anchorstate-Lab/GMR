@@ -12,7 +12,7 @@
 mod http;
 
 use async_trait::async_trait;
-use gmr_content::{Claim, ContentError, ContentProvider, Fetched, History, MemorySource, Record};
+use gmr_content::{ContentError, ContentProvider, Fetched, History, MemorySource, Record};
 use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
 use gmr_probe::Budget;
 use serde::Deserialize;
@@ -365,7 +365,6 @@ impl MemorySource for Mem0 {
                 reference: Ref::new(self.id.as_str(), m.id),
                 version: version_of(&m.memory),
                 bytes: m.memory.into_bytes(),
-                claim: Claim::Silent,
             }));
             match page.next {
                 Some(next) => url = next,

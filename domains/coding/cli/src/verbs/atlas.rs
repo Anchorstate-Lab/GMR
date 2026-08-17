@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gmr::{AnchorView, Before, Grounding, MemoryView, Runtime, Sighting};
+use gmr::{AnchorView, Before, Declaring, Grounding, MemoryView, Runtime, Sighting};
 use gmr_atlas::{Edge, EdgeKind, Graph, Kind, Node, Tone};
 
 use crate::delivery::Subscriptions;
@@ -105,11 +105,13 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
     node
 }
 
-fn memory_node(m: &MemoryView, detail: Option<String>) -> Node {
+fn memory_node(m: &MemoryView, source: &dyn Declaring, detail: Option<String>) -> Node {
     let external = m.reference.external_id.to_string();
+    let label = crate::memories::shown(&m.reference, source);
     let (tone, badge) = memory_tone(m);
-    let mut node = Node::new(memory_id(&external), external, Kind::Memory, tone)
-        .fact("provider", m.reference.provider.to_string());
+    let mut node = Node::new(memory_id(&external), label, Kind::Memory, tone)
+        .fact("provider", m.reference.provider.to_string())
+        .fact("address", external);
     if let Some(b) = badge {
         node = node.badge(b);
     }
@@ -143,6 +145,14 @@ pub async fn run(
     let (subs, _) = Subscriptions::load(root, &catalog)?;
     let views = rt.read_all().await?;
 
+    let source = crate::memories::declaring(root);
+    let mut nodes_by_name = crate::prose::Nodes::new();
+    for m in views.iter().flat_map(|v| &v.memories) {
+        if let Some(name) = source.name_of(&m.reference) {
+            nodes_by_name.insert(name, memory_id(m.reference.external_id.as_str()));
+        }
+    }
+
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
     let mut memories: BTreeMap<String, Node> = BTreeMap::new();
@@ -173,8 +183,8 @@ pub async fn run(
             memories.entry(external).or_insert_with(|| {
                 let detail = m
                     .content()
-                    .map(|b| crate::prose::to_html(&String::from_utf8_lossy(b)));
-                memory_node(m, detail)
+                    .map(|b| crate::prose::to_html(&String::from_utf8_lossy(b), &nodes_by_name));
+                memory_node(m, &source, detail)
             });
         }
     }
@@ -189,15 +199,15 @@ pub async fn run(
         else {
             continue;
         };
-        for target in crate::prose::wikilinks(&String::from_utf8_lossy(body)) {
-            if target == *external || !memories.contains_key(&target) {
+        let from = memory_id(external);
+        for name in crate::prose::wikilinks(&String::from_utf8_lossy(body)) {
+            let Some(to) = nodes_by_name.get(&name) else {
+                continue;
+            };
+            if *to == from {
                 continue;
             }
-            edges.push(Edge::new(
-                memory_id(external),
-                memory_id(&target),
-                EdgeKind::Reference,
-            ));
+            edges.push(Edge::new(from.clone(), to.clone(), EdgeKind::Reference));
         }
     }
 

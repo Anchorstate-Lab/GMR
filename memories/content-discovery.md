@@ -1,6 +1,7 @@
 ---
 about:
   - crates/gmr-content/src/lib.rs#MemorySource
+  - crates/gmr-content/src/lib.rs#Declaring
   - crates/gmr-content/src/lib.rs#Record
   - crates/gmr-content/src/lib.rs#Claim
 watch: [sig, logic]
@@ -38,19 +39,53 @@ answering `Ok(None)` is authoritative about a record being gone, and
 acts on. Treating a short listing as a set of dead references would produce
 a screenful of records to delete that are all still there.
 
-## `Claim` is a capability of the source, not an obligation of the record
+## Declaring is a second trait, because it was a returned "I have none"
 
 Some stores let a record say what it is about: markdown frontmatter is
-exactly that. Most do not, and requiring it would push adoption onto
-whether someone can change the agent that writes their memories — memories
-are often written by a different agent entirely, and mem0's own update path
-makes no promise about metadata surviving. So `Silent` is a first-class
-answer and the ordinary one; a source that has no notion of a claim returns
-it for every record and nothing is wrong.
+exactly that. Most do not, and requiring it would push adoption onto whether
+someone can change the agent that writes their memories — memories are often
+written by a different agent entirely, and mem0's own update path makes no
+promise about metadata surviving. Declarations for such stores go through
+`gmr bind`, which is the base primitive anyway: the binding table has always
+been the authority on which anchors a record is about.
 
-Declarations for such stores go through `gmr bind`, which is the base
-primitive anyway: the binding table has always been the authority on which
-anchors a record is about, and it lives beside the store rather than in it.
+`Claim` used to be a field on `Record`, and a store with no notion of a
+declaration returned `Silent` for every one of its records. That is the
+shape D3 removed from `History` — **an absent capability expressed as a
+value every caller has to handle** — and it grew back here unnoticed.
+
+What it cost was measured rather than argued. Pointed at a store that
+declares nothing, the domain read 147 records, produced zero anchors, and
+`sync` and `check` both exited 0: a repository supervising nothing, with
+every gate green. The callers were all handling `Silent` correctly. There
+was simply nothing in "this record says nothing" to distinguish from "this
+store has no way to say anything", and the second is a misconfiguration
+while the first is ordinary.
+
+So `Claim` moved onto `Declaring::claim_of`, and `Record` no longer carries
+one. A store that does not declare does not implement the trait, and the
+declaration path cannot be handed it at all. `Silent` keeps its original and
+now unambiguous meaning: within a store that does declare, this particular
+record declares nothing.
+
+## `Declaring` is synchronous, and that is its whole admission test
+
+Its methods take no `Budget` and return no future, so a store reachable
+only across a network cannot implement it. That is deliberate and it is the
+one place where the control plane and the data plane are separated by the
+compiler rather than by a rule someone has to remember.
+
+The reason is a failure with no good handling. `Grounding::Unreachable`
+covers a store that will not answer for a record's *content*: D6 puts it in
+the bucket that never turns red, `read` reports it, and the anchor is still
+judged. There is no equivalent for a store that will not answer about which
+anchors *exist* — without that answer there is no roster to judge, so
+`check` and `doctor` can only fail outright. Measured, with the declarations
+in a remote store and the store stopped: `read` exited 0 and reported each
+binding as unreachable; `check` and `doctor` exited 2.
+
+Exit 2 was the correct code. What was wrong was that the declarations could
+be put somewhere unreachable at all.
 
 `Malformed` exists so the one case that *can* be wrong stays wrong loudly.
 A source that finds a claim it cannot parse must not silently downgrade to
@@ -64,6 +99,11 @@ Does a base crate start calling `list()`? Then discovery has become a base
 mechanism, and the next question is which store it enumerates — which the
 base cannot answer without making a domain's decision for it.
 
-Does `Silent` acquire a meaning beyond "this record says nothing"? It is
-returned by every record in stores that have no claims at all, so any
-consequence attached to it lands on all of them at once.
+Does `Silent` acquire a meaning beyond "this record says nothing"? It once
+also meant "this store cannot say anything", and the two are a
+misconfiguration and an ordinary day.
+
+Does `Declaring` gain an `async` method, or a `Budget`? That is the moment
+the anchor roster becomes something a network can withhold, and no exit code
+can express that usefully — see [[cli-notes-source]] for why the one
+implementation was already synchronous before the contract required it.

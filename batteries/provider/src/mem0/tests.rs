@@ -153,13 +153,6 @@ async fn a_listing_says_nothing_about_what_each_record_is_about() {
     let records = provider.list(&plenty()).await.unwrap();
 
     assert_eq!(records.len(), 2);
-    assert!(
-        records.iter().all(|r| r.claim == Claim::Silent),
-        "even the record carrying metadata.gmr reads as Silent. Honouring it would promise \
-         a declaration channel mem0 does not guarantee — its update path makes no promise \
-         about metadata surviving — and a claim that works today and vanishes tomorrow is \
-         worse than one that never existed. Declarations go through `gmr bind`"
-    );
     assert_eq!(records[0].reference, Ref::new("mem0", "m-1"));
     assert_eq!(records[0].version, version_of("one"));
 }
@@ -281,7 +274,6 @@ async fn a_self_hosted_listing_sitting_on_the_ceiling_is_refused() {
         reference: Ref::new("mem0", "m"),
         version: version_of("x"),
         bytes: b"x".to_vec(),
-        claim: Claim::Silent,
     };
 
     assert!(

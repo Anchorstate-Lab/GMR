@@ -9,6 +9,7 @@ use crate::probes::Catalog;
 pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError> {
     let p = rt.pass().await?;
     let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?)?;
+    let source = crate::memories::declaring(root);
 
     let mut moved = Vec::new();
     let mut unclaimed = Vec::new();
@@ -24,7 +25,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
     if json {
         let rows: Vec<_> = moved
             .iter()
-            .map(|(key, memories)| serde_json::json!({ "anchor": key, "memories": super::observe::shown_all(memories) }))
+            .map(|(key, memories)| serde_json::json!({ "anchor": key, "memories": super::observe::shown_all(memories, &source) }))
             .collect();
         println!(
             "{}",
@@ -58,7 +59,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             }
             println!("  {key}");
             for m in memories {
-                println!("    → {}", crate::render::shown(m));
+                println!("    → {}", crate::memories::shown(m, &source));
             }
         }
         super::observe::report_unclaimed(&unclaimed);

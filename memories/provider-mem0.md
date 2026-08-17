@@ -115,16 +115,20 @@ naming nothing with **every memory in the store**, everybody's, as an
 administrative listing. Both refusals happen at assembly, where a
 misconfiguration should stop, rather than at the first read.
 
-## Every record is `Silent`, including ones carrying `metadata.gmr`
+## This module has no way to declare anything, and that is now structural
 
 mem0 has a metadata bag, and reading a `gmr` key out of it would be easy.
-It is deliberately not read. Doing so would advertise a declaration channel
-mem0 makes no promise about — its update path says nothing about metadata
-surviving — and a channel that works today and quietly stops tomorrow is
-worse than one that never existed. Declarations for stores like this go
-through `gmr bind`, which is the base primitive anyway; see
-[[content-discovery]] for why `Claim` is a source's option rather than a
-record's duty.
+Doing so would advertise a declaration channel mem0 makes no promise about —
+its update path says nothing about metadata surviving — and a channel that
+works today and quietly stops tomorrow is worse than one that never existed.
+Declarations for stores like this go through `gmr bind`, which is the base
+primitive anyway.
+
+The refusal used to be a value: every record came back carrying
+`Claim::Silent`. It is now the absence of a trait — this module does not
+implement `Declaring` and cannot, since that trait is synchronous and every
+call here awaits. `Record` has no claim field for it to fill in. See
+[[content-discovery]] for what the returned "I have none" cost, measured.
 
 ## Never writing is a property of the seam, not a rule anyone keeps
 

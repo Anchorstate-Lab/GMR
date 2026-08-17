@@ -12,6 +12,7 @@ pub async fn run(
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
+    let source = crate::memories::declaring(root);
     let keys = match key {
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
@@ -52,7 +53,7 @@ pub async fn run(
             };
             report.push(serde_json::json!({
                 "anchor": key, "observed": word, "detail": detail,
-                "state": state, "memories": shown_all(&memories),
+                "state": state, "memories": shown_all(&memories, &source),
             }));
         } else if word != "still" {
             match &detail {
@@ -60,7 +61,7 @@ pub async fn run(
                 None => println!("{key}  {word}"),
             }
             for m in &memories {
-                println!("    → {}", crate::render::shown(m));
+                println!("    → {}", crate::memories::shown(m, &source));
             }
         }
     }
@@ -109,6 +110,8 @@ pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {
     }
 }
 
-pub(crate) fn shown_all(refs: &[gmr::Ref]) -> Vec<String> {
-    refs.iter().map(crate::render::shown).collect()
+pub(crate) fn shown_all(refs: &[gmr::Ref], source: &dyn gmr::Declaring) -> Vec<String> {
+    refs.iter()
+        .map(|r| crate::memories::shown(r, source))
+        .collect()
 }

@@ -35,8 +35,20 @@ Does a new caller scan raw markdown for `[[` without going through `walk`? It
 will work on short strings and quietly miss the ones the parser chose to split,
 which is the worst shape this bug has.
 
-## Where the name goes
+## A name is resolved, never synthesised into an address
 
-`target_of` is where "a wikilink names a file under `memories/`" is decided. The
-page marks a target it cannot resolve as dead rather than dropping it, so a
-convention that stops holding shows up on screen instead of vanishing.
+`target_of` used to turn `[[runtime-read]]` into `memories/runtime-read.md` —
+a path template. It agreed with the node ids by coincidence, because both
+happened to be git paths, and nothing anywhere said the two had to agree.
+
+The coincidence broke the moment a record was addressed by anything else: with
+memories in a store that names records by uuid, every link resolved to a path
+no node answered to, and the whole reference graph — 143 edges in this
+repository — silently became zero. Not one error, not one dead link on screen.
+The page rendered perfectly and said nothing.
+
+`linked` now takes a map from name to node id, built by asking the declaring
+source what each record is called ([[cli-notes-source]]). A name nothing answers
+to is written out as text with no destination, which is the honest rendering:
+there is nothing to navigate to. The map is the only thing that decides, so
+there is no second opinion to drift from the first.

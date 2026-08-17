@@ -17,6 +17,7 @@ macro_rules! from_display {
 
 from_display!(
     gmr::RuntimeError,
+    gmr::ContentError,
     gmr::StoreError,
     gmr::CanonicalizeError,
     gmr::NewtypeError,

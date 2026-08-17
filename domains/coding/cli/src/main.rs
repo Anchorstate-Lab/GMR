@@ -204,7 +204,7 @@ async fn served(
             };
             verbs::accept::run(&rt, &root, key, why, asked, all, json).await
         }
-        Command::Read { key } => verbs::read::run(&rt, key, json).await,
+        Command::Read { key } => verbs::read::run(&rt, &root, key, json).await,
         Command::Revise(args) => verbs::revise::run(&rt, &root, args, json).await,
         Command::Rebase { keys, all, why } => verbs::rebase::run(&rt, keys, all, why, json).await,
         Command::Bind {

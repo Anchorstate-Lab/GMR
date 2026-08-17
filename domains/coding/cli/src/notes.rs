@@ -1,4 +1,4 @@
-//! `memories/**.md` as a `MemorySource`.
+//! `memories/**.md` as a `Declaring` source, and a `MemorySource` too.
 //!
 //! This lives in the domain rather than in a battery because everything it
 //! decides is a domain decision: which directory holds notes, that only
@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use gmr::probe::Budget;
-use gmr::{Claim, ContentError, MemorySource, ProviderId, Record, Ref, Version};
+use gmr::{Claim, ContentError, Declaring, MemorySource, ProviderId, Record, Ref, Version};
 
 use crate::error::CliError;
 
@@ -36,7 +36,7 @@ impl Notes {
         }
     }
 
-    pub fn records(&self) -> Result<Vec<Record>, CliError> {
+    fn walked(&self) -> Result<Vec<Record>, CliError> {
         let mut rels = Vec::new();
         walk(&self.root, &self.root.join(&self.dir), &mut rels)?;
         rels.sort();
@@ -56,22 +56,41 @@ impl Notes {
         Ok(read
             .into_iter()
             .zip(versions)
-            .map(|((rel, body), version)| {
-                let (bytes, claim) = match body {
-                    Err(why) => (Vec::new(), Claim::Malformed(why)),
-                    Ok(text) => {
-                        let claim = claim_of(&text);
-                        (text.into_bytes(), claim)
-                    }
-                };
-                Record {
-                    reference: Ref::new(self.id.as_str(), rel),
-                    version,
-                    bytes,
-                    claim,
-                }
+            .map(|((rel, body), version)| Record {
+                reference: Ref::new(self.id.as_str(), rel),
+                version,
+                bytes: body.map(String::into_bytes).unwrap_or_default(),
             })
             .collect())
+    }
+}
+
+impl Declaring for Notes {
+    fn provider(&self) -> &ProviderId {
+        &self.id
+    }
+
+    fn records(&self) -> Result<Vec<Record>, ContentError> {
+        self.walked().map_err(|e| ContentError::new(e.to_string()))
+    }
+
+    fn claim_of(&self, record: &Record) -> Claim {
+        let rel = record.reference.external_id.as_str();
+        if record.bytes.is_empty()
+            && let Err(e) = std::fs::read_to_string(self.root.join(rel))
+        {
+            return Claim::Malformed(format!("cannot read this file: {e}"));
+        }
+        stated_in(&String::from_utf8_lossy(&record.bytes))
+    }
+
+    fn name_of(&self, reference: &Ref) -> Option<String> {
+        if reference.provider != self.id {
+            return None;
+        }
+        let rel = reference.external_id.as_str();
+        let inside = rel.strip_prefix(&format!("{}/", self.dir))?;
+        Some(inside.strip_suffix(".md").unwrap_or(inside).to_owned())
     }
 }
 
@@ -82,7 +101,7 @@ impl MemorySource for Notes {
     }
 
     async fn list(&self, _budget: &Budget) -> Result<Vec<Record>, ContentError> {
-        self.records().map_err(|e| ContentError::new(e.to_string()))
+        Declaring::records(self)
     }
 }
 
@@ -102,7 +121,7 @@ fn versions_of(
         .collect()
 }
 
-fn claim_of(text: &str) -> Claim {
+fn stated_in(text: &str) -> Claim {
     let Some(rest) = text.strip_prefix("---\n") else {
         return Claim::Silent;
     };
@@ -151,11 +170,12 @@ mod tests {
 
     fn claims(files: &[(&str, &str)]) -> Vec<(String, Claim)> {
         let dir = world(files);
-        Notes::at(dir.path(), "memories")
+        let notes = Notes::at(dir.path(), "memories");
+        notes
             .records()
             .unwrap()
             .into_iter()
-            .map(|r| (r.reference.external_id.to_string(), r.claim))
+            .map(|r| (r.reference.external_id.to_string(), notes.claim_of(&r)))
             .collect()
     }
 
