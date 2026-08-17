@@ -70,17 +70,39 @@ impl History for Git {
 }
 
 pub fn blob_version(root: &Path, relative: &str) -> Result<String, ContentError> {
+    blob_versions(root, std::slice::from_ref(&relative))?
+        .pop()
+        .ok_or_else(|| ContentError::new(format!("git said nothing about `{relative}`")))
+}
+
+pub fn blob_versions(root: &Path, relative: &[&str]) -> Result<Vec<String>, ContentError> {
+    if relative.is_empty() {
+        return Ok(Vec::new());
+    }
     let out = Command::new("git")
-        .args(["hash-object", "--", relative])
+        .args(["hash-object", "--"])
+        .args(relative)
         .current_dir(root)
         .output()
         .map_err(|e| ContentError::new(format!("cannot run git: {e}")))?;
 
     if !out.status.success() {
         return Err(ContentError::new(format!(
-            "cannot compute the version for `{relative}`: {}",
+            "cannot compute the version for {} path(s): {}",
+            relative.len(),
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    let hashes: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.trim().to_owned())
+        .collect();
+    match hashes.len() == relative.len() {
+        true => Ok(hashes),
+        false => Err(ContentError::new(format!(
+            "git returned {} version(s) for {} path(s)",
+            hashes.len(),
+            relative.len()
+        ))),
+    }
 }

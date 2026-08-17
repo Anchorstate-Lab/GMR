@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use gmr::{Claim, Record};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -34,6 +35,14 @@ enum Entry {
     Declared(Box<Spec>),
 }
 
+fn stated_or_empty<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 #[derive(Debug, Deserialize)]
 struct Spec {
     key: String,
@@ -44,9 +53,9 @@ struct Spec {
     position: Option<Value>,
     #[serde(default)]
     shape: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "stated_or_empty")]
     rules: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "stated_or_empty")]
     terminal: Vec<String>,
 }
 
@@ -54,7 +63,7 @@ struct Spec {
 struct Frontmatter {
     #[serde(default)]
     about: Option<OneOrMany>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "stated_or_empty")]
     anchors: Vec<Entry>,
     #[serde(default)]
     shape: Option<String>,
@@ -113,23 +122,6 @@ fn from_spec(spec: Spec) -> AnchorDecl {
     }
 }
 
-fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, String> {
-    let rest = match text.strip_prefix("---\n") {
-        Some(r) => r,
-        None => return Ok(None),
-    };
-    let Some(end) = rest.find("\n---") else {
-        return Err("frontmatter is never closed by `---`".to_owned());
-    };
-    let body = &rest[..end];
-    if body.trim().is_empty() {
-        return Ok(None);
-    }
-    serde_yaml_ng::from_str(body)
-        .map(Some)
-        .map_err(|e| format!("frontmatter is not valid YAML: {e}"))
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Weight {
     Advisory,
@@ -176,7 +168,9 @@ fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
     routed.probe == spec.probe && spec.position.as_ref() == Some(&routed.position)
 }
 
-fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
+fn claims_of(record: &Record, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
+    let rel = record.reference.external_id.as_str();
+    let text = String::from_utf8_lossy(&record.bytes);
     let mut faults = Vec::new();
     let at = |code, detail, weight| Fault {
         note: rel.to_owned(),
@@ -186,20 +180,8 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Faul
         weight,
     };
 
-    let text = match std::fs::read_to_string(root.join(rel)) {
-        Ok(t) => t,
-        Err(e) => {
-            faults.push(at(
-                "unreadable",
-                format!("cannot read this file: {e}"),
-                Weight::Blocks,
-            ));
-            return (None, faults);
-        }
-    };
-    let fm = match frontmatter_of(&text) {
-        Ok(Some(fm)) => fm,
-        Ok(None) => {
+    let said = match &record.claim {
+        Claim::Silent => {
             faults.push(at(
                 "unclaimed",
                 "no frontmatter, so this note names no anchor and nothing observes whether \
@@ -209,8 +191,20 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Faul
             ));
             return (None, faults);
         }
-        Err(reason) => {
-            faults.push(at("malformed", reason, Weight::Blocks));
+        Claim::Malformed(reason) => {
+            faults.push(at("malformed", reason.clone(), Weight::Blocks));
+            return (None, faults);
+        }
+        Claim::Says(value) => value,
+    };
+    let fm: Frontmatter = match serde_json::from_value(said.clone()) {
+        Ok(fm) => fm,
+        Err(e) => {
+            faults.push(at(
+                "malformed",
+                format!("frontmatter is not shaped like a note's: {e}"),
+                Weight::Blocks,
+            ));
             return (None, faults);
         }
     };
@@ -314,34 +308,21 @@ impl Scanned {
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
-    let mut rels = Vec::new();
-    walk(root, &root.join(NOTES_DIR), &mut rels)?;
-    rels.sort();
+    of(
+        &crate::notes::Notes::at(root, NOTES_DIR).records()?,
+        catalog,
+    )
+}
 
+pub fn of(records: &[Record], catalog: &Catalog) -> Result<Scanned, CliError> {
     let mut notes = Vec::new();
     let mut faults = Vec::new();
-    for rel in rels {
-        let (note, mut f) = note_of(root, &rel, catalog);
+    for record in records {
+        let (note, mut f) = claims_of(record, catalog);
         notes.extend(note);
         faults.append(&mut f);
     }
     Ok(Scanned { notes, faults })
-}
-
-fn walk(root: &Path, at: &Path, out: &mut Vec<String>) -> Result<(), CliError> {
-    let Ok(entries) = std::fs::read_dir(at) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk(root, &path, out)?;
-        } else if path.extension().is_some_and(|e| e == "md") {
-            let rel = path.strip_prefix(root).unwrap_or(&path);
-            out.push(rel.to_string_lossy().replace('\\', "/"));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

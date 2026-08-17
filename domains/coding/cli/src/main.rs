@@ -4,6 +4,7 @@ mod coord;
 mod delivery;
 mod error;
 mod memories;
+mod notes;
 mod probes;
 mod prose;
 mod render;
