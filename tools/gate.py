@@ -33,6 +33,7 @@ PURE_ROOTS = ["gmr-core", "gmr-expr"]
 
 NO_CONCRETE_IMPL = {
     "gmr-probe": {"tokio", "reqwest", "hyper"},
+    "gmr-content": {"tokio", "reqwest", "hyper"},
     "gmr-store": {"sqlx", "rusqlite", "libsqlite3", "postgres", "tokio-postgres"},
 }
 

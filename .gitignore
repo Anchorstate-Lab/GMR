@@ -4,6 +4,7 @@ target/
 .codegraph/
 .vscode/
 .claude/
+.env
 
 __pycache__/
 

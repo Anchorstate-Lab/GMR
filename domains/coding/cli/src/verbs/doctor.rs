@@ -46,16 +46,24 @@ struct Grounds {
     gone: Vec<String>,
     no_provider: Vec<String>,
     unreachable: Vec<String>,
+    never_asked: Vec<String>,
     no_before: Vec<String>,
+    bound: usize,
 }
 
 fn grounds(live: &[&gmr::AnchorView]) -> Grounds {
     let mut out = Grounds::default();
     for m in live.iter().flat_map(|v| &v.memories) {
         let id = m.reference.external_id.to_string();
+        out.bound += 1;
         match &m.grounding {
             gmr::Grounding::Gone => out.gone.push(id),
             gmr::Grounding::NoProvider { .. } => out.no_provider.push(id),
+            gmr::Grounding::Unreachable { code, .. }
+                if *code == gmr::ContentErrorCode::BudgetSpent =>
+            {
+                out.never_asked.push(id);
+            }
             gmr::Grounding::Unreachable { .. } => out.unreachable.push(id),
             gmr::Grounding::Rewritten { before, .. }
                 if !matches!(before, gmr::Before::Retrieved { .. }) =>
@@ -69,6 +77,7 @@ fn grounds(live: &[&gmr::AnchorView]) -> Grounds {
         &mut out.gone,
         &mut out.no_provider,
         &mut out.unreachable,
+        &mut out.never_asked,
         &mut out.no_before,
     ] {
         list.sort();
@@ -118,14 +127,13 @@ pub async fn run(
     let catalog = crate::probes::Catalog::load(root)?;
     let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
     let mut scanned = crate::memories::scan(root, &catalog)?;
+    let declared = read_declared(root, DEFAULT_FILE)?;
     scanned.accounted_for(
-        read_declared(root, DEFAULT_FILE)?
+        declared
             .anchor
             .iter()
             .map(|d| d.key.as_str())
-            .chain(views.iter().map(|v| v.key.as_str()))
-            .collect::<Vec<_>>()
-            .into_iter(),
+            .chain(views.iter().map(|v| v.key.as_str())),
     );
     let undeclared_keys = undeclared(root, catalog, &live, &scanned)?;
     let undeclared: Vec<&str> = undeclared_keys.iter().map(|k| k.as_str()).collect();
@@ -158,7 +166,8 @@ pub async fn run(
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "undeclared": undeclared,
                 "gone": ground.gone, "no_provider": ground.no_provider,
-                "unreachable": ground.unreachable, "no_before": ground.no_before,
+                "unreachable": ground.unreachable, "never_asked": ground.never_asked,
+                "bound": ground.bound, "no_before": ground.no_before,
                 "skill_stale": skill_stale,
                 "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
@@ -233,8 +242,15 @@ pub async fn run(
     }
     if !ground.unreachable.is_empty() {
         println!(
-            "unreachable {} record(s) could not be reached this run\n            <- somebody else's service or a spent budget, not something to fix here. Reported, never counted against the exit code",
+            "unreachable {} record(s) could not be reached this run\n            <- somebody else's service, not something to fix here. Reported, never counted against the exit code",
             ground.unreachable.len()
+        );
+    }
+    if !ground.never_asked.is_empty() {
+        println!(
+            "unasked   {} of {} bound record(s) were never asked about — the total content budget ran out first\n          <- what is printed above is that partial view, not the whole repository. Raise --content-total-ms to see the rest",
+            ground.never_asked.len(),
+            ground.bound
         );
     }
     if !ground.no_before.is_empty() {

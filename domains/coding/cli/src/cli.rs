@@ -33,6 +33,17 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = gmr::Policy::default().probe_budget_ms)]
     pub probe_budget_ms: u64,
 
+    /// How long one call to a memory store may take, in milliseconds. A store across a
+    /// network is the only thing here that can hang, so this is the per-record bound.
+    #[arg(long, global = true, default_value_t = gmr::Policy::default().content_call_ms)]
+    pub content_call_ms: u64,
+
+    /// How long reaching memory stores may take in total, in milliseconds, across every
+    /// record one command looks at. Records whose turn never comes are reported as
+    /// unreachable with a spent budget, never as missing.
+    #[arg(long, global = true, default_value_t = gmr::Policy::default().content_total_ms)]
+    pub content_total_ms: u64,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -332,12 +343,18 @@ mod tests {
     #[test]
     fn the_budget_default_has_one_source_of_truth() {
         let cli = Cli::parse_from(["gmr", "--repo", ".", "check"]);
-        assert_eq!(
-            cli.probe_budget_ms,
-            gmr::Policy::default().probe_budget_ms,
-            "a literal here and a literal in Policy::default drift the moment one is edited, \
-             and main.rs hands the flag's value to the policy — so the policy's own default \
-             would quietly stop being what anyone gets"
-        );
+        let policy = gmr::Policy::default();
+        for (flag, from_cli, from_policy) in [
+            ("--probe-budget-ms", cli.probe_budget_ms, policy.probe_budget_ms),
+            ("--content-call-ms", cli.content_call_ms, policy.content_call_ms),
+            ("--content-total-ms", cli.content_total_ms, policy.content_total_ms),
+        ] {
+            assert_eq!(
+                from_cli, from_policy,
+                "a literal here and a literal in Policy::default drift the moment one is \
+                 edited, and main.rs hands {flag}'s value to the policy — so the policy's own \
+                 default would quietly stop being what anyone gets"
+            );
+        }
     }
 }

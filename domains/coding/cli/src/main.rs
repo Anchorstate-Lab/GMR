@@ -146,6 +146,8 @@ async fn served(
     let mut builder = Runtime::builder()
         .policy(gmr::Policy {
             probe_budget_ms: cli.probe_budget_ms,
+            content_call_ms: cli.content_call_ms,
+            content_total_ms: cli.content_total_ms,
             ..Default::default()
         })
         .transport(Arc::new(InProcess::new(&root, linked.probes)))

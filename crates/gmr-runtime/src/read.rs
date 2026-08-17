@@ -106,7 +106,10 @@ impl MemoryView {
 }
 
 fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(&String::from_utf8_lossy(bytes))
+    match std::str::from_utf8(bytes) {
+        Ok(text) => s.serialize_some(text),
+        Err(_) => s.serialize_none(),
+    }
 }
 
 impl Runtime {
