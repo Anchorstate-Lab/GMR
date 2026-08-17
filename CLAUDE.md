@@ -74,8 +74,9 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 - **`gmr-expr`**: pure expression evaluation. No IO, no clock, no dependency on `gmr-core`.  
   (The obs‑strict / state‑lenient semantics and `changed()` convention are anchor‑layer decisions, not generic evaluator features – they merely happen to have no compile‑time dependency on `gmr-core`; do not read “no dependency” as “ignorant of anchors”.)
 - **`gmr-probe`**: probe invocation contract. No concrete transport implementation.
+- **`gmr-content`**: retrieval and discovery contracts. What every store must do sits in `ContentProvider` itself; what only some can do gets its own trait (`History`, `MemorySource`), so declining a capability means not implementing it rather than answering "I have none". No concrete provider implementation, and no opinion about which store to enumerate or how much of it.
 - **`gmr-store`**: storage traits and feature‑gated backends. Sliced by mutability: Journal / BindingStore / Sealer / LinkStore / Queue.
-- **`gmr-runtime`**: sole orchestration layer. May depend on core / expr / probe / store, but must not make domain decisions.
+- **`gmr-runtime`**: sole orchestration layer. May depend on core / expr / probe / content / store, but must not make domain decisions.
 - **`gmr`**: only re‑exports.
 
 ---
