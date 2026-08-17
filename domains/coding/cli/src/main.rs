@@ -33,18 +33,18 @@ pub(crate) fn probes_dir(root: &std::path::Path) -> PathBuf {
     probes::store_dir(root)
 }
 
-fn mem0(api_key: &str) -> Result<Mem0, gmr::ContentError> {
+fn mem0() -> Option<Result<Mem0, gmr::ContentError>> {
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let scope = Scope {
         user_id: env("MEM0_USER_ID"),
         agent_id: env("MEM0_AGENT_ID"),
         app_id: env("MEM0_APP_ID"),
     };
-    let provider = Mem0::new(api_key, scope)?;
-    Ok(match env("MEM0_BASE_URL") {
-        Some(base) => provider.based_at(base),
-        None => provider,
-    })
+    match (env("MEM0_BASE_URL"), env("MEM0_API_KEY")) {
+        (Some(base), key) => Some(Mem0::self_hosted(base, key, scope)),
+        (None, Some(key)) => Some(Mem0::platform(key, scope)),
+        (None, None) => None,
+    }
 }
 
 fn stale_journal_guard(root: &std::path::Path, state: &std::path::Path) -> Result<(), CliError> {
@@ -165,8 +165,8 @@ async fn served(
             builder = builder.provider_warning("claude-code", e.to_string());
         }
     }
-    if let Some(key) = std::env::var_os("MEM0_API_KEY") {
-        match mem0(&key.to_string_lossy()) {
+    if let Some(built) = mem0() {
+        match built {
             Ok(p) => builder = builder.provider(Arc::new(p)),
             Err(e) => {
                 eprintln!("gmr: mem0 provider unavailable: {e}");

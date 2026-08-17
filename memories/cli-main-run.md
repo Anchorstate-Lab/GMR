@@ -58,13 +58,26 @@ builder via `provider_warning` (see [[runtime-provider-warning]]) rather
 than only `eprintln!`'d, so a `--json` caller (or `gmr doctor`) has a way
 to learn about it too.
 
-mem0 differs from that on purpose. **Absence of `MEM0_API_KEY` registers
-nothing and warns about nothing** — not using mem0 is not a
-misconfiguration, and a warning on every run for a store the reader has
-never heard of is noise that teaches people to stop reading warnings. A key
-that *is* set and then fails to build a provider is the `ClaudeMemory` case
-again: warn, record on the builder, carry on. The line is "did the person
-ask for this store", and only an env var can answer it.
+mem0 differs from that on purpose. **Naming no mem0 registers nothing and
+warns about nothing** — not using mem0 is not a misconfiguration, and a
+warning on every run for a store the reader has never heard of is noise
+that teaches people to stop reading warnings. A mem0 that *is* named and
+then fails to build is the `ClaudeMemory` case again: warn, record on the
+builder, carry on. The line is "did the person ask for this store", and
+only an env var can answer it.
+
+Two env vars answer it, because there are two mem0s. `MEM0_BASE_URL` means
+a self-hosted server and selects that dialect; `MEM0_API_KEY` alone means
+the managed platform. A self-hosted server run with `AUTH_DISABLED` has no
+key at all, which is why registration cannot be gated on the key the way it
+once was, and why the key is optional on that branch and travels in a
+different header — see [[provider-mem0]].
+
+`MEM0_BASE_URL` used to mean "the platform dialect, pointed somewhere
+else", which is the one thing a reader setting it never means. Someone who
+sets it is running their own server, and that server mounts different
+routes; the old reading reached none of them while reporting that somebody
+else's service was unavailable.
 
 Registering mem0 means this binary links `reqwest`. That is why
 `gmr-provider` keeps `mem0` off by default and this crate turns it on:

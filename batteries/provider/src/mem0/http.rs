@@ -13,16 +13,21 @@ pub(crate) trait Http: Send + Sync {
     async fn get(&self, url: &str, budget: &Budget) -> Result<Answer, ContentError>;
 }
 
+pub(crate) struct Credential {
+    pub(crate) header: &'static str,
+    pub(crate) value: String,
+}
+
 pub(crate) struct Reqwest {
     client: reqwest::Client,
-    token: String,
+    credential: Option<Credential>,
 }
 
 impl Reqwest {
-    pub(crate) fn new(token: String) -> Result<Self, ContentError> {
+    pub(crate) fn new(credential: Option<Credential>) -> Result<Self, ContentError> {
         reqwest::Client::builder()
             .build()
-            .map(|client| Self { client, token })
+            .map(|client| Self { client, credential })
             .map_err(|e| ContentError::new(format!("cannot build an HTTP client: {e}")))
     }
 }
@@ -33,17 +38,14 @@ impl Http for Reqwest {
         let left = budget
             .remaining()
             .ok_or_else(|| ContentError::spent("no time left to call mem0"))?;
-        let response = self
-            .client
-            .get(url)
-            .header("Authorization", format!("Token {}", self.token))
-            .timeout(left)
-            .send()
-            .await
-            .map_err(|e| match e.is_timeout() {
-                true => ContentError::spent(format!("mem0 did not answer within the budget: {e}")),
-                false => ContentError::new(format!("cannot reach mem0: {e}")),
-            })?;
+        let mut request = self.client.get(url).timeout(left);
+        if let Some(credential) = &self.credential {
+            request = request.header(credential.header, &credential.value);
+        }
+        let response = request.send().await.map_err(|e| match e.is_timeout() {
+            true => ContentError::spent(format!("mem0 did not answer within the budget: {e}")),
+            false => ContentError::new(format!("cannot reach mem0: {e}")),
+        })?;
         let status = response.status().as_u16();
         let body = response
             .text()
@@ -60,18 +62,24 @@ pub(crate) mod testkit {
     use gmr_content::ContentError;
     use gmr_probe::Budget;
     use std::collections::BTreeMap;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
+
+    pub(crate) type Asked = Arc<Mutex<Vec<String>>>;
 
     #[derive(Default)]
     pub(crate) struct Canned {
         answers: BTreeMap<String, Answer>,
-        pub(crate) asked: Mutex<Vec<String>>,
+        asked: Asked,
         refuse: Option<String>,
     }
 
     impl Canned {
         pub(crate) fn new() -> Self {
             Self::default()
+        }
+
+        pub(crate) fn log(&self) -> Asked {
+            self.asked.clone()
         }
 
         pub(crate) fn on(mut self, url_suffix: &str, status: u16, body: &str) -> Self {

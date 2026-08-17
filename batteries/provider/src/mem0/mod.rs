@@ -3,6 +3,11 @@
 //! The seam this module talks through offers `get` and nothing else, so
 //! "GMR never writes into mem0" is not a rule anyone has to keep — there is
 //! no method here that could.
+//!
+//! There are two mem0s behind one name: the managed platform and the
+//! self-hosted server, which disagree about routes, about the header a key
+//! travels in, and about how "there is no such memory" is spelled.
+//! `Deployment` is the one place that knows which one is being addressed.
 
 mod http;
 
@@ -12,9 +17,91 @@ use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
 use gmr_probe::Budget;
 use serde::Deserialize;
 
-use http::{Answer, Http};
+use http::{Answer, Credential, Http};
 
 pub const DEFAULT_BASE: &str = "https://api.mem0.ai";
+
+const SELF_HOSTED_CEILING: usize = 1000;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Deployment {
+    Platform,
+    SelfHosted,
+}
+
+enum Absence {
+    NotSaid,
+    Certain,
+    Unconfirmed { probe: String },
+}
+
+impl Deployment {
+    fn memory(&self, base: &str, id: &ExternalId) -> String {
+        match self {
+            Self::Platform => format!("{base}/v1/memories/{id}/"),
+            Self::SelfHosted => format!("{base}/memories/{id}"),
+        }
+    }
+
+    fn history(&self, base: &str, id: &ExternalId) -> String {
+        match self {
+            Self::Platform => format!("{base}/v1/memories/{id}/history/"),
+            Self::SelfHosted => format!("{base}/memories/{id}/history"),
+        }
+    }
+
+    fn listing(&self, base: &str, scope: &str) -> String {
+        match self {
+            Self::Platform => format!("{base}/v1/memories/?{scope}"),
+            Self::SelfHosted => format!("{base}/memories?{scope}&top_k={SELF_HOSTED_CEILING}"),
+        }
+    }
+
+    fn credential(&self, key: String) -> Credential {
+        match self {
+            Self::Platform => Credential {
+                header: "Authorization",
+                value: format!("Token {key}"),
+            },
+            Self::SelfHosted => Credential {
+                header: "X-API-Key",
+                value: key,
+            },
+        }
+    }
+
+    fn absence(&self, answer: &Answer, base: &str, scope: &str) -> Absence {
+        match self {
+            Self::Platform if answer.status == 404 => Absence::Unconfirmed {
+                probe: format!("{}&page_size=1", self.listing(base, scope)),
+            },
+            Self::SelfHosted if answer.status == 200 && answer.body.trim() == "null" => {
+                Absence::Certain
+            }
+            _ => Absence::NotSaid,
+        }
+    }
+
+    fn reads_as_no_history(&self, answer: &Answer) -> bool {
+        match self {
+            Self::Platform => answer.status == 404,
+            Self::SelfHosted => false,
+        }
+    }
+
+    fn whole(&self, listed: Vec<Record>) -> Result<Vec<Record>, ContentError> {
+        match self {
+            Self::Platform => Ok(listed),
+            Self::SelfHosted if listed.len() < SELF_HOSTED_CEILING => Ok(listed),
+            Self::SelfHosted => Err(ContentError::new(format!(
+                "this scope holds at least {SELF_HOSTED_CEILING} memories, which is the most a \
+                 self-hosted mem0 returns, and its listing route carries no cursor and no total \
+                 — so a complete listing and a truncated one arrive identical. Narrow the scope \
+                 rather than trust a count that sits exactly on the ceiling"
+            ))),
+        }
+    }
+}
 
 pub struct Scope {
     pub user_id: Option<String>,
@@ -29,6 +116,10 @@ impl Scope {
             agent_id: None,
             app_id: None,
         }
+    }
+
+    fn names_nothing(&self) -> bool {
+        self.user_id.is_none() && self.agent_id.is_none() && self.app_id.is_none()
     }
 
     fn query(&self) -> String {
@@ -47,23 +138,59 @@ impl Scope {
 pub struct Mem0 {
     id: ProviderId,
     base: String,
+    deployment: Deployment,
     scope: Scope,
     http: Box<dyn Http>,
 }
 
 impl Mem0 {
-    pub fn new(api_key: impl Into<String>, scope: Scope) -> Result<Self, ContentError> {
-        Ok(Self {
-            id: ProviderId::new("mem0"),
-            base: DEFAULT_BASE.to_owned(),
+    pub fn platform(api_key: impl Into<String>, scope: Scope) -> Result<Self, ContentError> {
+        Self::assembled(
+            Deployment::Platform,
+            DEFAULT_BASE.to_owned(),
+            Some(api_key.into()),
             scope,
-            http: Box::new(http::Reqwest::new(api_key.into())?),
-        })
+        )
     }
 
-    pub fn based_at(mut self, base: impl Into<String>) -> Self {
-        self.base = base.into();
-        self
+    pub fn self_hosted(
+        base: impl Into<String>,
+        api_key: Option<String>,
+        scope: Scope,
+    ) -> Result<Self, ContentError> {
+        if scope.app_id.is_some() {
+            return Err(ContentError::new(
+                "a self-hosted mem0 filters on user_id, agent_id and run_id, and silently \
+                 ignores app_id. A scope named only by app_id therefore names nothing, and its \
+                 listing route answers a scope that names nothing with every memory in the \
+                 store — everybody's, not yours. Name a user_id or an agent_id instead",
+            ));
+        }
+        Self::assembled(Deployment::SelfHosted, base.into(), api_key, scope)
+    }
+
+    fn assembled(
+        deployment: Deployment,
+        base: String,
+        api_key: Option<String>,
+        scope: Scope,
+    ) -> Result<Self, ContentError> {
+        if scope.names_nothing() {
+            return Err(ContentError::new(
+                "this mem0 provider was given no user_id, agent_id or app_id, so it never says \
+                 whose memories it reads. A scope that names nothing is not a wider listing of \
+                 yours, it is somebody else's",
+            ));
+        }
+        Ok(Self {
+            id: ProviderId::new("mem0"),
+            base,
+            deployment,
+            http: Box::new(http::Reqwest::new(
+                api_key.map(|key| deployment.credential(key)),
+            )?),
+            scope,
+        })
     }
 
     pub fn named(mut self, id: impl Into<String>) -> Self {
@@ -72,30 +199,23 @@ impl Mem0 {
     }
 
     #[cfg(test)]
-    fn faked(http: Box<dyn Http>, scope: Scope) -> Self {
+    fn faked(http: Box<dyn Http>, scope: Scope, deployment: Deployment) -> Self {
         Self {
             id: ProviderId::new("mem0"),
             base: "https://mem0.test".to_owned(),
+            deployment,
             scope,
             http,
         }
     }
 
-    async fn scope_is_live(&self, budget: &Budget) -> Result<bool, ContentError> {
-        let url = format!(
-            "{}/v1/memories/?{}&page_size=1",
-            self.base,
-            self.scope.query()
-        );
-        Ok(self.http.get(&url, budget).await?.status == 200)
-    }
-
     async fn absent(
         &self,
         id: &ExternalId,
+        probe: &str,
         budget: &Budget,
     ) -> Result<Option<Fetched>, ContentError> {
-        match self.scope_is_live(budget).await? {
+        match self.http.get(probe, budget).await?.status == 200 {
             true => Ok(None),
             false => Err(ContentError::new(format!(
                 "mem0 has no `{id}` for this key and scope, and asking it to list that scope \
@@ -166,8 +286,16 @@ impl ContentProvider for Mem0 {
         id: &ExternalId,
         budget: &Budget,
     ) -> Result<Option<Fetched>, ContentError> {
-        let url = format!("{}/v1/memories/{id}/", self.base);
+        let url = self.deployment.memory(&self.base, id);
         let answer = self.http.get(&url, budget).await?;
+        match self
+            .deployment
+            .absence(&answer, &self.base, &self.scope.query())
+        {
+            Absence::Certain => return Ok(None),
+            Absence::Unconfirmed { probe } => return self.absent(id, &probe, budget).await,
+            Absence::NotSaid => {}
+        }
         match answer.status {
             200 => {
                 let memory: Memory = parse(&answer.body, "memory")?;
@@ -176,7 +304,6 @@ impl ContentProvider for Mem0 {
                     bytes: memory.memory.into_bytes(),
                 }))
             }
-            404 => self.absent(id, budget).await,
             _ => Err(refused(&answer, "a memory")),
         }
     }
@@ -194,7 +321,7 @@ impl History for Mem0 {
         version: &Version,
         budget: &Budget,
     ) -> Result<Option<Vec<u8>>, ContentError> {
-        let url = format!("{}/v1/memories/{id}/history/", self.base);
+        let url = self.deployment.history(&self.base, id);
         let answer = self.http.get(&url, budget).await?;
         match answer.status {
             200 => {
@@ -205,7 +332,7 @@ impl History for Mem0 {
                     .find(|text| &version_of(text) == version)
                     .map(String::into_bytes))
             }
-            404 => Ok(None),
+            _ if self.deployment.reads_as_no_history(&answer) => Ok(None),
             _ => Err(refused(&answer, "a memory's history")),
         }
     }
@@ -218,7 +345,7 @@ impl MemorySource for Mem0 {
     }
 
     async fn list(&self, budget: &Budget) -> Result<Vec<Record>, ContentError> {
-        let mut url = format!("{}/v1/memories/?{}", self.base, self.scope.query());
+        let mut url = self.deployment.listing(&self.base, &self.scope.query());
         let mut out = Vec::new();
         loop {
             if budget.remaining().is_none() {
@@ -242,7 +369,7 @@ impl MemorySource for Mem0 {
             }));
             match page.next {
                 Some(next) => url = next,
-                None => return Ok(out),
+                None => return self.deployment.whole(out),
             }
         }
     }
