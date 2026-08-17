@@ -454,6 +454,86 @@ echo "$out" | grep -q "nothing moved" \
 "$gmr" --repo "$scale" check >/dev/null \
     || fail "the anchor did not settle once it had time to look — a spent budget became state"
 
+# ── Who can fix it decides the exit code. Every state below is reachable with
+#    the claude-code provider alone, because its store is a directory this
+#    script owns: point it somewhere, and the store is there, empty, or gone.
+#    Without these, the rule that `unreachable` never turns a build red is a
+#    sentence in a doc that no run disagrees with.
+step "the exit code is decided by who can fix it"
+mem=$work/claude-memory
+mkdir -p "$mem"
+printf 'binding through a store this script owns\n' > "$mem/owned.md"
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+
+"$gmr" --repo "$repo" bind owned.md --provider claude-code \
+    --anchors 'src/auth.ts#createSession' >/dev/null \
+    || fail "could not bind through the claude-code provider"
+
+set +e
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "a healthy binding through a second store made doctor red" "$out"
+
+# The record is deleted, the store is still there: the world's answer.
+rm "$mem/owned.md"
+set +e
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "a record the store says is gone did not turn doctor red, and unbinding it is exactly the thing the owner can do" "$out"
+echo "$out" | grep -q '"gone":\["owned.md"\]' || fail "the dead reference was not reported as gone" "$out"
+
+# The store itself is gone: our failure, not the world's answer. Same repository,
+# same binding — only the reachability differs, and the exit code must not.
+printf 'back again\n' > "$mem/owned.md"
+"$gmr" --repo "$repo" reaffirm owned.md --provider claude-code >/dev/null \
+    || fail "could not re-stamp the binding after the record came back"
+export GMR_CLAUDE_MEMORY_DIR="$work/no-such-store"
+set +e
+reachable=$("$gmr" --repo "$repo" check >/dev/null 2>&1; echo $?)
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+echo "$out" | grep -q '"unreachable":\["owned.md"\]' \
+    || fail "a store that is not there was not reported as unreachable — silence is how this used to look" "$out"
+echo "$out" | grep -q '"gone":\[\]' \
+    || fail "a store that would not answer was read as the record being gone; that sends the reader to delete a binding that is fine" "$out"
+[ "$code" -eq 0 ] || fail "somebody else's store being unreachable turned doctor red; nobody holding this repository can act on that" "$out"
+
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+set +e
+"$gmr" --repo "$repo" check >/dev/null 2>&1; back=$?
+set -e
+[ "$reachable" -eq "$back" ] \
+    || fail "check exited $reachable with the store unreachable and $back with it reachable — a store nobody here owns must not move the exit code"
+
+# The provider cannot even register: with no $HOME and no override there is no
+# directory to name. A binding through a store this binary has no provider for
+# is the owner's to fix -- enable a feature, set credentials, rebind -- so red.
+set +e
+out=$(env -u HOME -u GMR_CLAUDE_MEMORY_DIR "$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+echo "$out" | grep -q '"no_provider":\["owned.md"\]' \
+    || fail "a binding through a store with no provider in this binary was not reported as such; unreachable would say somebody else's service is down, and this is a build or a config" "$out"
+[ "$code" -eq 1 ] || fail "a binding through a store this binary cannot name did not turn doctor red" "$out"
+
+step "a listing is what a store will show, not a roster of what exists"
+out=$("$gmr" --repo "$repo" memories --json)
+echo "$out" | grep -q '"reference":"git:memories/auth.md"' \
+    || fail "the note this run bound was not in its store's listing" "$out"
+echo "$out" | grep -q '"anchors":\["src/auth.ts#createSession"\]' \
+    || fail "the listing did not say which anchors a bound record is about" "$out"
+"$gmr" --repo "$repo" memories --provider claude-code >/dev/null 2>&1 \
+    && fail "a store with no way to list what it holds answered a listing anyway"
+
+step "an installed SKILL.md older than the binary is the owner's to fix"
+printf 'stale\n' >> "$repo/.claude/skills/gmr/SKILL.md"
+set +e
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "an installed skill doc this build no longer honours did not turn doctor red — agents read it and cannot tell" "$out"
+echo "$out" | grep -q '"skill_stale":\[' || fail "the stale skill doc was not named" "$out"
+rm "$repo/.claude/skills/gmr/SKILL.md"
+"$gmr" --repo "$repo" init >/dev/null
+
 echo
 echo "Accepted: a stranger's repo, no toolchain, no downloaded probes. Memory and"
 echo "          fact are tied together — in the source and outside it — and when the"
