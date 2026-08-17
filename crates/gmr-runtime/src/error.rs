@@ -1,9 +1,16 @@
-use gmr_core::{AnchorKey, Ref};
+use gmr_core::{AnchorKey, ProviderId, Ref};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     #[error("anchor `{key}` has never been opened")]
     NoSuchAnchor { key: AnchorKey },
+
+    #[error(
+        "no provider named `{provider}` is registered in this binary — \
+         this is an assembly fault, not the world saying the record is gone. \
+         Which providers exist depends on how this binary was built"
+    )]
+    NoProvider { provider: ProviderId },
 
     #[error("`{reference:?}` is not bound to anything — nothing to reaffirm; bind it first")]
     NotBound { reference: Ref },
@@ -50,6 +57,7 @@ impl RuntimeError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::NoSuchAnchor { .. } => "no_such_anchor",
+            Self::NoProvider { .. } => "no_provider",
             Self::NotBound { .. } => "not_bound",
             Self::AlreadyOpen { .. } => "already_open",
             Self::AnchorClosed { .. } => "anchor_closed",

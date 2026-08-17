@@ -7,10 +7,12 @@ pub async fn run(
     from: String,
     to: String,
     kind: String,
+    from_provider: String,
+    to_provider: String,
     json: bool,
 ) -> Result<i32, CliError> {
-    let from_ref = Ref::new("git", from.clone());
-    let to_ref = Ref::new("git", to.clone());
+    let from_ref = Ref::new(from_provider, from.clone());
+    let to_ref = Ref::new(to_provider, to.clone());
     rt.link(&from_ref, &to_ref, LinkKind(kind.clone())).await?;
 
     if json {

@@ -172,20 +172,36 @@ pub enum Command {
 
     /// Re-stamp a binding's content version without changing which anchors it's about.
     #[command(hide = true)]
-    Reaffirm { path: String },
+    Reaffirm {
+        path: String,
+        /// Which registered ContentProvider `path` is resolved through.
+        #[arg(long, default_value = "git")]
+        provider: String,
+    },
 
     /// Other references bound to any anchor `path` is also bound to.
     #[command(hide = true)]
-    Cobound { path: String },
+    Cobound {
+        path: String,
+        /// Which registered ContentProvider `path` is resolved through.
+        #[arg(long, default_value = "git")]
+        provider: String,
+    },
 
     /// Record that `from` relates to `to`. Independent of anchoring — linking
     /// two references says nothing about which anchors either is bound to.
+    /// The two ends may sit in different providers: a memory in one store can
+    /// contradict a memory in another.
     #[command(hide = true)]
     Link {
         from: String,
         to: String,
         #[arg(long)]
         kind: String,
+        #[arg(long, default_value = "git")]
+        from_provider: String,
+        #[arg(long, default_value = "git")]
+        to_provider: String,
     },
 
     /// Retire an anchor. Closure is irreversible.

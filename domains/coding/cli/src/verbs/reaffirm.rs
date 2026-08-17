@@ -1,19 +1,19 @@
-use std::path::Path;
-
 use gmr::{Ref, Runtime};
 
 use crate::error::CliError;
 
-pub async fn run(rt: &Runtime, root: &Path, path: String, json: bool) -> Result<i32, CliError> {
-    if !root.join(&path).exists() {
-        return Err(CliError(format!("`{path}` is not in this repository")));
-    }
-    let reference = Ref::new("git", path.clone());
+pub async fn run(
+    rt: &Runtime,
+    path: String,
+    provider: String,
+    json: bool,
+) -> Result<i32, CliError> {
+    let reference = Ref::new(provider.clone(), path.clone());
     let version = rt
         .memory()
         .current_version(&reference)
         .await?
-        .ok_or_else(|| CliError(format!("no content provider could version `{path}`")))?;
+        .ok_or_else(|| CliError(format!("`{provider}` has no record `{path}`")))?;
 
     rt.reaffirm(&reference, version.clone()).await?;
     let version = version.into_inner();

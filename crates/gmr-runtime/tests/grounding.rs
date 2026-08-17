@@ -410,3 +410,41 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
         "no longer attached to this anchor"
     );
 }
+
+#[tokio::test]
+async fn a_provider_nobody_registered_is_our_fault_not_the_worlds_answer() {
+    let w = World::new(true);
+    let unregistered = Ref::new("mem0", "some-uuid");
+
+    let err = w
+        .runtime
+        .memory()
+        .current_version(&unregistered)
+        .await
+        .expect_err(
+            "an unregistered provider used to come back as Ok(None), which reads exactly like \
+             the provider answering that the record is gone. Callers then told the user their \
+             record did not exist, when the truth was that this binary cannot reach that store",
+        );
+
+    assert_eq!(err.code(), "no_provider");
+    assert!(
+        err.to_string().contains("mem0"),
+        "the message has to name the provider that is missing: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_registered_provider_that_has_no_such_record_still_answers_none() {
+    let w = World::new(true);
+    let absent = Ref::new("git", "memories/never-written.md");
+
+    let version = w
+        .runtime
+        .memory()
+        .current_version(&absent)
+        .await
+        .expect("reaching the provider worked; it simply has nothing under that id");
+
+    assert!(version.is_none(), "this half is the world's answer");
+}

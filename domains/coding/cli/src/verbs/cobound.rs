@@ -2,8 +2,13 @@ use gmr::{Ref, Runtime};
 
 use crate::error::CliError;
 
-pub async fn run(rt: &Runtime, path: String, json: bool) -> Result<i32, CliError> {
-    let reference = Ref::new("git", path.clone());
+pub async fn run(
+    rt: &Runtime,
+    path: String,
+    provider: String,
+    json: bool,
+) -> Result<i32, CliError> {
+    let reference = Ref::new(provider, path.clone());
     let others = rt.cobound(&reference).await?;
 
     if json {

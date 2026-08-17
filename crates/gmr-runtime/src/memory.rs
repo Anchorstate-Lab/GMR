@@ -102,7 +102,9 @@ impl MemoryLens {
 
     pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
         let Some(provider) = self.provider_for(reference) else {
-            return Ok(None);
+            return Err(RuntimeError::NoProvider {
+                provider: reference.provider.clone(),
+            });
         };
         Ok(provider
             .fetch(&reference.external_id)

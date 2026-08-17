@@ -187,10 +187,18 @@ async fn served(
             anchors,
             detach,
             provider,
-        } => verbs::bind::run(&rt, &root, path, anchors, detach, provider, json).await,
-        Command::Reaffirm { path } => verbs::reaffirm::run(&rt, &root, path, json).await,
-        Command::Cobound { path } => verbs::cobound::run(&rt, path, json).await,
-        Command::Link { from, to, kind } => verbs::link::run(&rt, from, to, kind, json).await,
+        } => verbs::bind::run(&rt, path, anchors, detach, provider, json).await,
+        Command::Reaffirm { path, provider } => {
+            verbs::reaffirm::run(&rt, path, provider, json).await
+        }
+        Command::Cobound { path, provider } => verbs::cobound::run(&rt, path, provider, json).await,
+        Command::Link {
+            from,
+            to,
+            kind,
+            from_provider,
+            to_provider,
+        } => verbs::link::run(&rt, from, to, kind, from_provider, to_provider, json).await,
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Edges { since, status } => verbs::edges::run(&rt, since, status, json).await,
         Command::Health { key } => verbs::health::run(&rt, key, json).await,

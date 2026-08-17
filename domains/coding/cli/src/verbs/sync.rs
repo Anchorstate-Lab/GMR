@@ -345,7 +345,7 @@ async fn align_bindings(
     let mut renamed = Vec::new();
 
     for note in notes {
-        let reference = Ref::new("git", note.path.clone());
+        let reference = Ref::new(crate::memories::NOTES_PROVIDER, note.path.clone());
         let mut want: Vec<AnchorKey> = note
             .wants
             .iter()

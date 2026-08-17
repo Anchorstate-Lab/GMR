@@ -1,12 +1,9 @@
-use std::path::Path;
-
 use gmr::{AnchorKey, Ref, Runtime};
 
 use crate::error::CliError;
 
 pub async fn run(
     rt: &Runtime,
-    root: &Path,
     path: String,
     anchors: Vec<String>,
     detach: bool,
@@ -16,15 +13,12 @@ pub async fn run(
     if anchors.is_empty() && !detach {
         return Err(CliError("provide either --anchors or --detach".into()));
     }
-    if provider == "git" && !root.join(&path).exists() {
-        return Err(CliError(format!("`{path}` is not in this repository")));
-    }
-    let reference = Ref::new(provider, path.clone());
+    let reference = Ref::new(provider.clone(), path.clone());
     let version = rt
         .memory()
         .current_version(&reference)
         .await?
-        .ok_or_else(|| CliError(format!("no content provider could version `{path}`")))?;
+        .ok_or_else(|| CliError(format!("`{provider}` has no record `{path}`")))?;
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
     rt.bind(reference, anchors.clone(), version.clone()).await?;

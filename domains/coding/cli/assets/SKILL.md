@@ -73,12 +73,14 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 - `absent` — the probe ran and found nothing there. Normal when criteria were written before the code exists — don't read this as "it used to be there and now it's gone" without checking.
 - `unseen` — outstanding failed attempts; check the probe or its credentials.
 - `stranded` — no transport here can resolve the declared probe (`gmr probes build`).
-- `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it will fail with "no content provider could version" until the underlying cause is fixed. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
+- `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it fail with "no provider named `<name>` is registered in this binary" until the underlying cause is fixed. That message means the store is unreachable from here, **not** that the record is gone — a provider that is registered and simply has no such record says "`<provider>` has no record `<path>`" instead. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
 - `notes` — lint findings over every file under `memories/`, independent of the anchors above. `breaks: true` means the note names no live anchor at all; `breaks: false` is advisory. Codes: `unclaimed` (no frontmatter, so nothing observes whether this note still holds), `bare-key` (an `anchors:` entry binds to a key without declaring it, and nothing else in the repo declares that key either), `long-hand` (an explicit `anchors:` entry states exactly what `about: <coord>` would already route to — safe to simplify), `retired` (the note names a shape/axis word this build no longer has — stale, or a deliberate record of something buried; only you can tell which).
 
 ## Binding non-git content
 
 `gmr bind <path> --anchors <key> --provider <name>` binds arbitrary content to an anchor, not only files inside this repo's own git tree. `--provider` defaults to `git`. Whether other providers (for example a `claude-code` provider reading this agent's own memory files) are available depends on how this particular binary was built — `gmr bind --help` reflects what's actually compiled in.
+
+`reaffirm` and `cobound` take the same `--provider`. `link` takes `--from-provider` and `--to-provider` separately, because the two ends may sit in different stores — a memory in one store can contradict a memory in another, and saying so should not require moving either of them.
 
 ## Don't
 

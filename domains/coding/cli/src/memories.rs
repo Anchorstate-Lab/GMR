@@ -9,6 +9,8 @@ use crate::verbs::sync::AnchorDecl;
 
 pub const NOTES_DIR: &str = "memories";
 
+pub const NOTES_PROVIDER: &str = "git";
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum OneOrMany {
