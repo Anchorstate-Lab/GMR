@@ -312,6 +312,30 @@ pub async fn run(
     Ok(i32::from(!blocked.is_empty()))
 }
 
+struct Rename {
+    dropped: Vec<AnchorKey>,
+    gained: Vec<AnchorKey>,
+}
+
+impl Rename {
+    fn joined(&self, keys: &[AnchorKey]) -> String {
+        keys.iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+fn ambiguous(had: &[AnchorKey], want: &[AnchorKey], closed: &[AnchorKey]) -> Option<Rename> {
+    let dropped: Vec<AnchorKey> = had
+        .iter()
+        .filter(|k| !want.contains(k) && !closed.contains(k))
+        .cloned()
+        .collect();
+    let gained: Vec<AnchorKey> = want.iter().filter(|k| !had.contains(k)).cloned().collect();
+    (!dropped.is_empty() && !gained.is_empty()).then_some(Rename { dropped, gained })
+}
+
 async fn align_bindings(
     rt: &Runtime,
     notes: &[crate::memories::Note],
@@ -334,22 +358,18 @@ async fn align_bindings(
         if let Some(record) = &current {
             let mut had = record.binding.anchors.clone();
             had.sort();
-            let dropped: Vec<_> = had.iter().filter(|k| !want.contains(k)).collect();
-            let added: Vec<_> = want.iter().filter(|k| !had.contains(k)).collect();
-            if !dropped.is_empty() && !added.is_empty() {
+            let mut closed = Vec::new();
+            for key in had.iter().filter(|k| !want.contains(k)) {
+                if matches!(rt.read(key).await, Ok(view) if view.closed) {
+                    closed.push(key.clone());
+                }
+            }
+            if let Some(rename) = ambiguous(&had, &want, &closed) {
                 renamed.push(format!(
                     "{}: dropped {}, gained {}",
                     note.path,
-                    dropped
-                        .iter()
-                        .map(|k| k.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    added
-                        .iter()
-                        .map(|k| k.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    rename.joined(&rename.dropped),
+                    rename.joined(&rename.gained)
                 ));
                 continue;
             }
@@ -463,6 +483,49 @@ pub fn audit<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keys(names: &[&str]) -> Vec<AnchorKey> {
+        names.iter().map(|n| AnchorKey::new(*n)).collect()
+    }
+
+    #[test]
+    fn dropping_one_key_while_gaining_another_is_ambiguous() {
+        assert!(
+            ambiguous(&keys(&["old"]), &keys(&["new"]), &[]).is_some(),
+            "a rename and a mistake look identical from here, so sync must not guess"
+        );
+    }
+
+    #[test]
+    fn closing_the_dropped_anchor_is_what_resolves_it() {
+        assert!(
+            ambiguous(&keys(&["old"]), &keys(&["new"]), &keys(&["old"])).is_none(),
+            "sync tells the reader to close the old anchor with a reason. Closing left the \
+             binding record untouched, so the same refusal came back every run and the \
+             instruction could never be carried out"
+        );
+    }
+
+    #[test]
+    fn one_closed_drop_does_not_excuse_a_live_one() {
+        let rename = ambiguous(
+            &keys(&["closed", "live"]),
+            &keys(&["new"]),
+            &keys(&["closed"]),
+        )
+        .expect("the live drop is still an unanswered question");
+        assert_eq!(rename.dropped, keys(&["live"]));
+    }
+
+    #[test]
+    fn gaining_a_key_without_dropping_one_is_never_ambiguous() {
+        assert!(ambiguous(&keys(&["a"]), &keys(&["a", "b"]), &[]).is_none());
+    }
+
+    #[test]
+    fn dropping_a_key_without_gaining_one_is_never_ambiguous() {
+        assert!(ambiguous(&keys(&["a", "b"]), &keys(&["a"]), &[]).is_none());
+    }
 
     const ART: &str = "probe = \"ast-map\"";
 
