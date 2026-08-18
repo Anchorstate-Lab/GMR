@@ -1,9 +1,3 @@
-//! The index on SQLite: the backend a deployment actually runs.
-//!
-//! Held against `testkit::Remembered` by the conformance suite, which is the
-//! only thing that makes "the backend does not change the answer" a fact rather
-//! than an intention.
-
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;

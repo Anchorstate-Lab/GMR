@@ -50,10 +50,11 @@ It is not read by any GMR code – not by probes, anchors, logs, or distribution
 
 Rationale: comments and memories are two copies that diverge, and nothing detects the drift. Memories are monitored by anchors and alert on code changes; comments are not. Leaving one comment is leaving a drift path that will never be caught.
 
-Two exceptions (neither are “comments”):
+One exception, and it is not a “comment”:
 
-- `//!` module headers – describe “what this file is”, not “why”.
 - `///` in `cli.rs` for clap – those are `--help` text, user‑facing strings that happen to use comment syntax. Removing them removes help.
+
+`//!` module headers were an exception once. They stopped being one: a header saying “what this file is” drifts into saying “why”, and nothing observes it when it does. Whatever a header wanted to say belongs in a memory anchored to the code it is about.
 
 This rule lives in `tools/gate.py` under “no comments in the clean zones”, not in this prose – prose only applies when read, but no anchor fires when comments creep back.  
 Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `tools/gate.py`, which is the list itself – do not restate it here, or this paragraph becomes a second copy that drifts.
@@ -73,9 +74,10 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 - **`gmr-core`**: vocabulary + content addressing + Entry + fold. Must not know how to fetch facts, evaluate rules, or store.
 - **`gmr-expr`**: pure expression evaluation. No IO, no clock, no dependency on `gmr-core`.  
   (The obs‑strict / state‑lenient semantics and `changed()` convention are anchor‑layer decisions, not generic evaluator features – they merely happen to have no compile‑time dependency on `gmr-core`; do not read “no dependency” as “ignorant of anchors”.)
-- **`gmr-probe`**: probe invocation contract. No concrete transport implementation.
+- **`gmr-probe`**: probe invocation contract. No concrete transport implementation. `Budget` also lives here: it is the shared vocabulary for every outbound call, not a probe-only idea, and `gmr-content` is its second user. Two users do not justify a crate of its own; a third does — move it then rather than growing a second budget vocabulary alongside it.
+- **`gmr-content`**: retrieval and discovery contracts. What every store must do sits in `ContentProvider` itself; what only some can do gets its own trait (`History`, `MemorySource`), so declining a capability means not implementing it rather than answering "I have none". No concrete provider implementation, and no opinion about which store to enumerate or how much of it.
 - **`gmr-store`**: storage traits and feature‑gated backends. Sliced by mutability: Journal / BindingStore / Sealer / LinkStore / Queue.
-- **`gmr-runtime`**: sole orchestration layer. May depend on core / expr / probe / store, but must not make domain decisions.
+- **`gmr-runtime`**: sole orchestration layer. May depend on core / expr / probe / content / store, but must not make domain decisions.
 - **`gmr`**: only re‑exports.
 
 ---

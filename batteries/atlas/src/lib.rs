@@ -1,5 +1,3 @@
-//! Battery: one anchor-memory graph, rendered as one self-contained HTML page.
-
 mod graph;
 mod render;
 

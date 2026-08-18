@@ -1,19 +1,19 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use gmr::State;
+use gmr::{Ref, State};
 use serde_json::Value;
 
 use crate::error::CliError;
-use crate::memories::{Fault, Note, Weight};
+use crate::memories::{Fault, Names, Note, Weight};
 use crate::probes::Catalog;
 use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
 
-fn declaring(notes: &[Note], key: &str) -> String {
+fn declaring(notes: &[Note], names: &Names, key: &str) -> String {
     notes
         .iter()
         .find(|n| n.wants.iter().any(|w| w.key() == key))
-        .map_or_else(|| DEFAULT_FILE.to_owned(), |n| n.path.clone())
+        .map_or_else(|| DEFAULT_FILE.to_owned(), |n| names.of(&n.reference))
 }
 
 pub fn axes_set(state: &State) -> Option<Vec<String>> {
@@ -28,11 +28,15 @@ pub fn axes_set(state: &State) -> Option<Vec<String>> {
 
 #[derive(Debug, Default)]
 pub struct Subscriptions {
-    per_note: BTreeMap<String, Vec<String>>,
+    per_note: BTreeMap<Ref, Vec<String>>,
 }
 
 impl Subscriptions {
-    pub fn load(root: &Path, catalog: &Catalog) -> Result<(Self, Vec<Fault>), CliError> {
+    pub fn load(
+        root: &Path,
+        catalog: &Catalog,
+        names: &Names,
+    ) -> Result<(Self, Vec<Fault>), CliError> {
         let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, catalog)?;
         let declared = read_declared(root, DEFAULT_FILE)?;
 
@@ -45,7 +49,7 @@ impl Subscriptions {
                     axes_by_anchor.insert(&decl.key, crate::shapes::axes_of(shape));
                 }
                 Err(e) => faults.push(Fault {
-                    note: declaring(&notes, &decl.key),
+                    note: declaring(&notes, names, &decl.key),
                     key: Some(decl.key.clone()),
                     code: "unknown-shape",
                     detail: format!("`{}`: {e}", decl.key),
@@ -63,7 +67,7 @@ impl Subscriptions {
                 };
                 if let Some(bad) = watch.iter().find(|w| !axes.contains(&w.as_str())) {
                     faults.push(Fault {
-                        note: note.path.clone(),
+                        note: names.of(&note.reference),
                         key: Some(want.key().to_owned()),
                         code: "watch-invalid",
                         detail: format!(
@@ -76,7 +80,7 @@ impl Subscriptions {
                     continue 'note;
                 }
             }
-            per_note.insert(note.path.clone(), watch.clone());
+            per_note.insert(note.reference.clone(), watch.clone());
         }
 
         Ok((Self { per_note }, faults))
@@ -85,7 +89,7 @@ impl Subscriptions {
     pub fn delivers(
         &self,
         shape: Option<&crate::shapes::Shape>,
-        note: &str,
+        note: &Ref,
         state: &State,
         moved: bool,
     ) -> bool {
@@ -114,10 +118,14 @@ mod tests {
         State::new(serde_json::json!({ "position": {}, "v": v, "status": "x" }))
     }
 
+    fn at(provider: &str, id: &str) -> Ref {
+        Ref::new(provider, id)
+    }
+
     fn narrowed(note: &[&str]) -> Subscriptions {
         Subscriptions {
             per_note: BTreeMap::from([(
-                "memories/a.md".to_owned(),
+                at("git", "memories/a.md"),
                 note.iter().map(|s| (*s).to_owned()).collect(),
             )]),
         }
@@ -131,10 +139,25 @@ mod tests {
     fn an_unwatched_axis_moves_without_handing_back_the_memory() {
         let s = narrowed(&["logic"]);
         let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
-        assert!(!s.delivers(contract(), "memories/a.md", &moved_place, true));
+        assert!(!s.delivers(contract(), &at("git", "memories/a.md"), &moved_place, true));
 
         let moved_logic = state(serde_json::json!({ "logic": true, "place": false }));
-        assert!(s.delivers(contract(), "memories/a.md", &moved_logic, true));
+        assert!(s.delivers(contract(), &at("git", "memories/a.md"), &moved_logic, true));
+    }
+
+    #[test]
+    fn the_same_id_in_two_stores_is_two_notes_not_one() {
+        let s = narrowed(&["logic"]);
+        let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
+
+        assert!(!s.delivers(contract(), &at("git", "memories/a.md"), &moved_place, true));
+        assert!(
+            s.delivers(contract(), &at("mem0", "memories/a.md"), &moved_place, true),
+            "a subscription belongs to one record in one store. Keyed by the bare id, a note \
+             in a second store would silently inherit the narrowing of a note it merely shares \
+             a name with — and the symptom is a memory that stops being handed back, which \
+             looks exactly like the axis simply not having moved"
+        );
     }
 
     #[test]
@@ -142,7 +165,7 @@ mod tests {
         let s = narrowed(&["logic"]);
         let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
         assert!(
-            s.delivers(contract(), "memories/b.md", &moved_place, true),
+            s.delivers(contract(), &at("git", "memories/b.md"), &moved_place, true),
             "contract watches every axis, and this note asked for nothing else"
         );
     }
@@ -152,7 +175,7 @@ mod tests {
         let s = Subscriptions::default();
         assert!(!s.delivers(
             contract(),
-            "memories/a.md",
+            &at("git", "memories/a.md"),
             &state(serde_json::json!({ "sig": false })),
             true
         ));
@@ -162,16 +185,20 @@ mod tests {
     fn a_set_bit_keeps_handing_the_memory_back_after_the_observation_that_set_it() {
         let s = narrowed(&["sig"]);
         let carried = state(serde_json::json!({ "sig": true }));
-        assert!(s.delivers(contract(), "memories/a.md", &carried, false));
-        assert!(s.delivers(contract(), "memories/b.md", &carried, false));
+        assert!(s.delivers(contract(), &at("git", "memories/a.md"), &carried, false));
+        assert!(s.delivers(contract(), &at("git", "memories/b.md"), &carried, false));
     }
 
     #[test]
     fn an_anchor_with_no_shape_falls_back_to_the_transition_edge() {
         let s = Subscriptions::default();
         let hand = State::new(serde_json::json!({ "position": {}, "n": 3, "status": "moved" }));
-        assert!(s.delivers(None, "memories/a.md", &hand, true));
-        assert!(!s.delivers(None, "memories/a.md", &hand, false));
+        assert!(s.delivers(None, &at("git", "memories/a.md"), &hand, true));
+        assert!(!s.delivers(None, &at("git", "memories/a.md"), &hand, false));
+    }
+
+    fn book(root: &Path) -> Names {
+        Names::over(vec![std::sync::Arc::new(crate::memories::declaring(root))])
     }
 
     fn world(files: &[(&str, &str)]) -> (tempfile::TempDir, crate::probes::Catalog) {
@@ -199,9 +226,14 @@ mod tests {
                 "---\nabout: src/a.rs\nwatch: [roll]\n---\n",
             ),
         ]);
-        let (subs, broken) = Subscriptions::load(d.path(), &c).unwrap();
+        let (subs, broken) = Subscriptions::load(d.path(), &c, &book(d.path())).unwrap();
         assert_eq!(broken.len(), 1);
-        assert_eq!(broken[0].note, "memories/bad.md");
+        assert_eq!(
+            broken[0].note, "bad",
+            "doctor prints this column next to the note lint's, and that one has always \
+             spelled a note by its name. Two spellings in one column is how a reader learns \
+             that `bad` and `memories/bad.md` might be two different files"
+        );
         assert!(
             broken[0].detail.contains("not_a_real_axis"),
             "{}",
@@ -211,7 +243,7 @@ mod tests {
         let roster = crate::shapes::get("roster").ok();
         let moved_roll = state(serde_json::json!({ "roll": true }));
         assert!(
-            subs.delivers(roster, "memories/good.md", &moved_roll, true),
+            subs.delivers(roster, &at("git", "memories/good.md"), &moved_roll, true),
             "the well-formed note in the same load still narrows correctly"
         );
     }
@@ -226,10 +258,10 @@ mod tests {
                  position: { file: src/a.rs }\n    shape: no-such-shape\n---\n",
             ),
         ]);
-        let (_, faults) = Subscriptions::load(d.path(), &c).unwrap();
+        let (_, faults) = Subscriptions::load(d.path(), &c, &book(d.path())).unwrap();
         assert_eq!(faults.len(), 1);
         assert_eq!(
-            faults[0].note, "memories/custom.md",
+            faults[0].note, "custom",
             "the column a person reads to know what to open. It used to hold the anchor key, \
              because this failure had a record type of its own whose `note` field nobody had \
              to fill with a note"

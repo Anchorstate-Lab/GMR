@@ -25,9 +25,35 @@ async fn criteria(
     sync::audit(&views, &decls, &scanned, &ctx)
 }
 
+#[derive(Default)]
+struct Wrong {
+    handed: bool,
+    unclaimed: bool,
+    unseen: bool,
+    drifted: bool,
+    unreadable: bool,
+    undeclared: bool,
+    unwatchable: bool,
+    swapped: bool,
+}
+
+impl Wrong {
+    fn any(&self) -> bool {
+        self.handed
+            || self.unclaimed
+            || self.unseen
+            || self.drifted
+            || self.unreadable
+            || self.undeclared
+            || self.unwatchable
+            || self.swapped
+    }
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
@@ -36,7 +62,7 @@ pub async fn run(
         None => rt.anchors().await?,
     };
     let catalog = Catalog::load(root)?;
-    let (subs, unwatchable) = Subscriptions::load(root, &catalog)?;
+    let (subs, unwatchable) = Subscriptions::load(root, &catalog, names)?;
     let Audit {
         drifted,
         unreadable,
@@ -44,7 +70,7 @@ pub async fn run(
     } = criteria(rt, root, catalog, &keys).await?;
     let swapped = super::swapped(rt, &keys).await?;
 
-    let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<String>)> = Vec::new();
+    let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<gmr::Ref>)> = Vec::new();
     let mut unclaimed = Vec::new();
     let mut unseen = Vec::new();
     let mut quiet = 0;
@@ -80,14 +106,16 @@ pub async fn run(
         ));
     }
 
-    let wrong = !handed.is_empty()
-        || !unclaimed.is_empty()
-        || !unseen.is_empty()
-        || !drifted.is_empty()
-        || !unreadable.is_empty()
-        || !undeclared.is_empty()
-        || !unwatchable.is_empty()
-        || !swapped.is_empty();
+    let wrong = Wrong {
+        handed: !handed.is_empty(),
+        unclaimed: !unclaimed.is_empty(),
+        unseen: !unseen.is_empty(),
+        drifted: !drifted.is_empty(),
+        unreadable: !unreadable.is_empty(),
+        undeclared: !undeclared.is_empty(),
+        unwatchable: !unwatchable.is_empty(),
+        swapped: !swapped.is_empty(),
+    };
 
     if json {
         println!(
@@ -95,7 +123,8 @@ pub async fn run(
             serde_json::json!({
                 "observed": keys.len(),
                 "handed_back": handed.iter().map(|(k, s, d, m)| serde_json::json!({
-                    "anchor": k, "status": s, "diagnosis": d, "memories": m
+                    "anchor": k, "status": s, "diagnosis": d,
+                    "memories": super::observe::addressed_all(m)
                 })).collect::<Vec<_>>(),
                 "moved_unwatched": quiet,
                 "unclaimed": unclaimed,
@@ -117,7 +146,7 @@ pub async fn run(
                 })).collect::<Vec<_>>(),
             })
         );
-        return Ok(i32::from(wrong));
+        return Ok(i32::from(wrong.any()));
     }
 
     for (key, status, diagnosis, memories) in &handed {
@@ -126,7 +155,7 @@ pub async fn run(
             println!("  {d}");
         }
         for m in memories {
-            println!("  → {m}");
+            println!("  → {}", names.of(m));
         }
     }
     if !unseen.is_empty() {
@@ -138,17 +167,7 @@ pub async fn run(
     super::observe::report_unclaimed(&unclaimed);
 
     match (handed.len(), quiet) {
-        (0, 0)
-            if unseen.is_empty()
-                && unclaimed.is_empty()
-                && drifted.is_empty()
-                && unreadable.is_empty()
-                && undeclared.is_empty()
-                && unwatchable.is_empty()
-                && swapped.is_empty() =>
-        {
-            println!("{} anchors, nothing moved.", keys.len())
-        }
+        (0, 0) if !wrong.any() => println!("{} anchors, nothing moved.", keys.len()),
         (0, n) if n > 0 => println!(
             "\n{} anchors, {n} moved on axes nobody asked about. `gmr status` shows them.",
             keys.len()
@@ -236,5 +255,29 @@ pub async fn run(
         }
         println!("\n     gmr rebase --all --why '...'");
     }
-    Ok(i32::from(wrong))
+    Ok(i32::from(wrong.any()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Wrong;
+
+    #[test]
+    fn a_quiet_run_is_green() {
+        assert!(!Wrong::default().any());
+    }
+
+    #[test]
+    fn nothing_a_provider_answers_can_move_this_exit_code() {
+        assert_eq!(
+            std::mem::size_of::<Wrong>(),
+            8,
+            "every field here is something this repository's owner can act on: a memory handed \
+             back, a note claiming nothing, an anchor nobody could look at, criteria that \
+             drifted. Whether a store answered is deliberately not among them — D6 puts that \
+             in the bucket that never turns red, and `read` reports it instead. A ninth field \
+             means somebody let a network failure decide whether CI passes, and the damage is \
+             that a repository with an unreachable store can no longer be checked at all"
+        );
+    }
 }

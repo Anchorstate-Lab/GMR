@@ -1,5 +1,8 @@
 use std::path::Path;
 
+use gmr::Ref;
+
+use crate::notes::{Claim, Stated};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -8,6 +11,54 @@ use crate::probes::Catalog;
 use crate::verbs::sync::AnchorDecl;
 
 pub const NOTES_DIR: &str = "memories";
+
+pub fn declaring(root: &Path) -> crate::notes::Notes {
+    crate::notes::Notes::at(root, NOTES_DIR)
+}
+
+pub const RESOLVED_THROUGH: &str = "git";
+
+pub fn addressed(reference: &Ref) -> String {
+    format!("{}:{}", reference.provider, reference.external_id)
+}
+
+pub fn located(text: &str, provider: Option<&str>, known: &[&str]) -> Result<Ref, CliError> {
+    let carried = text
+        .split_once(':')
+        .filter(|(named, rest)| known.contains(named) && !rest.is_empty());
+    match (carried, provider) {
+        (Some((named, rest)), None) => Ok(Ref::new(named, rest)),
+        (Some((named, rest)), Some(want)) if want == named => Ok(Ref::new(named, rest)),
+        (Some((named, _)), Some(want)) => Err(CliError(format!(
+            "`{text}` is addressed to `{named}` and --provider says `{want}`. One of them is \
+             not what you meant, and guessing which would bind this to a store you did not name"
+        ))),
+        (None, Some(want)) => Ok(Ref::new(want, text)),
+        (None, None) => Ok(Ref::new(RESOLVED_THROUGH, text)),
+    }
+}
+
+#[derive(Default)]
+pub struct Names {
+    sources: Vec<std::sync::Arc<crate::notes::Notes>>,
+}
+
+impl Names {
+    pub fn over(sources: Vec<std::sync::Arc<crate::notes::Notes>>) -> Self {
+        Self { sources }
+    }
+
+    pub fn named(&self, reference: &Ref) -> Option<String> {
+        self.sources
+            .iter()
+            .find_map(|source| source.name_of(reference))
+    }
+
+    pub fn of(&self, reference: &Ref) -> String {
+        self.named(reference)
+            .unwrap_or_else(|| addressed(reference))
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -32,6 +83,14 @@ enum Entry {
     Declared(Box<Spec>),
 }
 
+fn stated_or_empty<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 #[derive(Debug, Deserialize)]
 struct Spec {
     key: String,
@@ -42,9 +101,9 @@ struct Spec {
     position: Option<Value>,
     #[serde(default)]
     shape: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "stated_or_empty")]
     rules: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "stated_or_empty")]
     terminal: Vec<String>,
 }
 
@@ -52,7 +111,7 @@ struct Spec {
 struct Frontmatter {
     #[serde(default)]
     about: Option<OneOrMany>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "stated_or_empty")]
     anchors: Vec<Entry>,
     #[serde(default)]
     shape: Option<String>,
@@ -77,7 +136,7 @@ impl Want {
 
 #[derive(Debug)]
 pub struct Note {
-    pub path: String,
+    pub reference: Ref,
     pub wants: Vec<Want>,
     pub watch: Option<Vec<String>>,
 }
@@ -109,23 +168,6 @@ fn from_spec(spec: Spec) -> AnchorDecl {
         retain_full: false,
         cadence_secs: None,
     }
-}
-
-fn frontmatter_of(text: &str) -> Result<Option<Frontmatter>, String> {
-    let rest = match text.strip_prefix("---\n") {
-        Some(r) => r,
-        None => return Ok(None),
-    };
-    let Some(end) = rest.find("\n---") else {
-        return Err("frontmatter is never closed by `---`".to_owned());
-    };
-    let body = &rest[..end];
-    if body.trim().is_empty() {
-        return Ok(None);
-    }
-    serde_yaml_ng::from_str(body)
-        .map(Some)
-        .map_err(|e| format!("frontmatter is not valid YAML: {e}"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -174,7 +216,17 @@ fn superfluous(spec: &Spec, catalog: &Catalog) -> bool {
     routed.probe == spec.probe && spec.position.as_ref() == Some(&routed.position)
 }
 
-fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Fault>) {
+fn claims_of(
+    declared: &Stated,
+    source: &crate::notes::Notes,
+    catalog: &Catalog,
+) -> (Option<Note>, Vec<Fault>) {
+    let record = &declared.record;
+    let named = source
+        .name_of(&record.reference)
+        .unwrap_or_else(|| addressed(&record.reference));
+    let rel = named.as_str();
+    let text = String::from_utf8_lossy(&record.bytes);
     let mut faults = Vec::new();
     let at = |code, detail, weight| Fault {
         note: rel.to_owned(),
@@ -184,20 +236,9 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Faul
         weight,
     };
 
-    let text = match std::fs::read_to_string(root.join(rel)) {
-        Ok(t) => t,
-        Err(e) => {
-            faults.push(at(
-                "unreadable",
-                format!("cannot read this file: {e}"),
-                Weight::Blocks,
-            ));
-            return (None, faults);
-        }
-    };
-    let fm = match frontmatter_of(&text) {
-        Ok(Some(fm)) => fm,
-        Ok(None) => {
+    let claimed = declared.claim.clone();
+    let said = match &claimed {
+        Claim::Silent => {
             faults.push(at(
                 "unclaimed",
                 "no frontmatter, so this note names no anchor and nothing observes whether \
@@ -207,8 +248,20 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Faul
             ));
             return (None, faults);
         }
-        Err(reason) => {
-            faults.push(at("malformed", reason, Weight::Blocks));
+        Claim::Malformed(reason) => {
+            faults.push(at("malformed", reason.clone(), Weight::Blocks));
+            return (None, faults);
+        }
+        Claim::Says(value) => value,
+    };
+    let fm: Frontmatter = match serde_json::from_value(said.clone()) {
+        Ok(fm) => fm,
+        Err(e) => {
+            faults.push(at(
+                "malformed",
+                format!("frontmatter is not shaped like a note's: {e}"),
+                Weight::Blocks,
+            ));
             return (None, faults);
         }
     };
@@ -270,7 +323,7 @@ fn note_of(root: &Path, rel: &str, catalog: &Catalog) -> (Option<Note>, Vec<Faul
     faults.extend(tombstones(rel, &text));
 
     let note = (!wants.is_empty()).then(|| Note {
-        path: rel.to_owned(),
+        reference: record.reference.clone(),
         wants,
         watch: fm.watch,
     });
@@ -309,37 +362,29 @@ impl Scanned {
     pub fn blocked_key(&self, key: &str) -> Option<&Fault> {
         self.blocked().find(|f| f.key.as_deref() == Some(key))
     }
+
+    pub fn accounted_for<'a>(&mut self, keys: impl Iterator<Item = &'a str>) {
+        let known: std::collections::BTreeSet<&str> = keys.collect();
+        self.faults.retain(|f| {
+            f.code != "bare-key" || !f.key.as_deref().is_some_and(|k| known.contains(k))
+        });
+    }
 }
 
 pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
-    let mut rels = Vec::new();
-    walk(root, &root.join(NOTES_DIR), &mut rels)?;
-    rels.sort();
+    of(&declaring(root), catalog)
+}
 
+pub fn of(source: &crate::notes::Notes, catalog: &Catalog) -> Result<Scanned, CliError> {
+    let declared = source.declared()?;
     let mut notes = Vec::new();
     let mut faults = Vec::new();
-    for rel in rels {
-        let (note, mut f) = note_of(root, &rel, catalog);
+    for record in &declared {
+        let (note, mut f) = claims_of(record, source, catalog);
         notes.extend(note);
         faults.append(&mut f);
     }
     Ok(Scanned { notes, faults })
-}
-
-fn walk(root: &Path, at: &Path, out: &mut Vec<String>) -> Result<(), CliError> {
-    let Ok(entries) = std::fs::read_dir(at) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk(root, &path, out)?;
-        } else if path.extension().is_some_and(|e| e == "md") {
-            let rel = path.strip_prefix(root).unwrap_or(&path);
-            out.push(rel.to_string_lossy().replace('\\', "/"));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -367,6 +412,114 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         }
         let catalog = Catalog::load(dir.path()).unwrap();
         (dir, catalog)
+    }
+
+    #[test]
+    fn a_bare_key_that_something_else_declares_is_not_a_fault() {
+        let (d, r) = world(&[(
+            "memories/deploy.md",
+            "---\nanchors:\n  - deploy::staging\n---\n",
+        )]);
+        let mut scanned = scan(d.path(), &r).unwrap();
+
+        assert!(
+            scanned.faults.iter().any(|f| f.code == "bare-key"),
+            "the scan cannot know what declares a key, so it reports every bare one"
+        );
+
+        scanned.accounted_for(["deploy::staging"].into_iter());
+
+        assert!(
+            !scanned.faults.iter().any(|f| f.code == "bare-key"),
+            "`anchors.toml` declaring the key, or an anchor already standing under it, is \
+             exactly what the lint says is missing. Left standing it makes `sync` exit 1 on a \
+             repository whose script probe and note are both correct"
+        );
+    }
+
+    const STORES: [&str; 3] = ["git", "mem0", "claude-code"];
+
+    #[test]
+    fn every_address_this_cli_prints_can_be_handed_straight_back() {
+        for reference in [
+            Ref::new("git", "memories/auth.md"),
+            Ref::new("mem0", "9f8e1d02-0000-4000-8000-000000000000"),
+            Ref::new("claude-code", "feedback.md"),
+        ] {
+            assert_eq!(
+                located(&addressed(&reference), None, &STORES).unwrap(),
+                reference,
+                "`addressed` is how every verb hands a record to whoever reads its output, \
+                 and SKILL.md tells an agent to use that string verbatim. Without a parse \
+                 that undoes it the encoding is one-way: `bind` and `reaffirm` refuse it as \
+                 a record that does not exist, and `cobound` answers about an address nobody \
+                 ever wrote — with no error anywhere"
+            );
+        }
+    }
+
+    #[test]
+    fn a_prefix_no_store_here_answers_to_is_part_of_the_id() {
+        assert_eq!(
+            located("mem0:9f8e", None, &["git"]).unwrap(),
+            Ref::new("git", "mem0:9f8e"),
+            "an id is allowed to contain a colon, so only a prefix this binary actually \
+             registered may be taken as one. Splitting on any colon would quietly rewrite \
+             every id that has one"
+        );
+    }
+
+    #[test]
+    fn a_bare_path_still_reaches_the_store_it_always_did() {
+        assert_eq!(
+            located("memories/auth.md", None, &STORES).unwrap(),
+            Ref::new("git", "memories/auth.md")
+        );
+        assert_eq!(
+            located("9f8e", Some("mem0"), &STORES).unwrap(),
+            Ref::new("mem0", "9f8e")
+        );
+    }
+
+    #[test]
+    fn an_address_that_contradicts_the_flag_is_refused_rather_than_picked() {
+        located("mem0:9f8e", Some("git"), &STORES).expect_err(
+            "silently preferring either one binds this record to a store the caller did not \
+             name, and the binding table is append-only",
+        );
+        located("mem0:9f8e", Some("mem0"), &STORES)
+            .expect("saying the same thing twice is not a contradiction");
+    }
+
+    #[test]
+    fn a_record_no_source_names_still_says_which_store_it_is_in() {
+        let (d, _) = world(&[]);
+        let names = Names::over(vec![std::sync::Arc::new(declaring(d.path()))]);
+
+        assert_eq!(
+            names.of(&Ref::new("mem0", "4f3a91e2-8c7d")),
+            "mem0:4f3a91e2-8c7d"
+        );
+        assert_eq!(names.of(&Ref::new("git", "memories/auth.md")), "auth");
+    }
+
+    #[test]
+    fn a_name_is_available_wherever_the_book_is_and_nowhere_else() {
+        let (d, _) = world(&[]);
+        let reference = Ref::new("git", "memories/auth.md");
+
+        assert_eq!(
+            Names::default().of(&reference),
+            "git:memories/auth.md",
+            "a verb that was never handed the book falls back to the address, which is \
+             honest. What it must not do is print a third spelling of its own — `check` \
+             printed the address, `doctor` and `edges` printed the bare id, and the reader \
+             had no way to tell that all three meant one record"
+        );
+        assert_eq!(
+            Names::over(vec![std::sync::Arc::new(declaring(d.path()))]).of(&reference),
+            "auth"
+        );
     }
 
     #[test]
@@ -465,13 +618,14 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         );
         let blocked: Vec<_> = scanned.blocked().collect();
         assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].note, "memories/bad.md");
-        assert_eq!(blocked[0].key, None);
-        assert!(
-            blocked[0].line().contains("bad.md"),
-            "{}",
-            blocked[0].line()
+        assert_eq!(
+            blocked[0].note, "bad",
+            "a fault names the note the way its author does. The address a store happens to \
+             keep it at is the store's business, and for a store that addresses by uuid it \
+             is nothing a reader could act on"
         );
+        assert_eq!(blocked[0].key, None);
+        assert!(blocked[0].line().contains("bad"), "{}", blocked[0].line());
     }
 
     #[test]
@@ -580,7 +734,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         ]);
         assert_eq!(
             codes(d.path(), &r),
-            vec![("memories/bad.md".to_owned(), "malformed")],
+            vec![("bad".to_owned(), "malformed")],
             "one note's frontmatter fails to parse; the other, well-formed one is not \
              swept into the same failure and draws no complaint of its own"
         );
@@ -590,10 +744,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     #[test]
     fn a_note_with_no_frontmatter_names_no_anchor_and_is_caught() {
         let (d, r) = world(&[("memories/loose.md", "# just prose\n")]);
-        assert_eq!(
-            codes(d.path(), &r),
-            vec![("memories/loose.md".to_owned(), "unclaimed")]
-        );
+        assert_eq!(codes(d.path(), &r), vec![("loose".to_owned(), "unclaimed")]);
         assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 
@@ -606,7 +757,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         );
         assert_eq!(
             codes(d.path(), &r),
-            vec![("memories/watched.md".to_owned(), "unclaimed")],
+            vec![("watched".to_owned(), "unclaimed")],
             "a note whose frontmatter parses but names no coordinate used to be the one \
              failure nothing reported: not an anchor, not a complaint, not a line of output \
              anywhere. Its author believes it is watched, and `watch:` alone reads exactly \
@@ -621,10 +772,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "memories/x.md",
             "---\nanchors:\n  - some::key\n---\n\n# note\n",
         )]);
-        assert_eq!(
-            codes(d.path(), &r),
-            vec![("memories/x.md".to_owned(), "bare-key")]
-        );
+        assert_eq!(codes(d.path(), &r), vec![("x".to_owned(), "bare-key")]);
         assert!(lint(d.path(), &r).unwrap()[0].breaks());
     }
 

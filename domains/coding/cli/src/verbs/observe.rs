@@ -4,11 +4,13 @@ use gmr::{AnchorKey, Observed, Runtime, State};
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
+use crate::memories::Names;
 use crate::probes::Catalog;
 
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &Names,
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
@@ -16,7 +18,7 @@ pub async fn run(
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
-    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?)?;
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?, names)?;
 
     let mut moved = 0;
     let mut handed = 0;
@@ -52,7 +54,7 @@ pub async fn run(
             };
             report.push(serde_json::json!({
                 "anchor": key, "observed": word, "detail": detail,
-                "state": state, "memories": memories,
+                "state": state, "memories": addressed_all(&memories),
             }));
         } else if word != "still" {
             match &detail {
@@ -60,7 +62,7 @@ pub async fn run(
                 None => println!("{key}  {word}"),
             }
             for m in &memories {
-                println!("    → {m}");
+                println!("    → {}", names.of(m));
             }
         }
     }
@@ -84,7 +86,7 @@ pub(crate) async fn delivered(
     to: &State,
     moved: bool,
     unclaimed: &mut Vec<AnchorKey>,
-) -> Result<Vec<String>, CliError> {
+) -> Result<Vec<gmr::Ref>, CliError> {
     let bound = super::memories_on(rt, key).await?;
     if bound.is_empty() {
         if moved {
@@ -107,4 +109,8 @@ pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {
     for k in unclaimed {
         println!("  ? {k}");
     }
+}
+
+pub(crate) fn addressed_all(refs: &[gmr::Ref]) -> Vec<String> {
+    refs.iter().map(crate::memories::addressed).collect()
 }

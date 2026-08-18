@@ -1,10 +1,3 @@
-//! The reference every backend is measured against: the index with nothing
-//! underneath it but a map.
-//!
-//! Not a deployment option — it does not survive the process. Its job is to be
-//! obviously right, so that a conformance run disagreeing with it is evidence
-//! about the backend and not about this.
-
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 

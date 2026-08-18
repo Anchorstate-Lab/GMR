@@ -95,11 +95,11 @@ printf -- '---\nabout: src/auth.ts#createSession\n---\n\n# A session is only cre
 
 out=$("$gmr" --repo "$repo" sync)
 echo "$out" | grep -q "1 anchors opened" || fail "the note did not open an anchor" "$out"
-echo "$out" | grep -q "memories/auth.md" || fail "the note was not bound" "$out"
+echo "$out" | grep -q -- "+ auth" || fail "the note was not bound" "$out"
 
 # A second run must write nothing: the binding table only grows, never changes.
 out=$("$gmr" --repo "$repo" sync)
-echo "$out" | grep -q "memories/auth.md" && fail "sync is not idempotent, it appended the binding again" "$out"
+echo "$out" | grep -q -- "+ auth" && fail "sync is not idempotent, it appended the binding again" "$out"
 
 step "observe: the world has not moved"
 set +e
@@ -122,7 +122,7 @@ set -e
 [ "$code" -eq 1 ] || fail "the exit code should be 1 when the world moved, got $code" "$out"
 echo "$out" | grep -q "moved" || fail "did not report moved" "$out"
 # This line is the acceptance criterion itself: the fact moved, the note came back.
-echo "$out" | grep -q "memories/auth.md" \
+echo "$out" | grep -q -- "→ auth" \
     || fail "the anchor moved but the note bound to it was not handed back — this is the whole value of the product" "$out"
 
 step "pass --json: the shape an agent loop reads"
@@ -134,7 +134,7 @@ set +e
 out=$("$gmr" --repo "$repo" pass --json); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "pass should exit 1 when an anchor moved, got $code" "$out"
-echo "$out" | grep -q '"memories":\["memories/auth.md"\]' \
+echo "$out" | grep -q '"memories":\["git:memories/auth.md"\]' \
     || fail "pass --json did not hand the note back" "$out"
 
 # ── A probe the user wrote: a fact that is not in the code ───────────────────
@@ -173,7 +173,7 @@ set +e
 out=$("$gmr" --repo "$repo" observe); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "the deploy moved to another commit, the exit code should be 1, got $code" "$out"
-echo "$out" | grep -q "memories/deploy.md" \
+echo "$out" | grep -q -- "→ deploy" \
     || fail "anchored a fact that is invisible in the source, but the note did not come back" "$out"
 
 # ── The front door: one coordinate in, one vector out ────────────────────────
@@ -191,7 +191,9 @@ echo "$out" | grep -q 'memories/session-rotate.md' || fail "anchor did not write
 
 out=$("$gmr" --repo "$repo" status "$key")
 echo "$out" | grep -q 'contract' || fail "status did not recognise the shape" "$out"
-echo "$out" | grep -q 'memories/session-rotate.md' || fail "status did not list the memory" "$out"
+echo "$out" | grep -q -- '→ session-rotate' || fail "status did not list the memory" "$out"
+echo "$out" | grep -q 'memories/session-rotate.md' \
+    && fail "status spelled a note as a path while every other verb spells it as a name" "$out"
 
 set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
@@ -221,7 +223,7 @@ set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "a definition appeared before it, check should be 1, got $code" "$out"
-echo "$out" | grep -q 'memories/session-rotate.md' \
+echo "$out" | grep -q -- '→ session-rotate' \
     || fail "place moved but the memory was not handed back" "$out"
 
 # Say so yourself if you want quiet. watch is per-note, not a criterion, and
@@ -259,7 +261,7 @@ set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "a subscribed axis moved, check should be 1, got $code" "$out"
-echo "$out" | grep -q 'memories/session-rotate.md' || fail "check did not hand the memory back" "$out"
+echo "$out" | grep -q -- '→ session-rotate' || fail "check did not hand the memory back" "$out"
 
 out=$("$gmr" --repo "$repo" status "$key")
 echo "$out" | grep -qE 'sig 1' || fail "the signature changed but the sig bit was not set" "$out"
@@ -453,6 +455,113 @@ echo "$out" | grep -q "nothing moved" \
 # would still be here, and no later run would clear it.
 "$gmr" --repo "$scale" check >/dev/null \
     || fail "the anchor did not settle once it had time to look — a spent budget became state"
+
+# ── Who can fix it decides the exit code. Every state below is reachable with
+#    the claude-code provider alone, because its store is a directory this
+#    script owns: point it somewhere, and the store is there, empty, or gone.
+#    Without these, the rule that `unreachable` never turns a build red is a
+#    sentence in a doc that no run disagrees with.
+step "the exit code is decided by who can fix it"
+mem=$work/claude-memory
+mkdir -p "$mem"
+printf 'binding through a store this script owns\n' > "$mem/owned.md"
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+
+"$gmr" --repo "$repo" bind owned.md --provider claude-code \
+    --anchors 'src/auth.ts#createSession' >/dev/null \
+    || fail "could not bind through the claude-code provider"
+
+set +e
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "a healthy binding through a second store made doctor red" "$out"
+
+# The record is deleted, the store is still there: the world's answer.
+rm "$mem/owned.md"
+set +e
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "a record the store says is gone did not turn doctor red, and unbinding it is exactly the thing the owner can do" "$out"
+echo "$out" | grep -q '"gone":\["claude-code:owned.md"\]' || fail "the dead reference was not reported as gone" "$out"
+
+# The store itself is gone: our failure, not the world's answer. Same repository,
+# same binding — only the reachability differs, and the exit code must not.
+printf 'back again\n' > "$mem/owned.md"
+"$gmr" --repo "$repo" reaffirm owned.md --provider claude-code >/dev/null \
+    || fail "could not re-stamp the binding after the record came back"
+export GMR_CLAUDE_MEMORY_DIR="$work/no-such-store"
+set +e
+reachable=$("$gmr" --repo "$repo" check >/dev/null 2>&1; echo $?)
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+echo "$out" | grep -q '"unreachable":\["claude-code:owned.md"\]' \
+    || fail "a store that is not there was not reported as unreachable — silence is how this used to look" "$out"
+echo "$out" | grep -q '"gone":\[\]' \
+    || fail "a store that would not answer was read as the record being gone; that sends the reader to delete a binding that is fine" "$out"
+[ "$code" -eq 0 ] || fail "somebody else's store being unreachable turned doctor red; nobody holding this repository can act on that" "$out"
+
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+set +e
+"$gmr" --repo "$repo" check >/dev/null 2>&1; back=$?
+set -e
+[ "$reachable" -eq "$back" ] \
+    || fail "check exited $reachable with the store unreachable and $back with it reachable — a store nobody here owns must not move the exit code"
+
+# The provider cannot even register: with no $HOME and no override there is no
+# directory to name. A binding through a store this binary has no provider for
+# is the owner's to fix -- enable a feature, set credentials, rebind -- so red.
+set +e
+out=$(env -u HOME -u GMR_CLAUDE_MEMORY_DIR "$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+echo "$out" | grep -q '"no_provider":\["claude-code:owned.md"\]' \
+    || fail "a binding through a store with no provider in this binary was not reported as such; unreachable would say somebody else's service is down, and this is a build or a config" "$out"
+[ "$code" -eq 1 ] || fail "a binding through a store this binary cannot name did not turn doctor red" "$out"
+
+step "a listing is what a store will show, not a roster of what exists"
+out=$("$gmr" --repo "$repo" memories --json)
+echo "$out" | grep -q '"reference":"git:memories/auth.md"' \
+    || fail "the note this run bound was not in its store's listing" "$out"
+echo "$out" | grep -q '"anchors":\["src/auth.ts#createSession"\]' \
+    || fail "the listing did not say which anchors a bound record is about" "$out"
+"$gmr" --repo "$repo" memories --provider claude-code >/dev/null 2>&1 \
+    && fail "a store with no way to list what it holds answered a listing anyway"
+
+# ── SKILL.md tells an agent to hand an address straight back to the verbs. That
+#    sentence is a promise about two things that are edited in different files,
+#    and nothing but a round trip can tell whether they still agree. Without
+#    this, `bind` answered a valid address with "`git` has no record
+#    `git:memories/auth.md`" and `cobound` answered about an address nobody
+#    ever wrote — exit 0, no error anywhere.
+step "an address this CLI prints is an address this CLI takes"
+addr=$("$gmr" --repo "$repo" memories --json \
+    | tr ',' '\n' | grep -o '"git:memories/auth.md"' | head -1 | tr -d '"')
+[ "$addr" = "git:memories/auth.md" ] || fail "could not read an address out of --json" "$addr"
+
+"$gmr" --repo "$repo" reaffirm "$addr" >/dev/null \
+    || fail "a verb refused the address its own --json had just printed"
+"$gmr" --repo "$repo" cobound "$addr" >/dev/null \
+    || fail "cobound refused the address its own --json had just printed"
+
+# The half git alone cannot prove: a store whose prefix is not `git`.
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+"$gmr" --repo "$repo" reaffirm 'claude-code:owned.md' >/dev/null \
+    || fail "an address naming a second store did not resolve to that store"
+
+set +e
+out=$("$gmr" --repo "$repo" bind "$addr" --provider claude-code --anchors "$key" 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] \
+    || fail "an address saying git and a --provider saying claude-code were reconciled by guessing; the binding table only ever grows" "$out"
+
+step "an installed SKILL.md older than the binary is the owner's to fix"
+printf 'stale\n' >> "$repo/.claude/skills/gmr/SKILL.md"
+set +e
+out=$("$gmr" --repo "$repo" doctor --json); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "an installed skill doc this build no longer honours did not turn doctor red — agents read it and cannot tell" "$out"
+echo "$out" | grep -q '"skill_stale":\[' || fail "the stale skill doc was not named" "$out"
+rm "$repo/.claude/skills/gmr/SKILL.md"
+"$gmr" --repo "$repo" init >/dev/null
 
 echo
 echo "Accepted: a stranger's repo, no toolchain, no downloaded probes. Memory and"

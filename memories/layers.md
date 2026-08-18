@@ -15,6 +15,11 @@ anchors:
     params: { root: crates/gmr-probe }
     position: { vis: "pub" }
     shape: roster
+  - key: layer::gmr-content
+    probe: ast-map
+    params: { root: crates/gmr-content }
+    position: { vis: "pub" }
+    shape: roster
   - key: layer::gmr-store
     probe: ast-map
     params: { root: crates/gmr-store }
@@ -40,7 +45,7 @@ them there are, they cannot answer the other question: **what is this layer now.
 One more `pub` in a crate and no single-point anchor moves — and that is precisely
 the contract between two layers changing.
 
-These six anchors watch the public-surface roster of six crates. Four axes, of
+These seven anchors watch the public-surface roster of seven crates. Four axes, of
 which `watch` subscribes to the first three:
 
 ```
@@ -70,6 +75,7 @@ their own, and deleting either one leaves a gap the other cannot fill.
 | `gmr-core` | vocabulary · content addresses · Entry · fold | is it starting to know how facts are fetched / how rules are computed / how things are stored |
 | `gmr-expr` | pure expression evaluation | is there IO · a clock · a dependency on gmr-core |
 | `gmr-probe` | the probe invocation contract | has a concrete transport implementation crept in |
+| `gmr-content` | the retrieval and discovery contracts | is it a concrete provider (that belongs to a battery), or has a required method appeared that only some stores can honour — that one belongs in its own trait, not in `ContentProvider` |
 | `gmr-store` | storage traits and feature-gated backends | is the new trait split by **mutability** (Journal / Binding / Sealer / Link / Queue) |
 | `gmr-runtime` | the one orchestration layer | is it starting to make the domain's judgments for it |
 | `gmr` | re-exports only | any definition of its own is out of bounds |
@@ -78,6 +84,15 @@ The tests come from CLAUDE.md's crate-boundary section. This does not restate it
 it wires it to an anchor that can speak — a boundary written in a document waits
 for someone to remember to go and read it, while a boundary hung on an anchor
 hands this table back on the day it is crossed.
+
+`gmr-content` was added to both late, and the gap is the argument for this anchor
+rather than a footnote to it. That crate held three public items and appeared in
+neither CLAUDE.md §5 nor this list. Three commits then took it to nine — `History`
+split out of `ContentProvider`, `Claim` / `Record` / `MemorySource` added, an error
+code made serialisable — and **not one of them moved a single anchor here**, which
+is precisely the sentence at the top of this file describing what these anchors
+exist to catch. A layer with no anchor does not report a quiet surface; it reports
+nothing, and the two are indistinguishable from the outside.
 
 ## Why `params` + `vis` rather than a coordinate
 

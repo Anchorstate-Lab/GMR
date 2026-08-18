@@ -2,8 +2,13 @@ use gmr::{Ref, Runtime};
 
 use crate::error::CliError;
 
-pub async fn run(rt: &Runtime, path: String, json: bool) -> Result<i32, CliError> {
-    let reference = Ref::new("git", path.clone());
+pub async fn run(
+    rt: &Runtime,
+    names: &crate::memories::Names,
+    reference: Ref,
+    json: bool,
+) -> Result<i32, CliError> {
+    let path = names.of(&reference);
     let others = rt.cobound(&reference).await?;
 
     if json {
@@ -11,7 +16,7 @@ pub async fn run(rt: &Runtime, path: String, json: bool) -> Result<i32, CliError
             "{}",
             serde_json::json!({
                 "path": path,
-                "cobound": others.iter().map(|r| &r.external_id).collect::<Vec<_>>(),
+                "cobound": others.iter().map(crate::memories::addressed).collect::<Vec<_>>(),
             })
         );
         return Ok(0);
@@ -22,7 +27,7 @@ pub async fn run(rt: &Runtime, path: String, json: bool) -> Result<i32, CliError
     } else {
         println!("{path} is co-bound with:");
         for other in &others {
-            println!("  {}", other.external_id);
+            println!("  {}", names.of(other));
         }
     }
     Ok(0)

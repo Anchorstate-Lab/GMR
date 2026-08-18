@@ -1,5 +1,3 @@
-//! The vocabulary a caller hands over, and what this layer refuses to accept.
-
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]

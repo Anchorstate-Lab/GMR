@@ -1,9 +1,7 @@
-//! Every anchor and every memory this repository holds, as one page on disk.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gmr::{AnchorView, MemoryView, Runtime, Sighting};
+use gmr::{AnchorView, Before, Grounding, MemoryView, Runtime, Sighting};
 use gmr_atlas::{Edge, EdgeKind, Graph, Kind, Node, Tone};
 
 use crate::delivery::Subscriptions;
@@ -26,8 +24,8 @@ fn anchor_id(key: &str) -> String {
     format!("anchor:{key}")
 }
 
-fn memory_id(external_id: &str) -> String {
-    format!("memory:{external_id}")
+fn memory_id(reference: &gmr::Ref) -> String {
+    format!("memory:{}:{}", reference.provider, reference.external_id)
 }
 
 fn label_of(key: &str) -> String {
@@ -68,16 +66,16 @@ fn anchor_tone(view: &AnchorView, delivering: bool, unclaimed: bool) -> Tone {
 }
 
 fn memory_tone(m: &MemoryView) -> (Tone, Option<&'static str>) {
-    if m.unavailable.is_some() || m.content.is_none() {
-        (Tone::Alarm, Some("unreadable"))
-    } else if !m.grounded {
-        (Tone::Alarm, Some("ungrounded"))
-    } else if m.rewritten && m.retrievable == Some(false) {
-        (Tone::Alarm, Some("bound version lost"))
-    } else if m.rewritten {
-        (Tone::Notice, Some("rewritten since binding"))
-    } else {
-        (Tone::Calm, None)
+    match &m.grounding {
+        Grounding::Gone => (Tone::Alarm, Some("gone")),
+        Grounding::NoProvider { .. } => (Tone::Alarm, Some("no provider")),
+        Grounding::Unreachable { .. } => (Tone::Alarm, Some("unreachable")),
+        _ if !m.grounded => (Tone::Alarm, Some("ungrounded")),
+        Grounding::Rewritten { before, .. } => match before {
+            Before::Retrieved { .. } => (Tone::Notice, Some("rewritten since binding")),
+            _ => (Tone::Alarm, Some("bound version lost")),
+        },
+        Grounding::Current { .. } => (Tone::Calm, None),
     }
 }
 
@@ -105,11 +103,12 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
     node
 }
 
-fn memory_node(m: &MemoryView, detail: Option<String>) -> Node {
-    let external = m.reference.external_id.to_string();
+fn memory_node(m: &MemoryView, names: &crate::memories::Names, detail: Option<String>) -> Node {
+    let label = names.of(&m.reference);
     let (tone, badge) = memory_tone(m);
-    let mut node = Node::new(memory_id(&external), external, Kind::Memory, tone)
-        .fact("provider", m.reference.provider.to_string());
+    let mut node = Node::new(memory_id(&m.reference), label, Kind::Memory, tone)
+        .fact("provider", m.reference.provider.to_string())
+        .fact("address", m.reference.external_id.to_string());
     if let Some(b) = badge {
         node = node.badge(b);
     }
@@ -119,8 +118,16 @@ fn memory_node(m: &MemoryView, detail: Option<String>) -> Node {
     if m.stale == Some(true) {
         node = node.fact("bound at", "before this anchor's latest entry");
     }
-    if let Some(why) = &m.unavailable {
-        node = node.fact("unavailable", why.clone());
+    match &m.grounding {
+        Grounding::Gone => node = node.fact("gone", "the provider says this record is gone"),
+        Grounding::NoProvider { provider } => {
+            node = node.fact(
+                "no provider",
+                format!("`{provider}` is not registered here"),
+            );
+        }
+        Grounding::Unreachable { why, .. } => node = node.fact("unreachable", why.clone()),
+        _ => {}
     }
     node
 }
@@ -128,25 +135,29 @@ fn memory_node(m: &MemoryView, detail: Option<String>) -> Node {
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     out: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
     let catalog = Catalog::load(root)?;
-    let (subs, _) = Subscriptions::load(root, &catalog)?;
+    let (subs, _) = Subscriptions::load(root, &catalog, names)?;
     let views = rt.read_all().await?;
+
+    let mut nodes_by_name = crate::prose::Nodes::new();
+    for m in views.iter().flat_map(|v| &v.memories) {
+        if let Some(name) = names.named(&m.reference) {
+            nodes_by_name.insert(name, memory_id(&m.reference));
+        }
+    }
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
-    let mut memories: BTreeMap<String, Node> = BTreeMap::new();
+    let mut memories: BTreeMap<gmr::Ref, Node> = BTreeMap::new();
     let mut barren = 0usize;
 
     for view in &views {
         let shape = crate::shapes::of(&view.anchor.transitions);
-        let bound: Vec<String> = view
-            .memories
-            .iter()
-            .map(|m| m.reference.external_id.to_string())
-            .collect();
+        let bound: Vec<gmr::Ref> = view.memories.iter().map(|m| m.reference.clone()).collect();
         let delivering = bound
             .iter()
             .any(|note| subs.delivers(shape, note, &view.state, false));
@@ -160,38 +171,39 @@ pub async fn run(
         nodes.push(anchor_node(view, anchor_tone(view, delivering, unclaimed)));
 
         for m in &view.memories {
-            let external = m.reference.external_id.to_string();
             edges.push(Edge::new(
-                memory_id(&external),
+                memory_id(&m.reference),
                 anchor_id(&key),
                 EdgeKind::Binding,
             ));
-            memories.entry(external).or_insert_with(|| {
-                let detail = m.content.as_deref().map(crate::prose::to_html);
-                memory_node(m, detail)
+            memories.entry(m.reference.clone()).or_insert_with(|| {
+                let detail = m
+                    .content()
+                    .map(|b| crate::prose::to_html(&String::from_utf8_lossy(b), &nodes_by_name));
+                memory_node(m, names, detail)
             });
         }
     }
 
-    let present: Vec<String> = memories.keys().cloned().collect();
-    for external in &present {
+    let present: Vec<gmr::Ref> = memories.keys().cloned().collect();
+    for reference in &present {
         let Some(body) = views
             .iter()
             .flat_map(|v| &v.memories)
-            .find(|m| m.reference.external_id.as_str() == external)
-            .and_then(|m| m.content.as_deref())
+            .find(|m| &m.reference == reference)
+            .and_then(gmr::MemoryView::content)
         else {
             continue;
         };
-        for target in crate::prose::wikilinks(body) {
-            if target == *external || !memories.contains_key(&target) {
+        let from = memory_id(reference);
+        for name in crate::prose::wikilinks(&String::from_utf8_lossy(body)) {
+            let Some(to) = nodes_by_name.get(&name) else {
+                continue;
+            };
+            if *to == from {
                 continue;
             }
-            edges.push(Edge::new(
-                memory_id(external),
-                memory_id(&target),
-                EdgeKind::Reference,
-            ));
+            edges.push(Edge::new(from.clone(), to.clone(), EdgeKind::Reference));
         }
     }
 
@@ -279,17 +291,38 @@ mod tests {
         assert_eq!(label_of("doctrine::decisions"), "decisions");
     }
 
+    #[test]
+    fn the_same_id_in_two_stores_is_two_nodes_not_one() {
+        assert_ne!(
+            memory_id(&gmr::Ref::new("git", "a.md")),
+            memory_id(&gmr::Ref::new("mem0", "a.md")),
+            "a node's identity has to be the whole reference. Keyed by the id alone, two \
+             records that merely share a name collapse into one node: one label, one tone, \
+             and both anchors' binding edges pointing at it — the page then says two \
+             coordinates are watched by the same memory, which is a claim nobody made. \
+             `external_id` was globally unique for exactly as long as git was the only store"
+        );
+    }
+
     fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
             bound_version: gmr::Version::new("v1"),
-            current_version: None,
-            rewritten,
-            content: Some("body".to_owned()),
-            content_at_bind: None,
-            retrievable: None,
+            grounding: if rewritten {
+                Grounding::Rewritten {
+                    version: gmr::Version::new("v2"),
+                    content: b"body".to_vec(),
+                    before: Before::Retrieved {
+                        content: b"was".to_vec(),
+                    },
+                }
+            } else {
+                Grounding::Current {
+                    version: gmr::Version::new("v1"),
+                    content: b"body".to_vec(),
+                }
+            },
             grounded,
-            unavailable: None,
             links: Vec::new(),
             bound_at_seq: None,
             stale,

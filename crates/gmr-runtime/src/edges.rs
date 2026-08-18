@@ -45,8 +45,24 @@ pub enum Standing {
         anchor: AnchorKey,
         reference: gmr_core::Ref,
         bound_version: Version,
-        current_version: Option<Version>,
-        retrievable: Option<bool>,
+        current_version: Version,
+        before: crate::read::Before,
+    },
+    Gone {
+        anchor: AnchorKey,
+        reference: gmr_core::Ref,
+        bound_version: Version,
+    },
+    NoProvider {
+        anchor: AnchorKey,
+        reference: gmr_core::Ref,
+        provider: gmr_core::ProviderId,
+    },
+    Unreachable {
+        anchor: AnchorKey,
+        reference: gmr_core::Ref,
+        code: gmr_content::ContentErrorCode,
+        why: String,
     },
 }
 
@@ -83,6 +99,8 @@ async fn changed_since(
     status: Option<&StatusId>,
 ) -> Result<Edges, RuntimeError> {
     let now = Utc::now();
+    let total = policy.content_budget();
+    let call = policy.content_call();
     let mut edges = Vec::new();
     let mut standing = status.is_none().then(Vec::new);
     let mut head = cursor;
@@ -107,16 +125,40 @@ async fn changed_since(
             }
 
             for binding in memory.bindings_on(&key).await? {
-                let view = memory.fetch_memory(binding).await?;
-                if view.rewritten {
-                    standing.push(Standing::Rewritten {
-                        anchor: key.clone(),
-                        reference: view.reference,
-                        bound_version: view.bound_version,
-                        current_version: view.current_version,
-                        retrievable: view.retrievable,
-                    });
-                }
+                let view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
+                let anchor = key.clone();
+                let reference = view.reference;
+                let bound_version = view.bound_version;
+                standing.extend(match view.grounding {
+                    crate::read::Grounding::Current { .. } => None,
+                    crate::read::Grounding::Rewritten {
+                        version, before, ..
+                    } => Some(Standing::Rewritten {
+                        anchor,
+                        reference,
+                        bound_version,
+                        current_version: version,
+                        before,
+                    }),
+                    crate::read::Grounding::Gone => Some(Standing::Gone {
+                        anchor,
+                        reference,
+                        bound_version,
+                    }),
+                    crate::read::Grounding::NoProvider { provider } => Some(Standing::NoProvider {
+                        anchor,
+                        reference,
+                        provider,
+                    }),
+                    crate::read::Grounding::Unreachable { code, why } => {
+                        Some(Standing::Unreachable {
+                            anchor,
+                            reference,
+                            code,
+                            why,
+                        })
+                    }
+                });
             }
         }
     }

@@ -40,3 +40,14 @@ Does `status --json` grow to carry `attempts`/`sighting`/`derivation`, or any ot
 `AnchorView` field it currently omits? If it ends up a superset of what `read` prints
 (closed anchors included), the schema argument above is gone and folding `read` into
 `status --key` becomes a real option instead of a loss of capability.
+
+## Both now take the repository root, to name memories the way their author does
+
+`read` prints the memories bound to an anchor, and it used to print each
+one's address. It takes `root` so it can ask the declaring source what that
+record is called — a name where there is one, the address where there is
+not. `status` already had `root` for its own reasons.
+
+The address is not a name. It reads as one only for a store that happens to
+address records by their path, and this repository is that store, which is
+exactly why nothing noticed. See [[cli-notes-source]].

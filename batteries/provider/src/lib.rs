@@ -1,7 +1,3 @@
-//! `ContentProvider` implementations. One module per backend, one feature
-//! per module — adding a backend is adding a feature and a module, not a
-//! new package (same convention as `crates/gmr-store`'s `sqlite` feature).
-
 #[cfg(any(feature = "git", feature = "claude-code"))]
 mod local_file;
 
@@ -10,3 +6,39 @@ pub mod git;
 
 #[cfg(feature = "claude-code")]
 pub mod claude_code;
+
+#[cfg(feature = "mem0")]
+pub mod mem0;
+
+#[cfg(any(feature = "git", feature = "claude-code"))]
+pub(crate) fn spend(budget: &gmr_probe::Budget) -> Result<(), gmr_content::ContentError> {
+    budget
+        .checkpoint()
+        .map_err(|s| gmr_content::ContentError::spent(s.as_str()))
+}
+
+#[cfg(feature = "git")]
+pub(crate) async fn within(
+    command: std::process::Command,
+    budget: &gmr_probe::Budget,
+) -> Result<std::process::Output, gmr_content::ContentError> {
+    spend(budget)?;
+    let left = budget
+        .remaining()
+        .ok_or_else(|| gmr_content::ContentError::spent("no time left to run git"))?;
+
+    let mut command = tokio::process::Command::from(command);
+    command
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+
+    tokio::time::timeout(left, command.output())
+        .await
+        .map_err(|_| {
+            gmr_content::ContentError::spent(
+                "git was still running when this call's budget ran out, so it was killed. A \
+                 deadline that only decides whether to start is not a deadline",
+            )
+        })?
+        .map_err(|e| gmr_content::ContentError::new(format!("cannot run git: {e}")))
+}

@@ -1,9 +1,11 @@
-use gmr::{Edge, Runtime, Standing, StatusId};
+use gmr::{Before, Edge, Runtime, Standing, StatusId};
 
 use crate::error::CliError;
+use crate::memories::Names;
 
 pub async fn run(
     rt: &Runtime,
+    names: &Names,
     since: u64,
     status: Option<String>,
     json: bool,
@@ -62,15 +64,39 @@ pub async fn run(
                     Standing::Rewritten {
                         anchor,
                         reference,
-                        retrievable,
+                        before,
                         ..
                     } => {
-                        let tail = match retrievable {
-                            Some(false) => "  bound version is no longer retrievable",
-                            _ => "",
+                        let tail = match before {
+                            Before::Retrieved { .. } => "",
+                            Before::NotRetained => "  the bound version was not kept",
+                            Before::NoHistory => "  this provider keeps no history",
+                            Before::Unreachable { .. } => {
+                                "  the bound version could not be reached"
+                            }
                         };
-                        println!("rewritten   {anchor}  {}{tail}", reference.external_id);
+                        println!("rewritten   {anchor}  {}{tail}", names.of(reference));
                     }
+                    Standing::Gone {
+                        anchor, reference, ..
+                    } => println!(
+                        "gone        {anchor}  {}  the provider says this record is gone",
+                        names.of(reference)
+                    ),
+                    Standing::NoProvider {
+                        anchor,
+                        reference,
+                        provider,
+                    } => println!(
+                        "no provider {anchor}  {}  `{provider}` is not registered in this binary",
+                        names.of(reference)
+                    ),
+                    Standing::Unreachable {
+                        anchor,
+                        reference,
+                        why,
+                        ..
+                    } => println!("unreachable {anchor}  {}  {why}", names.of(reference)),
                 }
             }
         }

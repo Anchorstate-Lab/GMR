@@ -1,5 +1,3 @@
-//! A memory is markdown with `[[other-memory]]` in it, and this is where that is known.
-
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd, html};
 
 fn options() -> Options {
@@ -15,9 +13,7 @@ fn escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-pub fn target_of(name: &str) -> String {
-    format!("memories/{name}.md")
-}
+pub type Nodes = std::collections::BTreeMap<String, String>;
 
 enum Piece<'a> {
     Prose(String),
@@ -78,7 +74,7 @@ fn found_in(text: &str) -> Vec<(std::ops::Range<usize>, String)> {
     out
 }
 
-fn linked(text: &str) -> Vec<Event<'static>> {
+fn linked(text: &str, nodes: &Nodes) -> Vec<Event<'static>> {
     let hits = found_in(text);
     if hits.is_empty() {
         return vec![Event::Text(CowStr::from(text.to_owned()))];
@@ -89,9 +85,12 @@ fn linked(text: &str) -> Vec<Event<'static>> {
         if span.start > at {
             out.push(Event::Text(CowStr::from(text[at..span.start].to_owned())));
         }
+        let target = match nodes.get(&name) {
+            Some(node) => format!(" data-node=\"{}\"", escape(node)),
+            None => String::new(),
+        };
         out.push(Event::InlineHtml(CowStr::from(format!(
-            "<a class=\"wiki\" href=\"#\" data-node=\"memory:{}\">{}</a>",
-            escape(&target_of(&name)),
+            "<a class=\"wiki\" href=\"#\"{target}>{}</a>",
             escape(&name)
         ))));
         at = span.end;
@@ -102,11 +101,11 @@ fn linked(text: &str) -> Vec<Event<'static>> {
     out
 }
 
-pub fn to_html(markdown: &str) -> String {
+pub fn to_html(markdown: &str, nodes: &Nodes) -> String {
     let mut events: Vec<Event> = Vec::new();
     for piece in walk(markdown) {
         match piece {
-            Piece::Prose(text) => events.extend(linked(&text)),
+            Piece::Prose(text) => events.extend(linked(&text, nodes)),
             Piece::Kept(event) => events.push(event),
         }
     }
@@ -120,9 +119,8 @@ pub fn wikilinks(markdown: &str) -> Vec<String> {
     for piece in walk(markdown) {
         let Piece::Prose(text) = piece else { continue };
         for (_, name) in found_in(&text) {
-            let target = target_of(&name);
-            if !out.contains(&target) {
-                out.push(target);
+            if !out.contains(&name) {
+                out.push(name);
             }
         }
     }
@@ -135,7 +133,10 @@ mod tests {
 
     #[test]
     fn the_frontmatter_is_not_part_of_what_a_reader_sees() {
-        let html = to_html("---\nabout: src/a.rs#b\nwatch: [sig]\n---\n\n# Title\n\nBody.\n");
+        let html = to_html(
+            "---\nabout: src/a.rs#b\nwatch: [sig]\n---\n\n# Title\n\nBody.\n",
+            &Nodes::new(),
+        );
         assert!(html.contains("<h1>Title</h1>"), "{html}");
         assert!(
             !html.contains("about:"),
@@ -144,12 +145,30 @@ mod tests {
         assert!(!html.contains("watch:"), "{html}");
     }
 
+    fn known(name: &str, node: &str) -> Nodes {
+        Nodes::from([(name.to_owned(), node.to_owned())])
+    }
+
     #[test]
     fn a_wikilink_becomes_something_the_page_can_navigate_to() {
-        let html = to_html("see [[ast-naming]] for why");
+        let nodes = known("ast-naming", "memory:memories/ast-naming.md");
+        let html = to_html("see [[ast-naming]] for why", &nodes);
         assert!(
             html.contains("data-node=\"memory:memories/ast-naming.md\""),
             "{html}"
+        );
+        assert!(html.contains(">ast-naming</a>"), "{html}");
+    }
+
+    #[test]
+    fn a_name_nothing_answers_to_is_written_out_without_a_destination() {
+        let html = to_html("see [[ast-naming]] for why", &Nodes::new());
+        assert!(
+            !html.contains("data-node"),
+            "a link is only a link once somethinganswers to the name. Synthesising a target from \
+             the name — `memories/<name>.md` — is right for exactly one store and silently \
+             wrong for every other, and the symptom is a page full of edges that lead nowhere \
+             or, worse, none at all: {html}"
         );
         assert!(html.contains(">ast-naming</a>"), "{html}");
     }
@@ -163,12 +182,12 @@ mod tests {
             split > 1,
             "the parser stopped splitting brackets; this test guards the reason walk() merges"
         );
-        assert_eq!(wikilinks("[[a-b]]"), vec!["memories/a-b.md"]);
+        assert_eq!(wikilinks("[[a-b]]"), vec!["a-b"]);
     }
 
     #[test]
     fn a_wikilink_inside_code_stays_literal_because_it_is_being_quoted_not_used() {
-        let html = to_html("```\nwrite [[name]] to link\n```\n");
+        let html = to_html("```\nwrite [[name]] to link\n```\n", &Nodes::new());
         assert!(!html.contains("data-node"), "{html}");
         assert_eq!(wikilinks("```\n[[name]]\n```\n"), Vec::<String>::new());
     }
@@ -176,26 +195,26 @@ mod tests {
     #[test]
     fn every_distinct_target_is_reported_once_however_often_it_is_named() {
         let links = wikilinks("[[a]] then [[b]] then [[a]] again");
-        assert_eq!(links, vec!["memories/a.md", "memories/b.md"]);
+        assert_eq!(links, vec!["a", "b"]);
     }
 
     #[test]
     fn an_unclosed_bracket_pair_is_text_and_does_not_swallow_the_rest() {
-        let html = to_html("a [[ unclosed and then some prose");
+        let html = to_html("a [[ unclosed and then some prose", &Nodes::new());
         assert!(!html.contains("data-node"), "{html}");
         assert!(html.contains("unclosed and then some prose"), "{html}");
     }
 
     #[test]
     fn markup_in_a_name_cannot_escape_the_attribute_it_is_written_into() {
-        let html = to_html("[[a\"onerror=x]]");
+        let html = to_html("[[a\"onerror=x]]", &Nodes::new());
         assert!(!html.contains("\"onerror=x"), "{html}");
         assert!(html.contains("&quot;onerror=x"), "{html}");
     }
 
     #[test]
     fn merging_does_not_reach_across_inline_code() {
-        let html = to_html("`[[a` and `b]]`");
+        let html = to_html("`[[a` and `b]]`", &Nodes::new());
         assert!(!html.contains("data-node"), "{html}");
     }
 }

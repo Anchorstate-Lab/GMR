@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched};
+use gmr_content::{ContentError, ContentProvider, Fetched, MemoryStore};
 use gmr_core::{ExternalId, ProviderId, Version, content_hash_of_bytes};
+use gmr_probe::Budget;
 
 pub struct ClaudeMemory {
     root: PathBuf,
@@ -17,13 +18,18 @@ impl ClaudeMemory {
         })
     }
 
-    #[cfg(test)]
-    fn at(memory_dir: impl Into<PathBuf>) -> Self {
+    pub fn at(memory_dir: impl Into<PathBuf>) -> Self {
         Self {
             root: memory_dir.into(),
             id: ProviderId::new("claude-code"),
         }
     }
+}
+
+pub fn store(project_root: impl AsRef<Path>) -> Result<MemoryStore, ContentError> {
+    Ok(MemoryStore::new(std::sync::Arc::new(ClaudeMemory::new(
+        project_root,
+    )?)))
 }
 
 fn memory_dir(project_root: &Path) -> Result<PathBuf, ContentError> {
@@ -49,7 +55,12 @@ impl ContentProvider for ClaudeMemory {
         &self.id
     }
 
-    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
+        crate::spend(budget)?;
         let Some(bytes) = crate::local_file::read(&self.root, id)? else {
             return Ok(None);
         };
@@ -59,19 +70,15 @@ impl ContentProvider for ClaudeMemory {
             bytes,
         }))
     }
-
-    async fn fetch_at(
-        &self,
-        _id: &ExternalId,
-        _version: &Version,
-    ) -> Result<Option<Vec<u8>>, ContentError> {
-        Ok(None)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn plenty() -> Budget {
+        Budget::within(std::time::Duration::from_secs(30), usize::MAX)
+    }
 
     #[tokio::test]
     async fn fetches_a_file_that_exists() {
@@ -80,7 +87,7 @@ mod tests {
         let provider = ClaudeMemory::at(dir.path());
 
         let fetched = provider
-            .fetch(&ExternalId::new("feedback.md"))
+            .fetch(&ExternalId::new("feedback.md"), &plenty())
             .await
             .unwrap()
             .unwrap();
@@ -93,7 +100,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let provider = ClaudeMemory::at(dir.path());
 
-        let fetched = provider.fetch(&ExternalId::new("absent.md")).await.unwrap();
+        let fetched = provider
+            .fetch(&ExternalId::new("absent.md"), &plenty())
+            .await
+            .unwrap();
 
         assert!(fetched.is_none());
     }
@@ -106,7 +116,7 @@ mod tests {
 
         std::fs::write(&path, b"first").unwrap();
         let v1 = provider
-            .fetch(&ExternalId::new("note.md"))
+            .fetch(&ExternalId::new("note.md"), &plenty())
             .await
             .unwrap()
             .unwrap()
@@ -114,7 +124,7 @@ mod tests {
 
         std::fs::write(&path, b"second").unwrap();
         let v2 = provider
-            .fetch(&ExternalId::new("note.md"))
+            .fetch(&ExternalId::new("note.md"), &plenty())
             .await
             .unwrap()
             .unwrap()
@@ -123,18 +133,12 @@ mod tests {
         assert_ne!(v1, v2);
     }
 
-    #[tokio::test]
-    async fn fetch_at_honestly_reports_no_history() {
+    #[test]
+    fn this_provider_offers_no_history_at_all() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("note.md"), b"content").unwrap();
         let provider = ClaudeMemory::at(dir.path());
 
-        let bytes = provider
-            .fetch_at(&ExternalId::new("note.md"), &Version::new("any"))
-            .await
-            .unwrap();
-
-        assert!(bytes.is_none());
+        assert!(provider.history().is_none());
     }
 
     #[test]

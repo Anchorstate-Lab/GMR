@@ -6,6 +6,7 @@ use gmr_content::{ContentError, ContentProvider, Fetched};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
+use gmr_probe::Budget;
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
@@ -25,7 +26,11 @@ impl ContentProvider for Files {
         &self.id
     }
 
-    async fn fetch(&self, id: &ExternalId) -> Result<Option<Fetched>, ContentError> {
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        _budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
         let path = self.root.join(id.as_str());
         if !path.exists() {
             return Ok(None);
@@ -35,14 +40,6 @@ impl ContentProvider for Files {
             version: Version::new(gmr_core::content_hash_of_bytes(&bytes).into_inner()),
             bytes,
         }))
-    }
-
-    async fn fetch_at(
-        &self,
-        _id: &ExternalId,
-        _version: &Version,
-    ) -> Result<Option<Vec<u8>>, ContentError> {
-        Ok(None)
     }
 }
 

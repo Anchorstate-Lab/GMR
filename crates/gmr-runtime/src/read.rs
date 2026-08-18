@@ -1,7 +1,12 @@
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
+use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, Ref, Seq, State, StatusId, Version, scan,
+    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, State, StatusId,
+    Version, scan,
 };
+use gmr_probe::Budget;
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -38,23 +43,96 @@ pub struct AnchorView {
 pub struct MemoryView {
     pub reference: Ref,
     pub bound_version: Version,
-    pub current_version: Option<Version>,
-    pub rewritten: bool,
-    pub content: Option<String>,
-    pub content_at_bind: Option<String>,
-    pub retrievable: Option<bool>,
     pub grounded: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unavailable: Option<String>,
     pub links: Vec<Link>,
     pub bound_at_seq: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale: Option<bool>,
+    pub grounding: Grounding,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "grounding", rename_all = "snake_case")]
+pub enum Grounding {
+    Current {
+        version: Version,
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+    },
+    Rewritten {
+        version: Version,
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+        before: Before,
+    },
+    Gone,
+    NoProvider {
+        provider: ProviderId,
+    },
+    Unreachable {
+        code: ContentErrorCode,
+        why: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "before", rename_all = "snake_case")]
+pub enum Before {
+    Retrieved {
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+    },
+    NotRetained,
+    NoHistory,
+    Unreachable {
+        code: ContentErrorCode,
+        why: String,
+    },
+}
+
+impl MemoryView {
+    pub fn content(&self) -> Option<&[u8]> {
+        match &self.grounding {
+            Grounding::Current { content, .. } | Grounding::Rewritten { content, .. } => {
+                Some(content)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn rewritten(&self) -> bool {
+        matches!(self.grounding, Grounding::Rewritten { .. })
+    }
+}
+
+fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => s.serialize_some(text),
+        Err(_) => s.serialize_none(),
+    }
 }
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
-        read(&self.log, &self.memory, key).await
+        let policy = self.scheduler.policy();
+        read(
+            &self.log,
+            &self.memory,
+            key,
+            &policy.content_budget(),
+            policy.content_call(),
+        )
+        .await
+    }
+
+    pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
+        let policy = self.scheduler.policy();
+        self.memory
+            .current_version(
+                reference,
+                &policy.content_budget().narrowed(policy.content_call()),
+            )
+            .await
     }
 
     pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
@@ -62,7 +140,14 @@ impl Runtime {
     }
 
     pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
-        read_all(&self.log, &self.memory).await
+        let policy = self.scheduler.policy();
+        read_all(
+            &self.log,
+            &self.memory,
+            &policy.content_budget(),
+            policy.content_call(),
+        )
+        .await
     }
 }
 
@@ -70,6 +155,8 @@ async fn read(
     log: &AnchorLog,
     memory: &MemoryLens,
     key: &AnchorKey,
+    total: &Budget,
+    call: Duration,
 ) -> Result<AnchorView, RuntimeError> {
     let entries = log.entries(key, 0).await?;
     let mut sightings: u64 = 0;
@@ -82,11 +169,11 @@ async fn read(
 
     let mut memories = Vec::new();
     for binding in memory.bindings_on(key).await? {
-        let mut view = memory.fetch_memory(binding).await?;
+        let mut view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
         view.stale = view.bound_at_seq.map(|seq| seq < s.head);
         memories.push(view);
     }
-    memory.carry_linked(&mut memories).await?;
+    memory.carry_linked(&mut memories, total, call).await?;
 
     let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
         Some(Outcome::Found { .. }) => Sighting::Found,
@@ -129,10 +216,15 @@ async fn cobound(memory: &MemoryLens, reference: &Ref) -> Result<Vec<Ref>, Runti
     Ok(out)
 }
 
-async fn read_all(log: &AnchorLog, memory: &MemoryLens) -> Result<Vec<AnchorView>, RuntimeError> {
+async fn read_all(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    total: &Budget,
+    call: Duration,
+) -> Result<Vec<AnchorView>, RuntimeError> {
     let mut out = Vec::new();
     for key in log.anchors().await? {
-        out.push(read(log, memory, &key).await?);
+        out.push(read(log, memory, &key, total, call).await?);
     }
     Ok(out)
 }

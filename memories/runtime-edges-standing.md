@@ -24,6 +24,19 @@ means standing was never computed at all (the caller passed a `status`
 filter and only wanted matching transitions), while `Some(vec![])` means it
 was computed and nothing is currently stale or rewritten.
 
+## Not knowing is itself a standing condition
+
+A provider that will not answer used to produce nothing here at all: the
+walk only emitted `Rewritten`, and a failed fetch left `rewritten` false,
+so a store being down made `gmr edges` report that everything was fine.
+`Gone`, `NoProvider` and `Unreachable` are now their own variants for the
+same reason `Rewritten` is one — each is true *right now* and none of them
+comes from the log.
+
+They stay separate rather than collapsing into one "could not check"
+because they are not the same person's problem, and that decides whether CI
+should go red; [[runtime-grounding]] carries that split.
+
 `domains/coding/cli/src/verbs/edges.rs#run` is where this reaches the
 terminal: it prints edges and standing conditions in separate sections
 ("Current standing conditions (cursor-independent; repeated every time)"),

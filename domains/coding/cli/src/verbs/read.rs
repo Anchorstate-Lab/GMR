@@ -2,7 +2,12 @@ use gmr::Runtime;
 
 use crate::{error::CliError, render};
 
-pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, CliError> {
+pub async fn run(
+    rt: &Runtime,
+    names: &crate::memories::Names,
+    key: Option<String>,
+    json: bool,
+) -> Result<i32, CliError> {
     let views = match key {
         Some(k) => {
             let mut out = Vec::new();
@@ -20,7 +25,7 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
         println!("no anchors.");
     } else {
         for v in &views {
-            print!("{}", render::anchor(v));
+            print!("{}", render::anchor(v, names));
         }
     }
     Ok(0)

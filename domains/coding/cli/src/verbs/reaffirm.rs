@@ -1,19 +1,21 @@
-use std::path::Path;
-
 use gmr::{Ref, Runtime};
 
 use crate::error::CliError;
 
-pub async fn run(rt: &Runtime, root: &Path, path: String, json: bool) -> Result<i32, CliError> {
-    if !root.join(&path).exists() {
-        return Err(CliError(format!("`{path}` is not in this repository")));
-    }
-    let reference = Ref::new("git", path.clone());
-    let version = rt
-        .memory()
-        .current_version(&reference)
-        .await?
-        .ok_or_else(|| CliError(format!("no content provider could version `{path}`")))?;
+pub async fn run(
+    rt: &Runtime,
+    names: &crate::memories::Names,
+    reference: Ref,
+    json: bool,
+) -> Result<i32, CliError> {
+    let path = names.of(&reference);
+    let address = crate::memories::addressed(&reference);
+    let version = rt.current_version(&reference).await?.ok_or_else(|| {
+        CliError(format!(
+            "`{}` has no record `{}`",
+            reference.provider, reference.external_id
+        ))
+    })?;
 
     rt.reaffirm(&reference, version.clone()).await?;
     let version = version.into_inner();
@@ -21,7 +23,7 @@ pub async fn run(rt: &Runtime, root: &Path, path: String, json: bool) -> Result<
     if json {
         println!(
             "{}",
-            serde_json::json!({ "reaffirmed": path, "version": version })
+            serde_json::json!({ "reaffirmed": address, "version": version })
         );
     } else {
         println!("{path} reaffirmed");

@@ -22,6 +22,8 @@ gmr status --json
 gmr check --json
 ```
 
+Every `--json` field that names a record — `check`/`observe`/`pass` under `"memories"`, `status` under `"note"`, `doctor`'s `gone` / `no_provider` / `unreachable` / `never_asked` / `no_before` — spells it `provider:external_id`, the address rather than a display name. `git:memories/auth.md` is a path in this repository; `mem0:9f8e…` is a uuid in a mem0 scope. Hand that string back verbatim to `gmr bind`, `reaffirm`, `cobound` and `link` — they take an address in place of a path and need no `--provider`; passing one that disagrees with the prefix is refused rather than guessed. Do not strip the prefix, and do not assume a memory is a file. (`gmr read` is not one of these: it takes an *anchor key*, never a record address.) Human-readable output spells the same record by its name — `auth` — so a note reads the way its author filed it; the address is what you compute with.
+
 ## The loop
 
 This is a loop you run yourself as part of normal work — not a human-only ritual you wait to be asked for:
@@ -31,6 +33,7 @@ This is a loop you run yourself as part of normal work — not a human-only ritu
 3. `gmr check` — did anything move on an axis a memory asked about? Exits 1 if so, and hands you the memories to re-read. It also flags two other conditions that make what it reports untrustworthy: anchors whose declaration no longer matches their live criteria (`gmr accept --all --criteria --why "..."` to take the new criteria), and anchors standing on a reading a different probe instrument took (`gmr rebase --all --why "..."` to recapture). Resolve those before trusting a quiet `check`.
 4. `gmr accept <key> --why "..."` — you looked, and what it shows is the new baseline. Clears the vector, seals the reason. If both a baseline drift and a criteria drift are pending at once, plain `--why` refuses and asks you to say which with `--baseline` or `--criteria` — they're different judgments and don't share one reason.
 5. `gmr status` — everything being watched, its axes, its memories. Reads only.
+5b. `gmr memories [--provider <name>]` — what each store here will show you, and which of it is already bound. Reads only. This is how you find a reference to bind when the store is not a directory of files: a mem0 uuid is not something you can guess. A listing is what a store *will show*, not a roster of what exists — a record missing from one is not a dead reference.
 6. `gmr atlas` — writes the whole anchor–memory graph to `.anchor/output/atlas.html`, one self-contained file. Reads only. Reach for it when the question is about *shape* rather than about one anchor: which coordinates several notes are all watching, which notes span many coordinates, what a subsystem's notes actually cover. Hand a person the path — the page is for reading, and `status --json` is the cheaper answer for anything you can resolve yourself.
 
 `gmr anchor` with no coordinate opens whatever the declarations and notes already ask for — that is what a fresh clone needs, since the journal does not travel with the repository.
@@ -66,19 +69,46 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 ## Reading `gmr doctor --json`
 
 ```json
-{"anchors": N, "live": N, "absent": [...], "unseen": [...], "barren": [...], "stranded": [...], "content_versioning": bool, "provider_warnings": [{"provider": "...", "message": "..."}], "notes": [{"note": "...", "code": "...", "detail": "...", "breaks": bool}]}
+{"anchors": N, "live": N, "absent": [...], "unseen": [...], "barren": [...], "stranded": [...],
+ "undeclared": [...], "gone": [...], "no_provider": [...], "unreachable": [...],
+ "never_asked": [...], "bound": N, "no_before": [...], "skill_stale": [...],
+ "content_versioning": bool, "cache_fault": "..." | null,
+ "provider_warnings": [{"provider": "...", "message": "..."}],
+ "notes": [{"note": "...", "key": "...", "code": "...", "detail": "...", "breaks": bool, "blocks": bool}]}
 ```
+
+**The exit code is decided by who can fix it, not by how bad it sounds.** Red: `stranded`, `provider_warnings`, breaking `notes`, `undeclared`, `gone`, `no_provider`, `skill_stale` — a rebuild, an unbind, an edit, a re-init makes each of them go away. Never red: `unreachable`, `never_asked`, `no_before`, `absent`, `barren`, `unseen` — somebody else's service, a spent budget, or an ordinary state. A build failed over something the owner cannot act on only teaches them to stop reading the colour, so this list is the rule and not a tally.
 
 - `barren` — anchors nobody has bound a note to yet.
 - `absent` — the probe ran and found nothing there. Normal when criteria were written before the code exists — don't read this as "it used to be there and now it's gone" without checking.
 - `unseen` — outstanding failed attempts; check the probe or its credentials.
 - `stranded` — no transport here can resolve the declared probe (`gmr probes build`).
-- `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it will fail with "no content provider could version" until the underlying cause is fixed. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
+- `gone` — the store answered authoritatively that this record no longer exists. The binding points at nothing; unbind it or bind the record that replaced it. A store that merely *would not answer* is `unreachable`, never this.
+- `no_provider` — a binding names a store this binary has no provider for. Yours to fix: enable the feature, set the credentials, or rebind.
+- `unreachable` — a store would not answer this run. Reported, never counted.
+- `never_asked` / `bound` — how many of the `bound` records this run never got to, because the total content budget ran out first. When this is non-zero, everything above it is a **partial view**; raise `--content-total-ms` to see the rest.
+- `no_before` — rewritten records that cannot show what they said at binding time, because their store keeps no history or did not keep that version. You are still told they moved.
+- `skill_stale` — an installed copy of this doc is not the one in the binary (it differs, or it cannot be read at all; never installed is neither). `gmr init` only ever writes it when absent, so an upgrade leaves the old text in place and agents keep reading contracts this build no longer honours. Both copies are checked — the project's and `~/.claude/skills/gmr/SKILL.md` — and the line names the one command that rewrites that copy: plain `gmr init` never touches the global one.
+- `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it fail with "no provider named `<name>` is registered in this binary" until the underlying cause is fixed. That message means the store is unreachable from here, **not** that the record is gone — a provider that is registered and simply has no such record says "`<provider>` has no record `<path>`" instead. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
 - `notes` — lint findings over every file under `memories/`, independent of the anchors above. `breaks: true` means the note names no live anchor at all; `breaks: false` is advisory. Codes: `unclaimed` (no frontmatter, so nothing observes whether this note still holds), `bare-key` (an `anchors:` entry binds to a key without declaring it, and nothing else in the repo declares that key either), `long-hand` (an explicit `anchors:` entry states exactly what `about: <coord>` would already route to — safe to simplify), `retired` (the note names a shape/axis word this build no longer has — stale, or a deliberate record of something buried; only you can tell which).
 
 ## Binding non-git content
 
 `gmr bind <path> --anchors <key> --provider <name>` binds arbitrary content to an anchor, not only files inside this repo's own git tree. `--provider` defaults to `git`. Whether other providers (for example a `claude-code` provider reading this agent's own memory files) are available depends on how this particular binary was built — `gmr bind --help` reflects what's actually compiled in.
+
+`reaffirm` and `cobound` take the same `--provider`. `link` takes `--from-provider` and `--to-provider` separately, because the two ends may sit in different stores — a memory in one store can contradict a memory in another, and saying so should not require moving either of them.
+
+### mem0
+
+Set `MEM0_API_KEY` and the scope (`MEM0_USER_ID`, optionally `MEM0_AGENT_ID` / `MEM0_APP_ID`) before running any verb, and a `mem0` provider registers itself. With no key set, nothing registers and nothing complains — not using mem0 is not a misconfiguration.
+
+Then `gmr bind <memory-uuid> --anchors <key> --provider mem0`. **The uuid is the whole reference**; mem0 keeps it stable when it updates a memory in place, so a binding survives the memory being rewritten — that rewrite is exactly what GMR is there to tell you about.
+
+GMR only ever reads mem0. It does not write memories, metadata or anything else back, so a memory's `metadata` is never treated as saying which anchor it is about — declarations go through `gmr bind`. `gmr read` on a rewritten mem0 memory shows what it said at binding time, rebuilt from mem0's own change log.
+
+`gmr memories --provider mem0` lists what that scope holds, marking what is already bound — reach for it rather than hunting a uuid by hand.
+
+Two things worth knowing when reading a report about mem0 records: mem0's own consolidation can delete a memory that contradicts something newer, and that shows up as `gone` (worth acting on — the binding now points at nothing). Its store being unreachable shows up as `unreachable`, which is never counted against an exit code, because nobody holding this repository can fix it.
 
 ## Don't
 

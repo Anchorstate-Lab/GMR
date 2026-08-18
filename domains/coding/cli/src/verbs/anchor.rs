@@ -83,6 +83,7 @@ fn write_note(path: &Path, coord: &str, memory: Option<&str>) -> Result<bool, Cl
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     coord: Option<String>,
     memory: Option<String>,
     json: bool,
@@ -91,6 +92,7 @@ pub async fn run(
         return crate::verbs::sync::run(
             rt,
             root,
+            names,
             crate::verbs::sync::DEFAULT_FILE.to_owned(),
             false,
             json,
@@ -135,6 +137,7 @@ pub async fn run(
     crate::verbs::sync::run(
         rt,
         root,
+        names,
         crate::verbs::sync::DEFAULT_FILE.to_owned(),
         false,
         json,

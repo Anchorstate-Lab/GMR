@@ -1,5 +1,3 @@
-//! One page, one file, nothing fetched at open time.
-
 use crate::graph::{AtlasError, Graph};
 
 const LAYOUT_BASE: &str = include_str!("../assets/layout-base.min.js");

@@ -12,6 +12,7 @@ pub mod health;
 pub mod import;
 pub mod init;
 pub mod link;
+pub mod memories;
 pub mod observe;
 pub mod open;
 pub mod pass;
@@ -99,13 +100,13 @@ pub(crate) async fn recapture(
     Ok(revised)
 }
 
-pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<String>, CliError> {
+pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<gmr::Ref>, CliError> {
     Ok(rt
         .memory()
         .bindings_on(key)
         .await?
         .into_iter()
-        .map(|b| b.binding.reference.external_id.into_inner())
+        .map(|b| b.binding.reference)
         .collect())
 }
 
