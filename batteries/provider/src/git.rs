@@ -111,14 +111,30 @@ async fn blob_version_within(
         .ok_or_else(|| ContentError::new(format!("git said nothing about `{relative}`")))
 }
 
-pub fn blob_versions(root: &Path, relative: &[&str]) -> Result<Vec<String>, ContentError> {
-    if relative.is_empty() {
-        return Ok(Vec::new());
+const ARGS_PER_CALL: usize = 32 * 1024;
+
+fn first_batch<'a>(paths: &'a [&'a str]) -> (&'a [&'a str], &'a [&'a str]) {
+    let mut take = 0;
+    let mut bytes = 0;
+    while take < paths.len() && (take == 0 || bytes + paths[take].len() + 1 <= ARGS_PER_CALL) {
+        bytes += paths[take].len() + 1;
+        take += 1;
     }
-    let out = hash_object(root, relative)
-        .output()
-        .map_err(|e| ContentError::new(format!("cannot run git: {e}")))?;
-    hashes_in(&out, relative.len())
+    paths.split_at(take)
+}
+
+pub fn blob_versions(root: &Path, relative: &[&str]) -> Result<Vec<String>, ContentError> {
+    let mut out = Vec::with_capacity(relative.len());
+    let mut rest = relative;
+    while !rest.is_empty() {
+        let (batch, tail) = first_batch(rest);
+        let answer = hash_object(root, batch)
+            .output()
+            .map_err(|e| ContentError::new(format!("cannot run git: {e}")))?;
+        out.extend(hashes_in(&answer, batch.len())?);
+        rest = tail;
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -135,6 +151,44 @@ mod tests {
                 .status()
                 .unwrap();
         }
+    }
+
+    #[test]
+    fn more_paths_than_one_command_line_holds_are_still_all_versioned() {
+        let dir = tempfile::tempdir().unwrap();
+        let names: Vec<String> = (0..200).map(|n| format!("{n:0>200}.md")).collect();
+        for (n, name) in names.iter().enumerate() {
+            std::fs::write(dir.path().join(name), format!("body {n}")).unwrap();
+        }
+        let paths: Vec<&str> = names.iter().map(String::as_str).collect();
+
+        let versions = blob_versions(dir.path(), &paths).unwrap();
+
+        assert_eq!(
+            versions.len(),
+            paths.len(),
+            "every path handed in gets a version back or none does. A repository grows notes \
+             until one `git hash-object` exceeds the argument limit, and from that day on \
+             every verb that versions the whole corpus fails at once"
+        );
+        let last = paths.len() - 1;
+        assert!(
+            first_batch(&paths).0.len() <= last,
+            "this corpus has to span more than one call or it proves nothing"
+        );
+        let alone = blob_versions(dir.path(), &paths[last..]).unwrap();
+        assert_eq!(
+            versions[last], alone[0],
+            "the versions come back in the order the paths went in, across batch boundaries. \
+             Off by one batch, every note is stamped with its neighbour's version — and each \
+             then reports as rewritten with a bound version nothing can retrieve"
+        );
+    }
+
+    #[test]
+    fn no_paths_asks_git_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(blob_versions(dir.path(), &[]).unwrap().is_empty());
     }
 
     #[tokio::test]

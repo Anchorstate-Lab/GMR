@@ -132,12 +132,23 @@ fn stated_in(text: &str) -> Claim {
     }
 }
 
+fn unreadable(at: &Path, e: &std::io::Error) -> CliError {
+    CliError(format!(
+        "cannot read `{}`: {e}. A directory that is not there holds no notes, which is an \
+         answer; a directory that will not be read is our failure, and reporting it as empty \
+         makes every anchor in this repository read as undeclared at once",
+        at.display()
+    ))
+}
+
 fn walk(root: &Path, at: &Path, out: &mut Vec<String>) -> Result<(), CliError> {
-    let Ok(entries) = std::fs::read_dir(at) else {
-        return Ok(());
+    let entries = match std::fs::read_dir(at) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(unreadable(at, &e)),
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in entries {
+        let path = entry.map_err(|e| unreadable(at, &e))?.path();
         if path.is_dir() {
             walk(root, &path, out)?;
         } else if path.extension().is_some_and(|e| e == "md") {
@@ -242,6 +253,30 @@ mod tests {
              it against the version the provider computes. Two ways of arriving at a version \
              means one repository state where they disagree, and there every note reports as \
              rewritten with a bound version nothing can retrieve"
+        );
+    }
+
+    #[test]
+    fn a_notes_directory_that_is_not_there_holds_no_notes() {
+        let dir = world(&[]);
+        assert!(
+            Notes::at(dir.path(), "memories")
+                .declared()
+                .unwrap()
+                .is_empty(),
+            "a repository that keeps no notes here is not broken, it is answering"
+        );
+    }
+
+    #[test]
+    fn a_notes_directory_that_will_not_be_listed_is_our_failure_not_an_empty_answer() {
+        let dir = world(&[("memories", "this is a file, not a directory")]);
+
+        Notes::at(dir.path(), "memories").declared().expect_err(
+            "swallowed, this reads as a repository with no notes at all — and every anchor \
+             standing in it then reports as undeclared, because no note declares anything \
+             any more. `read_dir` fails for more reasons than absence, and the one thing the \
+             reader must not be told is that their notes are gone",
         );
     }
 
