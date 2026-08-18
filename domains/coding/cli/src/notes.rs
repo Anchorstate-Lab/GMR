@@ -115,21 +115,32 @@ fn versions_of(root: &Path, paths: &[&str]) -> Result<Vec<Version>, CliError> {
         })
 }
 
+const FENCE: &str = "---";
+
+fn fenced(line: &str) -> bool {
+    line.trim_end() == FENCE
+}
+
 fn stated_in(text: &str) -> Claim {
-    let Some(rest) = text.strip_prefix("---\n") else {
-        return Claim::Silent;
-    };
-    let Some(end) = rest.find("\n---") else {
-        return Claim::Malformed("frontmatter is never closed by `---`".to_owned());
-    };
-    let body = &rest[..end];
-    if body.trim().is_empty() {
+    let mut lines = text.lines();
+    if !lines.next().is_some_and(fenced) {
         return Claim::Silent;
     }
-    match serde_yaml_ng::from_str::<serde_json::Value>(body) {
-        Ok(value) => Claim::Says(value),
-        Err(e) => Claim::Malformed(format!("frontmatter is not valid YAML: {e}")),
+    let mut body = String::new();
+    for line in lines {
+        if fenced(line) {
+            return match body.trim().is_empty() {
+                true => Claim::Silent,
+                false => match serde_yaml_ng::from_str::<serde_json::Value>(&body) {
+                    Ok(value) => Claim::Says(value),
+                    Err(e) => Claim::Malformed(format!("frontmatter is not valid YAML: {e}")),
+                },
+            };
+        }
+        body.push_str(line);
+        body.push('\n');
     }
+    Claim::Malformed("frontmatter is never closed by `---`".to_owned())
 }
 
 fn unreadable(at: &Path, e: &std::io::Error) -> CliError {
@@ -218,6 +229,48 @@ mod tests {
     fn an_empty_frontmatter_block_says_nothing_rather_than_being_broken() {
         let got = claims(&[("memories/a.md", "---\n\n---\nbody")]);
         assert_eq!(got[0].1, Claim::Silent);
+    }
+
+    #[test]
+    fn a_block_that_closes_immediately_is_closed() {
+        let got = claims(&[("memories/a.md", "---\n---\n\n# just prose\n")]);
+        assert_eq!(
+            got[0].1,
+            Claim::Silent,
+            "`---` twice with nothing between them is the ordinary way to write a note that \
+             claims nothing on purpose. Told it was never closed, its author goes looking for \
+             a missing line that is right there"
+        );
+    }
+
+    #[test]
+    fn a_note_saved_with_windows_line_endings_still_states_what_it_is_about() {
+        let got = claims(&[(
+            "memories/a.md",
+            "---\r\nabout: src/a.rs\r\nwatch: [sig]\r\n---\r\n\r\nbody\r\n",
+        )]);
+        assert_eq!(
+            got[0].1,
+            Claim::Says(serde_json::json!({ "about": "src/a.rs", "watch": ["sig"] })),
+            "read as silence, this note names no anchor and nothing observes it — and the \
+             only thing separating it from a note that works is which editor saved it"
+        );
+    }
+
+    #[test]
+    fn only_a_line_that_is_nothing_but_the_fence_closes_the_block() {
+        let got = claims(&[(
+            "memories/a.md",
+            "---\nabout: src/a.rs\n--- not a fence\nwatch: [sig]\n---\n",
+        )]);
+        assert!(
+            matches!(&got[0].1, Claim::Malformed(_)),
+            "a line that merely starts with `---` used to end the block, and everything after \
+             it — `watch:`, `anchors:`, whatever the note went on to declare — was dropped \
+             with no complaint anywhere. Whatever this note is, it is not something to read \
+             half of: {:?}",
+            got[0].1
+        );
     }
 
     #[test]
