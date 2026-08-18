@@ -32,7 +32,7 @@ pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
     })
 }
 
-pub fn anchor(v: &AnchorView, source: &crate::notes::Notes) -> String {
+pub fn anchor(v: &AnchorView, names: &crate::memories::Names) -> String {
     let mut out = String::new();
     let head = match v.status.as_ref() {
         Some(s) => format!("{}  [{s}]", v.key),
@@ -55,10 +55,7 @@ pub fn anchor(v: &AnchorView, source: &crate::notes::Notes) -> String {
 
     for m in &v.memories {
         let mark = if m.grounded { "*" } else { "?" };
-        out.push_str(&format!(
-            "  {mark} {}",
-            crate::memories::shown(&m.reference, source)
-        ));
+        out.push_str(&format!("  {mark} {}", names.of(&m.reference)));
         out.push_str(&grounding(&m.grounding));
         if !m.grounded {
             out.push_str("  ungrounded");

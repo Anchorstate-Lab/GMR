@@ -16,14 +16,30 @@ pub fn declaring(root: &Path) -> crate::notes::Notes {
     crate::notes::Notes::at(root, NOTES_DIR)
 }
 
-pub fn shown(reference: &Ref, source: &crate::notes::Notes) -> String {
-    source
-        .name_of(reference)
-        .unwrap_or_else(|| addressed(reference))
-}
-
 pub fn addressed(reference: &Ref) -> String {
     format!("{}:{}", reference.provider, reference.external_id)
+}
+
+#[derive(Default)]
+pub struct Names {
+    sources: Vec<std::sync::Arc<crate::notes::Notes>>,
+}
+
+impl Names {
+    pub fn over(sources: Vec<std::sync::Arc<crate::notes::Notes>>) -> Self {
+        Self { sources }
+    }
+
+    pub fn named(&self, reference: &Ref) -> Option<String> {
+        self.sources
+            .iter()
+            .find_map(|source| source.name_of(reference))
+    }
+
+    pub fn of(&self, reference: &Ref) -> String {
+        self.named(reference)
+            .unwrap_or_else(|| addressed(reference))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,7 +204,9 @@ fn claims_of(
     catalog: &Catalog,
 ) -> (Option<Note>, Vec<Fault>) {
     let record = &declared.record;
-    let named = shown(&record.reference, source);
+    let named = source
+        .name_of(&record.reference)
+        .unwrap_or_else(|| addressed(&record.reference));
     let rel = named.as_str();
     let text = String::from_utf8_lossy(&record.bytes);
     let mut faults = Vec::new();
@@ -402,15 +420,34 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     }
 
     #[test]
-    fn a_record_this_source_did_not_name_still_says_which_store_it_is_in() {
+    fn a_record_no_source_names_still_says_which_store_it_is_in() {
         let (d, _) = world(&[]);
-        let source = declaring(d.path());
+        let names = Names::over(vec![std::sync::Arc::new(declaring(d.path()))]);
 
         assert_eq!(
-            shown(&Ref::new("mem0", "4f3a91e2-8c7d"), &source),
+            names.of(&Ref::new("mem0", "4f3a91e2-8c7d")),
             "mem0:4f3a91e2-8c7d"
         );
-        assert_eq!(shown(&Ref::new("git", "memories/auth.md"), &source), "auth");
+        assert_eq!(names.of(&Ref::new("git", "memories/auth.md")), "auth");
+    }
+
+    #[test]
+    fn a_name_is_available_wherever_the_book_is_and_nowhere_else() {
+        let (d, _) = world(&[]);
+        let reference = Ref::new("git", "memories/auth.md");
+
+        assert_eq!(
+            Names::default().of(&reference),
+            "git:memories/auth.md",
+            "a verb that was never handed the book falls back to the address, which is \
+             honest. What it must not do is print a third spelling of its own — `check` \
+             printed the address, `doctor` and `edges` printed the bare id, and the reader \
+             had no way to tell that all three meant one record"
+        );
+        assert_eq!(
+            Names::over(vec![std::sync::Arc::new(declaring(d.path()))]).of(&reference),
+            "auth"
+        );
     }
 
     #[test]

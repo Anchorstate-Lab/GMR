@@ -103,8 +103,8 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
     node
 }
 
-fn memory_node(m: &MemoryView, source: &crate::notes::Notes, detail: Option<String>) -> Node {
-    let label = crate::memories::shown(&m.reference, source);
+fn memory_node(m: &MemoryView, names: &crate::memories::Names, detail: Option<String>) -> Node {
+    let label = names.of(&m.reference);
     let (tone, badge) = memory_tone(m);
     let mut node = Node::new(memory_id(&m.reference), label, Kind::Memory, tone)
         .fact("provider", m.reference.provider.to_string())
@@ -135,17 +135,17 @@ fn memory_node(m: &MemoryView, source: &crate::notes::Notes, detail: Option<Stri
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     out: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
     let catalog = Catalog::load(root)?;
-    let (subs, _) = Subscriptions::load(root, &catalog)?;
+    let (subs, _) = Subscriptions::load(root, &catalog, names)?;
     let views = rt.read_all().await?;
 
-    let source = crate::memories::declaring(root);
     let mut nodes_by_name = crate::prose::Nodes::new();
     for m in views.iter().flat_map(|v| &v.memories) {
-        if let Some(name) = source.name_of(&m.reference) {
+        if let Some(name) = names.named(&m.reference) {
             nodes_by_name.insert(name, memory_id(&m.reference));
         }
     }
@@ -180,7 +180,7 @@ pub async fn run(
                 let detail = m
                     .content()
                     .map(|b| crate::prose::to_html(&String::from_utf8_lossy(b), &nodes_by_name));
-                memory_node(m, &source, detail)
+                memory_node(m, names, detail)
             });
         }
     }

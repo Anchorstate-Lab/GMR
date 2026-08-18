@@ -116,7 +116,7 @@ const ARGS_PER_CALL: usize = 32 * 1024;
 fn first_batch<'a>(paths: &'a [&'a str]) -> (&'a [&'a str], &'a [&'a str]) {
     let mut take = 0;
     let mut bytes = 0;
-    while take < paths.len() && (take == 0 || bytes + paths[take].len() + 1 <= ARGS_PER_CALL) {
+    while take < paths.len() && (take == 0 || bytes + paths[take].len() < ARGS_PER_CALL) {
         bytes += paths[take].len() + 1;
         take += 1;
     }

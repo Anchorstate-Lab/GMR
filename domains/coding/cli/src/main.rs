@@ -155,22 +155,25 @@ async fn served(
         builder = builder.provider_warning(&warning.provider, &warning.message);
     }
     let rt = builder.build();
+    let names = &stores.names;
 
     let json = cli.json;
     match cli.command {
-        Command::Sync { file, dry_run } => verbs::sync::run(&rt, &root, file, dry_run, json).await,
+        Command::Sync { file, dry_run } => {
+            verbs::sync::run(&rt, &root, names, file, dry_run, json).await
+        }
         Command::Anchor { coordinate, memory } => {
-            verbs::anchor::run(&rt, &root, coordinate, memory, json).await
+            verbs::anchor::run(&rt, &root, names, coordinate, memory, json).await
         }
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
-        Command::Status { key } => verbs::status::run(&rt, &root, key, json).await,
-        Command::Check { key } => verbs::check::run(&rt, &root, key, json).await,
-        Command::Atlas { out } => verbs::atlas::run(&rt, &root, out, json).await,
+        Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
+        Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,
+        Command::Atlas { out } => verbs::atlas::run(&rt, &root, names, out, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init { .. } => unreachable!("init was handled above"),
         Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
-        Command::Observe { key } => verbs::observe::run(&rt, &root, key, json).await,
+        Command::Observe { key } => verbs::observe::run(&rt, &root, names, key, json).await,
         Command::Accept {
             key,
             baseline,
@@ -185,7 +188,7 @@ async fn served(
             };
             verbs::accept::run(&rt, &root, key, why, asked, all, json).await
         }
-        Command::Read { key } => verbs::read::run(&rt, &root, key, json).await,
+        Command::Read { key } => verbs::read::run(&rt, names, key, json).await,
         Command::Revise(args) => verbs::revise::run(&rt, &root, args, json).await,
         Command::Rebase { keys, all, why } => verbs::rebase::run(&rt, keys, all, why, json).await,
         Command::Bind {
@@ -197,7 +200,9 @@ async fn served(
         Command::Reaffirm { path, provider } => {
             verbs::reaffirm::run(&rt, path, provider, json).await
         }
-        Command::Cobound { path, provider } => verbs::cobound::run(&rt, path, provider, json).await,
+        Command::Cobound { path, provider } => {
+            verbs::cobound::run(&rt, names, path, provider, json).await
+        }
         Command::Link {
             from,
             to,
@@ -206,12 +211,14 @@ async fn served(
             to_provider,
         } => verbs::link::run(&rt, from, to, kind, from_provider, to_provider, json).await,
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
-        Command::Edges { since, status } => verbs::edges::run(&rt, since, status, json).await,
+        Command::Edges { since, status } => {
+            verbs::edges::run(&rt, names, since, status, json).await
+        }
         Command::Health { key } => verbs::health::run(&rt, key, json).await,
         Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
-        Command::Pass => verbs::pass::run(&rt, &root, json).await,
+        Command::Pass => verbs::pass::run(&rt, &root, names, json).await,
         Command::Doctor => {
-            verbs::doctor::run(&rt, &root, linked.cache_fault.as_deref(), json).await
+            verbs::doctor::run(&rt, &root, names, linked.cache_fault.as_deref(), json).await
         }
         Command::Export { .. } => unreachable!("export was handled above"),
         Command::Import { .. } => unreachable!("import was handled above"),

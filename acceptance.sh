@@ -191,7 +191,9 @@ echo "$out" | grep -q 'memories/session-rotate.md' || fail "anchor did not write
 
 out=$("$gmr" --repo "$repo" status "$key")
 echo "$out" | grep -q 'contract' || fail "status did not recognise the shape" "$out"
-echo "$out" | grep -q 'memories/session-rotate.md' || fail "status did not list the memory" "$out"
+echo "$out" | grep -q -- '→ session-rotate' || fail "status did not list the memory" "$out"
+echo "$out" | grep -q 'memories/session-rotate.md' \
+    && fail "status spelled a note as a path while every other verb spells it as a name" "$out"
 
 set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
@@ -221,7 +223,7 @@ set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "a definition appeared before it, check should be 1, got $code" "$out"
-echo "$out" | grep -q 'memories/session-rotate.md' \
+echo "$out" | grep -q -- '→ session-rotate' \
     || fail "place moved but the memory was not handed back" "$out"
 
 # Say so yourself if you want quiet. watch is per-note, not a criterion, and
@@ -259,7 +261,7 @@ set +e
 out=$("$gmr" --repo "$repo" check "$key"); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "a subscribed axis moved, check should be 1, got $code" "$out"
-echo "$out" | grep -q 'memories/session-rotate.md' || fail "check did not hand the memory back" "$out"
+echo "$out" | grep -q -- '→ session-rotate' || fail "check did not hand the memory back" "$out"
 
 out=$("$gmr" --repo "$repo" status "$key")
 echo "$out" | grep -qE 'sig 1' || fail "the signature changed but the sig bit was not set" "$out"
@@ -480,7 +482,7 @@ set +e
 out=$("$gmr" --repo "$repo" doctor --json); code=$?
 set -e
 [ "$code" -eq 1 ] || fail "a record the store says is gone did not turn doctor red, and unbinding it is exactly the thing the owner can do" "$out"
-echo "$out" | grep -q '"gone":\["owned.md"\]' || fail "the dead reference was not reported as gone" "$out"
+echo "$out" | grep -q '"gone":\["claude-code:owned.md"\]' || fail "the dead reference was not reported as gone" "$out"
 
 # The store itself is gone: our failure, not the world's answer. Same repository,
 # same binding — only the reachability differs, and the exit code must not.
@@ -492,7 +494,7 @@ set +e
 reachable=$("$gmr" --repo "$repo" check >/dev/null 2>&1; echo $?)
 out=$("$gmr" --repo "$repo" doctor --json); code=$?
 set -e
-echo "$out" | grep -q '"unreachable":\["owned.md"\]' \
+echo "$out" | grep -q '"unreachable":\["claude-code:owned.md"\]' \
     || fail "a store that is not there was not reported as unreachable — silence is how this used to look" "$out"
 echo "$out" | grep -q '"gone":\[\]' \
     || fail "a store that would not answer was read as the record being gone; that sends the reader to delete a binding that is fine" "$out"
@@ -511,7 +513,7 @@ set -e
 set +e
 out=$(env -u HOME -u GMR_CLAUDE_MEMORY_DIR "$gmr" --repo "$repo" doctor --json); code=$?
 set -e
-echo "$out" | grep -q '"no_provider":\["owned.md"\]' \
+echo "$out" | grep -q '"no_provider":\["claude-code:owned.md"\]' \
     || fail "a binding through a store with no provider in this binary was not reported as such; unreachable would say somebody else's service is down, and this is a build or a config" "$out"
 [ "$code" -eq 1 ] || fail "a binding through a store this binary cannot name did not turn doctor red" "$out"
 

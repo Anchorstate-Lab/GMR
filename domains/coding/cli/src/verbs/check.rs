@@ -53,6 +53,7 @@ impl Wrong {
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
@@ -61,7 +62,7 @@ pub async fn run(
         None => rt.anchors().await?,
     };
     let catalog = Catalog::load(root)?;
-    let (subs, unwatchable) = Subscriptions::load(root, &catalog)?;
+    let (subs, unwatchable) = Subscriptions::load(root, &catalog, names)?;
     let Audit {
         drifted,
         unreadable,
@@ -69,7 +70,7 @@ pub async fn run(
     } = criteria(rt, root, catalog, &keys).await?;
     let swapped = super::swapped(rt, &keys).await?;
 
-    let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<String>)> = Vec::new();
+    let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<gmr::Ref>)> = Vec::new();
     let mut unclaimed = Vec::new();
     let mut unseen = Vec::new();
     let mut quiet = 0;
@@ -101,7 +102,7 @@ pub async fn run(
             key.clone(),
             status,
             crate::render::diagnosis(view.facts.as_ref()),
-            super::observe::addressed_all(&memories),
+            memories,
         ));
     }
 
@@ -122,7 +123,8 @@ pub async fn run(
             serde_json::json!({
                 "observed": keys.len(),
                 "handed_back": handed.iter().map(|(k, s, d, m)| serde_json::json!({
-                    "anchor": k, "status": s, "diagnosis": d, "memories": m
+                    "anchor": k, "status": s, "diagnosis": d,
+                    "memories": super::observe::addressed_all(m)
                 })).collect::<Vec<_>>(),
                 "moved_unwatched": quiet,
                 "unclaimed": unclaimed,
@@ -153,7 +155,7 @@ pub async fn run(
             println!("  {d}");
         }
         for m in memories {
-            println!("  → {m}");
+            println!("  → {}", names.of(m));
         }
     }
     if !unseen.is_empty() {

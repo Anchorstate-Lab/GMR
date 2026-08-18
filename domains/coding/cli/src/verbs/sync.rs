@@ -135,6 +135,7 @@ pub fn merged<'a>(
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     file: String,
     dry_run: bool,
     json: bool,
@@ -197,8 +198,7 @@ pub async fn run(
         opened.push(decl.key.clone());
     }
 
-    let (binds, bound, renamed) =
-        align_bindings(rt, notes, &crate::memories::declaring(root)).await?;
+    let (binds, bound, renamed) = align_bindings(rt, notes, names).await?;
     steps.extend(
         binds
             .into_iter()
@@ -369,7 +369,7 @@ enum Step {
 async fn align_bindings(
     rt: &Runtime,
     notes: &[crate::memories::Note],
-    source: &crate::notes::Notes,
+    names: &crate::memories::Names,
 ) -> Result<(Vec<Binding>, Vec<String>, Vec<String>), CliError> {
     let mut planned = Vec::new();
     let mut bound = Vec::new();
@@ -377,7 +377,7 @@ async fn align_bindings(
 
     for note in notes {
         let reference = note.reference.clone();
-        let named = crate::memories::shown(&reference, source);
+        let named = names.of(&reference);
         let mut want: Vec<AnchorKey> = note
             .wants
             .iter()
@@ -559,8 +559,10 @@ mod tests {
             watch: None,
         }];
 
-        let source = crate::notes::Notes::at(dir.path(), "memories");
-        let (plan, bound, _) = align_bindings(&rt, &notes, &source).await.unwrap();
+        let names = crate::memories::Names::over(vec![std::sync::Arc::new(
+            crate::memories::declaring(dir.path()),
+        )]);
+        let (plan, bound, _) = align_bindings(&rt, &notes, &names).await.unwrap();
 
         assert_eq!(plan.len(), 1);
         assert_eq!(

@@ -43,18 +43,29 @@ impl Verdict {
 
 #[derive(Default)]
 struct Grounds {
-    gone: Vec<String>,
-    no_provider: Vec<String>,
-    unreachable: Vec<String>,
-    never_asked: Vec<String>,
-    no_before: Vec<String>,
+    gone: Vec<gmr::Ref>,
+    no_provider: Vec<gmr::Ref>,
+    unreachable: Vec<gmr::Ref>,
+    never_asked: Vec<gmr::Ref>,
+    no_before: Vec<gmr::Ref>,
     bound: usize,
+}
+
+fn addresses(refs: &[gmr::Ref]) -> Vec<String> {
+    refs.iter().map(crate::memories::addressed).collect()
+}
+
+fn spelled(refs: &[gmr::Ref], names: &crate::memories::Names) -> String {
+    refs.iter()
+        .map(|r| names.of(r))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn grounds(live: &[&gmr::AnchorView]) -> Grounds {
     let mut out = Grounds::default();
     for m in live.iter().flat_map(|v| &v.memories) {
-        let id = m.reference.external_id.to_string();
+        let id = m.reference.clone();
         out.bound += 1;
         match &m.grounding {
             gmr::Grounding::Gone => out.gone.push(id),
@@ -101,6 +112,7 @@ pub fn undeclared(
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     cache_fault: Option<&str>,
     json: bool,
 ) -> Result<i32, CliError> {
@@ -125,7 +137,7 @@ pub async fn run(
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
     let catalog = crate::probes::Catalog::load(root)?;
-    let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog)?;
+    let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog, names)?;
     let mut scanned = crate::memories::scan(root, &catalog)?;
     let declared = read_declared(root, DEFAULT_FILE)?;
     scanned.accounted_for(
@@ -165,9 +177,10 @@ pub async fn run(
                 "anchors": views.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "undeclared": undeclared,
-                "gone": ground.gone, "no_provider": ground.no_provider,
-                "unreachable": ground.unreachable, "never_asked": ground.never_asked,
-                "bound": ground.bound, "no_before": ground.no_before,
+                "gone": addresses(&ground.gone), "no_provider": addresses(&ground.no_provider),
+                "unreachable": addresses(&ground.unreachable),
+                "never_asked": addresses(&ground.never_asked),
+                "bound": ground.bound, "no_before": addresses(&ground.no_before),
                 "skill_stale": skill_stale,
                 "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
@@ -231,13 +244,13 @@ pub async fn run(
     if !ground.gone.is_empty() {
         println!(
             "gone      {}\n          <- the provider says these records no longer exist. Restore them or detach the binding; until then these anchors are watched on behalf of nothing",
-            ground.gone.join(", ")
+            spelled(&ground.gone, names)
         );
     }
     if !ground.no_provider.is_empty() {
         println!(
             "no provider {}\n            <- bound through a provider this binary does not have. Rebuild with that feature, or the binding cannot be read here at all",
-            ground.no_provider.join(", ")
+            spelled(&ground.no_provider, names)
         );
     }
     if !ground.unreachable.is_empty() {

@@ -5,18 +5,15 @@ use gmr::{Ref, State};
 use serde_json::Value;
 
 use crate::error::CliError;
-use crate::memories::{Fault, Note, Weight};
+use crate::memories::{Fault, Names, Note, Weight};
 use crate::probes::Catalog;
 use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
 
-fn declaring(notes: &[Note], key: &str) -> String {
+fn declaring(notes: &[Note], names: &Names, key: &str) -> String {
     notes
         .iter()
         .find(|n| n.wants.iter().any(|w| w.key() == key))
-        .map_or_else(
-            || DEFAULT_FILE.to_owned(),
-            |n| n.reference.external_id.to_string(),
-        )
+        .map_or_else(|| DEFAULT_FILE.to_owned(), |n| names.of(&n.reference))
 }
 
 pub fn axes_set(state: &State) -> Option<Vec<String>> {
@@ -35,7 +32,11 @@ pub struct Subscriptions {
 }
 
 impl Subscriptions {
-    pub fn load(root: &Path, catalog: &Catalog) -> Result<(Self, Vec<Fault>), CliError> {
+    pub fn load(
+        root: &Path,
+        catalog: &Catalog,
+        names: &Names,
+    ) -> Result<(Self, Vec<Fault>), CliError> {
         let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, catalog)?;
         let declared = read_declared(root, DEFAULT_FILE)?;
 
@@ -48,7 +49,7 @@ impl Subscriptions {
                     axes_by_anchor.insert(&decl.key, crate::shapes::axes_of(shape));
                 }
                 Err(e) => faults.push(Fault {
-                    note: declaring(&notes, &decl.key),
+                    note: declaring(&notes, names, &decl.key),
                     key: Some(decl.key.clone()),
                     code: "unknown-shape",
                     detail: format!("`{}`: {e}", decl.key),
@@ -66,7 +67,7 @@ impl Subscriptions {
                 };
                 if let Some(bad) = watch.iter().find(|w| !axes.contains(&w.as_str())) {
                     faults.push(Fault {
-                        note: note.reference.external_id.to_string(),
+                        note: names.of(&note.reference),
                         key: Some(want.key().to_owned()),
                         code: "watch-invalid",
                         detail: format!(
@@ -196,6 +197,10 @@ mod tests {
         assert!(!s.delivers(None, &at("git", "memories/a.md"), &hand, false));
     }
 
+    fn book(root: &Path) -> Names {
+        Names::over(vec![std::sync::Arc::new(crate::memories::declaring(root))])
+    }
+
     fn world(files: &[(&str, &str)]) -> (tempfile::TempDir, crate::probes::Catalog) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".anchor")).unwrap();
@@ -221,9 +226,14 @@ mod tests {
                 "---\nabout: src/a.rs\nwatch: [roll]\n---\n",
             ),
         ]);
-        let (subs, broken) = Subscriptions::load(d.path(), &c).unwrap();
+        let (subs, broken) = Subscriptions::load(d.path(), &c, &book(d.path())).unwrap();
         assert_eq!(broken.len(), 1);
-        assert_eq!(broken[0].note, "memories/bad.md");
+        assert_eq!(
+            broken[0].note, "bad",
+            "doctor prints this column next to the note lint's, and that one has always \
+             spelled a note by its name. Two spellings in one column is how a reader learns \
+             that `bad` and `memories/bad.md` might be two different files"
+        );
         assert!(
             broken[0].detail.contains("not_a_real_axis"),
             "{}",
@@ -248,10 +258,10 @@ mod tests {
                  position: { file: src/a.rs }\n    shape: no-such-shape\n---\n",
             ),
         ]);
-        let (_, faults) = Subscriptions::load(d.path(), &c).unwrap();
+        let (_, faults) = Subscriptions::load(d.path(), &c, &book(d.path())).unwrap();
         assert_eq!(faults.len(), 1);
         assert_eq!(
-            faults[0].note, "memories/custom.md",
+            faults[0].note, "custom",
             "the column a person reads to know what to open. It used to hold the anchor key, \
              because this failure had a record type of its own whose `note` field nobody had \
              to fill with a note"

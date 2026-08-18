@@ -12,6 +12,7 @@ pub struct Warning {
 pub struct Stores {
     pub built: Vec<MemoryStore>,
     pub warnings: Vec<Warning>,
+    pub names: crate::memories::Names,
 }
 
 impl Stores {
@@ -38,6 +39,7 @@ pub fn assembled(root: &Path) -> Stores {
     let mut stores = Stores::default();
 
     let notes = std::sync::Arc::new(crate::memories::declaring(root));
+    stores.names = crate::memories::Names::over(vec![notes.clone()]);
     stores
         .built
         .push(gmr_provider::git::store(root).listing(notes));

@@ -4,6 +4,7 @@ use crate::error::CliError;
 
 pub async fn run(
     rt: &Runtime,
+    names: &crate::memories::Names,
     path: String,
     provider: String,
     json: bool,
@@ -16,7 +17,7 @@ pub async fn run(
             "{}",
             serde_json::json!({
                 "path": path,
-                "cobound": others.iter().map(|r| &r.external_id).collect::<Vec<_>>(),
+                "cobound": others.iter().map(crate::memories::addressed).collect::<Vec<_>>(),
             })
         );
         return Ok(0);
@@ -27,7 +28,7 @@ pub async fn run(
     } else {
         println!("{path} is co-bound with:");
         for other in &others {
-            println!("  {}", other.external_id);
+            println!("  {}", names.of(other));
         }
     }
     Ok(0)

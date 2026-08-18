@@ -1,9 +1,11 @@
 use gmr::{Before, Edge, Runtime, Standing, StatusId};
 
 use crate::error::CliError;
+use crate::memories::Names;
 
 pub async fn run(
     rt: &Runtime,
+    names: &Names,
     since: u64,
     status: Option<String>,
     json: bool,
@@ -73,13 +75,13 @@ pub async fn run(
                                 "  the bound version could not be reached"
                             }
                         };
-                        println!("rewritten   {anchor}  {}{tail}", reference.external_id);
+                        println!("rewritten   {anchor}  {}{tail}", names.of(reference));
                     }
                     Standing::Gone {
                         anchor, reference, ..
                     } => println!(
                         "gone        {anchor}  {}  the provider says this record is gone",
-                        reference.external_id
+                        names.of(reference)
                     ),
                     Standing::NoProvider {
                         anchor,
@@ -87,14 +89,14 @@ pub async fn run(
                         provider,
                     } => println!(
                         "no provider {anchor}  {}  `{provider}` is not registered in this binary",
-                        reference.external_id
+                        names.of(reference)
                     ),
                     Standing::Unreachable {
                         anchor,
                         reference,
                         why,
                         ..
-                    } => println!("unreachable {anchor}  {}  {why}", reference.external_id),
+                    } => println!("unreachable {anchor}  {}  {why}", names.of(reference)),
                 }
             }
         }

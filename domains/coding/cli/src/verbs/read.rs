@@ -4,7 +4,7 @@ use crate::{error::CliError, render};
 
 pub async fn run(
     rt: &Runtime,
-    root: &std::path::Path,
+    names: &crate::memories::Names,
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
@@ -25,7 +25,7 @@ pub async fn run(
         println!("no anchors.");
     } else {
         for v in &views {
-            print!("{}", render::anchor(v, &crate::memories::declaring(root)));
+            print!("{}", render::anchor(v, names));
         }
     }
     Ok(0)

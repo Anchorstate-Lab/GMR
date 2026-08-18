@@ -4,12 +4,12 @@ use gmr::Runtime;
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
+use crate::memories::Names;
 use crate::probes::Catalog;
 
-pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError> {
+pub async fn run(rt: &Runtime, root: &Path, names: &Names, json: bool) -> Result<i32, CliError> {
     let p = rt.pass().await?;
-    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?)?;
-    let source = crate::memories::declaring(root);
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?, names)?;
 
     let mut moved = Vec::new();
     let mut unclaimed = Vec::new();
@@ -59,7 +59,7 @@ pub async fn run(rt: &Runtime, root: &Path, json: bool) -> Result<i32, CliError>
             }
             println!("  {key}");
             for m in memories {
-                println!("    → {}", crate::memories::shown(m, &source));
+                println!("    → {}", names.of(m));
             }
         }
         super::observe::report_unclaimed(&unclaimed);

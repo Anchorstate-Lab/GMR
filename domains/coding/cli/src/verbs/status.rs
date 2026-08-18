@@ -32,6 +32,7 @@ fn unwritten(root: &Path, note: &str) -> bool {
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &crate::memories::Names,
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
@@ -63,13 +64,12 @@ pub async fn run(
     let mut rows = Vec::new();
     for view in &live {
         let shape = crate::shapes::name_of(&view.anchor.transitions).unwrap_or("custom");
-        let memories: Vec<(String, bool)> = view
+        let memories: Vec<(&gmr::Ref, bool)> = view
             .memories
             .iter()
             .map(|m| {
-                let path = m.reference.external_id.as_str().to_owned();
-                let blank = unwritten(root, &path);
-                (path, blank)
+                let blank = unwritten(root, m.reference.external_id.as_str());
+                (&m.reference, blank)
             })
             .collect();
         rows.push((view, shape, axes_line(view), memories));
@@ -83,8 +83,8 @@ pub async fn run(
                     "anchor": v.key, "shape": shape,
                     "status": v.status.as_ref().map(|s| s.to_string()),
                     "state": v.state,
-                    "memories": memories.iter().map(|(p, blank)| serde_json::json!({
-                        "note": p, "unwritten": blank
+                    "memories": memories.iter().map(|(r, blank)| serde_json::json!({
+                        "note": crate::memories::addressed(r), "unwritten": blank
                     })).collect::<Vec<_>>(),
                 })
             })
@@ -129,7 +129,8 @@ pub async fn run(
         if let Some(d) = crate::render::diagnosis(view.facts.as_ref()) {
             println!("    ?  {d}");
         }
-        for (note, blank) in memories {
+        for (reference, blank) in memories {
+            let note = names.of(reference);
             match blank {
                 true => println!("    ! {note}   unwritten"),
                 false => println!("    → {note}"),

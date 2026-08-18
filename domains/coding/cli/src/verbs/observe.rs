@@ -4,20 +4,21 @@ use gmr::{AnchorKey, Observed, Runtime, State};
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
+use crate::memories::Names;
 use crate::probes::Catalog;
 
 pub async fn run(
     rt: &Runtime,
     root: &Path,
+    names: &Names,
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
-    let source = crate::memories::declaring(root);
     let keys = match key {
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
-    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?)?;
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?, names)?;
 
     let mut moved = 0;
     let mut handed = 0;
@@ -61,7 +62,7 @@ pub async fn run(
                 None => println!("{key}  {word}"),
             }
             for m in &memories {
-                println!("    → {}", crate::memories::shown(m, &source));
+                println!("    → {}", names.of(m));
             }
         }
     }
