@@ -526,6 +526,33 @@ echo "$out" | grep -q '"anchors":\["src/auth.ts#createSession"\]' \
 "$gmr" --repo "$repo" memories --provider claude-code >/dev/null 2>&1 \
     && fail "a store with no way to list what it holds answered a listing anyway"
 
+# ── SKILL.md tells an agent to hand an address straight back to the verbs. That
+#    sentence is a promise about two things that are edited in different files,
+#    and nothing but a round trip can tell whether they still agree. Without
+#    this, `bind` answered a valid address with "`git` has no record
+#    `git:memories/auth.md`" and `cobound` answered about an address nobody
+#    ever wrote — exit 0, no error anywhere.
+step "an address this CLI prints is an address this CLI takes"
+addr=$("$gmr" --repo "$repo" memories --json \
+    | tr ',' '\n' | grep -o '"git:memories/auth.md"' | head -1 | tr -d '"')
+[ "$addr" = "git:memories/auth.md" ] || fail "could not read an address out of --json" "$addr"
+
+"$gmr" --repo "$repo" reaffirm "$addr" >/dev/null \
+    || fail "a verb refused the address its own --json had just printed"
+"$gmr" --repo "$repo" cobound "$addr" >/dev/null \
+    || fail "cobound refused the address its own --json had just printed"
+
+# The half git alone cannot prove: a store whose prefix is not `git`.
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+"$gmr" --repo "$repo" reaffirm 'claude-code:owned.md' >/dev/null \
+    || fail "an address naming a second store did not resolve to that store"
+
+set +e
+out=$("$gmr" --repo "$repo" bind "$addr" --provider claude-code --anchors "$key" 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] \
+    || fail "an address saying git and a --provider saying claude-code were reconciled by guessing; the binding table only ever grows" "$out"
+
 step "an installed SKILL.md older than the binary is the owner's to fix"
 printf 'stale\n' >> "$repo/.claude/skills/gmr/SKILL.md"
 set +e

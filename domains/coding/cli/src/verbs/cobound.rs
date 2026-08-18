@@ -5,11 +5,10 @@ use crate::error::CliError;
 pub async fn run(
     rt: &Runtime,
     names: &crate::memories::Names,
-    path: String,
-    provider: String,
+    reference: Ref,
     json: bool,
 ) -> Result<i32, CliError> {
-    let reference = Ref::new(provider, path.clone());
+    let path = names.of(&reference);
     let others = rt.cobound(&reference).await?;
 
     if json {

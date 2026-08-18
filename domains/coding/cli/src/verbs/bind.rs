@@ -4,20 +4,23 @@ use crate::error::CliError;
 
 pub async fn run(
     rt: &Runtime,
-    path: String,
+    names: &crate::memories::Names,
+    reference: Ref,
     anchors: Vec<String>,
     detach: bool,
-    provider: String,
     json: bool,
 ) -> Result<i32, CliError> {
     if anchors.is_empty() && !detach {
         return Err(CliError("provide either --anchors or --detach".into()));
     }
-    let reference = Ref::new(provider.clone(), path.clone());
-    let version = rt
-        .current_version(&reference)
-        .await?
-        .ok_or_else(|| CliError(format!("`{provider}` has no record `{path}`")))?;
+    let path = names.of(&reference);
+    let version = rt.current_version(&reference).await?.ok_or_else(|| {
+        CliError(format!(
+            "`{}` has no record `{}`",
+            reference.provider, reference.external_id
+        ))
+    })?;
+    let address = crate::memories::addressed(&reference);
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
     rt.bind(reference, anchors.clone(), version.clone()).await?;
@@ -26,7 +29,7 @@ pub async fn run(
     if json {
         println!(
             "{}",
-            serde_json::json!({ "bound": path, "version": version, "anchors": anchors, "detached": detach })
+            serde_json::json!({ "bound": address, "version": version, "anchors": anchors, "detached": detach })
         );
     } else if detach {
         println!("{path} detached; history remains in the table");

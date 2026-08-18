@@ -16,8 +16,26 @@ pub fn declaring(root: &Path) -> crate::notes::Notes {
     crate::notes::Notes::at(root, NOTES_DIR)
 }
 
+pub const RESOLVED_THROUGH: &str = "git";
+
 pub fn addressed(reference: &Ref) -> String {
     format!("{}:{}", reference.provider, reference.external_id)
+}
+
+pub fn located(text: &str, provider: Option<&str>, known: &[&str]) -> Result<Ref, CliError> {
+    let carried = text
+        .split_once(':')
+        .filter(|(named, rest)| known.contains(named) && !rest.is_empty());
+    match (carried, provider) {
+        (Some((named, rest)), None) => Ok(Ref::new(named, rest)),
+        (Some((named, rest)), Some(want)) if want == named => Ok(Ref::new(named, rest)),
+        (Some((named, _)), Some(want)) => Err(CliError(format!(
+            "`{text}` is addressed to `{named}` and --provider says `{want}`. One of them is \
+             not what you meant, and guessing which would bind this to a store you did not name"
+        ))),
+        (None, Some(want)) => Ok(Ref::new(want, text)),
+        (None, None) => Ok(Ref::new(RESOLVED_THROUGH, text)),
+    }
 }
 
 #[derive(Default)]
@@ -417,6 +435,60 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
              exactly what the lint says is missing. Left standing it makes `sync` exit 1 on a \
              repository whose script probe and note are both correct"
         );
+    }
+
+    const STORES: [&str; 3] = ["git", "mem0", "claude-code"];
+
+    #[test]
+    fn every_address_this_cli_prints_can_be_handed_straight_back() {
+        for reference in [
+            Ref::new("git", "memories/auth.md"),
+            Ref::new("mem0", "9f8e1d02-0000-4000-8000-000000000000"),
+            Ref::new("claude-code", "feedback.md"),
+        ] {
+            assert_eq!(
+                located(&addressed(&reference), None, &STORES).unwrap(),
+                reference,
+                "`addressed` is how every verb hands a record to whoever reads its output, \
+                 and SKILL.md tells an agent to use that string verbatim. Without a parse \
+                 that undoes it the encoding is one-way: `bind` and `reaffirm` refuse it as \
+                 a record that does not exist, and `cobound` answers about an address nobody \
+                 ever wrote — with no error anywhere"
+            );
+        }
+    }
+
+    #[test]
+    fn a_prefix_no_store_here_answers_to_is_part_of_the_id() {
+        assert_eq!(
+            located("mem0:9f8e", None, &["git"]).unwrap(),
+            Ref::new("git", "mem0:9f8e"),
+            "an id is allowed to contain a colon, so only a prefix this binary actually \
+             registered may be taken as one. Splitting on any colon would quietly rewrite \
+             every id that has one"
+        );
+    }
+
+    #[test]
+    fn a_bare_path_still_reaches_the_store_it_always_did() {
+        assert_eq!(
+            located("memories/auth.md", None, &STORES).unwrap(),
+            Ref::new("git", "memories/auth.md")
+        );
+        assert_eq!(
+            located("9f8e", Some("mem0"), &STORES).unwrap(),
+            Ref::new("mem0", "9f8e")
+        );
+    }
+
+    #[test]
+    fn an_address_that_contradicts_the_flag_is_refused_rather_than_picked() {
+        located("mem0:9f8e", Some("git"), &STORES).expect_err(
+            "silently preferring either one binds this record to a store the caller did not \
+             name, and the binding table is append-only",
+        );
+        located("mem0:9f8e", Some("mem0"), &STORES)
+            .expect("saying the same thing twice is not a contradiction");
     }
 
     #[test]

@@ -196,12 +196,17 @@ async fn served(
             anchors,
             detach,
             provider,
-        } => verbs::bind::run(&rt, path, anchors, detach, provider, json).await,
+        } => {
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::bind::run(&rt, names, reference, anchors, detach, json).await
+        }
         Command::Reaffirm { path, provider } => {
-            verbs::reaffirm::run(&rt, path, provider, json).await
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::reaffirm::run(&rt, names, reference, json).await
         }
         Command::Cobound { path, provider } => {
-            verbs::cobound::run(&rt, names, path, provider, json).await
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::cobound::run(&rt, names, reference, json).await
         }
         Command::Link {
             from,
@@ -209,7 +214,11 @@ async fn served(
             kind,
             from_provider,
             to_provider,
-        } => verbs::link::run(&rt, from, to, kind, from_provider, to_provider, json).await,
+        } => {
+            let from = stores.locate(&from, from_provider.as_deref())?;
+            let to = stores.locate(&to, to_provider.as_deref())?;
+            verbs::link::run(&rt, from, to, kind, json).await
+        }
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Edges { since, status } => {
             verbs::edges::run(&rt, names, since, status, json).await

@@ -182,10 +182,11 @@ pub enum Command {
         anchors: Vec<String>,
         #[arg(long)]
         detach: bool,
-        /// Which registered ContentProvider `path` is resolved through.
+        /// Which registered ContentProvider `path` is resolved through. Unset, a
+        /// `<provider>:<id>` address picks its own and a bare path means `git`.
         /// What's actually available depends on how this binary was built.
-        #[arg(long, default_value = "git")]
-        provider: String,
+        #[arg(long)]
+        provider: Option<String>,
     },
 
     /// Re-stamp a binding's content version without changing which anchors it's about.
@@ -193,8 +194,8 @@ pub enum Command {
     Reaffirm {
         path: String,
         /// Which registered ContentProvider `path` is resolved through.
-        #[arg(long, default_value = "git")]
-        provider: String,
+        #[arg(long)]
+        provider: Option<String>,
     },
 
     /// Other references bound to any anchor `path` is also bound to.
@@ -202,8 +203,8 @@ pub enum Command {
     Cobound {
         path: String,
         /// Which registered ContentProvider `path` is resolved through.
-        #[arg(long, default_value = "git")]
-        provider: String,
+        #[arg(long)]
+        provider: Option<String>,
     },
 
     /// Record that `from` relates to `to`. Independent of anchoring — linking
@@ -216,10 +217,10 @@ pub enum Command {
         to: String,
         #[arg(long)]
         kind: String,
-        #[arg(long, default_value = "git")]
-        from_provider: String,
-        #[arg(long, default_value = "git")]
-        to_provider: String,
+        #[arg(long)]
+        from_provider: Option<String>,
+        #[arg(long)]
+        to_provider: Option<String>,
     },
 
     /// Retire an anchor. Closure is irreversible.

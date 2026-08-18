@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::error::CliError;
 use gmr::{ContentError, MemoryStore};
 use gmr_provider::mem0::{Mem0, Scope};
 
@@ -16,6 +17,11 @@ pub struct Stores {
 }
 
 impl Stores {
+    pub fn locate(&self, text: &str, provider: Option<&str>) -> Result<gmr::Ref, CliError> {
+        let known: Vec<&str> = self.built.iter().map(|s| s.provider().as_str()).collect();
+        crate::memories::located(text, provider, &known)
+    }
+
     pub fn listing(&self, provider: Option<&str>) -> Vec<&MemoryStore> {
         self.built
             .iter()

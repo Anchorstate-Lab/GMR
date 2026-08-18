@@ -4,15 +4,18 @@ use crate::error::CliError;
 
 pub async fn run(
     rt: &Runtime,
-    path: String,
-    provider: String,
+    names: &crate::memories::Names,
+    reference: Ref,
     json: bool,
 ) -> Result<i32, CliError> {
-    let reference = Ref::new(provider.clone(), path.clone());
-    let version = rt
-        .current_version(&reference)
-        .await?
-        .ok_or_else(|| CliError(format!("`{provider}` has no record `{path}`")))?;
+    let path = names.of(&reference);
+    let address = crate::memories::addressed(&reference);
+    let version = rt.current_version(&reference).await?.ok_or_else(|| {
+        CliError(format!(
+            "`{}` has no record `{}`",
+            reference.provider, reference.external_id
+        ))
+    })?;
 
     rt.reaffirm(&reference, version.clone()).await?;
     let version = version.into_inner();
@@ -20,7 +23,7 @@ pub async fn run(
     if json {
         println!(
             "{}",
-            serde_json::json!({ "reaffirmed": path, "version": version })
+            serde_json::json!({ "reaffirmed": address, "version": version })
         );
     } else {
         println!("{path} reaffirmed");
