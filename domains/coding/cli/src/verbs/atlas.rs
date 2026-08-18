@@ -24,8 +24,8 @@ fn anchor_id(key: &str) -> String {
     format!("anchor:{key}")
 }
 
-fn memory_id(external_id: &str) -> String {
-    format!("memory:{external_id}")
+fn memory_id(reference: &gmr::Ref) -> String {
+    format!("memory:{}:{}", reference.provider, reference.external_id)
 }
 
 fn label_of(key: &str) -> String {
@@ -104,12 +104,11 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
 }
 
 fn memory_node(m: &MemoryView, source: &crate::notes::Notes, detail: Option<String>) -> Node {
-    let external = m.reference.external_id.to_string();
     let label = crate::memories::shown(&m.reference, source);
     let (tone, badge) = memory_tone(m);
-    let mut node = Node::new(memory_id(&external), label, Kind::Memory, tone)
+    let mut node = Node::new(memory_id(&m.reference), label, Kind::Memory, tone)
         .fact("provider", m.reference.provider.to_string())
-        .fact("address", external);
+        .fact("address", m.reference.external_id.to_string());
     if let Some(b) = badge {
         node = node.badge(b);
     }
@@ -147,13 +146,13 @@ pub async fn run(
     let mut nodes_by_name = crate::prose::Nodes::new();
     for m in views.iter().flat_map(|v| &v.memories) {
         if let Some(name) = source.name_of(&m.reference) {
-            nodes_by_name.insert(name, memory_id(m.reference.external_id.as_str()));
+            nodes_by_name.insert(name, memory_id(&m.reference));
         }
     }
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
-    let mut memories: BTreeMap<String, Node> = BTreeMap::new();
+    let mut memories: BTreeMap<gmr::Ref, Node> = BTreeMap::new();
     let mut barren = 0usize;
 
     for view in &views {
@@ -172,13 +171,12 @@ pub async fn run(
         nodes.push(anchor_node(view, anchor_tone(view, delivering, unclaimed)));
 
         for m in &view.memories {
-            let external = m.reference.external_id.to_string();
             edges.push(Edge::new(
-                memory_id(&external),
+                memory_id(&m.reference),
                 anchor_id(&key),
                 EdgeKind::Binding,
             ));
-            memories.entry(external).or_insert_with(|| {
+            memories.entry(m.reference.clone()).or_insert_with(|| {
                 let detail = m
                     .content()
                     .map(|b| crate::prose::to_html(&String::from_utf8_lossy(b), &nodes_by_name));
@@ -187,17 +185,17 @@ pub async fn run(
         }
     }
 
-    let present: Vec<String> = memories.keys().cloned().collect();
-    for external in &present {
+    let present: Vec<gmr::Ref> = memories.keys().cloned().collect();
+    for reference in &present {
         let Some(body) = views
             .iter()
             .flat_map(|v| &v.memories)
-            .find(|m| m.reference.external_id.as_str() == external)
+            .find(|m| &m.reference == reference)
             .and_then(gmr::MemoryView::content)
         else {
             continue;
         };
-        let from = memory_id(external);
+        let from = memory_id(reference);
         for name in crate::prose::wikilinks(&String::from_utf8_lossy(body)) {
             let Some(to) = nodes_by_name.get(&name) else {
                 continue;
@@ -291,6 +289,19 @@ mod tests {
         assert_eq!(label_of("layer::gmr-core"), "gmr-core");
         assert_eq!(trail_of("doctrine::decisions"), ["doctrine"]);
         assert_eq!(label_of("doctrine::decisions"), "decisions");
+    }
+
+    #[test]
+    fn the_same_id_in_two_stores_is_two_nodes_not_one() {
+        assert_ne!(
+            memory_id(&gmr::Ref::new("git", "a.md")),
+            memory_id(&gmr::Ref::new("mem0", "a.md")),
+            "a node's identity has to be the whole reference. Keyed by the id alone, two \
+             records that merely share a name collapse into one node: one label, one tone, \
+             and both anchors' binding edges pointing at it — the page then says two \
+             coordinates are watched by the same memory, which is a claim nobody made. \
+             `external_id` was globally unique for exactly as long as git was the only store"
+        );
     }
 
     fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
