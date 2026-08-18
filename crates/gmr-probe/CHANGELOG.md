@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.3...v0.3.4) - 2026-08-18
+
+### Added
+
+- *(content)* 预算随调用下去，一次操作一个总额
+- *(core,probe,shell,domain)* [**breaking**] 探针版本挣出来 —— artifact 内容寻址，声明与派生分家
+
+### Other
+
+- Merge branch 'fix/memory-layer-review'
+- release v0.3.2 ([#7](https://github.com/Anchorstate-Lab/GMR/pull/7))
+- release v0.3.1 ([#5](https://github.com/Anchorstate-Lab/GMR/pull/5))
+- release v0.3.0
+- cancellation runs down the tree; and two truths about the budget flag
+- raise the schema to v7 for a per-anchor probe budget, and climb into it
+- a call carries a budget, and giving up on the race now cancels the work
+- release v0.2.3 ([#3](https://github.com/Anchorstate-Lab/GMR/pull/3))
+- release v0.2.1 ([#2](https://github.com/Anchorstate-Lab/GMR/pull/2))
+- anchor its doc comments as memory, join the clean zone
+- the declaration slot holds a name; the transport answers what it stands for
+- record why an observation failed, on both sides of "our failure"
+- rename has_lease to leases_configured, and cut this session's comment bloat
+- Phase 1: narrow Expr.source to String, dedupe env-var contracts
+- Update English output
+- Update English output
+- first commit
+
 ## [0.3.3](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.2...v0.3.3) - 2026-08-16
 
 ### Added
