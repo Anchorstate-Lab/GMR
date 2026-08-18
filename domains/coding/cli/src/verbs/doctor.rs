@@ -181,7 +181,7 @@ pub async fn run(
                 "unreachable": addresses(&ground.unreachable),
                 "never_asked": addresses(&ground.never_asked),
                 "bound": ground.bound, "no_before": addresses(&ground.no_before),
-                "skill_stale": skill_stale,
+                "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
                 "notes": faults.iter().map(|f| serde_json::json!({
@@ -272,10 +272,10 @@ pub async fn run(
             ground.no_before.len()
         );
     }
-    if !skill_stale.is_empty() {
+    for s in &skill_stale {
         println!(
-            "skill     {}\n          <- installed SKILL.md differs from this binary's. `gmr init` only ever writes it when absent, so an upgraded binary leaves the old text in place and agents keep reading contracts this build no longer honours. Delete the file and re-run `gmr init`",
-            skill_stale.join(", ")
+            "skill     {}\n          <- this copy is not the SKILL.md in this binary. `gmr init` only ever writes it when absent, so an upgraded binary leaves the old text in place and agents keep reading contracts this build no longer honours. Delete it and re-run `{}`",
+            s.path, s.refresh
         );
     }
     if no_git {
