@@ -39,7 +39,7 @@ impl ContentProvider for Git {
         let Some(bytes) = crate::local_file::read(&self.root, id)? else {
             return Ok(None);
         };
-        let version = blob_version_within(&self.root, id.as_str(), budget)?;
+        let version = blob_version_within(&self.root, id.as_str(), budget).await?;
         Ok(Some(Fetched {
             version: Version::new(version),
             bytes,
@@ -63,7 +63,7 @@ impl History for Git {
         command
             .args(["cat-file", "blob", version.as_str()])
             .current_dir(&self.root);
-        let out = crate::within(command, budget)?;
+        let out = crate::within(command, budget).await?;
         if !out.status.success() {
             return Ok(None);
         }
@@ -100,13 +100,13 @@ fn hashes_in(out: &std::process::Output, wanted: usize) -> Result<Vec<String>, C
     }
 }
 
-fn blob_version_within(
+async fn blob_version_within(
     root: &Path,
     relative: &str,
     budget: &Budget,
 ) -> Result<String, ContentError> {
-    crate::within(hash_object(root, std::slice::from_ref(&relative)), budget)
-        .and_then(|out| hashes_in(&out, 1))?
+    let out = crate::within(hash_object(root, std::slice::from_ref(&relative)), budget).await?;
+    hashes_in(&out, 1)?
         .pop()
         .ok_or_else(|| ContentError::new(format!("git said nothing about `{relative}`")))
 }
@@ -126,14 +126,59 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
-    #[test]
-    fn a_call_still_running_when_the_budget_runs_out_is_killed() {
+    fn versioned(root: &Path, name: &str, bytes: &str) {
+        std::fs::write(root.join(name), bytes).unwrap();
+        for args in [["init", "-q"].as_slice(), ["add", name].as_slice()] {
+            Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .status()
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_record_too_big_for_a_pipe_is_read_back_not_waited_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = "x".repeat(1024 * 1024);
+        versioned(dir.path(), "big.md", &big);
+
+        let git = Git::new(dir.path());
+        let budget = Budget::within(Duration::from_secs(10), usize::MAX);
+        let bound = git
+            .fetch(&ExternalId::new("big.md"), &budget)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let started = Instant::now();
+        let back = git
+            .fetch_at(&ExternalId::new("big.md"), &bound.version, &budget)
+            .await;
+
+        assert_eq!(
+            back.unwrap().as_deref(),
+            Some(big.as_bytes()),
+            "reading a child's output only after it exits is a deadlock the moment the child \
+             writes more than a pipe holds: it blocks on the write, never exits, and the \
+             budget kills it. The record is fine and the store is local — but a note this \
+             size reports as unreachable at binding time, and burns a whole call's budget \
+             doing it"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "it answered, but only after waiting the deadline out"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_call_still_running_when_the_budget_runs_out_is_killed() {
         let mut sleeper = Command::new("sleep");
         sleeper.arg("30");
         let budget = Budget::within(Duration::from_millis(50), usize::MAX);
 
         let started = Instant::now();
-        let answer = crate::within(sleeper, &budget);
+        let answer = crate::within(sleeper, &budget).await;
 
         assert!(
             answer.is_err(),
