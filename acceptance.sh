@@ -563,6 +563,30 @@ echo "$out" | grep -q '"skill_stale":\[' || fail "the stale skill doc was not na
 rm "$repo/.claude/skills/gmr/SKILL.md"
 "$gmr" --repo "$repo" init >/dev/null
 
+step "a record that is gone can still be let go of"
+"$gmr" --repo "$repo" bind 'git:memories/auth.md' --anchors "$key" >/dev/null \
+    || fail "could not bind the note back before deleting it"
+rm "$repo/memories/auth.md"
+(cd "$repo" && git add -A && git -c user.email=a@b -c user.name=t commit -qm "delete the note")
+
+set +e
+out=$("$gmr" --repo "$repo" doctor --json)
+set -e
+echo "$out" | grep -q '"gone":\["git:memories/auth.md"\]' \
+    || fail "a deleted record was not reported as gone" "$out"
+
+set +e
+out=$("$gmr" --repo "$repo" bind 'git:memories/auth.md' --detach 2>&1); code=$?
+set -e
+[ "$code" -eq 0 ] || fail "doctor says to restore the record or detach the binding, and detach refused: the one state that needs an unbind is the one where the record cannot be fetched" "$out"
+
+set +e
+out=$("$gmr" --repo "$repo" doctor --json)
+set -e
+echo "$out" | grep -q '"gone":\[\]' || fail "detaching left the record still reported as gone" "$out"
+echo "$out" | grep -q '"unsupervised":\[\]' \
+    || fail "detaching left the record reported as unsupervised" "$out"
+
 echo
 echo "Accepted: a stranger's repo, no toolchain, no downloaded probes. Memory and"
 echo "          fact are tied together — in the source and outside it — and when the"

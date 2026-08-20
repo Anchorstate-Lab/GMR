@@ -10,36 +10,25 @@ watch: [sig, logic]
 
 # A partial statement has to be a partial type, or it overwrites what it cannot say
 
-`RunSettings` has three fields. `AnchorDecl` could express two of them, and a
-note could express none — `from_about` and `from_spec` both wrote
-`retain_full: false, cadence_secs: None` in, and there was no `budget_ms` field
-to write at all. Then `sync` reconciled by whole-struct equality:
+`RunSettings` has three fields, and `sync` reconciles a declaration against what
+an anchor is running. Building a **complete** `RunSettings` out of an **incomplete** declaration and
+then comparing by equality resets, on every sync, every knob the declaration had
+no way to mention — and to a value nobody wrote. It is unrecoverable in the
+ordinary case, because the flags that set these live only on `open` and `open`
+refuses an anchor that is already open.
 
-```rust
-if rt.settings_for(&key).await? != decl.settings() { Resettle(decl.settings()) }
-```
-
-`decl.settings()` built a **complete** `RunSettings` out of an **incomplete**
-declaration, so a knob the declaration had no way to mention was reset, on every
-sync, to a value nobody had written. Measured: opening with `--retain-full
---cadence-secs 900 --budget-ms 7000` and then adding one line of `about:`
-frontmatter took `full | 900 | 7000` to `tick | NULL | NULL` — and it could not
-be put back, because those three flags exist only on `open` and `open` refuses
-an anchor that is already open.
-
-The type was lying. `Declared` is all `Option`, so a declaration that says
-nothing is *shaped* like a declaration that says nothing.
+`Declared` is all `Option`, so a declaration that says nothing is *shaped* like a
+declaration that says nothing.
 
 ## Two readings, and they only differ once an anchor is running
 
-`at_open` is for a new anchor: there is nothing to overwrite, so unsaid means
-the deployment default. `overlaid` is for one already running: unsaid means
+`at_open` is for a new anchor: there is nothing to overwrite, so unsaid means the
+deployment default. `overlaid` is for one already running: unsaid means
 unchanged, and it returns `None` when the declaration moves nothing, so `sync`
-stops reporting a `resettled` that resettles nothing.
+reports a `resettled` only when something was resettled.
 
-Collapsing the two into one function is the shape that just came out. They are
-the same struct read under two different questions, and only the second one can
-destroy something.
+They are one struct read under two questions, and only the second can destroy
+something. One function serving both is the shape this exists instead of.
 
 ## Nothing became unreachable
 
@@ -64,15 +53,15 @@ rather than destructive. It is one line naming a coordinate; see
 [[cli-notes-source]] for why that line is deliberately not a place to put
 operating knobs.
 
-## The same mistake, one door over
+## The same rule, one door over
 
-A coordinate opened by hand and the same coordinate declared by a note used to
-produce **different** `ProbeRef`s — `--params` defaulted to the string `"{}"`
-while `from_about` wrote `{"root": "."}` — so that anchor sat in
-`criteria_drifted (probe)` forever. `Routed` now carries `params`, so routing a
-coordinate has one answer, and `--params` is an `Option<String>`: unstated is
-unstated, not `"{}"`. Same lesson as the knobs, in the half of the declaration
-that *is* sealed criteria.
+`Routed` carries `params`, so routing a coordinate has one answer whichever door
+asks — `gmr open` and a note's `about:` produce the same `ProbeRef` rather than
+two that differ by a default nobody chose, which would leave the anchor in
+`criteria_drifted (probe)` with nothing to reconcile. `--params` is an
+`Option<String>` for the same reason the knobs are: unstated has to stay
+distinguishable from stated-as-empty, here in the half of the declaration that
+*is* sealed criteria.
 
 ## When this changes, ask
 
@@ -81,5 +70,6 @@ Does a new field on `RunSettings` arrive on `Declared` too? A fourth knob only
 somebody's tuning rather than as anything that looks like a bug.
 
 Does anything build a whole `RunSettings` from a declaration in order to compare
-it? That comparison is only sound when the declaration can express every field,
-and the two have drifted apart once already.
+it? That comparison is only sound while the declaration can express every field,
+which is a property of two types staying in step — not something either one
+enforces on the other.

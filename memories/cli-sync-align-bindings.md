@@ -58,11 +58,16 @@ it applying the plan and finding the binding afterwards. The second looks
 redundant and is not: without it the first would pass just as well against a
 fixture that could never bind at all.
 
-It takes the declaring source for one reason: to name a note the way its
-author does rather than by the address a store happens to keep it at. Every
-other verb had already been moved to that ([[cli-notes-source]]); leaving
-this one printing paths would have meant two verbs spelling the same note
-differently, which teaches a reader to trust neither.
+It takes the book of names for one reason: to name a note the way its author
+does rather than by the address a store happens to keep it at. Leaving this one
+printing paths would have meant two verbs spelling the same note differently,
+which teaches a reader to trust neither.
+
+It is handed one rather than building one, like every other verb — see
+[[cli-main-run]]. Constructing a declaring source here would be a second opinion
+about which sources exist, beside the one assembly already formed, and a second
+opinion about a record's identity is the specific hazard this function sits
+closest to.
 
 ## When this changes, ask
 

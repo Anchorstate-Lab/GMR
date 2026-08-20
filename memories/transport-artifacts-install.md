@@ -21,9 +21,9 @@ good name that simply is not installed here. That is different from an
 different from a stale bad state that a caller would need to repair.
 
 That line only holds because the index is typed (see
-[[transport-artifacts-store]]). While it held strings, "the index cannot be
-trusted" had a third outcome that was neither: a value that was not a version
-came back as `Ok(Some(..))` and was believed.
+[[transport-artifacts-store]]). Untyped, "the index cannot be trusted" has a
+third outcome that is neither `Ok(None)` nor `Err`: a value that is not a version
+comes back as `Ok(Some(..))` and is believed.
 
 ## When this changes, ask
 

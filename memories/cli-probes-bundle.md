@@ -20,13 +20,11 @@ probes), and copying it verbatim would let the bundle's index claim artifacts
 the bundle does not actually contain.
 
 It is written by opening an `Artifacts` over the bundle directory and calling
-`install` per probe, **not** by a writer of its own. There used to be a
-`write_install_index` here that hand-rolled the same file — including its own
-copy of the schema string, next to `INSTALL_SCHEMA` in the battery that reads
-it. Two writers of one format is a version bump away from a bundle no reader
-accepts, and the reader is in a different crate from the writer, so nothing
-would have caught it. See [[transport-artifacts-store]] for who owns the
-format.
+`install` per probe, **not** by a writer of its own. A second writer here would
+carry its own copy of the schema string, one crate away from the `INSTALL_SCHEMA`
+the reader checks — a version bump apart from a bundle no reader accepts, with
+nothing standing between them to notice. See [[transport-artifacts-store]] for
+who owns the format.
 
 The built-in extractors are deliberately absent from this bundle — they
 live in the binary itself (see [[extract-closure]]), so there is nothing

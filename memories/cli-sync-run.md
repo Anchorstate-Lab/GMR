@@ -28,11 +28,10 @@ different responses:
   [[anchor-RunSettings]]), so sync just applies them directly with
   `set_settings`, no human decision required.
 
-  "Names" is load-bearing and used to be missing. The comparison was
-  whole-struct equality against a `RunSettings` fabricated from the
-  declaration, so a knob the declaration had no way to mention was reset on
-  every run — reported as `resettled`, which made a verb undoing somebody's
-  tuning look like a verb doing its job. `Declared::overlaid` is the repair and
+  "Names" is load-bearing: comparing whole-struct against a `RunSettings` built
+  from the declaration would reset every knob the declaration cannot mention, and
+  report it as `resettled` — a verb undoing somebody's tuning while looking like
+  a verb doing its job. `Declared::overlaid` is what keeps it to what was named;
   [[cli-settings-declared]] is why.
 
 For anchors not yet open, `check_contract` runs before the `dry_run`

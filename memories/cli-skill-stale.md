@@ -25,6 +25,18 @@ is the guarantee [[provider-claude-memory]] exists to keep on the reading
 side; doing it here on the writing side would be worse. `doctor` prints the
 path and the fix.
 
+Each `Stale` carries its own `refresh`, because there are two copies and two
+different commands write them: plain `gmr init` writes the project one and
+`gmr init --global` writes the one under `$HOME`. Naming the wrong one leaves
+the doc stale with the instruction already carried out.
+
+**Neither command rewrites an existing file.** `write_new` skips one that is
+already there — that is the behaviour this whole check exists because of — so
+`refresh` on its own is half an instruction, and the remedy is delete-then-init.
+`doctor`'s line says exactly that; the field cannot, because it is one command
+name. If this ever becomes a field a caller acts on rather than a string a
+person reads, that gap stops being cosmetic.
+
 Its first run against this repository found a real one: `assets/SKILL.md`
 had been edited two commits earlier and the installed copy had not moved.
 

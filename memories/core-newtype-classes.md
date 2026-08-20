@@ -10,15 +10,15 @@ watch: [sig, logic]
 
 # Two classes of newtype, because "where is this invariant enforced" has two answers
 
-`string_newtype!` used to have one arm. It emitted an infallible `new` beside a
-validating `try_new`, and `#[serde(transparent)]` derived a `Deserialize` that
-went through neither. The result was measurable: `AnchorKey::new` had 71 call
-sites and `AnchorKey::try_new` had none, and every value read back from the
-journal, the binding store, a manifest or the install index skipped the check
-entirely. The predicates existed; no real path went through them.
+A newtype that offers an infallible `new` beside a validating `try_new`, and
+derives `Deserialize` through `#[serde(transparent)]`, has a check nothing is
+obliged to run: the cheap constructor is the one call sites reach for, and every
+value read back from the journal, the binding store, a manifest or an install
+index goes through neither.
 
-The obvious repair — make `Deserialize` validate, everywhere — is wrong, and
-the reason is the whole design. It splits the types in two.
+Making `Deserialize` validate everywhere is the obvious repair and it is wrong.
+The macro has two arms instead, and the arm a type takes is the answer to *where*
+its invariant is enforced.
 
 ## minted: `ContentHash` · `ProbeVersion` · `FactAddress`
 
@@ -60,8 +60,8 @@ So the limit is enforced where a value first becomes typed:
 - `rules::key` — the one place `open` and `sync` mint an `AnchorKey` from text.
 - `rules::terminal` — now fallible, because a terminal status seals an anchor
   irreversibly and the base matches it by equality.
-- `memories::addressed_to`, behind `located` — an empty external id used to bind
-  cleanly and then report as `gone` forever, with nothing to restore.
+- `memories::addressed_to`, behind `located` — an empty external id binds
+  cleanly and then reports as `gone` forever, with nothing to restore.
 - `Artifacts`' install index is typed `BTreeMap<ProbeName, ProbeVersion>`, so
   the *file's schema* is the door rather than a call site downstream of it.
   This one was reachable: `installed()` read strings off disk and minted a

@@ -16,12 +16,12 @@ probe to use, when nothing about their declared intent changed at all.
 ## Parsing the params is a separate step from naming the probe
 
 `probe` takes an already-parsed `serde_json::Value`; `rules::params` is what
-turns text into one. They came apart because the value does not always come from
-text: a routed coordinate answers with its own params (see
-[[cli-settings-declared]]), and a declaration already holds a value that used to
-be round-tripped back through a string to get here. An `Option<String>` on the
-command line is what lets "the user said nothing" stay distinguishable from "the
-user said `{}`".
+turns text into one. They are separate because the value does not always come
+from text: a routed coordinate answers with its own params (see
+[[cli-settings-declared]]), and a declaration already holds one — neither should
+have to round-trip through a string to get here. An `Option<String>` on the
+command line is what keeps "the user said nothing" distinguishable from "the user
+said `{}`".
 
 ## When this changes, ask
 

@@ -21,13 +21,10 @@ each an `Option` — and feeds `RunSettings` rather than the sealed criteria; se
 [[anchor-RunSettings]] for why "how it runs" stays mutable and outside the hash
 `shape`/`rules` end up inside.
 
-It was two named `bool`/`Option` fields, and the third knob (`budget_ms`) had no
-field at all. That mattered more than it looks: `settings()` built a *complete*
-`RunSettings` out of them, so `sync` compared complete against complete and
-reset whatever this struct could not spell. A declaration is a partial statement
-and now has a partial type — [[cli-settings-declared]] carries the reasoning,
-because it is about how a declaration is *read*, not about what this struct
-holds.
+All three live in one place because a knob this struct cannot spell is a knob
+`sync` resets: a declaration is a partial statement, and it needs a partial type
+to stay one. [[cli-settings-declared]] carries that reasoning, because it is
+about how a declaration is *read* rather than about what this struct holds.
 
 `params` defaults to what routing a coordinate answers rather than to `{}`, so
 the same coordinate reaching here through `about:` and through `gmr open`
