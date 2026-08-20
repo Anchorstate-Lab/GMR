@@ -301,6 +301,8 @@ impl Index for SqliteIndex {
     }
 
     async fn write(&self, of: &Generation, files: &[Indexed]) -> Result<(), IndexError> {
+        const BATCH: usize = 150;
+
         let mut tx = self.pool.begin().await.map_err(db_err)?;
 
         sqlx::query(
@@ -314,68 +316,87 @@ impl Index for SqliteIndex {
         .await
         .map_err(db_err)?;
 
-        for file in files {
+        for chunk in files.chunks(BATCH) {
             for table in ["posting", "candidate"] {
-                sqlx::query(&format!(
-                    "DELETE FROM {table} WHERE generation = ? AND rel = ?"
-                ))
-                .bind(of.as_str())
-                .bind(&file.rel)
-                .execute(&mut *tx)
-                .await
-                .map_err(db_err)?;
+                let mut qb =
+                    sqlx::QueryBuilder::new(format!("DELETE FROM {table} WHERE generation = "));
+                qb.push_bind(of.as_str());
+                qb.push(" AND rel IN (");
+                let mut sep = qb.separated(", ");
+                for file in chunk {
+                    sep.push_bind(&file.rel);
+                }
+                sep.push_unseparated(")");
+                qb.build().execute(&mut *tx).await.map_err(db_err)?;
             }
 
-            sqlx::query(
-                "INSERT INTO file (generation, rel, hash, sort, mtime_ns, size) \
-                 VALUES (?, ?, ?, ?, ?, ?) \
-                 ON CONFLICT(generation, rel) DO UPDATE SET hash = excluded.hash, \
+            let mut qb = sqlx::QueryBuilder::new(
+                "INSERT INTO file (generation, rel, hash, sort, mtime_ns, size) ",
+            );
+            qb.push_values(chunk, |mut b, file| {
+                b.push_bind(of.as_str())
+                    .push_bind(&file.rel)
+                    .push_bind(&file.hash)
+                    .push_bind(&file.sort)
+                    .push_bind(file.stamp.map(|s| s.mtime_ns))
+                    .push_bind(file.stamp.map(|s| s.size as i64));
+            });
+            qb.push(
+                " ON CONFLICT(generation, rel) DO UPDATE SET hash = excluded.hash, \
                  sort = excluded.sort, mtime_ns = excluded.mtime_ns, size = excluded.size",
-            )
-            .bind(of.as_str())
-            .bind(&file.rel)
-            .bind(&file.hash)
-            .bind(&file.sort)
-            .bind(file.stamp.map(|s| s.mtime_ns))
-            .bind(file.stamp.map(|s| s.size as i64))
-            .execute(&mut *tx)
-            .await
-            .map_err(db_err)?;
+            );
+            qb.build().execute(&mut *tx).await.map_err(db_err)?;
+        }
 
+        let mut candidates: Vec<(&str, u32, &str, String, String)> = Vec::new();
+        for file in files {
             for row in &file.rows {
                 let coord = serde_json::to_string(&row.coord)
                     .map_err(|e| IndexError::new(Fault::Other, e.to_string()))?;
                 let facts = serde_json::to_string(&row.facts)
                     .map_err(|e| IndexError::new(Fault::Other, e.to_string()))?;
-                sqlx::query(
-                    "INSERT INTO candidate (generation, rel, ord, id, coord, facts) \
-                     VALUES (?, ?, ?, ?, ?, ?)",
-                )
-                .bind(of.as_str())
-                .bind(&file.rel)
-                .bind(row.ord as i64)
-                .bind(&row.id)
-                .bind(&coord)
-                .bind(&facts)
-                .execute(&mut *tx)
-                .await
-                .map_err(db_err)?;
+                candidates.push((file.rel.as_str(), row.ord, row.id.as_str(), coord, facts));
+            }
+        }
+        for chunk in candidates.chunks(BATCH) {
+            let mut qb = sqlx::QueryBuilder::new(
+                "INSERT INTO candidate (generation, rel, ord, id, coord, facts) ",
+            );
+            qb.push_values(chunk, |mut b, (rel, ord, id, coord, facts)| {
+                b.push_bind(of.as_str())
+                    .push_bind(rel)
+                    .push_bind(*ord as i64)
+                    .push_bind(id)
+                    .push_bind(coord)
+                    .push_bind(facts);
+            });
+            qb.build().execute(&mut *tx).await.map_err(db_err)?;
+        }
 
+        let mut postings: Vec<(&str, &str, &str, i64)> = Vec::new();
+        for file in files {
+            for row in &file.rows {
                 for (item, value) in &row.coord {
-                    sqlx::query(
-                        "INSERT INTO posting (generation, item, value, rel, ord) \
-                         VALUES (?, ?, ?, ?, ?)",
-                    )
-                    .bind(of.as_str())
-                    .bind(item)
-                    .bind(value)
-                    .bind(&file.rel)
-                    .bind(row.ord as i64)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(db_err)?;
+                    postings.push((
+                        item.as_str(),
+                        value.as_str(),
+                        file.rel.as_str(),
+                        row.ord as i64,
+                    ));
                 }
             }
+        }
+        for chunk in postings.chunks(BATCH) {
+            let mut qb =
+                sqlx::QueryBuilder::new("INSERT INTO posting (generation, item, value, rel, ord) ");
+            qb.push_values(chunk, |mut b, (item, value, rel, ord)| {
+                b.push_bind(of.as_str())
+                    .push_bind(item)
+                    .push_bind(value)
+                    .push_bind(rel)
+                    .push_bind(ord);
+            });
+            qb.build().execute(&mut *tx).await.map_err(db_err)?;
         }
 
         tx.commit().await.map_err(db_err)
