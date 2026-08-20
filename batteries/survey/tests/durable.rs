@@ -13,6 +13,7 @@ fn file(rel: &str) -> Indexed {
         rel: rel.to_owned(),
         hash: "h".to_owned(),
         sort: sort_key(rel),
+        stamp: None,
         rows: vec![Row {
             ord: 0,
             id: rel.to_owned(),

@@ -10,8 +10,9 @@ use sqlx::{Row as _, SqlitePool};
 
 use crate::index::{Built, Fault, Generation, Index, IndexError, Indexed, Located, Row, Snapshot};
 use crate::matching::Want;
+use crate::walk::{Held, Stamp};
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS generation (
@@ -26,6 +27,8 @@ CREATE TABLE IF NOT EXISTS file (
     rel        TEXT NOT NULL,
     hash       TEXT NOT NULL,
     sort       TEXT NOT NULL,
+    mtime_ns   INTEGER,
+    size       INTEGER,
     PRIMARY KEY (generation, rel)
 );
 
@@ -267,13 +270,34 @@ impl Index for SqliteIndex {
         }))
     }
 
-    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, String>, IndexError> {
-        let rows = sqlx::query("SELECT rel, hash FROM file WHERE generation = ?")
+    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, Held>, IndexError> {
+        let rows = sqlx::query("SELECT rel, hash, mtime_ns, size FROM file WHERE generation = ?")
             .bind(of.as_str())
             .fetch_all(&self.pool)
             .await
             .map_err(db_err)?;
-        Ok(rows.iter().map(|r| (r.get("rel"), r.get("hash"))).collect())
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let stamp = match (
+                    r.get::<Option<i64>, _>("mtime_ns"),
+                    r.get::<Option<i64>, _>("size"),
+                ) {
+                    (Some(mtime_ns), Some(size)) => Some(Stamp {
+                        mtime_ns,
+                        size: size as u64,
+                    }),
+                    _ => None,
+                };
+                (
+                    r.get("rel"),
+                    Held {
+                        hash: r.get("hash"),
+                        stamp,
+                    },
+                )
+            })
+            .collect())
     }
 
     async fn write(&self, of: &Generation, files: &[Indexed]) -> Result<(), IndexError> {
@@ -303,14 +327,17 @@ impl Index for SqliteIndex {
             }
 
             sqlx::query(
-                "INSERT INTO file (generation, rel, hash, sort) VALUES (?, ?, ?, ?) \
+                "INSERT INTO file (generation, rel, hash, sort, mtime_ns, size) \
+                 VALUES (?, ?, ?, ?, ?, ?) \
                  ON CONFLICT(generation, rel) DO UPDATE SET hash = excluded.hash, \
-                 sort = excluded.sort",
+                 sort = excluded.sort, mtime_ns = excluded.mtime_ns, size = excluded.size",
             )
             .bind(of.as_str())
             .bind(&file.rel)
             .bind(&file.hash)
             .bind(&file.sort)
+            .bind(file.stamp.map(|s| s.mtime_ns))
+            .bind(file.stamp.map(|s| s.size as i64))
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;

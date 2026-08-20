@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::matching::Want;
-use crate::walk::hash;
+use crate::walk::{Held, Stamp, hash};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Generation {
@@ -68,6 +68,7 @@ pub struct Indexed {
     pub rel: String,
     pub hash: String,
     pub sort: String,
+    pub stamp: Option<Stamp>,
     pub rows: Vec<Row>,
 }
 
@@ -155,7 +156,7 @@ pub fn under(rel: &str, root: &str) -> bool {
 pub trait Index: Send + Sync {
     async fn built(&self, of: &Generation) -> Result<Option<Built>, IndexError>;
 
-    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, String>, IndexError>;
+    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, Held>, IndexError>;
 
     async fn write(&self, of: &Generation, files: &[Indexed]) -> Result<(), IndexError>;
 

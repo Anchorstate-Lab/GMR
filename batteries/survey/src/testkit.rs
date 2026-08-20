@@ -12,6 +12,7 @@ use gmr_probe as _;
 struct Kept {
     hash: String,
     sort: String,
+    stamp: Option<crate::walk::Stamp>,
     rows: Vec<Row>,
 }
 
@@ -72,13 +73,21 @@ impl Index for Remembered {
         }))
     }
 
-    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, String>, IndexError> {
+    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, crate::walk::Held>, IndexError> {
         let held = guard(&self.held);
         Ok(held
             .files
             .iter()
             .filter(|((which, _), _)| which == of)
-            .map(|((_, rel), kept)| (rel.clone(), kept.hash.clone()))
+            .map(|((_, rel), kept)| {
+                (
+                    rel.clone(),
+                    crate::walk::Held {
+                        hash: kept.hash.clone(),
+                        stamp: kept.stamp,
+                    },
+                )
+            })
             .collect())
     }
 
@@ -91,6 +100,7 @@ impl Index for Remembered {
                 Kept {
                     hash: file.hash.clone(),
                     sort: file.sort.clone(),
+                    stamp: file.stamp,
                     rows: file.rows.clone(),
                 },
             );
