@@ -47,10 +47,7 @@ pub async fn run(
         }
         None => rt.grounded_all().await?,
     };
-    let live: Vec<&gmr::Grounded> = views
-        .iter()
-        .filter(|g| named || !g.view.closed)
-        .collect();
+    let live: Vec<&gmr::Grounded> = views.iter().filter(|g| named || !g.view.closed).collect();
 
     let ctx = Context {
         catalog: Catalog::load(root)?,

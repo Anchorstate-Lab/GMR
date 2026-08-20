@@ -110,11 +110,13 @@ async fn declaration_drifted(rt: &Runtime, root: &Path) -> Result<Vec<AnchorKey>
     let scanned = crate::memories::scan(root, &ctx.catalog)?;
     let decls = sync::merged(&declared, &scanned.notes);
     let views = rt.read_all().await?;
-    Ok(sync::audit(&views, &sync::Bound::of(rt).await?, &decls, &scanned, &ctx)?
-        .drifted
-        .into_iter()
-        .map(|(k, _)| k)
-        .collect())
+    Ok(
+        sync::audit(&views, &sync::Bound::of(rt).await?, &decls, &scanned, &ctx)?
+            .drifted
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect(),
+    )
 }
 
 pub async fn run(
