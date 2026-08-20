@@ -388,16 +388,14 @@ impl Index for SqliteIndex {
     ) -> Result<(), IndexError> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         for (rel, stamp) in restamped {
-            sqlx::query(
-                "UPDATE file SET mtime_ns = ?, size = ? WHERE generation = ? AND rel = ?",
-            )
-            .bind(stamp.map(|s| s.mtime_ns))
-            .bind(stamp.map(|s| s.size as i64))
-            .bind(of.as_str())
-            .bind(rel)
-            .execute(&mut *tx)
-            .await
-            .map_err(db_err)?;
+            sqlx::query("UPDATE file SET mtime_ns = ?, size = ? WHERE generation = ? AND rel = ?")
+                .bind(stamp.map(|s| s.mtime_ns))
+                .bind(stamp.map(|s| s.size as i64))
+                .bind(of.as_str())
+                .bind(rel)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
         }
         tx.commit().await.map_err(db_err)
     }

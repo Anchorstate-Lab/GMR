@@ -34,32 +34,12 @@ fn located_to_fragments(snapshot: Option<Snapshot>) -> Vec<Fragment> {
         .unwrap_or_default()
 }
 
-/// Bridges `Corpus` (sync — what `look()` calls) to `Index` (async — sqlx and
-/// friends) with a dedicated background thread that owns its own runtime,
-/// rather than reaching into whatever runtime the caller happens to be on.
-/// A caller might be a one-shot CLI invocation today, but this is a battery:
-/// it must not assume it is always called from inside a multi-thread tokio
-/// runtime, or from inside any runtime at all.
-///
-/// Jobs run through the background thread's own owned `Runtime`, not a
-/// cloned `Handle` — `sqlx`'s pool spawns a background maintenance task on
-/// `connect`, and only the owning `Runtime::block_on` reliably drives a
-/// current-thread runtime's previously-spawned tasks forward. A cloned
-/// `Handle::block_on` does not: the first query after connecting hangs
-/// forever, waiting on a connection permit only that maintenance task would
-/// release. Found by writing a minimal reproduction once the real bridge
-/// hung on its first `known()` call — not a hypothetical.
 pub struct Bridge<I> {
     tree: PathBuf,
     tx: mpsc::Sender<Job<I>>,
 }
 
 impl<I: Index + Send + 'static> Bridge<I> {
-    /// `open` runs entirely on the background thread's own runtime — it is
-    /// never awaited from the caller's context, so it does not need `Fut:
-    /// Send`. `spawn` itself blocks once, synchronously, waiting for that
-    /// open to finish; it is a one-time construction cost; unlike a bridge
-    /// call, callers do not pay it per anchor.
     pub fn spawn<F, Fut>(tree: impl Into<PathBuf>, open: F) -> Result<Self, IndexError>
     where
         F: FnOnce() -> Fut + Send + 'static,
@@ -123,7 +103,11 @@ impl<I: Index + Send + 'static> Bridge<I> {
         self.run(move |index, rt| rt.block_on(index.write(&of, &files)))
     }
 
-    fn restamp(&self, of: &Generation, restamped: &[(String, Option<Stamp>)]) -> Result<(), IndexError> {
+    fn restamp(
+        &self,
+        of: &Generation,
+        restamped: &[(String, Option<Stamp>)],
+    ) -> Result<(), IndexError> {
         let of = of.clone();
         let restamped = restamped.to_vec();
         self.run(move |index, rt| rt.block_on(index.restamp(&of, &restamped)))
@@ -141,7 +125,12 @@ impl<I: Index + Send + 'static> Bridge<I> {
         self.run(move |index, rt| rt.block_on(index.rows(&of, &root)))
     }
 
-    fn union(&self, of: &Generation, root: &str, want: &Want) -> Result<Option<Snapshot>, IndexError> {
+    fn union(
+        &self,
+        of: &Generation,
+        root: &str,
+        want: &Want,
+    ) -> Result<Option<Snapshot>, IndexError> {
         let of = of.clone();
         let root = root.to_owned();
         let want = want.clone();
@@ -155,13 +144,6 @@ impl<I: Index + Send + 'static> Corpus for Bridge<I> {
         let known = self.known(&of).map_err(index_halt)?;
         let scan = corpus::rescan(&self.tree, recipe, &known, budget)?;
 
-        // Always write, even with nothing fresh: this is what opens the
-        // generation in the SQLite backend (INSERT INTO generation ...),
-        // and a generation that never opens because a directory happens to
-        // be empty or wholly ineligible would leave `rows`/`union` reading
-        // `None` forever. Still one round trip regardless of file count —
-        // the quadratic per-file write survey-cache-write.md measured on
-        // the old Cache is exactly what batching into `Indexed` avoids.
         let files: Vec<Indexed> = scan
             .fresh
             .into_iter()

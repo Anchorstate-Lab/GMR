@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, Snapshot};
-use gmr_survey::walk::{Held, Stamp, sort_key};
 use gmr_survey::matching::Want;
+use gmr_survey::walk::{Held, Stamp, sort_key};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()

@@ -51,11 +51,6 @@ fn roomy() -> Budget {
     Budget::within(Duration::from_secs(60), 1 << 20)
 }
 
-// Deliberately a plain #[test], not #[tokio::test]: the whole point of the
-// bridge is that it must not assume the calling thread is inside a tokio
-// runtime at all. If this test only passed under #[tokio::test], the bridge
-// would be quietly depending on exactly the ambient-runtime assumption it
-// was built to avoid.
 #[test]
 fn the_bridge_agrees_with_the_in_memory_reference() {
     let d = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);

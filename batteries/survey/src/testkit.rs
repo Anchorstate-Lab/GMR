@@ -73,7 +73,10 @@ impl Index for Remembered {
         }))
     }
 
-    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, crate::walk::Held>, IndexError> {
+    async fn known(
+        &self,
+        of: &Generation,
+    ) -> Result<BTreeMap<String, crate::walk::Held>, IndexError> {
         let held = guard(&self.held);
         Ok(held
             .files
@@ -209,7 +212,9 @@ impl crate::corpus::Corpus for Surveyed {
     ) -> Result<(), crate::corpus::Halt> {
         let known: BTreeMap<String, crate::walk::Held> = {
             let held = self.held.lock().unwrap();
-            held.iter().map(|(k, (h, _))| (k.clone(), h.clone())).collect()
+            held.iter()
+                .map(|(k, (h, _))| (k.clone(), h.clone()))
+                .collect()
         };
         let scan = crate::corpus::rescan(&self.tree, recipe, &known, budget)?;
         let mut held = self.held.lock().unwrap();

@@ -227,15 +227,7 @@ mod tests {
     fn an_unreadable_tree_is_our_failure_too() {
         let d = fixture("bare", &[]);
         let surveyed = coord::testkit::Surveyed::over(&d);
-        assert!(
-            probe(
-                "",
-                &json!({"name": "x"}),
-                &surveyed,
-                &roomy()
-            )
-            .is_err()
-        );
+        assert!(probe("", &json!({"name": "x"}), &surveyed, &roomy()).is_err());
     }
 
     #[test]
@@ -271,8 +263,11 @@ mod tests {
             let first = probe("", &pos, &fresh, &roomy()).unwrap();
             let warm = probe("", &pos, &surveyed, &roomy()).unwrap();
             let again = probe("", &pos, &surveyed, &roomy()).unwrap();
-            assert_eq!(first, warm, "a corpus that has never been asked before and one that \
-                        has already read this tree must report the same thing");
+            assert_eq!(
+                first, warm,
+                "a corpus that has never been asked before and one that \
+                        has already read this tree must report the same thing"
+            );
             assert_eq!(warm, again, "and asking twice must not move the answer");
         }
     }
