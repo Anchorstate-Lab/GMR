@@ -16,6 +16,18 @@ the artifact directory never does, and the index is self-describing (it
 carries its own `schema`) so no assembly has to thread a separate table
 through to find it.
 
+It is typed `BTreeMap<ProbeName, ProbeVersion>` rather than `BTreeMap<String,
+String>`, which makes **this file's own schema the door**. It was strings, and
+`installed()` minted a `ProbeVersion` out of whatever it found — so an index
+somebody had truncated or hand-edited handed back a version that was not one,
+and it travelled onward into `Derivation`, into the journal, and into a
+twelve-character slice at some print site. Now the file refuses to decode and
+names the field and the reason. `ProbeVersion` is a minted type precisely so
+that this works; see [[core-newtype-classes]].
+
+This is also the only writer of the format. `probes bundle` used to hand-roll a
+second one — see [[cli-probes-bundle]].
+
 Holding a `Resolved` is a proof, not just data: it is only constructed after
 the manifest's own hash and every file it lists have been checked
 byte-for-byte (see [[transport-artifacts-resolve]]). Nothing downstream

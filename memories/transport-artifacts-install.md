@@ -20,6 +20,11 @@ good name that simply is not installed here. That is different from an
 `Err` — which means the index itself could not be read or trusted — and
 different from a stale bad state that a caller would need to repair.
 
+That line only holds because the index is typed (see
+[[transport-artifacts-store]]). While it held strings, "the index cannot be
+trusted" had a third outcome that was neither: a value that was not a version
+came back as `Ok(Some(..))` and was believed.
+
 ## When this changes, ask
 
 Does a repeated `install` for the same name still leave exactly one

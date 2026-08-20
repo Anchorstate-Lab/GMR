@@ -23,9 +23,17 @@ different responses:
   command that would tell them the same list was empty. A warning naming a
   remedy that does not apply is worse than no warning — it is how a list
   people are supposed to act on becomes one they learn to scroll past.
-- **Resettling**: `retain`/`cadence_secs` differ from the declaration.
-  These are not criteria at all (see [[anchor-RunSettings]]), so sync just
-  applies them directly with `set_settings`, no human decision required.
+- **Resettling**: the declaration *names* a knob whose value differs from the
+  one this anchor is running with. These are not criteria at all (see
+  [[anchor-RunSettings]]), so sync just applies them directly with
+  `set_settings`, no human decision required.
+
+  "Names" is load-bearing and used to be missing. The comparison was
+  whole-struct equality against a `RunSettings` fabricated from the
+  declaration, so a knob the declaration had no way to mention was reset on
+  every run — reported as `resettled`, which made a verb undoing somebody's
+  tuning look like a verb doing its job. `Declared::overlaid` is the repair and
+  [[cli-settings-declared]] is why.
 
 For anchors not yet open, `check_contract` runs before the `dry_run`
 branch returns early — a rule reading an obs field its probe never emits
