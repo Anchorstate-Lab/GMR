@@ -26,7 +26,7 @@ pub mod revise;
 pub mod status;
 pub mod sync;
 
-use gmr::{AnchorKey, Change, ContentHash, Revised, Runtime, State};
+use gmr::{AnchorKey, AnchorView, Change, ContentHash, Revised, Runtime, State};
 
 use crate::error::CliError;
 
@@ -110,13 +110,9 @@ pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<gmr
         .collect())
 }
 
-pub(crate) async fn swapped(
-    rt: &Runtime,
-    keys: &[AnchorKey],
-) -> Result<Vec<(AnchorKey, String)>, CliError> {
+pub(crate) fn swapped(rt: &Runtime, views: &[AnchorView]) -> Vec<(AnchorKey, String)> {
     let mut out = Vec::new();
-    for key in keys {
-        let view = rt.read(key).await?;
+    for view in views {
         if view.closed {
             continue;
         }
@@ -125,12 +121,16 @@ pub(crate) async fn swapped(
         };
         if was.version != now.version {
             out.push((
-                key.clone(),
-                format!("{} -> {}", was.version.short(), now.version.short()),
+                view.key.clone(),
+                format!(
+                    "{} -> {}",
+                    &was.version.as_str()[..12],
+                    &now.version.as_str()[..12]
+                ),
             ));
         }
     }
-    Ok(out)
+    out
 }
 
 pub(crate) fn sealed(context: &ContentHash, rationale: &ContentHash) {

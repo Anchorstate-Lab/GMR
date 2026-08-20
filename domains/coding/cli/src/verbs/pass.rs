@@ -15,9 +15,11 @@ pub async fn run(rt: &Runtime, root: &Path, names: &Names, json: bool) -> Result
     let mut unclaimed = Vec::new();
     let mut handed = 0;
     for key in &p.moved {
-        let state = rt.read(key).await?.state;
+        let view = rt.read(key).await?;
+        let shape = crate::shapes::of(&view.anchor.transitions);
         let memories =
-            super::observe::delivered(rt, &subs, key, &state, true, &mut unclaimed).await?;
+            super::observe::delivered(rt, &subs, key, shape, &view.state, true, &mut unclaimed)
+                .await?;
         handed += memories.len();
         moved.push((key, memories));
     }

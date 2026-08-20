@@ -41,7 +41,8 @@ pub async fn run(
 
         let memories = match &observed {
             Observed::Transitioned { to, .. } => {
-                delivered(rt, &subs, key, to, true, &mut unclaimed).await?
+                let shape = crate::shapes::of(&rt.read(key).await?.anchor.transitions);
+                delivered(rt, &subs, key, shape, to, true, &mut unclaimed).await?
             }
             _ => Vec::new(),
         };
@@ -83,6 +84,7 @@ pub(crate) async fn delivered(
     rt: &Runtime,
     subs: &Subscriptions,
     key: &AnchorKey,
+    shape: Option<&crate::shapes::Shape>,
     to: &State,
     moved: bool,
     unclaimed: &mut Vec<AnchorKey>,
@@ -94,7 +96,6 @@ pub(crate) async fn delivered(
         }
         return Ok(Vec::new());
     }
-    let shape = crate::shapes::of(&rt.read(key).await?.anchor.transitions);
     Ok(bound
         .into_iter()
         .filter(|m| subs.delivers(shape, m, to, moved))
