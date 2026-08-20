@@ -1,8 +1,18 @@
 use std::collections::BTreeSet;
 
-use gmr::{Expr, Kind, ProbeName, ProbeRef, Rule, StatusId, Transitions};
+use gmr::{AnchorKey, Expr, Kind, ProbeName, ProbeRef, Rule, StatusId, Transitions};
 
 use crate::error::CliError;
+
+pub fn key(text: &str) -> Result<AnchorKey, CliError> {
+    AnchorKey::try_new(text).map_err(|e| {
+        CliError(format!(
+            "`{text}` cannot be an anchor key ({e}).\n\
+             The journal is append-only, so a key is refused here or never: once one entry \
+             carries it, every later read has to accept it back."
+        ))
+    })
+}
 
 pub fn probe(kind: Kind, name: &str, params: &str) -> Result<ProbeRef, CliError> {
     let name = ProbeName::try_new(name).map_err(|e| {
@@ -43,11 +53,21 @@ pub fn transitions(texts: &[String]) -> Result<Transitions, CliError> {
         .map(Transitions)
 }
 
-pub fn terminal(names: &[String]) -> BTreeSet<StatusId> {
+pub fn terminal(names: &[String]) -> Result<BTreeSet<StatusId>, CliError> {
     names
         .iter()
-        .map(|s| StatusId::new(s.trim()))
-        .filter(|s| !s.as_str().is_empty())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            StatusId::try_new(s).map_err(|e| {
+                CliError(format!(
+                    "`{s}` cannot be a terminal status ({e}). \
+                     A terminal status seals an anchor for good, and the base compares it \
+                     by equality against whatever a rule produces — a status nothing can \
+                     spell twice would never match"
+                ))
+            })
+        })
         .collect()
 }
 
@@ -71,5 +91,30 @@ mod tests {
     #[test]
     fn the_arrow_inside_an_expression_still_splits_at_the_first_one() {
         assert!(rule("a => b => c").unwrap().to.source == "b => c");
+    }
+
+    #[test]
+    fn a_key_no_store_could_hand_back_is_refused_at_the_door() {
+        let e = key(&"k".repeat(400)).unwrap_err();
+        assert!(e.0.contains("append-only"), "{}", e.0);
+        assert!(
+            key("crates/gmr-core/src/addr.rs#canonical_number_string").is_ok(),
+            "the keys this repository already runs on have to keep passing"
+        );
+    }
+
+    #[test]
+    fn a_status_that_seals_an_anchor_has_to_be_one_a_rule_can_spell_again() {
+        assert!(
+            terminal(&["settled".into(), " expired ".into()])
+                .unwrap()
+                .len()
+                == 2
+        );
+        assert!(
+            terminal(&["".into(), "  ".into()]).unwrap().is_empty(),
+            "an empty entry is somebody writing `--terminal a,,b`, not a status"
+        );
+        assert!(terminal(&["s".repeat(400)]).is_err());
     }
 }

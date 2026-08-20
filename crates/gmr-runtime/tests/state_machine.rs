@@ -634,11 +634,11 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
     };
     let observation = Observation {
         outcome: Outcome::NotFound,
-        fact_address: gmr_core::FactAddress::new("b".repeat(64)),
+        fact_address: gmr_core::FactAddress::try_new("b".repeat(64)).unwrap(),
         versions: Versions {
-            declaration: gmr_core::ContentHash::new("d".repeat(64)),
+            declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
             derivation: gmr_core::Derivation {
-                version: gmr_core::ProbeVersion::new("a".repeat(64)),
+                version: gmr_core::ProbeVersion::try_new("a".repeat(64)).unwrap(),
                 verifiability: gmr_core::Verifiability::Closed,
             },
             evaluator: "e".to_owned(),
@@ -670,8 +670,8 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
                 change: Change::Restate {
                     state: State::new(serde_json::json!({ "status": "pending" })),
                 },
-                context: gmr_core::ContentHash::new("e".repeat(64)),
-                rationale: gmr_core::ContentHash::new("f".repeat(64)),
+                context: gmr_core::ContentHash::try_new("e".repeat(64)).unwrap(),
+                rationale: gmr_core::ContentHash::try_new("f".repeat(64)).unwrap(),
                 at: at(20),
             },
         ),

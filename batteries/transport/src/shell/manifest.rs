@@ -48,7 +48,7 @@ impl Manifest {
         let value = serde_json::to_value(self).expect("a manifest always serialises");
         let hash =
             content_hash_of(&value).expect("a Manifest never exceeds canonicalization limits");
-        ProbeVersion::new(hash.into_inner())
+        ProbeVersion::of(hash)
     }
 
     pub fn entry(&self) -> Option<&FileEntry> {
@@ -65,13 +65,13 @@ mod tests {
         Manifest {
             schema: MANIFEST_SCHEMA.to_owned(),
             kind: Kind::new("shell"),
-            derivation: ProbeVersion::new("d".repeat(64)),
+            derivation: ProbeVersion::try_new("d".repeat(64)).unwrap(),
             entrypoint: entry.to_owned(),
             args: vec!["--mode".into(), "contract".into()],
             env: BTreeMap::new(),
             files: vec![FileEntry {
                 path: entry.to_owned(),
-                sha256: ContentHash::new(sha.repeat(64)),
+                sha256: ContentHash::try_new(sha.repeat(64)).unwrap(),
                 executable: true,
             }],
             platform: Platform {

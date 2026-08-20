@@ -104,7 +104,7 @@ pub async fn run(rt: &Runtime, root: &Path, args: ReviseArgs, json: bool) -> Res
             }
         }
         What::Terminal => {
-            let want = rules::terminal(&args.terminal);
+            let want = rules::terminal(&args.terminal)?;
             let revised = rt
                 .revise(
                     &key,

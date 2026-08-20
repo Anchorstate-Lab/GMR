@@ -165,7 +165,7 @@ pub async fn run(
     let mut resettled = Vec::new();
 
     for decl in merged(&declared, notes) {
-        let key = AnchorKey::new(decl.key.clone());
+        let key = rules::key(&decl.key)?;
         steps.push(Step::Schedule(key.clone()));
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
@@ -190,7 +190,7 @@ pub async fn run(
             key,
             probe: decl.to_probe(&ctx)?,
             transitions: decl.to_transitions()?,
-            terminal: rules::terminal(&decl.terminal),
+            terminal: rules::terminal(&decl.terminal)?,
             initial: decl.initial(),
             settings: decl.settings(),
             supersedes: None,
@@ -439,7 +439,7 @@ pub fn differs(
     if anchor.transitions != decl.to_transitions()? {
         facets.push("rules");
     }
-    if anchor.terminal != rules::terminal(&decl.terminal) {
+    if anchor.terminal != rules::terminal(&decl.terminal)? {
         facets.push("terminal");
     }
     Ok(facets)

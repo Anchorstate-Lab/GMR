@@ -22,19 +22,31 @@ pub fn addressed(reference: &Ref) -> String {
     format!("{}:{}", reference.provider, reference.external_id)
 }
 
+fn addressed_to(provider: &str, external_id: &str) -> Result<Ref, CliError> {
+    let named = |what: &str, e: gmr::core::NewtypeError| {
+        CliError(format!(
+            "`{provider}:{external_id}` names no record: its {what} {e}"
+        ))
+    };
+    Ok(Ref {
+        provider: gmr::ProviderId::try_new(provider).map_err(|e| named("provider", e))?,
+        external_id: gmr::ExternalId::try_new(external_id).map_err(|e| named("id", e))?,
+    })
+}
+
 pub fn located(text: &str, provider: Option<&str>, known: &[&str]) -> Result<Ref, CliError> {
     let carried = text
         .split_once(':')
         .filter(|(named, rest)| known.contains(named) && !rest.is_empty());
     match (carried, provider) {
-        (Some((named, rest)), None) => Ok(Ref::new(named, rest)),
-        (Some((named, rest)), Some(want)) if want == named => Ok(Ref::new(named, rest)),
+        (Some((named, rest)), None) => addressed_to(named, rest),
+        (Some((named, rest)), Some(want)) if want == named => addressed_to(named, rest),
         (Some((named, _)), Some(want)) => Err(CliError(format!(
             "`{text}` is addressed to `{named}` and --provider says `{want}`. One of them is \
              not what you meant, and guessing which would bind this to a store you did not name"
         ))),
-        (None, Some(want)) => Ok(Ref::new(want, text)),
-        (None, None) => Ok(Ref::new(RESOLVED_THROUGH, text)),
+        (None, Some(want)) => addressed_to(want, text),
+        (None, None) => addressed_to(RESOLVED_THROUGH, text),
     }
 }
 
@@ -489,6 +501,17 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         );
         located("mem0:9f8e", Some("mem0"), &STORES)
             .expect("saying the same thing twice is not a contradiction");
+    }
+
+    #[test]
+    fn an_address_with_no_id_behind_it_is_refused_rather_than_bound() {
+        let e = located("", None, &STORES).unwrap_err();
+        assert!(
+            e.0.contains("names no record"),
+            "an empty id would bind an anchor to a record no provider can ever fetch, and \
+             `read` would report it as `gone` forever with nothing to restore: {}",
+            e.0
+        );
     }
 
     #[test]

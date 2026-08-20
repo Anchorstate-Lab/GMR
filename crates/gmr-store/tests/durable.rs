@@ -24,11 +24,11 @@ fn entry(value: &str) -> Entry {
             outcome: Outcome::Found {
                 facts: Facts::new(serde_json::json!({ "shape": value })),
             },
-            fact_address: FactAddress::new("b".repeat(64)),
+            fact_address: FactAddress::try_new("b".repeat(64)).unwrap(),
             versions: Versions {
-                declaration: gmr_core::ContentHash::new("d".repeat(64)),
+                declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
                 derivation: gmr_core::Derivation {
-                    version: ProbeVersion::new("a".repeat(64)),
+                    version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
                     verifiability: gmr_core::Verifiability::Closed,
                 },
                 evaluator: "eval-1".to_owned(),

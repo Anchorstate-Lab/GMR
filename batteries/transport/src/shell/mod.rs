@@ -202,10 +202,9 @@ mod tests {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
-            let derivation = ProbeVersion::new(
-                gmr_core::content_hash_of_bytes(format!("{body}{args:?}{env:?}").as_bytes())
-                    .into_inner(),
-            );
+            let derivation = ProbeVersion::of(gmr_core::content_hash_of_bytes(
+                format!("{body}{args:?}{env:?}").as_bytes(),
+            ));
             let address = publish(
                 &Artifacts::new(&self.store),
                 &src,

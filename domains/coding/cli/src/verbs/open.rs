@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, OpenRequest, Retain, RunSettings, Runtime, State, Supersede};
+use gmr::{OpenRequest, Retain, RunSettings, Runtime, State, Supersede};
 
 use crate::cli::OpenArgs;
 use crate::error::CliError;
@@ -12,7 +12,7 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let catalog = Catalog::load(root)?;
-    let key = AnchorKey::new(args.key.clone());
+    let key = rules::key(&args.key)?;
 
     let routed = match &args.probe {
         Some(_) => None,
@@ -52,16 +52,19 @@ pub async fn run(
         )));
     }
 
-    let supersedes = args.supersedes.zip(args.why).map(|(k, why)| Supersede {
-        key: AnchorKey::new(k),
-        rationale: why.into_bytes(),
-    });
+    let supersedes = match args.supersedes.zip(args.why) {
+        None => None,
+        Some((k, why)) => Some(Supersede {
+            key: rules::key(&k)?,
+            rationale: why.into_bytes(),
+        }),
+    };
     let opened = rt
         .open(OpenRequest {
             key: key.clone(),
             probe: rules::probe(catalog.kind_of(&probe_name), &probe_name, &args.params)?,
             transitions,
-            terminal: rules::terminal(&args.terminal),
+            terminal: rules::terminal(&args.terminal)?,
             initial,
             settings: RunSettings {
                 budget_ms: args.budget_ms,

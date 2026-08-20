@@ -27,7 +27,7 @@ pub fn publish_script(store: impl AsRef<Path>, body: &str) -> ProbeVersion {
         &Artifacts::new(store.as_ref()),
         staging.path(),
         Kind::new("shell"),
-        ProbeVersion::new(gmr_core::content_hash_of_bytes(body.as_bytes()).into_inner()),
+        ProbeVersion::of(gmr_core::content_hash_of_bytes(body.as_bytes())),
         "probe",
         Vec::new(),
         Default::default(),

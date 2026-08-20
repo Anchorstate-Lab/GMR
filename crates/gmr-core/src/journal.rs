@@ -308,7 +308,7 @@ mod tests {
         Versions {
             declaration: ContentHash::new("d".repeat(64)),
             derivation: Derivation {
-                version: ProbeVersion::new("a".repeat(64)),
+                version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
                 verifiability: Verifiability::Closed,
             },
             evaluator: "eval-1".to_owned(),
@@ -333,7 +333,7 @@ mod tests {
             outcome: Outcome::Found {
                 facts: Facts::new(json!({ "shape": "(a)->c" })),
             },
-            fact_address: FactAddress::new("b".repeat(64)),
+            fact_address: FactAddress::try_new("b".repeat(64)).unwrap(),
             versions: versions(),
         }
     }
@@ -639,8 +639,8 @@ mod tests {
     fn still_requires_both_the_state_and_the_facts_to_hold_put() {
         let s1 = State::new(json!({ STATUS: "ok" }));
         let s2 = State::new(json!({ STATUS: "drifted" }));
-        let a = FactAddress::new("c".repeat(64));
-        let b = FactAddress::new("d".repeat(64));
+        let a = FactAddress::try_new("c".repeat(64)).unwrap();
+        let b = FactAddress::try_new("d".repeat(64)).unwrap();
 
         assert!(should_still(&s1, &a, &s1, &a));
         assert!(!should_still(&s1, &a, &s2, &a), "the state moved");
