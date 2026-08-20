@@ -108,6 +108,20 @@ impl Index for Remembered {
         Ok(())
     }
 
+    async fn restamp(
+        &self,
+        of: &Generation,
+        restamped: &[(String, Option<crate::walk::Stamp>)],
+    ) -> Result<(), IndexError> {
+        let mut held = guard(&self.held);
+        for (rel, stamp) in restamped {
+            if let Some(kept) = held.files.get_mut(&(of.clone(), rel.clone())) {
+                kept.stamp = *stamp;
+            }
+        }
+        Ok(())
+    }
+
     async fn forget(&self, of: &Generation, gone: &[String]) -> Result<(), IndexError> {
         let mut held = guard(&self.held);
         for rel in gone {

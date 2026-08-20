@@ -160,6 +160,12 @@ pub trait Index: Send + Sync {
 
     async fn write(&self, of: &Generation, files: &[Indexed]) -> Result<(), IndexError>;
 
+    async fn restamp(
+        &self,
+        of: &Generation,
+        restamped: &[(String, Option<Stamp>)],
+    ) -> Result<(), IndexError>;
+
     async fn forget(&self, of: &Generation, gone: &[String]) -> Result<(), IndexError>;
 
     async fn seal(&self, of: &Generation, at: DateTime<Utc>) -> Result<(), IndexError>;

@@ -16,6 +16,9 @@ default = []
 sqlite = ["dep:sqlx"]
 # 契约自带的参考实现。不是部署选项 —— 它撑不过进程重启。
 testkit = []
+# Corpus（同步）到 Index（异步）的桥，专用线程 + 自带 runtime。不认识任何具体后端，
+# 跟哪个 Index 实现搭配是调用方的事（见 domains/coding/extract 怎么接 sqlite feature）。
+bridge = ["dep:tokio"]
 
 [dependencies]
 gmr-probe = { path = "../../crates/gmr-probe" }
@@ -26,10 +29,11 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 sqlx = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 # 测试跑一致性套件：两个后端各一遍。
 [dev-dependencies]
-gmr-survey = { path = ".", features = ["sqlite", "testkit"] }
+gmr-survey = { path = ".", features = ["sqlite", "testkit", "bridge"] }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
