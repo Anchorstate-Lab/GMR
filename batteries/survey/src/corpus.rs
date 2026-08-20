@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use gmr_probe::{Budget, Spent};
-use serde::{Deserialize, Serialize};
 
 use crate::matching::{Fragment, Want};
 use crate::recipe::Recipe;
-use crate::walk::{hash, sort_key, visit};
+use crate::walk::{Held, Stamp, hash, sort_key, visit};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Halt {
@@ -39,33 +38,6 @@ pub trait Corpus {
     fn whole(&self, recipe: &Recipe, root: &str) -> Result<Vec<Fragment>, Halt>;
 
     fn touching(&self, recipe: &Recipe, root: &str, want: &Want) -> Result<Vec<Fragment>, Halt>;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Stamp {
-    pub mtime_ns: i64,
-    pub size: u64,
-}
-
-impl Stamp {
-    pub fn of(at: &Path) -> Option<Self> {
-        let meta = std::fs::metadata(at).ok()?;
-        let mtime = meta.modified().ok()?;
-        let since = mtime
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as i64)
-            .unwrap_or_else(|e| -(e.duration().as_nanos() as i64));
-        Some(Self {
-            mtime_ns: since,
-            size: meta.len(),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Held {
-    pub hash: String,
-    pub stamp: Option<Stamp>,
 }
 
 pub struct Fresh {

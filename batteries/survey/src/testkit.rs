@@ -165,7 +165,7 @@ impl Index for Remembered {
 #[derive(Default)]
 pub struct Surveyed {
     tree: std::path::PathBuf,
-    held: Mutex<BTreeMap<String, (crate::corpus::Held, Vec<crate::matching::Fragment>)>>,
+    held: Mutex<BTreeMap<String, (crate::walk::Held, Vec<crate::matching::Fragment>)>>,
 }
 
 impl Surveyed {
@@ -183,7 +183,7 @@ impl crate::corpus::Corpus for Surveyed {
         recipe: &crate::recipe::Recipe,
         budget: &gmr_probe::Budget,
     ) -> Result<(), crate::corpus::Halt> {
-        let known: BTreeMap<String, crate::corpus::Held> = {
+        let known: BTreeMap<String, crate::walk::Held> = {
             let held = self.held.lock().unwrap();
             held.iter().map(|(k, (h, _))| (k.clone(), h.clone())).collect()
         };
@@ -201,7 +201,7 @@ impl crate::corpus::Corpus for Surveyed {
             held.insert(
                 fresh.rel,
                 (
-                    crate::corpus::Held {
+                    crate::walk::Held {
                         hash: fresh.hash,
                         stamp: fresh.stamp,
                     },

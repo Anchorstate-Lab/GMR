@@ -1,9 +1,37 @@
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub fn hash(s: &str) -> String {
     format!("{:x}", Sha256::digest(s.as_bytes()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Stamp {
+    pub mtime_ns: i64,
+    pub size: u64,
+}
+
+impl Stamp {
+    pub fn of(at: &Path) -> Option<Self> {
+        let meta = std::fs::metadata(at).ok()?;
+        let mtime = meta.modified().ok()?;
+        let since = mtime
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or_else(|e| -(e.duration().as_nanos() as i64));
+        Some(Self {
+            mtime_ns: since,
+            size: meta.len(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Held {
+    pub hash: String,
+    pub stamp: Option<Stamp>,
 }
 
 pub fn sort_key(rel: &str) -> String {
