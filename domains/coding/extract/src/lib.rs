@@ -140,15 +140,16 @@ pub struct Linked {
     pub cache_fault: Option<String>,
 }
 
-pub fn registry(root: &Path, state_dir: &Path) -> Linked {
+pub async fn registry(root: &Path, state_dir: &Path) -> Linked {
     let db = state_dir.join("survey-index.sqlite");
-    match Bridge::spawn(root, move || sqlite::open(db)) {
+    match Bridge::open(root, move || sqlite::open(db)).await {
         Ok(bridge) => Linked {
             cache_fault: None,
             probes: bind(Arc::new(bridge)),
         },
         Err(e) => {
-            let bridge = Bridge::spawn(root, sqlite::open_in_memory)
+            let bridge = Bridge::open(root, sqlite::open_in_memory)
+                .await
                 .expect("an in-memory SQLite pool cannot fail to open the way a file can");
             Linked {
                 cache_fault: Some(format!(
@@ -171,10 +172,10 @@ pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {
                     version: ProbeVersion::try_new(*version)
                         .expect("build.rs earns every version as a sha256 of its closure"),
                     extract: Arc::new(move |reach: &Reach| {
-                        let bridge = Bridge::<SqliteIndex>::spawn(
+                        let bridge = gmr_survey::bridge::run_blocking(Bridge::<SqliteIndex>::open(
                             &reach.cwd,
                             sqlite::open_in_memory,
-                        )
+                        ))
                         .expect("an in-memory SQLite pool cannot fail to open the way a file can");
                         probe(
                             &narrow_of(&reach.params),

@@ -1,19 +1,12 @@
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::thread;
 
 use gmr_probe::Budget;
-use tokio::runtime::Runtime;
 
 use crate::corpus::{self, Corpus, Halt};
 use crate::index::{Generation, Index, IndexError, Indexed, Row as IndexRow, Snapshot};
 use crate::matching::{Fragment, Want};
 use crate::recipe::Recipe;
-use crate::walk::{Held, Stamp};
-
-type Job<I> = Box<dyn FnOnce(&I, &Runtime) + Send>;
 
 fn index_halt(e: IndexError) -> Halt {
     Halt::Refused(format!("{:?}: {e}", e.fault))
@@ -34,114 +27,40 @@ fn located_to_fragments(snapshot: Option<Snapshot>) -> Vec<Fragment> {
         .unwrap_or_default()
 }
 
+thread_local! {
+    static FALLBACK: tokio::runtime::Runtime = tokio::runtime::Runtime::new()
+        .expect("gmr-survey: no ambient tokio runtime and a fallback one would not start");
+}
+
+pub fn run_blocking<F: Future>(fut: F) -> F::Output {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle.block_on(fut),
+        Err(_) => FALLBACK.with(|rt| rt.block_on(fut)),
+    }
+}
+
 pub struct Bridge<I> {
     tree: PathBuf,
-    tx: mpsc::Sender<Job<I>>,
+    index: I,
 }
 
-impl<I: Index + Send + 'static> Bridge<I> {
-    pub fn spawn<F, Fut>(tree: impl Into<PathBuf>, open: F) -> Result<Self, IndexError>
+impl<I: Index> Bridge<I> {
+    pub async fn open<F, Fut>(tree: impl Into<PathBuf>, open: F) -> Result<Self, IndexError>
     where
-        F: FnOnce() -> Fut + Send + 'static,
+        F: FnOnce() -> Fut,
         Fut: Future<Output = Result<I, IndexError>>,
     {
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), IndexError>>();
-        let (tx, rx) = mpsc::channel::<Job<I>>();
-        thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("gmr-survey: the bridge's own runtime failed to start");
-            let index = match rt.block_on(open()) {
-                Ok(index) => {
-                    let _ = ready_tx.send(Ok(()));
-                    index
-                }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
-                    return;
-                }
-            };
-            while let Ok(job) = rx.recv() {
-                job(&index, &rt);
-            }
-        });
-        ready_rx
-            .recv()
-            .expect("gmr-survey: the bridge's background thread died before answering")?;
         Ok(Self {
             tree: tree.into(),
-            tx,
+            index: open().await?,
         })
-    }
-
-    fn run<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&I, &Runtime) -> T + Send + 'static,
-        T: Send + 'static,
-    {
-        let (result_tx, result_rx) = mpsc::channel();
-        let job: Job<I> = Box::new(move |index, rt| {
-            let _ = result_tx.send(f(index, rt));
-        });
-        self.tx
-            .send(job)
-            .expect("gmr-survey: the bridge's background thread is gone");
-        result_rx
-            .recv()
-            .expect("gmr-survey: the bridge's background thread dropped a job without answering")
-    }
-
-    fn known(&self, of: &Generation) -> Result<BTreeMap<String, Held>, IndexError> {
-        let of = of.clone();
-        self.run(move |index, rt| rt.block_on(index.known(&of)))
-    }
-
-    fn write(&self, of: &Generation, files: &[Indexed]) -> Result<(), IndexError> {
-        let of = of.clone();
-        let files = files.to_vec();
-        self.run(move |index, rt| rt.block_on(index.write(&of, &files)))
-    }
-
-    fn restamp(
-        &self,
-        of: &Generation,
-        restamped: &[(String, Option<Stamp>)],
-    ) -> Result<(), IndexError> {
-        let of = of.clone();
-        let restamped = restamped.to_vec();
-        self.run(move |index, rt| rt.block_on(index.restamp(&of, &restamped)))
-    }
-
-    fn forget(&self, of: &Generation, gone: &[String]) -> Result<(), IndexError> {
-        let of = of.clone();
-        let gone = gone.to_vec();
-        self.run(move |index, rt| rt.block_on(index.forget(&of, &gone)))
-    }
-
-    fn rows(&self, of: &Generation, root: &str) -> Result<Option<Snapshot>, IndexError> {
-        let of = of.clone();
-        let root = root.to_owned();
-        self.run(move |index, rt| rt.block_on(index.rows(&of, &root)))
-    }
-
-    fn union(
-        &self,
-        of: &Generation,
-        root: &str,
-        want: &Want,
-    ) -> Result<Option<Snapshot>, IndexError> {
-        let of = of.clone();
-        let root = root.to_owned();
-        let want = want.clone();
-        self.run(move |index, rt| rt.block_on(index.union(&of, &root, &want)))
     }
 }
 
-impl<I: Index + Send + 'static> Corpus for Bridge<I> {
+impl<I: Index> Corpus for Bridge<I> {
     fn refresh(&self, recipe: &Recipe, budget: &Budget) -> Result<(), Halt> {
         let of = Generation::of(recipe.name, recipe.version);
-        let known = self.known(&of).map_err(index_halt)?;
+        let known = run_blocking(self.index.known(&of)).map_err(index_halt)?;
         let scan = corpus::rescan(&self.tree, recipe, &known, budget)?;
 
         let files: Vec<Indexed> = scan
@@ -165,32 +84,32 @@ impl<I: Index + Send + 'static> Corpus for Bridge<I> {
                     .collect(),
             })
             .collect();
-        self.write(&of, &files).map_err(index_halt)?;
+        run_blocking(self.index.write(&of, &files)).map_err(index_halt)?;
 
         if !scan.restamped.is_empty() {
-            self.restamp(&of, &scan.restamped).map_err(index_halt)?;
+            run_blocking(self.index.restamp(&of, &scan.restamped)).map_err(index_halt)?;
         }
         if !scan.gone.is_empty() {
-            self.forget(&of, &scan.gone).map_err(index_halt)?;
+            run_blocking(self.index.forget(&of, &scan.gone)).map_err(index_halt)?;
         }
         Ok(())
     }
 
     fn populated(&self, recipe: &Recipe, root: &str) -> Result<bool, Halt> {
         let of = Generation::of(recipe.name, recipe.version);
-        let known = self.known(&of).map_err(index_halt)?;
+        let known = run_blocking(self.index.known(&of)).map_err(index_halt)?;
         Ok(known.keys().any(|rel| crate::index::under(rel, root)))
     }
 
     fn whole(&self, recipe: &Recipe, root: &str) -> Result<Vec<Fragment>, Halt> {
         let of = Generation::of(recipe.name, recipe.version);
-        let snapshot = self.rows(&of, root).map_err(index_halt)?;
+        let snapshot = run_blocking(self.index.rows(&of, root)).map_err(index_halt)?;
         Ok(located_to_fragments(snapshot))
     }
 
     fn touching(&self, recipe: &Recipe, root: &str, want: &Want) -> Result<Vec<Fragment>, Halt> {
         let of = Generation::of(recipe.name, recipe.version);
-        let snapshot = self.union(&of, root, want).map_err(index_halt)?;
+        let snapshot = run_blocking(self.index.union(&of, root, want)).map_err(index_halt)?;
         Ok(located_to_fragments(snapshot))
     }
 }

@@ -124,7 +124,7 @@ async fn served(
     }
 
     let catalog = probes::Catalog::load(&root)?;
-    let linked = coding_extract::registry(&root, &state);
+    let linked = coding_extract::registry(&root, &state).await;
     if let Some(fault) = &linked.cache_fault {
         eprintln!("gmr: {fault}");
     }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use gmr_probe::Budget;
-use gmr_survey::bridge::Bridge;
+use gmr_survey::bridge::{Bridge, run_blocking};
 use gmr_survey::matching::Fragment;
 use gmr_survey::recipe::{Merge, Recipe, look};
 use gmr_survey::testkit::Surveyed;
@@ -59,7 +59,7 @@ fn the_bridge_agrees_with_the_in_memory_reference() {
     let surveyed = Surveyed::over(d.path());
     let via_surveyed = look(&RECIPE, "", &pos, &surveyed, &roomy()).unwrap();
 
-    let bridge = Bridge::spawn(d.path(), gmr_survey::sqlite::open_in_memory).unwrap();
+    let bridge = run_blocking(Bridge::open(d.path(), gmr_survey::sqlite::open_in_memory)).unwrap();
     let via_bridge = look(&RECIPE, "", &pos, &bridge, &roomy()).unwrap();
 
     assert_eq!(
@@ -72,7 +72,7 @@ fn the_bridge_agrees_with_the_in_memory_reference() {
 #[test]
 fn a_second_refresh_with_nothing_changed_still_answers_correctly() {
     let d = tree(&[("a.rs", "alpha")]);
-    let bridge = Bridge::spawn(d.path(), gmr_survey::sqlite::open_in_memory).unwrap();
+    let bridge = run_blocking(Bridge::open(d.path(), gmr_survey::sqlite::open_in_memory)).unwrap();
     let pos = serde_json::json!({ "file": "a.rs", "name": "alpha" });
 
     let first = look(&RECIPE, "", &pos, &bridge, &roomy()).unwrap();
@@ -88,7 +88,7 @@ fn a_second_refresh_with_nothing_changed_still_answers_correctly() {
 #[test]
 fn a_file_that_stops_existing_is_forgotten() {
     let d = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);
-    let bridge = Bridge::spawn(d.path(), gmr_survey::sqlite::open_in_memory).unwrap();
+    let bridge = run_blocking(Bridge::open(d.path(), gmr_survey::sqlite::open_in_memory)).unwrap();
 
     let before = look(
         &RECIPE,
