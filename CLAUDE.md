@@ -66,7 +66,7 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 - Modifying `memories/` or `.anchor/probes.toml` = changing criteria or records for this repo as a GMR user; usually requires owner judgement.
 - Modifying `crates/` = changing the GMR tool itself; must respect crate boundaries.
 - Modifying `architecture.toml` = changing `gate.sh`'s gate criteria, unrelated to GMR semantics.
-- Modifying `cliff.toml` = changing what counts as breaking / how the version bump is computed for `tools/gate.py`'s version check; also unrelated to GMR semantics. See §10.
+- Modifying `cliff.toml` = changing changelog text/grouping for whoever runs `git-cliff` by hand; not read by `gate.py` or any release workflow, and unrelated to GMR semantics. See §10.
 
 ---
 
@@ -139,12 +139,10 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 
 ## 10. Version & Release Process
 
-One workspace version. major = human‑only, never computed. minor = `feat`, and breaking while major is `0`. patch = `fix`/`docs`/`test` only. `cliff.toml` declares this; `tools/gate.py`’s `check_version_bump` verifies it, only when `Cargo.toml`’s version already differs from the latest tag.
+One workspace version. major.minor is human‑only — a deliberate stability promise, not a fact any parser gets to infer from commit messages. patch belongs to CI alone.
 
-Release:
+- **Ordinary change**: do not touch `Cargo.toml`’s `workspace.package.version` at all. `.github/workflows/release.yml`’s `bump-version` job bumps the patch digit on every push to `main`, commits, tags, and releases it — a merge to `main` *is* a release.
+- **Deliberate major or minor line**: edit `Cargo.toml`’s version to `X.(Y+1).0` (or `(X+1).0.0`) by hand, in the PR that earns it. CI sees `(major, minor)` has moved past the latest tag and tags exactly that version instead of bumping patch.
+- `tools/gate.py`’s `check_version_bump` enforces the shape of a manual edit — major.minor must move strictly forward of the latest tag, patch must be `0` — it does not compute an expected version from commit messages. (It used to, via `git-cliff --bumped-version`; a squash‑merged PR collapsed `!`‑marked breaking commits into one non‑`!` PR‑title commit, git‑cliff read only that flattened title, and the bump size was wrong without gate.sh noticing. The fix was to stop asking a commit‑message parser to decide version numbers, not to make it read squashed history correctly.)
 
-1. `git-cliff --bumped-version --unreleased -c cliff.toml`
-2. Write that version into `Cargo.toml`
-3. Update each crate’s `CHANGELOG.md`
-4. `chore: release vX.Y.Z`, push
-5. `git tag vX.Y.Z && git push origin vX.Y.Z` — triggers `release.yml`
+Nothing here is triggered by hand for an ordinary release — pushing the merge is the whole process. `cliff.toml` still shapes changelog text for whoever runs `git-cliff` manually; it is no longer read by `gate.py`.
