@@ -66,6 +66,45 @@ pub enum Standing {
     },
 }
 
+impl Standing {
+    pub fn of(anchor: AnchorKey, view: crate::read::MemoryView) -> Option<Self> {
+        let crate::read::MemoryView {
+            reference,
+            bound_version,
+            grounding,
+            ..
+        } = view;
+        match grounding {
+            crate::read::Grounding::Current { .. } => None,
+            crate::read::Grounding::Rewritten {
+                version, before, ..
+            } => Some(Self::Rewritten {
+                anchor,
+                reference,
+                bound_version,
+                current_version: version,
+                before,
+            }),
+            crate::read::Grounding::Gone => Some(Self::Gone {
+                anchor,
+                reference,
+                bound_version,
+            }),
+            crate::read::Grounding::NoProvider { provider } => Some(Self::NoProvider {
+                anchor,
+                reference,
+                provider,
+            }),
+            crate::read::Grounding::Unreachable { code, why } => Some(Self::Unreachable {
+                anchor,
+                reference,
+                code,
+                why,
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Edges {
     pub edges: Vec<Edge>,
@@ -126,39 +165,7 @@ async fn changed_since(
 
             for binding in memory.bindings_on(&key).await? {
                 let view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
-                let anchor = key.clone();
-                let reference = view.reference;
-                let bound_version = view.bound_version;
-                standing.extend(match view.grounding {
-                    crate::read::Grounding::Current { .. } => None,
-                    crate::read::Grounding::Rewritten {
-                        version, before, ..
-                    } => Some(Standing::Rewritten {
-                        anchor,
-                        reference,
-                        bound_version,
-                        current_version: version,
-                        before,
-                    }),
-                    crate::read::Grounding::Gone => Some(Standing::Gone {
-                        anchor,
-                        reference,
-                        bound_version,
-                    }),
-                    crate::read::Grounding::NoProvider { provider } => Some(Standing::NoProvider {
-                        anchor,
-                        reference,
-                        provider,
-                    }),
-                    crate::read::Grounding::Unreachable { code, why } => {
-                        Some(Standing::Unreachable {
-                            anchor,
-                            reference,
-                            code,
-                            why,
-                        })
-                    }
-                });
+                standing.extend(Standing::of(key.clone(), view));
             }
         }
     }
@@ -232,4 +239,92 @@ fn walk(
         was = now.state.clone();
         was_closed = now.closed;
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::read::{Before, Footing, Grounding, MemoryView};
+    use gmr_content::ContentErrorCode;
+    use gmr_core::{ProviderId, Ref};
+
+    fn viewed(grounding: Grounding) -> MemoryView {
+        MemoryView {
+            reference: Ref::new("git", "m.md"),
+            bound_version: Version::new("v1"),
+            grounded: true,
+            links: Vec::new(),
+            bound_at_seq: None,
+            stale: None,
+            grounding,
+        }
+    }
+
+    fn every_grounding() -> Vec<Grounding> {
+        vec![
+            Grounding::Current {
+                version: Version::new("v1"),
+                content: b"x".to_vec(),
+            },
+            Grounding::Rewritten {
+                version: Version::new("v2"),
+                content: b"y".to_vec(),
+                before: Before::Retrieved {
+                    content: b"x".to_vec(),
+                },
+            },
+            Grounding::Rewritten {
+                version: Version::new("v2"),
+                content: b"y".to_vec(),
+                before: Before::NotRetained,
+            },
+            Grounding::Rewritten {
+                version: Version::new("v2"),
+                content: b"y".to_vec(),
+                before: Before::NoHistory,
+            },
+            Grounding::Gone,
+            Grounding::NoProvider {
+                provider: ProviderId::new("mem0"),
+            },
+            Grounding::Unreachable {
+                code: ContentErrorCode::ProviderFailed,
+                why: "the store said no".into(),
+            },
+            Grounding::Unreachable {
+                code: ContentErrorCode::BudgetSpent,
+                why: "nothing was asked".into(),
+            },
+        ]
+    }
+
+    #[test]
+    fn the_two_corpus_walks_cannot_disagree_about_whether_a_record_is_fine() {
+        for grounding in every_grounding() {
+            let footing = grounding.footing();
+            let raised = Standing::of(AnchorKey::new("a"), viewed(grounding.clone())).is_some();
+            assert_eq!(
+                raised,
+                !footing.is_current(),
+                "`edges` raises a standing and `doctor` counts a footing, over the same \
+                 record. They were two matches on `Grounding` written apart, and they drifted: \
+                 doctor walked only the open anchors, so a record the provider had deleted was \
+                 `gone` under one verb and absent from the other — and the verb holding the \
+                 exit code was the blind one. Whatever a new grounding shape means, both have \
+                 to mean it: {grounding:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_footing_but_current_names_something_to_do_about_it() {
+        let seen: std::collections::BTreeSet<Footing> =
+            every_grounding().iter().map(Grounding::footing).collect();
+        assert_eq!(
+            seen.len(),
+            7,
+            "each footing has its own line in `doctor`, and a shape that stopped producing \
+             one would take that line down with it silently"
+        );
+    }
 }

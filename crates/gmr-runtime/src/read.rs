@@ -75,6 +75,42 @@ pub enum Grounding {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Footing {
+    Current,
+    Rewritten,
+    NoBefore,
+    Gone,
+    NoProvider,
+    Unreachable,
+    NeverAsked,
+}
+
+impl Footing {
+    pub fn is_current(self) -> bool {
+        matches!(self, Self::Current)
+    }
+}
+
+impl Grounding {
+    pub fn footing(&self) -> Footing {
+        match self {
+            Self::Current { .. } => Footing::Current,
+            Self::Rewritten { before, .. } => match before {
+                Before::Retrieved { .. } => Footing::Rewritten,
+                _ => Footing::NoBefore,
+            },
+            Self::Gone => Footing::Gone,
+            Self::NoProvider { .. } => Footing::NoProvider,
+            Self::Unreachable { code, .. } => match code {
+                ContentErrorCode::BudgetSpent => Footing::NeverAsked,
+                _ => Footing::Unreachable,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "before", rename_all = "snake_case")]
 pub enum Before {
@@ -102,6 +138,10 @@ impl MemoryView {
 
     pub fn rewritten(&self) -> bool {
         matches!(self.grounding, Grounding::Rewritten { .. })
+    }
+
+    pub fn footing(&self) -> Footing {
+        self.grounding.footing()
     }
 }
 

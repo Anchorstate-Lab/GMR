@@ -12,7 +12,8 @@ pub async fn run(rt: &Runtime, key: Option<String>, json: bool) -> Result<i32, C
     for k in &keys {
         per_anchor.push(rt.health(k).await?);
     }
-    let corpus = rt.corpus_health().await?;
+    let corpus = rt.corpus().await?;
+    let corpus = corpus.health();
 
     if json {
         println!(

@@ -387,7 +387,8 @@ async fn corpus_health_sees_barren_anchors() {
         .await
         .unwrap();
 
-    let c = w.runtime.corpus_health().await.unwrap();
+    let corpus = w.runtime.corpus().await.unwrap();
+    let c = corpus.health();
     assert_eq!(c.active_anchors, 1);
     assert_eq!(c.barren_anchors, vec![key()]);
     assert_eq!(c.bound_refs, 0);
@@ -396,9 +397,78 @@ async fn corpus_health_sees_barren_anchors() {
         .bind(Ref::new("git", "m.md"), vec![key()], Version::new("v1"))
         .await
         .unwrap();
-    let c = w.runtime.corpus_health().await.unwrap();
+    let corpus = w.runtime.corpus().await.unwrap();
+    let c = corpus.health();
     assert!(c.barren_anchors.is_empty());
     assert_eq!(c.memories_per_anchor.get("a"), Some(&1));
+    assert!(c.unsupervised.is_empty());
+}
+
+#[tokio::test]
+async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
+    let w = World::new();
+    w.write("{}");
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    let note = Ref::new("git", "m.md");
+    w.runtime
+        .bind(note.clone(), vec![key()], Version::new("v1"))
+        .await
+        .unwrap();
+
+    let corpus = w.runtime.corpus().await.unwrap();
+    assert!(corpus.health().unsupervised.is_empty());
+
+    w.runtime
+        .close(&key(), b"it served its purpose")
+        .await
+        .unwrap();
+
+    let corpus = w.runtime.corpus().await.unwrap();
+    assert_eq!(
+        corpus.health().unsupervised,
+        vec![note],
+        "closing the last anchor a record hangs on is how a memory leaves the supervised \
+         set, and it used to leave without a word: every corpus-level list filtered to the \
+         open anchors first, so the record stopped being counted rather than being reported. \
+         A note that still claims something about the code while nothing observes it is the \
+         exact state this tool exists to make visible"
+    );
+    assert!(
+        corpus.health().barren_anchors.is_empty(),
+        "the anchor is not barren — it has a record. It is the record that is stranded, and \
+         conflating the two would report the wrong half of the pair"
+    );
+}
+
+#[tokio::test]
+async fn a_record_bound_to_an_anchor_nobody_ever_opened_is_stranded_too() {
+    let w = World::new();
+    w.write("{}");
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    let note = Ref::new("git", "orphan.md");
+    w.runtime
+        .bind(
+            note.clone(),
+            vec![AnchorKey::new("never-opened")],
+            Version::new("v1"),
+        )
+        .await
+        .unwrap();
+
+    let corpus = w.runtime.corpus().await.unwrap();
+    assert_eq!(
+        corpus.health().unsupervised,
+        vec![note],
+        "`supervised` is one predicate — at least one anchor this record names is open — so \
+         a key that closed and a key that never existed answer it the same way. Deriving the \
+         list by walking anchors instead of records could only ever see the first"
+    );
 }
 
 #[tokio::test]
