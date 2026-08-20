@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.4...v0.4.0) - 2026-08-20
+
+### Fixed
+
+- *(runtime,cli)* [**breaking**] whether a record is still watched is a corpus fact, not a filter each verb picks
+
 ## [0.3.4](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.3...v0.3.4) - 2026-08-18
 
 ### Added
