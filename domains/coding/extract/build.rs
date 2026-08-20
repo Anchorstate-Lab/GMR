@@ -25,23 +25,17 @@ const WAIVED: [(&str, &str); 6] = [
         "module declarations and re-exports; holds no logic",
     ),
     (
-        "corpus.rs",
-        "storage and traversal. Freshness cannot change a pure collect's answer: same bytes, \
-         same fragments. What files reach collect at all is `eligible`, which lives in each \
-         extractor and is hashed with it, and the order they come back in is `sort_key`, \
-         which moved to walk.rs when this file became its first producer",
+        "cache.rs",
+        "storage. Freshness cannot change a pure collect's answer: same bytes, same \
+         candidates. What files reach collect at all is `eligible`, which lives in each \
+         extractor and is hashed with it",
     ),
     (
         "narrow.rs",
         "proved output-preserving; hashing it would rebase every repository for an answer \
          identical byte for byte. See memories/survey-narrow.md",
     ),
-    (
-        "index.rs",
-        "storage contract. `look` names `Corpus`, but a trait's shape cannot change what a \
-         pure collect produces, and the one thing in here that could — the sort key — is \
-         no longer in here",
-    ),
+    ("index.rs", "storage contract; no extractor reads it"),
     ("sqlite.rs", "storage backend; no extractor reads it"),
     ("testkit.rs", "storage backend; no extractor reads it"),
 ];

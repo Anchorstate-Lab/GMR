@@ -1,4 +1,4 @@
-pub mod corpus;
+pub mod cache;
 pub mod index;
 pub mod matching;
 pub mod narrow;
@@ -9,7 +9,7 @@ pub mod sqlite;
 pub mod testkit;
 pub mod walk;
 
-pub use corpus::*;
+pub use cache::*;
 pub use index::*;
 pub use matching::*;
 pub use narrow::*;
