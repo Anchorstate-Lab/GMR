@@ -193,6 +193,40 @@ struct Slot {
 pub struct MemoryQueue {
     inner: Mutex<HashMap<AnchorKey, Slot>>,
     settings: Mutex<HashMap<AnchorKey, RunSettings>>,
+    sightings: Mutex<HashMap<AnchorKey, crate::Seen>>,
+}
+
+#[async_trait]
+impl crate::Sightings for MemoryQueue {
+    async fn sighted(&self, anchor: &AnchorKey, at: DateTime<Utc>) -> Result<(), StoreError> {
+        let mut held = self.sightings.lock().unwrap();
+        let seen = held.entry(anchor.clone()).or_default();
+        seen.sightings += 1;
+        seen.last_at = Some(at);
+        Ok(())
+    }
+
+    async fn seen(&self, anchor: &AnchorKey) -> Result<crate::Seen, StoreError> {
+        Ok(self
+            .sightings
+            .lock()
+            .unwrap()
+            .get(anchor)
+            .copied()
+            .unwrap_or_default())
+    }
+
+    async fn all_seen(
+        &self,
+    ) -> Result<std::collections::BTreeMap<AnchorKey, crate::Seen>, StoreError> {
+        Ok(self
+            .sightings
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect())
+    }
 }
 
 #[async_trait]

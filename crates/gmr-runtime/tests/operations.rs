@@ -36,6 +36,7 @@ impl World {
             .sealer(bindings.clone())
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
             .policy(policy);
         if queue {
             b = b.queue(Arc::new(MemoryQueue::default()));
@@ -703,11 +704,13 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
         .open(request(w.dir.path(), watching("x")))
         .await
         .unwrap();
+    w.write(r#"{"x":2}"#);
     w.runtime.pass().await.unwrap();
 
     let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
     let (_, sighting) = entries
         .iter()
+        .rev()
         .find(|(_, e)| e.is_sighting())
         .unwrap()
         .clone();

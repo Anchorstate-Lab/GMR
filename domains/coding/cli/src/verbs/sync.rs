@@ -446,6 +446,7 @@ pub enum Standing<'a> {
 
 pub fn standing<'a>(
     view: &AnchorView,
+    bound: bool,
     decls: &[&'a AnchorDecl],
     scanned: &crate::memories::Scanned,
     ctx: &Context,
@@ -460,9 +461,29 @@ pub fn standing<'a>(
         }
         None => match scanned.blocked_key(view.key.as_str()) {
             Some(f) => Ok(Standing::Unreadable { reason: f.line() }),
-            None if !view.memories.is_empty() => Ok(Standing::Undeclared),
+            None if bound => Ok(Standing::Undeclared),
             None => Ok(Standing::Matches),
         },
+    }
+}
+
+#[derive(Default)]
+pub struct Bound(std::collections::BTreeSet<AnchorKey>);
+
+impl Bound {
+    pub async fn of(rt: &Runtime) -> Result<Self, CliError> {
+        Ok(Self(
+            rt.memory()
+                .all()
+                .await?
+                .into_iter()
+                .flat_map(|r| r.binding.anchors)
+                .collect(),
+        ))
+    }
+
+    pub fn holds(&self, key: &AnchorKey) -> bool {
+        self.0.contains(key)
     }
 }
 
@@ -475,6 +496,7 @@ pub struct Audit {
 
 pub fn audit<'a>(
     views: impl IntoIterator<Item = &'a AnchorView>,
+    bound: &Bound,
     decls: &[&AnchorDecl],
     scanned: &crate::memories::Scanned,
     ctx: &Context,
@@ -484,7 +506,7 @@ pub fn audit<'a>(
         if view.closed {
             continue;
         }
-        match standing(view, decls, scanned, ctx)? {
+        match standing(view, bound.holds(&view.key), decls, scanned, ctx)? {
             Standing::Matches => {}
             Standing::Drifted { facets, .. } => {
                 out.drifted.push((view.key.clone(), facets.join(" · ")))
@@ -530,6 +552,7 @@ mod tests {
             .links(std::sync::Arc::new(store.links()))
             .queue(std::sync::Arc::new(store.queue()))
             .settings(std::sync::Arc::new(store.queue()))
+            .sightings(std::sync::Arc::new(store.queue()))
             .provider(std::sync::Arc::new(Versions(ProviderId::new("git"))))
             .build();
         (rt, store)

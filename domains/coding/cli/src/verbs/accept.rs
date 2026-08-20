@@ -60,7 +60,8 @@ async fn pending(
     let scanned = crate::memories::scan(root, &ctx.catalog)?;
     let decls = sync::merged(&declared, &scanned.notes);
 
-    let (facets, decl) = match sync::standing(&view, &decls, &scanned, &ctx)? {
+    let bound = sync::Bound::of(rt).await?.holds(key);
+    let (facets, decl) = match sync::standing(&view, bound, &decls, &scanned, &ctx)? {
         sync::Standing::Drifted { decl, facets } => (facets, Some(decl.clone())),
         _ => (Vec::new(), None),
     };
@@ -109,11 +110,13 @@ async fn declaration_drifted(rt: &Runtime, root: &Path) -> Result<Vec<AnchorKey>
     let scanned = crate::memories::scan(root, &ctx.catalog)?;
     let decls = sync::merged(&declared, &scanned.notes);
     let views = rt.read_all().await?;
-    Ok(sync::audit(&views, &decls, &scanned, &ctx)?
-        .drifted
-        .into_iter()
-        .map(|(k, _)| k)
-        .collect())
+    Ok(
+        sync::audit(&views, &sync::Bound::of(rt).await?, &decls, &scanned, &ctx)?
+            .drifted
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect(),
+    )
 }
 
 pub async fn run(

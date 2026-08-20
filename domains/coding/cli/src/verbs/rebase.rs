@@ -11,11 +11,16 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let keys = match all {
-        true => crate::verbs::swapped(rt, &rt.anchors().await?)
-            .await?
-            .into_iter()
-            .map(|(key, _)| key)
-            .collect(),
+        true => {
+            let mut views = Vec::new();
+            for key in rt.anchors().await? {
+                views.push(rt.read(&key).await?);
+            }
+            crate::verbs::swapped(rt, &views)
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect()
+        }
         false => {
             let mut out = Vec::new();
             for arg in &keys {

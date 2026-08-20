@@ -1,4 +1,4 @@
-use gmr::{AnchorView, Before, Grounding};
+use gmr::{Before, Grounded, Grounding};
 use serde_json::Value;
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
@@ -32,7 +32,8 @@ pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
     })
 }
 
-pub fn anchor(v: &AnchorView, names: &crate::memories::Names) -> String {
+pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
+    let v = &g.view;
     let mut out = String::new();
     let head = match v.status.as_ref() {
         Some(s) => format!("{}  [{s}]", v.key),
@@ -53,7 +54,7 @@ pub fn anchor(v: &AnchorView, names: &crate::memories::Names) -> String {
         out.push_str("  * last observation looked there and found nothing\n");
     }
 
-    for m in &v.memories {
+    for m in &g.memories {
         let mark = if m.grounded { "*" } else { "?" };
         out.push_str(&format!("  {mark} {}", names.of(&m.reference)));
         out.push_str(&grounding(&m.grounding));

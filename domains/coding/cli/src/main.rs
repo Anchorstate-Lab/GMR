@@ -140,6 +140,7 @@ async fn served(
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.queue()))
+        .sightings(Arc::new(store.queue()))
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))

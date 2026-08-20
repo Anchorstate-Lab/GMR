@@ -72,6 +72,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         .sealer(bindings.clone())
         .links(bindings)
         .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
         .build();
 
     let key = AnchorKey::new("core::modules");
@@ -110,11 +111,11 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
     .unwrap();
     rt.observe(&key).await.unwrap();
 
-    let view = rt.read(&key).await.unwrap();
+    let view = rt.grounded(&key).await.unwrap();
     let handed_back = serde_json::to_string(&view).unwrap();
 
     assert_eq!(
-        view.state.as_value()["modules"],
+        view.view.state.as_value()["modules"],
         serde_json::json!(["addr", "probe", "fact"]),
         "the anchor should hand back what it sees now, not just that it changed"
     );

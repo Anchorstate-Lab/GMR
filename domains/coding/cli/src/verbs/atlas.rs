@@ -141,10 +141,10 @@ pub async fn run(
 ) -> Result<i32, CliError> {
     let catalog = Catalog::load(root)?;
     let (subs, _) = Subscriptions::load(root, &catalog, names)?;
-    let views = rt.read_all().await?;
+    let views = rt.grounded_all().await?;
 
     let mut nodes_by_name = crate::prose::Nodes::new();
-    for m in views.iter().flat_map(|v| &v.memories) {
+    for m in views.iter().flat_map(|g| &g.memories) {
         if let Some(name) = names.named(&m.reference) {
             nodes_by_name.insert(name, memory_id(&m.reference));
         }
@@ -155,9 +155,14 @@ pub async fn run(
     let mut memories: BTreeMap<gmr::Ref, Node> = BTreeMap::new();
     let mut barren = 0usize;
 
-    for view in &views {
+    for grounded in &views {
+        let view = &grounded.view;
         let shape = crate::shapes::of(&view.anchor.transitions);
-        let bound: Vec<gmr::Ref> = view.memories.iter().map(|m| m.reference.clone()).collect();
+        let bound: Vec<gmr::Ref> = grounded
+            .memories
+            .iter()
+            .map(|m| m.reference.clone())
+            .collect();
         let delivering = bound
             .iter()
             .any(|note| subs.delivers(shape, note, &view.state, false));
@@ -170,7 +175,7 @@ pub async fn run(
         let key = view.key.to_string();
         nodes.push(anchor_node(view, anchor_tone(view, delivering, unclaimed)));
 
-        for m in &view.memories {
+        for m in &grounded.memories {
             edges.push(Edge::new(
                 memory_id(&m.reference),
                 anchor_id(&key),
@@ -189,7 +194,7 @@ pub async fn run(
     for reference in &present {
         let Some(body) = views
             .iter()
-            .flat_map(|v| &v.memories)
+            .flat_map(|g| &g.memories)
             .find(|m| &m.reference == reference)
             .and_then(gmr::MemoryView::content)
         else {
@@ -353,7 +358,6 @@ mod tests {
             sightings: 1,
             derivation: None,
             facts: None,
-            memories: Vec::new(),
         }
     }
 

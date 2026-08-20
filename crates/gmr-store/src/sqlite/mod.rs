@@ -5,6 +5,7 @@ pub mod portable;
 pub mod queue;
 pub mod schema;
 pub mod settings;
+pub mod sightings;
 
 use std::path::Path;
 
@@ -79,7 +80,7 @@ async fn connect(options: SqliteConnectOptions) -> Result<SqliteStore, StoreErro
     Ok(SqliteStore { pool })
 }
 
-pub(crate) const LADDER: &[(i64, &str)] = &[(6, schema::V6_TO_V7)];
+pub(crate) const LADDER: &[(i64, &str)] = &[(6, schema::V6_TO_V7), (7, schema::V7_TO_V8)];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
     let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -524,7 +525,9 @@ CREATE TRIGGER IF NOT EXISTS sealed_no_delete BEFORE DELETE ON sealed
         let climbed = raw().await;
         sqlx::raw_sql(V6_SCHEMA).execute(&climbed).await.unwrap();
         stamp(&climbed, 6).await;
-        climb(&climbed, 7, LADDER).await.unwrap();
+        climb(&climbed, schema::SCHEMA_VERSION, LADDER)
+            .await
+            .unwrap();
 
         let fresh = open_in_memory().await.unwrap();
         assert_eq!(

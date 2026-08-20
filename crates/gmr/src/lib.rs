@@ -23,8 +23,8 @@ pub use gmr_expr::EVALUATOR_VERSION;
 pub use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorLog, AnchorView, Before, Corpus, CorpusHealth, Edge, Edges, Footing,
-    Grounding, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Passed, Policy, Revised,
-    Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
+    Grounded, Grounding, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Passed, Policy,
+    Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
 };
 pub use gmr_store::{
     BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, LinkStore, Queue, Sealer,

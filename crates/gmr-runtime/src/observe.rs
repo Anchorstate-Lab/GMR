@@ -138,20 +138,34 @@ pub(crate) async fn observe_with(
             .and(s.latest_seq)
     };
 
-    let entry = match still_ref {
-        Some(ref_entry) => Entry::Still {
-            ref_entry,
-            at,
-            versions: observation.versions.clone(),
-        },
-        None => Entry::Transition {
-            observation,
-            state: next.clone(),
-            at,
-        },
-    };
-
-    log.append(key, &entry, fence).await?;
+    match still_ref {
+        Some(ref_entry) if s.attempts > 0 => {
+            log.append(
+                key,
+                &Entry::Still {
+                    ref_entry,
+                    at,
+                    versions: observation.versions.clone(),
+                },
+                fence,
+            )
+            .await?;
+        }
+        Some(_) => {}
+        None => {
+            log.append(
+                key,
+                &Entry::Transition {
+                    observation,
+                    state: next.clone(),
+                    at,
+                },
+                fence,
+            )
+            .await?;
+        }
+    }
+    scheduler.sighted(key, at).await?;
 
     Ok(match still_ref {
         Some(_) => Observed::Still,

@@ -113,6 +113,8 @@ async fn open(
     )
     .await?;
 
+    scheduler.sighted(&key, at).await?;
+
     if let Err(e) = scheduler.set_settings(&key, &request.settings).await {
         warnings.push(format!(
             "the anchor opened but its retain/cadence could not be stored ({e}); \

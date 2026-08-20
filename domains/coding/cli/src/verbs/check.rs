@@ -1,28 +1,32 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, AnchorView, Observed, Runtime};
+use gmr::{AnchorKey, AnchorView, Observed, Runtime, State};
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
 use crate::probes::Catalog;
 use crate::verbs::sync::{self, Audit, Context, DEFAULT_FILE, read_declared};
 
-async fn criteria(
-    rt: &Runtime,
+fn criteria(
     root: &Path,
     catalog: Catalog,
-    keys: &[AnchorKey],
+    views: &[AnchorView],
+    bound: &sync::Bound,
 ) -> Result<Audit, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
     let scanned = crate::memories::scan(root, &catalog)?;
     let decls = sync::merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
+    sync::audit(views, bound, &decls, &scanned, &ctx)
+}
 
-    let mut views: Vec<AnchorView> = Vec::with_capacity(keys.len());
-    for key in keys {
-        views.push(rt.read(key).await?);
+fn settled(observed: &Observed, before: &State) -> Option<(bool, State)> {
+    match observed {
+        Observed::Attempt { .. } | Observed::Closed => None,
+        Observed::Transitioned { to, .. } => Some((true, to.clone())),
+        Observed::Unchanged { state } => Some((false, state.clone())),
+        Observed::Still => Some((false, before.clone())),
     }
-    sync::audit(&views, &decls, &scanned, &ctx)
 }
 
 #[derive(Default)]
@@ -63,45 +67,51 @@ pub async fn run(
     };
     let catalog = Catalog::load(root)?;
     let (subs, unwatchable) = Subscriptions::load(root, &catalog, names)?;
+
+    let mut views: Vec<AnchorView> = Vec::with_capacity(keys.len());
+    for key in &keys {
+        views.push(rt.read(key).await?);
+    }
+
     let Audit {
         drifted,
         unreadable,
         undeclared,
-    } = criteria(rt, root, catalog, &keys).await?;
-    let swapped = super::swapped(rt, &keys).await?;
+    } = criteria(root, catalog, &views, &sync::Bound::of(rt).await?)?;
+    let swapped = super::swapped(rt, &views);
 
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<gmr::Ref>)> = Vec::new();
     let mut unclaimed = Vec::new();
     let mut unseen = Vec::new();
     let mut quiet = 0;
 
-    for key in &keys {
+    for before in &views {
+        let key = &before.key;
         let observed = rt.observe(key).await?;
-        let moved = match &observed {
-            Observed::Attempt { code, message, .. } => {
-                unseen.push((key.clone(), format!("{code:?}: {message}")));
-                continue;
-            }
-            Observed::Closed => continue,
-            other => matches!(other, Observed::Transitioned { .. }),
+        if let Observed::Attempt { code, message, .. } = &observed {
+            unseen.push((key.clone(), format!("{code:?}: {message}")));
+            continue;
+        }
+        let Some((moved, state)) = settled(&observed, &before.state) else {
+            continue;
         };
 
-        let view = rt.read(key).await?;
+        let shape = crate::shapes::of(&before.anchor.transitions);
         let memories =
-            super::observe::delivered(rt, &subs, key, &view.state, moved, &mut unclaimed).await?;
+            super::observe::delivered(rt, &subs, key, shape, &state, moved, &mut unclaimed).await?;
         if memories.is_empty() {
             quiet += usize::from(moved);
             continue;
         }
-        let status = view
-            .state
-            .status()
-            .map(|s| s.to_string())
-            .unwrap_or_default();
+        let after = rt.read(key).await?;
         handed.push((
             key.clone(),
-            status,
-            crate::render::diagnosis(view.facts.as_ref()),
+            after
+                .state
+                .status()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+            crate::render::diagnosis(after.facts.as_ref()),
             memories,
         ));
     }

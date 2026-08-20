@@ -119,24 +119,19 @@ impl Runtime {
         cursor: Seq,
         status: Option<&StatusId>,
     ) -> Result<Edges, RuntimeError> {
-        changed_since(
-            &self.log,
-            &self.memory,
-            self.scheduler.policy(),
-            cursor,
-            status,
-        )
-        .await
+        changed_since(&self.log, &self.memory, &self.scheduler, cursor, status).await
     }
 }
 
 async fn changed_since(
     log: &AnchorLog,
     memory: &MemoryLens,
-    policy: &Policy,
+    scheduler: &crate::scheduler::Scheduler,
     cursor: Seq,
     status: Option<&StatusId>,
 ) -> Result<Edges, RuntimeError> {
+    let policy = scheduler.policy();
+    let seen = scheduler.all_seen().await?;
     let now = Utc::now();
     let total = policy.content_budget();
     let call = policy.content_call();
@@ -152,14 +147,17 @@ async fn changed_since(
         }
 
         if let Some(standing) = standing.as_mut() {
+            let looked = seen
+                .get(&key)
+                .and_then(|s| s.last_at)
+                .or_else(|| last.as_ref().and_then(|s| s.last_sighting));
             if let Some(s) = &last
                 && !s.closed
-                && s.last_sighting
-                    .is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
+                && looked.is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
             {
                 standing.push(Standing::Stale {
                     anchor: key.clone(),
-                    last_sighting: s.last_sighting,
+                    last_sighting: looked,
                 });
             }
 
