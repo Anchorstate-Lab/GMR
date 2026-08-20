@@ -4,7 +4,8 @@
 
 const { spawnSync } = require("node:child_process");
 
-const pkg = `@zongming_he/gmr-${process.platform}-${process.arch}`;
+const scope = require("../package.json").name.split("/")[0];
+const pkg = `${scope}/gmr-${process.platform}-${process.arch}`;
 
 let binary;
 try {
@@ -13,7 +14,7 @@ try {
   console.error(
     `gmr: no prebuilt binary for ${process.platform}-${process.arch}.\n` +
       `Install it directly instead:\n` +
-      `  curl -fsSL https://raw.githubusercontent.com/Zongming-He/gmr/main/dist/install.sh | sh`,
+      `  curl -fsSL https://raw.githubusercontent.com/Anchorstate-Lab/GMR/main/dist/install.sh | sh`,
   );
   process.exit(1);
 }
