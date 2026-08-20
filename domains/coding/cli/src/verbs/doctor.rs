@@ -58,12 +58,13 @@ pub fn undeclared(
     root: &Path,
     catalog: Catalog,
     live: &[&gmr::AnchorView],
+    bound: &sync::Bound,
     scanned: &crate::memories::Scanned,
 ) -> Result<Vec<AnchorKey>, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
     let decls = sync::merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
-    Ok(sync::audit(live.iter().copied(), &decls, scanned, &ctx)?.undeclared)
+    Ok(sync::audit(live.iter().copied(), bound, &decls, scanned, &ctx)?.undeclared)
 }
 
 pub async fn run(
@@ -74,7 +75,6 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let corpus = rt.corpus().await?;
-    let views = corpus.views();
     let live = corpus.live();
     let ground = corpus.health();
 
@@ -102,9 +102,9 @@ pub async fn run(
             .anchor
             .iter()
             .map(|d| d.key.as_str())
-            .chain(views.iter().map(|v| v.key.as_str())),
+            .chain(corpus.anchors().map(|v| v.key.as_str())),
     );
-    let undeclared_keys = undeclared(root, catalog, &live, &scanned)?;
+    let undeclared_keys = undeclared(root, catalog, &live, &sync::Bound::of(rt).await?, &scanned)?;
     let undeclared: Vec<&str> = undeclared_keys.iter().map(|k| k.as_str()).collect();
     let mut faults = scanned.faults;
     faults.extend(watch);
@@ -132,7 +132,7 @@ pub async fn run(
         println!(
             "{}",
             serde_json::json!({
-                "anchors": views.len(), "live": live.len(),
+                "anchors": corpus.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "undeclared": undeclared,
                 "gone": addresses(ground.on(Footing::Gone)),
@@ -154,7 +154,7 @@ pub async fn run(
         return Ok(exit_code);
     }
 
-    println!("anchors   {} (live {})", views.len(), live.len());
+    println!("anchors   {} (live {})", corpus.len(), live.len());
     if !states.is_empty() {
         let mut counts: std::collections::BTreeMap<&str, usize> = Default::default();
         for s in &states {

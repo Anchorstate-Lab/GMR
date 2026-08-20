@@ -41,13 +41,16 @@ pub async fn run(
         Some(k) => {
             let mut out = Vec::new();
             for key in super::resolve(rt, k).await? {
-                out.push(rt.read(&key).await?);
+                out.push(rt.grounded(&key).await?);
             }
             out
         }
-        None => rt.read_all().await?,
+        None => rt.grounded_all().await?,
     };
-    let live: Vec<&AnchorView> = views.iter().filter(|v| named || !v.closed).collect();
+    let live: Vec<&gmr::Grounded> = views
+        .iter()
+        .filter(|g| named || !g.view.closed)
+        .collect();
 
     let ctx = Context {
         catalog: Catalog::load(root)?,
@@ -59,12 +62,19 @@ pub async fn run(
         drifted,
         unreadable,
         undeclared,
-    } = sync::audit(live.iter().copied(), &decls, &scanned, &ctx)?;
+    } = sync::audit(
+        live.iter().map(|g| &g.view),
+        &sync::Bound::of(rt).await?,
+        &decls,
+        &scanned,
+        &ctx,
+    )?;
 
     let mut rows = Vec::new();
-    for view in &live {
+    for grounded in &live {
+        let view = &grounded.view;
         let shape = crate::shapes::name_of(&view.anchor.transitions).unwrap_or("custom");
-        let memories: Vec<(&gmr::Ref, bool)> = view
+        let memories: Vec<(&gmr::Ref, bool)> = grounded
             .memories
             .iter()
             .map(|m| {

@@ -7,12 +7,17 @@ use crate::error::CliError;
 use crate::probes::Catalog;
 use crate::verbs::sync::{self, Audit, Context, DEFAULT_FILE, read_declared};
 
-fn criteria(root: &Path, catalog: Catalog, views: &[AnchorView]) -> Result<Audit, CliError> {
+fn criteria(
+    root: &Path,
+    catalog: Catalog,
+    views: &[AnchorView],
+    bound: &sync::Bound,
+) -> Result<Audit, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
     let scanned = crate::memories::scan(root, &catalog)?;
     let decls = sync::merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
-    sync::audit(views, &decls, &scanned, &ctx)
+    sync::audit(views, bound, &decls, &scanned, &ctx)
 }
 
 fn settled(observed: &Observed, before: &State) -> Option<(bool, State)> {
@@ -72,7 +77,7 @@ pub async fn run(
         drifted,
         unreadable,
         undeclared,
-    } = criteria(root, catalog, &views)?;
+    } = criteria(root, catalog, &views, &sync::Bound::of(rt).await?)?;
     let swapped = super::swapped(rt, &views);
 
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<gmr::Ref>)> = Vec::new();

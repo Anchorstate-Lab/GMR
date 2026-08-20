@@ -8,7 +8,7 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
-use crate::read::{AnchorView, Footing};
+use crate::read::{AnchorView, Footing, Grounded};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AnchorHealth {
@@ -43,17 +43,25 @@ impl CorpusHealth {
 }
 
 pub struct Corpus {
-    views: Vec<AnchorView>,
+    grounded: Vec<Grounded>,
     health: CorpusHealth,
 }
 
 impl Corpus {
-    pub fn views(&self) -> &[AnchorView] {
-        &self.views
+    pub fn len(&self) -> usize {
+        self.grounded.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.grounded.is_empty()
+    }
+
+    pub fn anchors(&self) -> impl Iterator<Item = &AnchorView> {
+        self.grounded.iter().map(|g| &g.view)
     }
 
     pub fn live(&self) -> Vec<&AnchorView> {
-        self.views.iter().filter(|v| !v.closed).collect()
+        self.anchors().filter(|v| !v.closed).collect()
     }
 
     pub fn health(&self) -> &CorpusHealth {
@@ -69,9 +77,9 @@ impl Runtime {
     }
 
     pub async fn corpus(&self) -> Result<Corpus, RuntimeError> {
-        let views = self.read_all().await?;
-        let health = corpus_health(&self.memory, &views).await?;
-        Ok(Corpus { views, health })
+        let grounded = self.grounded_all().await?;
+        let health = corpus_health(&self.memory, &grounded).await?;
+        Ok(Corpus { grounded, health })
     }
 }
 
@@ -149,14 +157,15 @@ async fn health(
 
 async fn corpus_health(
     memory: &MemoryLens,
-    views: &[AnchorView],
+    grounded: &[Grounded],
 ) -> Result<CorpusHealth, RuntimeError> {
     let bindings = memory.all().await?;
-    let open: BTreeSet<&AnchorKey> = views.iter().filter(|v| !v.closed).map(|v| &v.key).collect();
+    let views = || grounded.iter().map(|g| &g.view);
+    let open: BTreeSet<&AnchorKey> = views().filter(|v| !v.closed).map(|v| &v.key).collect();
 
     let mut per_anchor: BTreeMap<String, usize> = BTreeMap::new();
     let mut barren = Vec::new();
-    for view in views {
+    for view in views() {
         let n = bindings
             .iter()
             .filter(|r| r.binding.anchors.contains(&view.key))
@@ -175,7 +184,7 @@ async fn corpus_health(
         .collect();
 
     let mut footings: BTreeMap<Footing, Vec<Ref>> = BTreeMap::new();
-    for m in views.iter().flat_map(|v| &v.memories) {
+    for m in grounded.iter().flat_map(|g| &g.memories) {
         footings
             .entry(m.footing())
             .or_default()

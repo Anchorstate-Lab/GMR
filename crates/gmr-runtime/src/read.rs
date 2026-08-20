@@ -36,6 +36,12 @@ pub struct AnchorView {
     pub derivation: Option<Derivation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub facts: Option<Facts>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Grounded {
+    #[serde(flatten)]
+    pub view: AnchorView,
     pub memories: Vec<MemoryView>,
 }
 
@@ -154,11 +160,24 @@ fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> 
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
+        Ok(projected(&self.log, key).await?.0)
+    }
+
+    pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
+        let mut out = Vec::new();
+        for key in self.log.anchors().await? {
+            out.push(projected(&self.log, &key).await?.0);
+        }
+        Ok(out)
+    }
+
+    pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
         let policy = self.scheduler.policy();
-        read(
-            &self.log,
+        let (view, head) = projected(&self.log, key).await?;
+        ground(
             &self.memory,
-            key,
+            view,
+            head,
             &policy.content_budget(),
             policy.content_call(),
         )
@@ -179,25 +198,20 @@ impl Runtime {
         cobound(&self.memory, reference).await
     }
 
-    pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
+    pub async fn grounded_all(&self) -> Result<Vec<Grounded>, RuntimeError> {
         let policy = self.scheduler.policy();
-        read_all(
-            &self.log,
-            &self.memory,
-            &policy.content_budget(),
-            policy.content_call(),
-        )
-        .await
+        let total = policy.content_budget();
+        let call = policy.content_call();
+        let mut out = Vec::new();
+        for key in self.log.anchors().await? {
+            let (view, head) = projected(&self.log, &key).await?;
+            out.push(ground(&self.memory, view, head, &total, call).await?);
+        }
+        Ok(out)
     }
 }
 
-async fn read(
-    log: &AnchorLog,
-    memory: &MemoryLens,
-    key: &AnchorKey,
-    total: &Budget,
-    call: Duration,
-) -> Result<AnchorView, RuntimeError> {
+async fn projected(log: &AnchorLog, key: &AnchorKey) -> Result<(AnchorView, Seq), RuntimeError> {
     let entries = log.entries(key, 0).await?;
     let mut sightings: u64 = 0;
     let s = scan(&entries, |_, entry, _| {
@@ -207,14 +221,6 @@ async fn read(
     })
     .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
-    let mut memories = Vec::new();
-    for binding in memory.bindings_on(key).await? {
-        let mut view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
-        view.stale = view.bound_at_seq.map(|seq| seq < s.head);
-        memories.push(view);
-    }
-    memory.carry_linked(&mut memories, total, call).await?;
-
     let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
         Some(Outcome::Found { .. }) => Sighting::Found,
         _ => Sighting::Absent,
@@ -222,21 +228,40 @@ async fn read(
     let derivation = s.latest.as_ref().map(|o| o.versions.derivation.clone());
     let facts = s.latest.as_ref().and_then(|o| o.facts().cloned());
 
-    Ok(AnchorView {
-        key: key.clone(),
-        status: s.state.status(),
-        state: s.state,
-        anchor: s.anchor,
-        sighting,
-        closed: s.closed,
-        attempts: s.attempts,
-        entered_at: s.entered_at,
-        last_sighting: s.last_sighting,
-        sightings,
-        derivation,
-        facts,
-        memories,
-    })
+    Ok((
+        AnchorView {
+            key: key.clone(),
+            status: s.state.status(),
+            state: s.state,
+            anchor: s.anchor,
+            sighting,
+            closed: s.closed,
+            attempts: s.attempts,
+            entered_at: s.entered_at,
+            last_sighting: s.last_sighting,
+            sightings,
+            derivation,
+            facts,
+        },
+        s.head,
+    ))
+}
+
+async fn ground(
+    memory: &MemoryLens,
+    view: AnchorView,
+    head: Seq,
+    total: &Budget,
+    call: Duration,
+) -> Result<Grounded, RuntimeError> {
+    let mut memories = Vec::new();
+    for binding in memory.bindings_on(&view.key).await? {
+        let mut held = memory.fetch_memory(binding, &total.narrowed(call)).await?;
+        held.stale = held.bound_at_seq.map(|seq| seq < head);
+        memories.push(held);
+    }
+    memory.carry_linked(&mut memories, total, call).await?;
+    Ok(Grounded { view, memories })
 }
 
 async fn cobound(memory: &MemoryLens, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
@@ -253,18 +278,5 @@ async fn cobound(memory: &MemoryLens, reference: &Ref) -> Result<Vec<Ref>, Runti
         }
     }
     out.sort();
-    Ok(out)
-}
-
-async fn read_all(
-    log: &AnchorLog,
-    memory: &MemoryLens,
-    total: &Budget,
-    call: Duration,
-) -> Result<Vec<AnchorView>, RuntimeError> {
-    let mut out = Vec::new();
-    for key in log.anchors().await? {
-        out.push(read(log, memory, &key, total, call).await?);
-    }
     Ok(out)
 }

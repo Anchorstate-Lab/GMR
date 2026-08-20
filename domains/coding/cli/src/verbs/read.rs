@@ -12,11 +12,11 @@ pub async fn run(
         Some(k) => {
             let mut out = Vec::new();
             for key in super::resolve(rt, &k).await? {
-                out.push(rt.read(&key).await?);
+                out.push(rt.grounded(&key).await?);
             }
             out
         }
-        None => rt.read_all().await?,
+        None => rt.grounded_all().await?,
     };
 
     if json {

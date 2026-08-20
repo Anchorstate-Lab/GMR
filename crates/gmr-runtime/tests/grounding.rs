@@ -276,7 +276,7 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
     let w = World::new(true);
     w.memory("a.md", "The anchor module roster is the contract itself.");
     w.open("a").await;
-    w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     w.bind("a.md", &["a"]).await;
 
     let before = w.runtime.changed_since(0, None).await.unwrap();
@@ -291,7 +291,7 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 
     w.memory("a.md", "Changed claim: the roster is only a shadow.");
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
     let Grounding::Rewritten {
         content, before, ..
@@ -330,7 +330,7 @@ async fn reaffirming_clears_rewritten_without_touching_anchors() {
     w.bind("a.md", &["a"]).await;
 
     w.memory("a.md", "Just a typo fix, nothing structural.");
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     assert!(view.memories[0].rewritten(), "content moved since bind");
 
     let reference = Ref::new("git", "memories/a.md");
@@ -341,7 +341,7 @@ async fn reaffirming_clears_rewritten_without_touching_anchors() {
         .await
         .unwrap();
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     assert!(
         !view.memories[0].rewritten(),
         "reaffirm re-stamped the version, so it's no longer stale"
@@ -372,11 +372,11 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
     let w = World::new(false);
     w.memory("a.md", "Original wording.");
     w.open("a").await;
-    w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     w.bind("a.md", &["a"]).await;
     w.memory("a.md", "Edited wording.");
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
     assert!(
         matches!(
@@ -487,7 +487,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .await
         .unwrap();
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     let by_id = |id: &str| {
         view.memories
             .iter()
@@ -541,7 +541,7 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
     );
     assert!(
         w.runtime
-            .read(&AnchorKey::new("a"))
+            .grounded(&AnchorKey::new("a"))
             .await
             .unwrap()
             .memories
@@ -590,7 +590,7 @@ async fn a_version_the_provider_did_not_keep_is_not_the_same_as_a_provider_that_
     w.bind_at("a.md", &["a"], "a-version-this-provider-never-recorded")
         .await;
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     let m = &view.memories[0];
 
     assert!(
@@ -615,7 +615,7 @@ async fn a_store_that_will_not_answer_is_reported_not_read_as_nothing_happened()
     w.open("a").await;
     w.bind_at("a.md", &["a"], "whatever-was-stamped").await;
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     assert!(
         matches!(view.memories[0].grounding, Grounding::Unreachable { .. }),
         "{:?}",
@@ -652,7 +652,7 @@ async fn declining_to_offer_history_means_fetch_at_is_never_reached() {
     w.bind("a.md", &["a"]).await;
     w.memory("a.md", "Edited wording.");
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
 
     assert_eq!(
         calls.load(Ordering::SeqCst),
@@ -698,7 +698,7 @@ async fn a_total_budget_already_spent_asks_the_store_nothing_at_all() {
     w.open("a").await;
     w.bind("a.md", &["a"]).await;
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
 
     assert!(
         matches!(
@@ -733,7 +733,7 @@ async fn one_record_running_out_of_budget_does_not_take_the_others_with_it() {
     w.bind("slow.md", &["a"]).await;
     w.bind("quick.md", &["a"]).await;
 
-    let view = w.runtime.read(&AnchorKey::new("a")).await.unwrap();
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     let by_id = |id: &str| {
         view.memories
             .iter()
