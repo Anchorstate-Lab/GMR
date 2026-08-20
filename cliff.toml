@@ -1,14 +1,19 @@
 # git-cliff's config. Not GMR data — same status as architecture.toml, just
-# happens to be TOML too. No GMR code reads this; only tools/gate.py and
-# (optionally) manual changelog generation do.
+# happens to be TOML too. No GMR code reads this. tools/gate.py no longer
+# does either: it once shelled out to `git-cliff --bumped-version` to check
+# Cargo.toml's version, but that trusted git-cliff's read of commit
+# messages, and a squash-merged PR can flatten a `!`-marked breaking commit
+# into a non-`!` PR-title commit that git-cliff has no way to see through —
+# the same class of wrong-size bump this flag was written to prevent,
+# recurring by a different mechanism. Version arithmetic moved to
+# tools/gate.py's check_version_bump, which computes patch itself and
+# trusts nothing about commit-message shape. This file, and the flag below,
+# now only shape changelog text for whoever runs git-cliff by hand.
 #
 # breaking_always_bump_major defaults to true: any breaking commit jumps
 # major straight from 0 to 1. That is not what 0.x semver wants — a breaking
 # change at 0.x.y should bump y, major stays at 0 (this is how cargo itself
-# reads 0.x semver). 0.3.3 -> 0.3.4 shipped eleven breaking commits as a
-# patch release because nothing independent of memory checked the bump; this
-# flag is not a nicer default, it is what makes tools/gate.py's check a
-# verifiable fact instead of the same class of mistake recurring.
+# reads 0.x semver).
 [bump]
 breaking_always_bump_major = false
 
