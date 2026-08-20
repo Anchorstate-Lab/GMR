@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/Anchorstate-Lab/GMR/compare/v0.4.0...v0.4.1) - 2026-08-20
+
+### Performance
+
+- *(runtime,cli)* reading an anchor is not reaching every store bound to it. `read` hands back `AnchorView`, the journal projection, and no longer fetches the records bound to it; `grounded` and `grounded_all` do that for the callers that print them. `Corpus::anchors()` and `live()` hand back `AnchorView`, so record-level facts are reachable only through `health()`
+- *(runtime)* a look that found nothing new is a tally, not a judgement. A quiet observation writes no journal row at all; the `sighting` store counts it. A `still` is still written when it ends a run of failures, which is the one case where it carries a fact nothing else records. `RuntimeBuilder` now requires `.sightings(..)`
+
 ## [0.4.0](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.4...v0.4.0) - 2026-08-20
 
 ### Fixed

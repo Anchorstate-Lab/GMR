@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/Anchorstate-Lab/GMR/compare/v0.4.0...v0.4.1) - 2026-08-20
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.4.0](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.4...v0.4.0) - 2026-08-20
 
 ### Fixed
