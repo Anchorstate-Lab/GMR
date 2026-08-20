@@ -66,6 +66,7 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 - Modifying `memories/` or `.anchor/probes.toml` = changing criteria or records for this repo as a GMR user; usually requires owner judgement.
 - Modifying `crates/` = changing the GMR tool itself; must respect crate boundaries.
 - Modifying `architecture.toml` = changing `gate.sh`'s gate criteria, unrelated to GMR semantics.
+- Modifying `cliff.toml` = changing what counts as breaking / how the version bump is computed for `tools/gate.py`'s version check; also unrelated to GMR semantics. See §10.
 
 ---
 
@@ -133,3 +134,17 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 - But do not idolise zero‑clone: log entries, state snapshots, event records are semantically snapshots – clone them when appropriate. A `clone` must correspond to a semantics: snapshot, shared ownership, or preserving across lifetimes. Do not use `clone` to bypass borrowing design.
 - Functions in `core/expr` should be as pure as possible: all inputs in parameters, all outputs in return values.
 - `runtime` may own trait objects because it is the assembly layer; `core/expr` should not introduce `dyn` for “flexibility”.
+
+---
+
+## 10. Version & Release Process
+
+One workspace version. major = human‑only, never computed. minor = `feat`, and breaking while major is `0`. patch = `fix`/`docs`/`test` only. `cliff.toml` declares this; `tools/gate.py`’s `check_version_bump` verifies it, only when `Cargo.toml`’s version already differs from the latest tag.
+
+Release:
+
+1. `git-cliff --bumped-version --unreleased -c cliff.toml`
+2. Write that version into `Cargo.toml`
+3. Update each crate’s `CHANGELOG.md`
+4. `chore: release vX.Y.Z`, push
+5. `git tag vX.Y.Z && git push origin vX.Y.Z` — triggers `release.yml`

@@ -25,6 +25,7 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ARCH_TOML = ROOT / "architecture.toml"
+CLIFF_TOML = ROOT / "cliff.toml"
 FACADE = ROOT / "crates" / "gmr" / "src" / "lib.rs"
 ACCEPTANCE = ROOT / "acceptance.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
@@ -220,6 +221,62 @@ def check_comments_clean():
     return []
 
 
+def latest_version_tag():
+    r = run(["git", "tag", "--list", "v*", "--sort=-v:refname"])
+    tags = [t for t in r.stdout.splitlines() if t.strip()]
+    return tags[0] if tags else None
+
+
+def check_version_bump():
+    """Cargo.toml's version is a claim about what the commits since the last
+    tag warrant. release-plz used to compute that claim and got it wrong —
+    0.3.3 -> 0.3.4 shipped eleven breaking commits as a patch bump — because
+    its bump decision depended on `cargo package` succeeding, which this
+    workspace's self-referential dev-dependencies never let happen. git-cliff
+    needs none of that: it reads commit messages, not packaged crates.
+
+    This only checks the claim when someone is actively making it. On an
+    ordinary PR, Cargo.toml's version still matches the latest tag and this
+    is a no-op — git-cliff only has to be on PATH for the PR that bumps it.
+
+    The major digit is never checked against git-cliff's answer. Crossing a
+    major line is a stability promise, not a fact commit messages can settle
+    on their own — a breaking commit only ever justifies a minor bump here
+    (see cliff.toml's breaking_always_bump_major = false), and moving off
+    that line at all is deliberately left to whoever edits Cargo.toml by hand.
+    """
+    with open(ROOT / "Cargo.toml", "rb") as f:
+        current = tomllib.load(f)["workspace"]["package"]["version"]
+
+    tag = latest_version_tag()
+    if tag is None:
+        return []
+    tag_version = tag.lstrip("v")
+    if current == tag_version:
+        return []
+    if current.split(".", 1)[0] != tag_version.split(".", 1)[0]:
+        return []
+
+    try:
+        r = run(["git-cliff", "--bumped-version", "--unreleased", "-c", str(CLIFF_TOML)])
+    except FileNotFoundError:
+        return [
+            f"Cargo.toml claims {current} (last tag {tag}) but git-cliff is not on PATH "
+            "to verify that bump is the right size"
+        ]
+    if r.returncode:
+        return [f"git-cliff could not compute the expected next version: {r.stderr.strip()}"]
+    expected = r.stdout.strip().lstrip("v")
+    if not expected:
+        return ["git-cliff produced no bumped version to compare against"]
+    if current != expected:
+        return [
+            f"Cargo.toml version is {current}, but commits since {tag} call for {expected} "
+            "(git-cliff --bumped-version, breaking_always_bump_major=false)"
+        ]
+    return []
+
+
 def check_acceptance_intact():
     """The sentinel exists, says how many steps ran, and CI checks that number.
 
@@ -282,6 +339,7 @@ CHECKS = [
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
+    ("Cargo.toml version bump matches what the commits since the last tag call for", check_version_bump),
 ]
 
 

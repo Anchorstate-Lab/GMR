@@ -1,0 +1,53 @@
+# git-cliff's config. Not GMR data — same status as architecture.toml, just
+# happens to be TOML too. No GMR code reads this; only tools/gate.py and
+# (optionally) manual changelog generation do.
+#
+# breaking_always_bump_major defaults to true: any breaking commit jumps
+# major straight from 0 to 1. That is not what 0.x semver wants — a breaking
+# change at 0.x.y should bump y, major stays at 0 (this is how cargo itself
+# reads 0.x semver). 0.3.3 -> 0.3.4 shipped eleven breaking commits as a
+# patch release because nothing independent of memory checked the bump; this
+# flag is not a nicer default, it is what makes tools/gate.py's check a
+# verifiable fact instead of the same class of mistake recurring.
+[bump]
+breaking_always_bump_major = false
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+require_conventional = false
+protect_breaking_commits = true
+commit_parsers = [
+    { message = "^feat", group = "Features" },
+    { message = "^fix", group = "Bug Fixes" },
+    { message = "^refactor", group = "Refactor" },
+    { message = "^perf", group = "Performance" },
+    { message = "^doc", group = "Documentation" },
+    { message = "^test", group = "Testing" },
+    { message = "^spec", group = "Spec" },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^chore|^ci", group = "Miscellaneous Tasks" },
+    { message = "^revert", group = "Revert" },
+    { message = ".*", group = "Other" },
+]
+filter_commits = false
+topo_order_commits = true
+sort_commits = "oldest"
+
+[changelog]
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | striptags | trim | upper_first }}
+    {% for commit in commits %}
+        - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
+            {% if commit.breaking %}[**breaking**] {% endif %}\
+            {{ commit.message | upper_first }}\
+    {% endfor %}
+{% endfor %}
+"""
+trim = true
