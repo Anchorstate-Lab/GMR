@@ -407,14 +407,15 @@ set -e
 echo "$out" | grep -q "1 anchors opened" \
     || fail "1600 files and the anchor never opened — the scan cost is not proportional to the repository" "$out"
 
-rm -f "$scale/.anchor/state/extract-cache.json"
+rm -f "$scale/.anchor/state/survey-index.sqlite" "$scale/.anchor/state/survey-index.sqlite-wal" \
+    "$scale/.anchor/state/survey-index.sqlite-shm"
 start=$(date +%s)
 "$gmr" --repo "$scale" check >/dev/null
 cold=$(( $(date +%s) - start ))
 [ "$cold" -lt 15 ] || fail "a cold scan of 1600 files took ${cold}s; the per-file cost is not proportional any more"
 
-[ -s "$scale/.anchor/state/extract-cache.json" ] \
-    || fail "the scan left no cache behind, so every later run pays the full price again"
+[ -s "$scale/.anchor/state/survey-index.sqlite" ] \
+    || fail "the scan left no index behind, so every later run pays the full price again"
 
 # ── A budget that runs out has to be *loud*. This is the failure the whole
 #    design points at: an anchor nobody could look at must come back as a
@@ -436,7 +437,8 @@ cold=$(( $(date +%s) - start ))
 #    survived the extractors getting fast: the refusal is typed, it names its
 #    own width, and it does not become state.
 step "a budget that runs out refuses out loud, and refusing is not an answer"
-rm -f "$scale/.anchor/state/extract-cache.json"
+rm -f "$scale/.anchor/state/survey-index.sqlite" "$scale/.anchor/state/survey-index.sqlite-wal" \
+    "$scale/.anchor/state/survey-index.sqlite-shm"
 set +e
 out=$("$gmr" --repo "$scale" --probe-budget-ms 1 check 2>&1); code=$?
 set -e

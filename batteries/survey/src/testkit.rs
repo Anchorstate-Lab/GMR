@@ -7,10 +7,12 @@ use chrono::{DateTime, Utc};
 use crate::index::{Built, Generation, Index, IndexError, Indexed, Located, Row, Snapshot, under};
 use crate::matching::Want;
 use crate::narrow::touches;
+use gmr_probe as _;
 
 struct Kept {
     hash: String,
     sort: String,
+    stamp: Option<crate::walk::Stamp>,
     rows: Vec<Row>,
 }
 
@@ -71,13 +73,24 @@ impl Index for Remembered {
         }))
     }
 
-    async fn known(&self, of: &Generation) -> Result<BTreeMap<String, String>, IndexError> {
+    async fn known(
+        &self,
+        of: &Generation,
+    ) -> Result<BTreeMap<String, crate::walk::Held>, IndexError> {
         let held = guard(&self.held);
         Ok(held
             .files
             .iter()
             .filter(|((which, _), _)| which == of)
-            .map(|((_, rel), kept)| (rel.clone(), kept.hash.clone()))
+            .map(|((_, rel), kept)| {
+                (
+                    rel.clone(),
+                    crate::walk::Held {
+                        hash: kept.hash.clone(),
+                        stamp: kept.stamp,
+                    },
+                )
+            })
             .collect())
     }
 
@@ -90,9 +103,24 @@ impl Index for Remembered {
                 Kept {
                     hash: file.hash.clone(),
                     sort: file.sort.clone(),
+                    stamp: file.stamp,
                     rows: file.rows.clone(),
                 },
             );
+        }
+        Ok(())
+    }
+
+    async fn restamp(
+        &self,
+        of: &Generation,
+        restamped: &[(String, Option<crate::walk::Stamp>)],
+    ) -> Result<(), IndexError> {
+        let mut held = guard(&self.held);
+        for (rel, stamp) in restamped {
+            if let Some(kept) = held.files.get_mut(&(of.clone(), rel.clone())) {
+                kept.stamp = *stamp;
+            }
         }
         Ok(())
     }
@@ -158,5 +186,97 @@ impl Index for Remembered {
                     .collect(),
             ),
         }))
+    }
+}
+
+#[derive(Default)]
+pub struct Surveyed {
+    tree: std::path::PathBuf,
+    held: Mutex<BTreeMap<String, (crate::walk::Held, Vec<crate::matching::Fragment>)>>,
+}
+
+impl Surveyed {
+    pub fn over(tree: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            tree: tree.into(),
+            held: Mutex::new(BTreeMap::new()),
+        }
+    }
+}
+
+impl crate::corpus::Corpus for Surveyed {
+    fn refresh(
+        &self,
+        recipe: &crate::recipe::Recipe,
+        budget: &gmr_probe::Budget,
+    ) -> Result<(), crate::corpus::Halt> {
+        let known: BTreeMap<String, crate::walk::Held> = {
+            let held = self.held.lock().unwrap();
+            held.iter()
+                .map(|(k, (h, _))| (k.clone(), h.clone()))
+                .collect()
+        };
+        let scan = crate::corpus::rescan(&self.tree, recipe, &known, budget)?;
+        let mut held = self.held.lock().unwrap();
+        for rel in scan.gone {
+            held.remove(&rel);
+        }
+        for (rel, stamp) in scan.restamped {
+            if let Some((h, _)) = held.get_mut(&rel) {
+                h.stamp = stamp;
+            }
+        }
+        for fresh in scan.fresh {
+            held.insert(
+                fresh.rel,
+                (
+                    crate::walk::Held {
+                        hash: fresh.hash,
+                        stamp: fresh.stamp,
+                    },
+                    fresh.fragments,
+                ),
+            );
+        }
+        Ok(())
+    }
+
+    fn populated(
+        &self,
+        _recipe: &crate::recipe::Recipe,
+        root: &str,
+    ) -> Result<bool, crate::corpus::Halt> {
+        let held = self.held.lock().unwrap();
+        Ok(held
+            .iter()
+            .any(|(rel, (_, f))| under(rel, root) && !f.is_empty()))
+    }
+
+    fn whole(
+        &self,
+        _recipe: &crate::recipe::Recipe,
+        root: &str,
+    ) -> Result<Vec<crate::matching::Fragment>, crate::corpus::Halt> {
+        let held = self.held.lock().unwrap();
+        let mut rows: Vec<(String, Vec<crate::matching::Fragment>)> = held
+            .iter()
+            .filter(|(rel, _)| under(rel, root))
+            .map(|(rel, (_, f))| (crate::walk::sort_key(rel), f.clone()))
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(rows.into_iter().flat_map(|(_, f)| f).collect())
+    }
+
+    fn touching(
+        &self,
+        recipe: &crate::recipe::Recipe,
+        root: &str,
+        want: &Want,
+    ) -> Result<Vec<crate::matching::Fragment>, crate::corpus::Halt> {
+        Ok(self
+            .whole(recipe, root)?
+            .into_iter()
+            .filter(|f| touches(&f.coord, want))
+            .collect())
     }
 }

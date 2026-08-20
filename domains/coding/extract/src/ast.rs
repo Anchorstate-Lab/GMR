@@ -1,6 +1,5 @@
 use crate::lang;
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use gmr_probe::Budget;
 use gmr_survey as coord;
@@ -171,7 +170,7 @@ fn parseable(rel: &str) -> bool {
     lang::for_path(rel).is_some()
 }
 
-fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Fragment>) -> Result<(), String> {
     let Some(table) = lang::for_path(rel) else {
         return Ok(());
     };
@@ -190,7 +189,7 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
 
     let mut cursor = tree.walk();
     let mut stack = vec![tree.root_node()];
-    let mut here: Vec<(usize, coord::Candidate)> = Vec::new();
+    let mut here: Vec<(usize, coord::Fragment)> = Vec::new();
     while let Some(node) = stack.pop() {
         for c in node.named_children(&mut cursor) {
             stack.push(c);
@@ -257,7 +256,7 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
         let facts = json!({ "body": coord::hash(&body), "line": node.start_position().row + 1 });
         here.push((
             node.start_byte(),
-            coord::Candidate::new(format!("{kind}:{}", c[naming(kind)]), c, facts),
+            coord::Fragment::new(format!("{kind}:{}", c[naming(kind)]), c, facts),
         ));
     }
 
@@ -279,18 +278,19 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
 }
 
 pub fn probe(
-    root: &Path,
+    root: &str,
     pos: &Value,
-    cache: &coord::Cache,
+    corpus: &dyn coord::Corpus,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    coord::look(&RECIPE, root, pos, cache, budget)
+    coord::look(&RECIPE, root, pos, corpus, budget)
 }
 
 pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     name: "ast-map",
     version: VERSION,
     items: &ITEMS,
+    narrows_on: &ITEMS,
     eligible: parseable,
     collect,
     merge: coord::Merge::Concat,
@@ -300,6 +300,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn reading(rel: &str, src: &str) -> (String, String) {
         let mut out = Vec::new();
@@ -449,7 +450,8 @@ mod tests {
         "pub fn alpha(x: u8) -> u8 { x }\npub fn beta(s: &str) -> usize { s.len() }\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos, &coord::Cache::disabled(), &roomy()).unwrap()
+        let corpus = coord::testkit::Surveyed::over(dir);
+        probe("", &pos, &corpus, &roomy()).unwrap()
     }
 
     #[test]
@@ -565,21 +567,15 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.rs", ONE)]);
-        assert!(probe(&d, &json!({}), &coord::Cache::disabled(), &roomy()).is_err());
+        let corpus = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({}), &corpus, &roomy()).is_err());
     }
 
     #[test]
     fn a_directory_with_nothing_parseable_is_our_failure_too() {
         let d = fixture("bare", &[("readme.txt", "not code")]);
-        assert!(
-            probe(
-                &d,
-                &json!({"name": "alpha"}),
-                &coord::Cache::disabled(),
-                &roomy()
-            )
-            .is_err()
-        );
+        let corpus = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({"name": "alpha"}), &corpus, &roomy()).is_err());
     }
 
     #[test]

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use gmr_probe::Budget;
 use gmr_survey as coord;
@@ -26,7 +25,7 @@ fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn sections(rel: &str, src: &str, out: &mut Vec<coord::Candidate>) {
+fn sections(rel: &str, src: &str, out: &mut Vec<coord::Fragment>) {
     let mut path: Vec<String> = Vec::new();
     let mut open: Option<(String, usize)> = None;
     let mut body: Vec<&str> = Vec::new();
@@ -43,7 +42,7 @@ fn sections(rel: &str, src: &str, out: &mut Vec<coord::Candidate>) {
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect();
-            out.push(coord::Candidate::new(
+            out.push(coord::Fragment::new(
                 format!("{}#{}", c["file"], c["heading"]),
                 c,
                 json!({ "line": line, "lines": body.len() }),
@@ -76,7 +75,7 @@ fn markdown(rel: &str) -> bool {
     rel.ends_with(".md")
 }
 
-fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Fragment>) -> Result<(), String> {
     if let Ok(src) = std::str::from_utf8(bytes) {
         sections(rel, src, out);
     }
@@ -87,6 +86,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     name: "prose-map",
     version: VERSION,
     items: &ITEMS,
+    narrows_on: &ITEMS,
     eligible: markdown,
     collect,
     merge: coord::Merge::Concat,
@@ -94,17 +94,18 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
 };
 
 pub fn probe(
-    root: &Path,
+    root: &str,
     pos: &Value,
-    cache: &coord::Cache,
+    corpus: &dyn coord::Corpus,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    coord::look(&RECIPE, root, pos, cache, budget)
+    coord::look(&RECIPE, root, pos, corpus, budget)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn roomy() -> Budget {
         Budget::within(std::time::Duration::from_secs(600), 1 << 24)
@@ -125,7 +126,8 @@ mod tests {
         "# Top\nOpening\n\n## Red Flag\nDo not do this\n\n## Dead Concept\nDo not revive\n";
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos, &coord::Cache::disabled(), &roomy()).unwrap()
+        let corpus = coord::testkit::Surveyed::over(dir);
+        probe("", &pos, &corpus, &roomy()).unwrap()
     }
 
     fn fp(dir: &Path, file: &str, heading: &str) -> String {
@@ -196,21 +198,15 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.md", DOC)]);
-        assert!(probe(&d, &json!({}), &coord::Cache::disabled(), &roomy()).is_err());
+        let corpus = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({}), &corpus, &roomy()).is_err());
     }
 
     #[test]
     fn a_tree_with_no_markdown_is_our_failure_too() {
         let d = fixture("bare", &[("a.rs", "fn main() {}")]);
-        assert!(
-            probe(
-                &d,
-                &json!({"heading": "x"}),
-                &coord::Cache::disabled(),
-                &roomy()
-            )
-            .is_err()
-        );
+        let corpus = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({"heading": "x"}), &corpus, &roomy()).is_err());
     }
 
     #[test]

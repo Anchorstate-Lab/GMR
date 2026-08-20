@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, Snapshot, sort_key};
+use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, Snapshot};
 use gmr_survey::matching::Want;
+use gmr_survey::walk::{Held, Stamp, sort_key};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()
@@ -24,7 +25,15 @@ fn file(rel: &str, hash: &str, rows: Vec<Row>) -> Indexed {
         rel: rel.to_owned(),
         hash: hash.to_owned(),
         sort: sort_key(rel),
+        stamp: None,
         rows,
+    }
+}
+
+fn held(hash: &str) -> Held {
+    Held {
+        hash: hash.to_owned(),
+        stamp: None,
     }
 }
 
@@ -101,10 +110,10 @@ async fn suite(index: &dyn Index) {
     assert_eq!(
         index.known(&ast).await.unwrap(),
         BTreeMap::from([
-            ("a.rs".to_owned(), "ha".to_owned()),
-            ("b.rs".to_owned(), "hb".to_owned()),
-            ("b/x.rs".to_owned(), "hx".to_owned()),
-            ("bb.rs".to_owned(), "hbb".to_owned()),
+            ("a.rs".to_owned(), held("ha")),
+            ("b.rs".to_owned(), held("hb")),
+            ("b/x.rs".to_owned(), held("hx")),
+            ("bb.rs".to_owned(), held("hbb")),
         ])
     );
 
@@ -212,10 +221,40 @@ async fn suite(index: &dyn Index) {
     );
     assert_eq!(
         index.known(&ast).await.unwrap()["a.rs"],
-        "ha2",
+        held("ha2"),
         "writing the same path again replaces it rather than adding to it"
     );
     assert_eq!(index.built(&ast).await.unwrap().unwrap().files, 4);
+
+    let stamps = Generation::of("stamp-check", "v1");
+    let stamped = Held {
+        hash: "hstamped".to_owned(),
+        stamp: Some(Stamp {
+            mtime_ns: 1_234_567_890,
+            size: 42,
+        }),
+    };
+    index
+        .write(
+            &stamps,
+            &[Indexed {
+                rel: "stamped.rs".to_owned(),
+                hash: stamped.hash.clone(),
+                sort: sort_key("stamped.rs"),
+                stamp: stamped.stamp,
+                rows: vec![],
+            }],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        index.known(&stamps).await.unwrap()["stamped.rs"],
+        stamped,
+        "the stamp a writer hands in comes back unchanged — it is the freshness fast \
+         path's only source of truth, so a backend that drops or mangles it silently \
+         turns every read after the first into a full re-hash"
+    );
+    index.discard(&stamps).await.unwrap();
 
     index.forget(&ast, &["b.rs".to_owned()]).await.unwrap();
     let built = index.built(&ast).await.unwrap().unwrap();

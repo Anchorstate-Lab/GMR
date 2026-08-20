@@ -14,7 +14,7 @@ license.workspace = true
 [dependencies]
 gmr-core = { path = "../../../crates/gmr-core" }
 gmr-probe = { path = "../../../crates/gmr-probe" }
-gmr-survey = { path = "../../../batteries/survey" }
+gmr-survey = { path = "../../../batteries/survey", features = ["sqlite", "bridge"] }
 gmr-transport = { path = "../../../batteries/transport", features = ["inproc"] }
 serde_json = { workspace = true }
 tree-sitter = "0.26"
@@ -27,6 +27,7 @@ tree-sitter-go = "0.25.0"
 sha2 = { workspace = true }
 
 [dev-dependencies]
+gmr-survey = { path = "../../../batteries/survey", features = ["testkit"] }
 tempfile = { workspace = true }
 
 [lints]

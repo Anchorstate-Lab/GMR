@@ -1,4 +1,6 @@
-pub mod cache;
+#[cfg(feature = "bridge")]
+pub mod bridge;
+pub mod corpus;
 pub mod index;
 pub mod matching;
 pub mod narrow;
@@ -9,7 +11,9 @@ pub mod sqlite;
 pub mod testkit;
 pub mod walk;
 
-pub use cache::*;
+#[cfg(feature = "bridge")]
+pub use bridge::*;
+pub use corpus::*;
 pub use index::*;
 pub use matching::*;
 pub use narrow::*;
