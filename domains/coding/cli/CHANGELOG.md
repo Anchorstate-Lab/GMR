@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/Anchorstate-Lab/GMR/compare/v0.4.0...v0.4.1) - 2026-08-20
+
+### Performance
+
+- *(cli)* one judgement needs one projection, not four. `check` built the same view four times per anchor; it now takes one pass before observing and reads again only for an anchor that hands a memory back. On this repository that is 1502 `git hash-object` processes down to 2, and 17.5s down to 3.3s
+- *(cli)* `sync::standing` decided "undeclared" from the grounded record vector, which also holds records carried in over links and bound to other anchors. It asks the binding set instead
+
 ## [0.4.0](https://github.com/Anchorstate-Lab/GMR/compare/v0.3.4...v0.4.0) - 2026-08-20
 
 ### Fixed
