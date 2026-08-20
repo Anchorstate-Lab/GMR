@@ -1,6 +1,7 @@
 use std::sync::{Arc, Barrier};
 
-use gmr_survey::index::{Generation, Index, Indexed, Row, sort_key};
+use gmr_survey::index::{Generation, Index, Indexed, Row};
+use gmr_survey::walk::sort_key;
 use gmr_survey::sqlite::{SCHEMA_VERSION, open};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {

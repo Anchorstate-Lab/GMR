@@ -19,6 +19,23 @@ pub const REPORT: &[&str] = &[
 pub const PER_CANDIDATE: &[&str] = &["at", "facts"];
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Fragment {
+    pub coord: BTreeMap<String, String>,
+    pub facts: Value,
+    pub id: String,
+}
+
+impl Fragment {
+    pub fn new(id: impl Into<String>, coord: BTreeMap<String, String>, facts: Value) -> Self {
+        Self {
+            coord,
+            facts,
+            id: id.into(),
+        }
+    }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Candidate {
     pub coord: BTreeMap<String, String>,
     pub facts: Value,
@@ -31,6 +48,14 @@ impl Candidate {
             coord,
             facts,
             id: id.into(),
+        }
+    }
+
+    pub fn verbatim(fragment: Fragment) -> Self {
+        Self {
+            coord: fragment.coord,
+            facts: fragment.facts,
+            id: fragment.id,
         }
     }
 }
