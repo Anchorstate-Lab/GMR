@@ -327,7 +327,7 @@ CHECKS = [
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
-    ("Cargo.toml version bump matches what the commits since the last tag call for", check_version_bump),
+    ("Cargo.toml version, if touched, only claims a major.minor line — patch is CI's", check_version_bump),
 ]
 
 
