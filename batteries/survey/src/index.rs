@@ -151,6 +151,10 @@ pub fn under(rel: &str, root: &str) -> bool {
     }
 }
 
+pub fn sort_key(rel: &str) -> String {
+    rel.replace('/', "\u{0}")
+}
+
 #[async_trait]
 pub trait Index: Send + Sync {
     async fn built(&self, of: &Generation) -> Result<Option<Built>, IndexError>;
@@ -214,6 +218,64 @@ mod tests {
         assert!(!under("crates/gmr-core", "crates/gmr-core"));
         assert!(under("anything/at/all.rs", ""));
         assert!(under("anything/at/all.rs", "."));
+    }
+
+    fn laid_out() -> (tempfile::TempDir, Vec<String>) {
+        let dir = tempfile::tempdir().unwrap();
+        for rel in [
+            "b.rs",
+            "b/x.rs",
+            "index.ts",
+            "index/a.ts",
+            "mod.rs",
+            "mod/a.rs",
+            "pkg.py",
+            "pkg/__init__.py",
+            "deep/a.rs",
+            "deep/a/b.rs",
+            "plain.rs",
+            "other/one.rs",
+        ] {
+            let at = dir.path().join(rel);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(&at, "x").unwrap();
+        }
+
+        let mut walked = Vec::new();
+        crate::walk::visit(dir.path(), &mut |_, rel| {
+            walked.push(rel.replace('\\', "/"));
+            Ok(())
+        })
+        .unwrap();
+        (dir, walked)
+    }
+
+    #[test]
+    fn the_sort_key_reproduces_the_order_the_walk_hands_files_over_in() {
+        let (_dir, walked) = laid_out();
+        let mut keyed = walked.clone();
+        keyed.sort_by_key(|rel| sort_key(rel));
+
+        assert_eq!(
+            walked, keyed,
+            "the index only ever sorts by this key, so the day it disagrees with the walk \
+             is the day `nth` starts naming a different candidate with nobody having \
+             touched the code"
+        );
+    }
+
+    #[test]
+    fn sorting_the_same_paths_by_their_bytes_would_not_have_agreed() {
+        let (_dir, walked) = laid_out();
+        let mut by_bytes = walked.clone();
+        by_bytes.sort();
+
+        assert_ne!(
+            walked, by_bytes,
+            "a layout where a file and a directory share a stem is the whole reason this \
+             key exists; if byte order happens to agree, the fixture stopped covering the \
+             case and the test above proves nothing"
+        );
     }
 
     #[test]

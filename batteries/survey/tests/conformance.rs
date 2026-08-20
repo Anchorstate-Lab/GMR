@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, Snapshot};
-use gmr_survey::walk::sort_key;
+use gmr_survey::index::{Fault, Generation, Index, Indexed, Located, Row, Snapshot, sort_key};
 use gmr_survey::matching::Want;
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {

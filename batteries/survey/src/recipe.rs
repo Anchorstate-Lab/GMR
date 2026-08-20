@@ -1,14 +1,16 @@
+use std::path::Path;
+
 use gmr_probe::Budget;
 use serde_json::Value;
 
-use crate::corpus::{Corpus, Halt};
-use crate::matching::{Candidate, Fragment, Want, nth, report, wanted};
+use crate::cache::{Cache, Halt, folded, gather};
+use crate::matching::{Candidate, nth, report, wanted};
 
-pub type Collect = fn(&str, &[u8], &mut Vec<Fragment>) -> Result<(), String>;
+pub type Collect = fn(&str, &[u8], &mut Vec<Candidate>) -> Result<(), String>;
 
 pub type Eligible = fn(&str) -> bool;
 
-pub type Fold = fn(&[Fragment]) -> Result<Vec<Candidate>, String>;
+pub type Fold = fn(&[Candidate]) -> Result<Vec<Candidate>, String>;
 
 pub enum Merge {
     Concat,
@@ -19,48 +21,32 @@ pub struct Recipe {
     pub name: &'static str,
     pub version: &'static str,
     pub items: &'static [&'static str],
-    pub narrows_on: &'static [&'static str],
     pub eligible: Eligible,
     pub collect: Collect,
     pub merge: Merge,
     pub barren: &'static str,
 }
 
-impl Recipe {
-    pub fn narrowable(&self, want: &Want) -> Want {
-        want.iter()
-            .filter(|(k, _)| self.narrows_on.contains(&k.as_str()))
-            .cloned()
-            .collect()
-    }
-}
-
 pub fn look(
     recipe: &Recipe,
-    root: &str,
+    root: &Path,
     pos: &Value,
-    corpus: &dyn Corpus,
+    cache: &Cache,
     budget: &Budget,
 ) -> Result<Value, Halt> {
     let want = wanted(pos, recipe.items)?;
-    corpus.refresh(recipe, budget)?;
-
-    let narrowed = recipe.narrowable(&want);
-    let fragments = match narrowed.is_empty() {
-        true => corpus.whole(recipe, root)?,
-        false => corpus.touching(recipe, root, &narrowed)?,
+    let gathered = gather(root, cache, recipe, budget)?;
+    let candidates = match recipe.merge {
+        Merge::Concat => gathered,
+        Merge::Fold(fold) => folded(root, cache, recipe.name, &gathered, fold)?,
     };
-    if fragments.is_empty() && !corpus.populated(recipe, root)? {
+    if candidates.is_empty() {
         return Err(Halt::Refused(format!(
-            "{root} {}; the probe is likely pointed at the wrong directory",
+            "{} {}; the probe is likely pointed at the wrong directory",
+            root.display(),
             recipe.barren
         )));
     }
-
-    let candidates = match recipe.merge {
-        Merge::Concat => fragments.into_iter().map(Candidate::verbatim).collect(),
-        Merge::Fold(fold) => fold(&fragments)?,
-    };
     Ok(report(recipe.version, &want, nth(pos), &candidates)?)
 }
 
@@ -69,14 +55,14 @@ pub(crate) mod fixture {
     use super::*;
     use std::collections::BTreeMap;
 
-    pub(crate) fn one(rel: &str, bytes: &[u8], out: &mut Vec<Fragment>) -> Result<(), String> {
+    pub(crate) fn one(rel: &str, bytes: &[u8], out: &mut Vec<Candidate>) -> Result<(), String> {
         let body = String::from_utf8_lossy(bytes).trim().to_owned();
         let coord: BTreeMap<String, String> = [
             ("file".to_owned(), rel.to_owned()),
             ("name".to_owned(), body.clone()),
         ]
         .into();
-        out.push(Fragment::new(
+        out.push(Candidate::new(
             format!("{rel}#{body}"),
             coord,
             serde_json::json!({ "bytes": bytes.len() }),
@@ -97,10 +83,6 @@ pub(crate) mod fixture {
             name: "p",
             version: "v1",
             items: &["file", "name"],
-            narrows_on: match merge {
-                Merge::Concat => &["file", "name"],
-                Merge::Fold(_) => &[],
-            },
             eligible,
             collect: one,
             merge,
@@ -114,11 +96,7 @@ mod tests {
     use super::fixture::*;
     use super::*;
 
-    fn surveyed(d: &tempfile::TempDir) -> crate::testkit::Surveyed {
-        crate::testkit::Surveyed::over(d.path())
-    }
-
-    fn tally(all: &[Fragment]) -> Result<Vec<Candidate>, String> {
+    fn tally(all: &[Candidate]) -> Result<Vec<Candidate>, String> {
         Ok(vec![Candidate::new(
             "all",
             [("name".to_owned(), "all".to_owned())].into(),
@@ -126,7 +104,7 @@ mod tests {
         )])
     }
 
-    fn refuse(_: &[Fragment]) -> Result<Vec<Candidate>, String> {
+    fn refuse(_: &[Candidate]) -> Result<Vec<Candidate>, String> {
         Err("that corpus makes no sense".to_owned())
     }
 
@@ -149,9 +127,9 @@ mod tests {
         let d = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);
         let out = look(
             &recipe(anything, Merge::Concat),
-            "",
+            d.path(),
             &serde_json::json!({ "file": "a.rs", "name": "alpha" }),
-            &surveyed(&d),
+            &Cache::disabled(),
             &roomy(),
         )
         .unwrap();
@@ -165,9 +143,9 @@ mod tests {
         let d = tree(&[("a.rs", "alpha")]);
         let e = look(
             &recipe(anything, Merge::Concat),
-            "",
+            d.path(),
             &serde_json::json!({ "unrelated": "x" }),
-            &surveyed(&d),
+            &Cache::disabled(),
             &roomy(),
         )
         .unwrap_err();
@@ -179,9 +157,9 @@ mod tests {
         let d = tree(&[("notes.md", "prose")]);
         let e = look(
             &recipe(rust_only, Merge::Concat),
-            "",
+            d.path(),
             &serde_json::json!({ "file": "a.rs" }),
-            &surveyed(&d),
+            &Cache::disabled(),
             &roomy(),
         )
         .unwrap_err();
@@ -197,9 +175,9 @@ mod tests {
         let d = tree(&[("a.rs", "alpha")]);
         let out = look(
             &recipe(anything, Merge::Concat),
-            "",
+            d.path(),
             &serde_json::json!({ "name": "gone" }),
-            &surveyed(&d),
+            &Cache::disabled(),
             &roomy(),
         )
         .unwrap();
@@ -216,9 +194,9 @@ mod tests {
         let seen = |eligible: Eligible| {
             look(
                 &recipe(eligible, Merge::Concat),
-                "",
+                d.path(),
                 &serde_json::json!({ "name": "alpha" }),
-                &surveyed(&d),
+                &Cache::disabled(),
                 &roomy(),
             )
             .unwrap()["candidates"]
@@ -239,9 +217,9 @@ mod tests {
         let d = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);
         let out = look(
             &recipe(anything, Merge::Fold(tally)),
-            "",
+            d.path(),
             &serde_json::json!({ "name": "all" }),
-            &surveyed(&d),
+            &Cache::disabled(),
             &roomy(),
         )
         .unwrap();
@@ -257,9 +235,9 @@ mod tests {
         let d = tree(&[("a.rs", "alpha")]);
         let e = look(
             &recipe(anything, Merge::Fold(refuse)),
-            "",
+            d.path(),
             &serde_json::json!({ "name": "alpha" }),
-            &surveyed(&d),
+            &Cache::disabled(),
             &roomy(),
         )
         .unwrap_err();

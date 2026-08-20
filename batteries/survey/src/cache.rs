@@ -1,0 +1,926 @@
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use gmr_probe::{Budget, Spent};
+use serde::{Deserialize, Serialize};
+
+use crate::matching::Candidate;
+use crate::recipe::{Fold, Recipe};
+use crate::walk::{hash, visit};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Halt {
+    Spent(Spent),
+    Refused(String),
+}
+
+impl From<String> for Halt {
+    fn from(why: String) -> Self {
+        Self::Refused(why)
+    }
+}
+
+impl std::fmt::Display for Halt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Spent(spent) => f.write_str(spent.as_str()),
+            Self::Refused(why) => f.write_str(why),
+        }
+    }
+}
+
+impl std::error::Error for Halt {}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Entry {
+    hash: String,
+    candidates: Vec<Candidate>,
+}
+
+type ProbeEntries = HashMap<String, Entry>;
+type Scoped = HashMap<String, ProbeEntries>;
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct OnDisk(Scoped);
+
+#[derive(Serialize)]
+#[serde(transparent)]
+struct OnDiskRef<'a>(&'a Scoped);
+
+type Scanned = Result<Arc<Vec<Candidate>>, Halt>;
+
+#[derive(Default)]
+struct Flight {
+    settled: Mutex<Option<Scanned>>,
+    folded: Mutex<Option<Scanned>>,
+}
+
+pub struct Cache {
+    file: Option<PathBuf>,
+    fault: Option<String>,
+    stamps: HashMap<String, String>,
+    entries: Mutex<Scoped>,
+    dirty: AtomicBool,
+    writes: AtomicUsize,
+    flights: Mutex<HashMap<String, Arc<Flight>>>,
+}
+
+impl Cache {
+    pub fn load(file: &Path, stamps: HashMap<String, String>) -> Self {
+        sweep(file);
+        let (entries, fault) = match std::fs::read_to_string(file) {
+            Ok(text) => match serde_json::from_str::<OnDisk>(&text) {
+                Ok(on_disk) => (on_disk.0, None),
+                Err(e) => (Scoped::new(), Some(unreadable(file, &e.to_string()))),
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Scoped::new(), None),
+            Err(e) => (Scoped::new(), Some(unreadable(file, &e.to_string()))),
+        };
+        let entries = entries
+            .into_iter()
+            .filter(|(scope, _)| current(scope, &stamps))
+            .collect();
+        Self {
+            fault,
+            ..Self::held(Some(file.to_owned()), entries, stamps)
+        }
+    }
+
+    pub fn disabled() -> Self {
+        Self::held(None, Scoped::new(), HashMap::new())
+    }
+
+    pub fn fault(&self) -> Option<&str> {
+        self.fault.as_deref()
+    }
+
+    fn held(file: Option<PathBuf>, entries: Scoped, stamps: HashMap<String, String>) -> Self {
+        Self {
+            file,
+            fault: None,
+            stamps,
+            entries: Mutex::new(entries),
+            dirty: AtomicBool::new(false),
+            writes: AtomicUsize::new(0),
+            flights: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, probe: &str, rel: &str, want_hash: &str) -> Option<Vec<Candidate>> {
+        let entries = guard(&self.entries);
+        let entry = entries.get(probe)?.get(rel)?;
+        (entry.hash == want_hash).then(|| entry.candidates.clone())
+    }
+
+    fn put(&self, probe: &str, rel: &str, file_hash: &str, candidates: &[Candidate]) {
+        let mut entries = guard(&self.entries);
+        entries.entry(probe.to_owned()).or_default().insert(
+            rel.to_owned(),
+            Entry {
+                hash: file_hash.to_owned(),
+                candidates: candidates.to_vec(),
+            },
+        );
+        self.dirty.store(true, Ordering::SeqCst);
+    }
+
+    fn retain(&self, probe: &str, seen: &HashSet<String>) {
+        let mut entries = guard(&self.entries);
+        let Some(scope) = entries.get_mut(probe) else {
+            return;
+        };
+        let before = scope.len();
+        scope.retain(|rel, _| seen.contains(rel));
+        if scope.len() != before {
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn persist(&self) -> Result<(), String> {
+        let Some(path) = &self.file else {
+            return Ok(());
+        };
+        if !self.dirty.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.replace(path).inspect_err(|_| {
+            self.dirty.store(true, Ordering::SeqCst);
+        })
+    }
+
+    fn replace(&self, path: &Path) -> Result<(), String> {
+        let json = {
+            let entries = guard(&self.entries);
+            serde_json::to_string(&OnDiskRef(&entries))
+                .map_err(|e| format!("cannot serialise the cache: {e}"))?
+        };
+        let dir = path
+            .parent()
+            .ok_or_else(|| format!("{} has no directory to write into", path.display()))?;
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+
+        let tmp = dir.join(format!("{}{}.tmp", scratch(path), std::process::id()));
+        std::fs::write(&tmp, json).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, path).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("cannot replace {}: {e}", path.display())
+        })?;
+        self.writes.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn flight(&self, scope: &str) -> Option<Arc<Flight>> {
+        self.file.as_ref()?;
+        let mut flights = guard(&self.flights);
+        Some(Arc::clone(flights.entry(scope.to_owned()).or_default()))
+    }
+}
+
+const ABANDONED_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
+
+fn scratch(file: &Path) -> String {
+    let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("cache");
+    format!(".{name}.")
+}
+
+fn abandoned(entry: &std::fs::DirEntry) -> bool {
+    entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > ABANDONED_AFTER)
+}
+
+fn sweep(file: &Path) {
+    let Some(dir) = file.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = scratch(file);
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let leftover = name
+            .to_str()
+            .is_some_and(|n| n.starts_with(&prefix) && n.ends_with(".tmp"));
+        if leftover && abandoned(&e) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+fn unreadable(file: &Path, why: &str) -> String {
+    format!(
+        "{} could not be read ({why}); it will be rebuilt from scratch, so the next probe pays \
+         a full scan and the ones after it will not. Rebuilding without saying so hides the cost",
+        file.display()
+    )
+}
+
+fn current(scope: &str, stamps: &HashMap<String, String>) -> bool {
+    let mut parts = scope.splitn(3, '@');
+    let (Some(probe), Some(stamp)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    stamps.get(probe).map(String::as_str) == Some(stamp)
+}
+
+pub fn gather(root: &Path, cache: &Cache, recipe: &Recipe, budget: &Budget) -> Scanned {
+    let scope = scope_of(cache, recipe.name, root);
+    let collect =
+        |rel: &str, bytes: &[u8], out: &mut Vec<Candidate>| (recipe.collect)(rel, bytes, out);
+    once(cache, &scope, || {
+        scan(root, cache, &scope, budget, &(recipe.eligible), collect)
+    })
+}
+
+pub fn folded(
+    root: &Path,
+    cache: &Cache,
+    probe: &str,
+    gathered: &Arc<Vec<Candidate>>,
+    fold: Fold,
+) -> Scanned {
+    let scope = scope_of(cache, probe, root);
+    let run = || Ok(Arc::new(fold(gathered)?));
+    let Some(flight) = cache.flight(&scope) else {
+        return run();
+    };
+    let mut slot = guard(&flight.folded);
+    if let Some(done) = slot.as_ref() {
+        return done.clone();
+    }
+    let done = run();
+    *slot = worth_remembering(&done);
+    done
+}
+
+fn once(cache: &Cache, scope: &str, run: impl FnOnce() -> Scanned) -> Scanned {
+    let Some(flight) = cache.flight(scope) else {
+        return run();
+    };
+    let mut settled = guard(&flight.settled);
+    if let Some(done) = settled.as_ref() {
+        return done.clone();
+    }
+    let scanned = run();
+    *settled = worth_remembering(&scanned);
+    scanned
+}
+
+fn worth_remembering(outcome: &Scanned) -> Option<Scanned> {
+    match outcome {
+        Err(Halt::Spent(_)) => None,
+        _ => Some(outcome.clone()),
+    }
+}
+
+fn scope_of(cache: &Cache, probe: &str, root: &Path) -> String {
+    let stamp = cache.stamps.get(probe).map(String::as_str).unwrap_or("");
+    format!("{probe}@{stamp}@{}", root.display())
+}
+
+fn scan(
+    root: &Path,
+    cache: &Cache,
+    scope: &str,
+    budget: &Budget,
+    eligible: &dyn Fn(&str) -> bool,
+    mut collect: impl FnMut(&str, &[u8], &mut Vec<Candidate>) -> Result<(), String>,
+) -> Scanned {
+    let mut cands = Vec::new();
+    let mut seen = HashSet::new();
+    let mut halted = None;
+    visit(root, &mut |p, rel| {
+        if let Err(spent) = budget.checkpoint() {
+            halted = Some(spent);
+            return Err(String::new());
+        }
+        if !eligible(rel) {
+            return Ok(());
+        }
+        let Ok(bytes) = std::fs::read(p) else {
+            return Ok(());
+        };
+        seen.insert(rel.to_owned());
+        let file_hash = hash(&String::from_utf8_lossy(&bytes));
+        if let Some(cached) = cache.get(scope, rel, &file_hash) {
+            cands.extend(cached);
+            return Ok(());
+        }
+        let mut fragment = Vec::new();
+        collect(rel, &bytes, &mut fragment)?;
+        cache.put(scope, rel, &file_hash, &fragment);
+        cands.extend(fragment);
+        Ok(())
+    })
+    .map_err(|why| match halted {
+        Some(spent) => Halt::Spent(spent),
+        None => Halt::Refused(why),
+    })?;
+    cache.retain(scope, &seen);
+    cache.persist()?;
+    Ok(Arc::new(cands))
+}
+
+fn guard<T>(lock: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn roomy() -> Budget {
+        Budget::within(std::time::Duration::from_secs(600), 1 << 24)
+    }
+    use std::cell::Cell;
+    use std::collections::BTreeMap;
+
+    thread_local! {
+        static CALLS: Cell<usize> = const { Cell::new(0) };
+        static FOLDS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn calls() -> usize {
+        CALLS.with(Cell::get)
+    }
+
+    fn folds() -> usize {
+        FOLDS.with(Cell::get)
+    }
+
+    fn counting(rel: &str, _bytes: &[u8], out: &mut Vec<Candidate>) -> Result<(), String> {
+        CALLS.with(|c| c.set(c.get() + 1));
+        out.push(Candidate::new(
+            rel.to_owned(),
+            BTreeMap::from([("file".to_owned(), rel.to_owned())]),
+            serde_json::json!({}),
+        ));
+        Ok(())
+    }
+
+    fn refusing(rel: &str, _bytes: &[u8], _out: &mut Vec<Candidate>) -> Result<(), String> {
+        match CALLS.with(|c| c.replace(c.get() + 1)) {
+            2 => Err(format!("no: {rel}")),
+            _ => Ok(()),
+        }
+    }
+
+    fn folding(cands: &[Candidate]) -> Result<Vec<Candidate>, String> {
+        FOLDS.with(|c| c.set(c.get() + 1));
+        Ok((0..cands.len())
+            .map(|i| {
+                Candidate::new(
+                    format!("folded {i}"),
+                    BTreeMap::new(),
+                    serde_json::json!({}),
+                )
+            })
+            .collect())
+    }
+
+    fn probing(name: &'static str, collect: crate::recipe::Collect) -> crate::recipe::Recipe {
+        crate::recipe::Recipe {
+            name,
+            collect,
+            ..crate::recipe::fixture::recipe(
+                crate::recipe::fixture::anything,
+                crate::recipe::Merge::Concat,
+            )
+        }
+    }
+
+    fn stamped() -> HashMap<String, String> {
+        ["p", "ast-map", "addr-map"]
+            .into_iter()
+            .map(|n| (n.to_owned(), "v1".to_owned()))
+            .collect()
+    }
+
+    fn gathering(eligible: fn(&str) -> bool) -> crate::recipe::Recipe {
+        crate::recipe::Recipe {
+            name: "p",
+            ..crate::recipe::fixture::recipe(eligible, crate::recipe::Merge::Concat)
+        }
+    }
+
+    #[test]
+    fn a_file_the_recipe_rules_out_leaves_no_trace_in_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let src = tree(&[("a.rs", "alpha"), ("notes.md", "prose")]);
+
+        let cache = Cache::load(&path, stamped());
+        let out = gather(
+            src.path(),
+            &cache,
+            &gathering(crate::recipe::fixture::rust_only),
+            &roomy(),
+        )
+        .unwrap();
+
+        assert_eq!(out.len(), 1);
+        let entries = guard(&cache.entries);
+        let scope = entries.values().next().expect("one scope was written");
+        assert!(scope.contains_key("a.rs"));
+        assert!(
+            !scope.contains_key("notes.md"),
+            "an ineligible file is skipped before it is read, so it is never hashed and              never stored. The old path read every file in the tree and cached an empty              list for the ones no extractor could use"
+        );
+    }
+
+    #[test]
+    fn the_bytes_the_recipe_is_handed_are_the_ones_the_cache_hashed() {
+        fn echo(rel: &str, bytes: &[u8], out: &mut Vec<Candidate>) -> Result<(), String> {
+            out.push(Candidate::new(
+                rel.to_owned(),
+                [("name".to_owned(), hash(&String::from_utf8_lossy(bytes)))].into(),
+                serde_json::json!({}),
+            ));
+            Ok(())
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "alpha")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+        let recipe = crate::recipe::Recipe {
+            collect: echo,
+            ..gathering(crate::recipe::fixture::anything)
+        };
+
+        let out = gather(src.path(), &cache, &recipe, &roomy()).unwrap();
+        let entries = guard(&cache.entries);
+        let scope = entries.values().next().unwrap();
+        assert_eq!(
+            out[0].coord["name"], scope["a.rs"].hash,
+            "the scan reads the file once and hands those bytes on. Reading it a second              time inside collect is what the old signature forced, and it doubled the IO              on every cache miss"
+        );
+    }
+
+    #[test]
+    fn a_second_gather_in_the_same_process_reuses_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "alpha"), ("b.rs", "beta")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+        let recipe = gathering(crate::recipe::fixture::anything);
+
+        let first = gather(src.path(), &cache, &recipe, &roomy()).unwrap();
+        std::fs::write(src.path().join("a.rs"), "changed").unwrap();
+        let second = gather(src.path(), &cache, &recipe, &roomy()).unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the same question asked twice in one pass is answered once — the flight memo              covers gather exactly as it covers the path it replaces"
+        );
+    }
+
+    fn tree(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for (path, body) in files {
+            let p = d.path().join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, body).unwrap();
+        }
+        d
+    }
+
+    #[test]
+    fn an_unchanged_file_is_not_recollected() {
+        let d = tree(&[("a.rs", "one")]);
+        let cache = Cache::disabled();
+
+        let first = gather(d.path(), &cache, &probing("p", counting), &roomy()).unwrap();
+        let second = gather(d.path(), &cache, &probing("p", counting), &roomy()).unwrap();
+
+        assert_eq!(calls(), 1);
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 1);
+    }
+
+    #[test]
+    fn a_changed_file_is_recollected_by_the_next_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+        let cache_file = dir.path().join("cache.json");
+
+        let first = Cache::load(&cache_file, stamped());
+        gather(src.path(), &first, &probing("p", counting), &roomy()).unwrap();
+
+        std::fs::write(src.path().join("a.rs"), "two").unwrap();
+        let second = Cache::load(&cache_file, stamped());
+        gather(src.path(), &second, &probing("p", counting), &roomy()).unwrap();
+
+        assert_eq!(calls(), 2);
+    }
+
+    #[test]
+    fn a_second_lookup_in_the_same_process_does_not_rewalk() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = tree(&[("a.rs", "one"), ("b.rs", "two")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+
+        let first = gather(d.path(), &cache, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(calls(), 2, "one collect per file");
+        assert_eq!(first.len(), 2);
+
+        let second = gather(d.path(), &cache, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(
+            calls(),
+            2,
+            "the second lookup reused the first scan, not even a per-file cache check"
+        );
+        assert_eq!(second.len(), 2);
+    }
+
+    #[test]
+    fn a_second_probe_does_not_see_the_first_probes_entries() {
+        let d = tree(&[("a.rs", "one")]);
+        let cache = Cache::disabled();
+
+        gather(d.path(), &cache, &probing("ast-map", counting), &roomy()).unwrap();
+        gather(d.path(), &cache, &probing("addr-map", counting), &roomy()).unwrap();
+
+        assert_eq!(calls(), 2);
+    }
+
+    #[test]
+    fn the_same_probe_at_two_different_roots_does_not_cross_contaminate() {
+        let a = tree(&[("lib.rs", "one")]);
+        let b = tree(&[("lib.rs", "two")]);
+        let cache = Cache::disabled();
+
+        let from_a = gather(a.path(), &cache, &probing("ast-map", counting), &roomy()).unwrap();
+        let from_b = gather(b.path(), &cache, &probing("ast-map", counting), &roomy()).unwrap();
+
+        assert_eq!(
+            calls(),
+            2,
+            "a narrower root (e.g. a layer:: anchor's params.root) must not be served \
+             the other root's cached scan just because the probe name matches"
+        );
+        assert_eq!(from_a.len(), 1);
+        assert_eq!(from_b.len(), 1);
+    }
+
+    #[test]
+    fn a_warm_cache_survives_a_reload_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+        let cache_file = dir.path().join("cache.json");
+
+        let warm = Cache::load(&cache_file, stamped());
+        gather(src.path(), &warm, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(calls(), 1);
+
+        let reloaded = Cache::load(&cache_file, stamped());
+        gather(src.path(), &reloaded, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(calls(), 1, "a fresh process should still hit");
+    }
+
+    fn many(n: usize) -> Vec<(String, String)> {
+        (0..n)
+            .map(|i| (format!("src/f{i}.rs"), format!("fn f{i}() {{}}")))
+            .collect()
+    }
+
+    #[test]
+    fn a_scan_writes_the_cache_file_once_not_once_per_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let owned = many(50);
+        let files: Vec<(&str, &str)> = owned
+            .iter()
+            .map(|(p, b)| (p.as_str(), b.as_str()))
+            .collect();
+        let src = tree(&files);
+
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+        gather(src.path(), &cache, &probing("p", counting), &roomy()).unwrap();
+
+        assert_eq!(calls(), 50, "one collect per file");
+        assert_eq!(
+            cache.writes.load(Ordering::SeqCst),
+            1,
+            "the cache is written once per scan; once per file is the quadratic that \
+             made a 800-file repository take 41 seconds"
+        );
+    }
+
+    #[test]
+    fn a_scan_that_changes_nothing_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one"), ("b.rs", "two")]);
+        let cache_file = dir.path().join("cache.json");
+
+        let warm = Cache::load(&cache_file, stamped());
+        gather(src.path(), &warm, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(warm.writes.load(Ordering::SeqCst), 1);
+
+        let reloaded = Cache::load(&cache_file, stamped());
+        gather(src.path(), &reloaded, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(
+            reloaded.writes.load(Ordering::SeqCst),
+            0,
+            "nothing changed, so there is nothing to write down"
+        );
+    }
+
+    #[test]
+    fn a_failed_scan_is_not_retried_by_the_next_caller() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = tree(&[("a.rs", "1"), ("b.rs", "2"), ("c.rs", "3"), ("d.rs", "4")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+
+        assert!(gather(d.path(), &cache, &probing("p", refusing), &roomy()).is_err());
+        let after_first = calls();
+
+        assert!(gather(d.path(), &cache, &probing("p", refusing), &roomy()).is_err());
+        assert_eq!(
+            calls(),
+            after_first,
+            "a scan that already failed is not run again by the next anchor in the same pass; \
+             retrying it once per anchor is what pegged a core for six minutes"
+        );
+    }
+
+    #[test]
+    fn a_corrupt_cache_file_is_reported_and_then_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        std::fs::write(&path, "{ this is not json").unwrap();
+
+        let cache = Cache::load(&path, stamped());
+        let fault = cache
+            .fault()
+            .expect("a cache file that is not JSON has to be reported, not discarded");
+        assert!(fault.contains("cache.json"), "{fault}");
+        assert!(
+            fault.contains("full scan"),
+            "rebuilding without saying so hides what this run is paying: {fault}"
+        );
+    }
+
+    #[test]
+    fn a_corrupt_cache_still_scans_and_leaves_a_readable_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        std::fs::write(&path, "{ this is not json").unwrap();
+        let src = tree(&[("a.rs", "one")]);
+
+        let broken = Cache::load(&path, stamped());
+        assert!(broken.fault().is_some());
+        gather(src.path(), &broken, &probing("p", counting), &roomy()).unwrap();
+
+        let healed = Cache::load(&path, stamped());
+        assert_eq!(
+            healed.fault(),
+            None,
+            "one scan replaces the unreadable file, so the cost is paid once and not every run"
+        );
+        gather(src.path(), &healed, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(
+            calls(),
+            1,
+            "the rebuilt file has to be a hit, or nothing was actually repaired"
+        );
+    }
+
+    fn aged(path: &Path, by: std::time::Duration) {
+        let f = std::fs::File::options().write(true).open(path).unwrap();
+        let when = std::time::SystemTime::now() - by;
+        f.set_times(std::fs::FileTimes::new().set_modified(when))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_temporary_a_killed_process_left_behind_does_not_accumulate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let orphan = dir.path().join(".cache.json.999999.tmp");
+        std::fs::write(&orphan, "half a cache").unwrap();
+        aged(&orphan, ABANDONED_AFTER * 2);
+
+        Cache::load(&path, stamped());
+
+        assert!(
+            !orphan.exists(),
+            "replace writes to a per-process temporary and renames, so a process killed \
+             between the two leaves one behind and nobody else is named to remove it"
+        );
+    }
+
+    #[test]
+    fn a_temporary_another_process_is_still_writing_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let in_flight = dir.path().join(".cache.json.999998.tmp");
+        std::fs::write(&in_flight, "a write happening right now").unwrap();
+
+        Cache::load(&path, stamped());
+
+        assert!(
+            in_flight.exists(),
+            "a temporary seconds old belongs to a live writer; removing it would make its \
+             rename fail, which is worse than the disk space it was costing"
+        );
+    }
+
+    #[test]
+    fn a_cache_file_that_is_not_there_yet_is_not_a_fault() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            Cache::load(&dir.path().join("absent.json"), stamped()).fault(),
+            None
+        );
+    }
+
+    #[test]
+    fn entries_for_deleted_files_do_not_survive_a_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one"), ("b.rs", "two")]);
+        let cache_file = dir.path().join("cache.json");
+
+        let first = Cache::load(&cache_file, stamped());
+        gather(src.path(), &first, &probing("p", counting), &roomy()).unwrap();
+
+        std::fs::remove_file(src.path().join("b.rs")).unwrap();
+        let second = Cache::load(&cache_file, stamped());
+        gather(src.path(), &second, &probing("p", counting), &roomy()).unwrap();
+
+        let third = Cache::load(&cache_file, stamped());
+        let entries = third.entries.lock().unwrap();
+        let scope = entries.values().next().expect("one scope was written");
+        assert!(scope.contains_key("a.rs"));
+        assert!(
+            !scope.contains_key("b.rs"),
+            "a file that is gone from the tree must go from the cache too, or the file \
+             grows for as long as the repository lives"
+        );
+    }
+
+    fn stamped_as(version: &str) -> HashMap<String, String> {
+        [("p".to_owned(), version.to_owned())].into_iter().collect()
+    }
+
+    #[test]
+    fn a_cache_written_by_one_version_of_a_probe_is_not_served_to_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+        let cache_file = dir.path().join("cache.json");
+
+        let before = Cache::load(&cache_file, stamped_as("v1"));
+        gather(src.path(), &before, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(calls(), 1);
+
+        let after = Cache::load(&cache_file, stamped_as("v2"));
+        gather(src.path(), &after, &probing("p", counting), &roomy()).unwrap();
+        assert_eq!(
+            calls(),
+            2,
+            "the file did not change but the logic that reads it did, so the candidates \
+             have to be recomputed — serving the old ones is the probe reporting what a \
+             version it no longer is would have said"
+        );
+    }
+
+    #[test]
+    fn entries_a_probe_version_can_no_longer_reach_are_dropped_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+        let cache_file = dir.path().join("cache.json");
+
+        let before = Cache::load(&cache_file, stamped_as("v1"));
+        gather(src.path(), &before, &probing("p", counting), &roomy()).unwrap();
+
+        let after = Cache::load(&cache_file, stamped_as("v2"));
+        gather(src.path(), &after, &probing("p", counting), &roomy()).unwrap();
+        let reloaded = Cache::load(&cache_file, stamped_as("v2"));
+        assert_eq!(
+            reloaded.entries.lock().unwrap().len(),
+            1,
+            "the superseded version's entries are unreachable, so they are not kept — \
+             otherwise the file grows by a whole repository at every upgrade"
+        );
+    }
+
+    #[test]
+    fn a_written_cache_leaves_no_temporary_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one")]);
+
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+        gather(src.path(), &cache, &probing("p", counting), &roomy()).unwrap();
+
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    fn aggregating(name: &'static str) -> crate::recipe::Recipe {
+        crate::recipe::Recipe {
+            merge: crate::recipe::Merge::Fold(folding),
+            ..probing(name, counting)
+        }
+    }
+
+    fn rolled_up(root: &Path, cache: &Cache, name: &'static str) -> Scanned {
+        let recipe = aggregating(name);
+        let gathered = gather(root, cache, &recipe, &roomy())?;
+        folded(root, cache, name, &gathered, folding)
+    }
+
+    #[test]
+    fn an_aggregate_is_folded_once_per_scan_not_once_per_question() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[("a.rs", "one"), ("b/c.rs", "two")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+
+        let first = rolled_up(src.path(), &cache, "p").unwrap();
+        let second = rolled_up(src.path(), &cache, "p").unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the second answer is the first one"
+        );
+        assert_eq!(calls(), 2, "two files, read once each");
+        assert_eq!(
+            folds(),
+            1,
+            "a cross-file aggregate is a pure function of the fragments, and the fragments \
+             are already settled for this scope. Folding again per question is the whole \
+             cost the per-file cache does not remove"
+        );
+    }
+
+    #[test]
+    fn two_roots_do_not_share_a_folded_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = tree(&[("a.rs", "one")]);
+        let two = tree(&[("a.rs", "one"), ("b.rs", "two")]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+
+        let a = rolled_up(one.path(), &cache, "p").unwrap();
+        let b = rolled_up(two.path(), &cache, "p").unwrap();
+
+        assert_eq!(
+            (a.len(), b.len()),
+            (1, 2),
+            "{}",
+            "the fold memo is keyed by the same scope the scan is, or narrowing a probe to \
+             one directory would be served whatever the first root produced"
+        );
+        assert_eq!(folds(), 2);
+    }
+
+    #[test]
+    fn a_disabled_cache_folds_every_time_it_is_asked() {
+        let src = tree(&[("a.rs", "one")]);
+        let cache = Cache::disabled();
+
+        for _ in 0..3 {
+            rolled_up(src.path(), &cache, "p").unwrap();
+        }
+        assert_eq!(
+            folds(),
+            3,
+            "disabled has to mean disabled: a test that rewrites a file and asks again must \
+             see the new answer, and a memo it cannot invalidate would hand back the old one"
+        );
+    }
+
+    #[test]
+    fn a_cold_run_over_several_roots_writes_the_whole_file_once_per_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = tree(&[
+            ("a/one.rs", "one"),
+            ("a/two.rs", "two"),
+            ("b/three.rs", "three"),
+            ("c/four.rs", "four"),
+        ]);
+        let cache = Cache::load(&dir.path().join("cache.json"), stamped());
+
+        for root in ["", "a", "b", "c"] {
+            gather(
+                &src.path().join(root),
+                &cache,
+                &probing("p", counting),
+                &roomy(),
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            cache.writes.load(Ordering::SeqCst),
+            4,
+            "one full-file write per scanned root: the flag is per cache, but so is the \
+             serialisation, so making the flag per scope changes nothing here"
+        );
+    }
+}
