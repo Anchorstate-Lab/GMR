@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -63,6 +63,17 @@ CREATE TABLE IF NOT EXISTS settings (
     budget_ms     INTEGER             -- NULL defers to the deployment default
 );
 
+-- ── Sightings: how often we looked and found the anchor where it should be,
+-- and when we last did. **Mutable**, like settings and the queue: a look that
+-- found nothing new settles nothing, so it owes no sealed rationale and has no
+-- business in an append-only log.
+
+CREATE TABLE IF NOT EXISTS sighting (
+    anchor   TEXT PRIMARY KEY,
+    count    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT                        -- RFC3339, as the entries spell it
+);
+
 -- ── Queue: polling deployments only. **Mutable**, no pretence ──
 
 CREATE TABLE IF NOT EXISTS queue (
@@ -99,4 +110,24 @@ CREATE TRIGGER IF NOT EXISTS sealed_no_delete BEFORE DELETE ON sealed
 
 pub const V6_TO_V7: &str = r#"
 ALTER TABLE settings ADD COLUMN budget_ms INTEGER;
+"#;
+
+pub const V7_TO_V8: &str = r#"
+CREATE TABLE IF NOT EXISTS sighting (
+    anchor   TEXT PRIMARY KEY,
+    count    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT
+);
+
+INSERT INTO sighting (anchor, count, last_at)
+SELECT j.anchor, COUNT(*), (
+    SELECT json_extract(prior.body, '$.at') FROM journal prior
+    WHERE prior.anchor = j.anchor
+      AND json_extract(prior.body, '$.entry') IN ('open', 'transition', 'still')
+    ORDER BY prior.seq DESC LIMIT 1
+)
+FROM journal j
+WHERE json_extract(j.body, '$.entry') IN ('open', 'transition', 'still')
+GROUP BY j.anchor
+ON CONFLICT(anchor) DO NOTHING;
 "#;

@@ -7,6 +7,7 @@ use gmr_core::{
     Version, scan,
 };
 use gmr_probe::Budget;
+use gmr_store::Seen;
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -160,20 +161,24 @@ fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> 
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
-        Ok(projected(&self.log, key).await?.0)
+        Ok(projected(&self.log, key, &self.scheduler.seen(key).await?)
+            .await?
+            .0)
     }
 
     pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
+        let seen = self.scheduler.all_seen().await?;
         let mut out = Vec::new();
         for key in self.log.anchors().await? {
-            out.push(projected(&self.log, &key).await?.0);
+            let looks = seen.get(&key).copied().unwrap_or_default();
+            out.push(projected(&self.log, &key, &looks).await?.0);
         }
         Ok(out)
     }
 
     pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
         let policy = self.scheduler.policy();
-        let (view, head) = projected(&self.log, key).await?;
+        let (view, head) = projected(&self.log, key, &self.scheduler.seen(key).await?).await?;
         ground(
             &self.memory,
             view,
@@ -202,24 +207,35 @@ impl Runtime {
         let policy = self.scheduler.policy();
         let total = policy.content_budget();
         let call = policy.content_call();
+        let seen = self.scheduler.all_seen().await?;
         let mut out = Vec::new();
         for key in self.log.anchors().await? {
-            let (view, head) = projected(&self.log, &key).await?;
+            let looks = seen.get(&key).copied().unwrap_or_default();
+            let (view, head) = projected(&self.log, &key, &looks).await?;
             out.push(ground(&self.memory, view, head, &total, call).await?);
         }
         Ok(out)
     }
 }
 
-async fn projected(log: &AnchorLog, key: &AnchorKey) -> Result<(AnchorView, Seq), RuntimeError> {
+async fn projected(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    looks: &Seen,
+) -> Result<(AnchorView, Seq), RuntimeError> {
     let entries = log.entries(key, 0).await?;
-    let mut sightings: u64 = 0;
+    let mut logged: u64 = 0;
     let s = scan(&entries, |_, entry, _| {
         if entry.is_sighting() {
-            sightings += 1;
+            logged += 1;
         }
     })
     .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+
+    let (sightings, last_sighting) = match looks.sightings {
+        0 => (logged, s.last_sighting),
+        counted => (counted, looks.last_at.or(s.last_sighting)),
+    };
 
     let sighting = match s.latest.as_ref().map(|o| &o.outcome) {
         Some(Outcome::Found { .. }) => Sighting::Found,
@@ -238,7 +254,7 @@ async fn projected(log: &AnchorLog, key: &AnchorKey) -> Result<(AnchorView, Seq)
             closed: s.closed,
             attempts: s.attempts,
             entered_at: s.entered_at,
-            last_sighting: s.last_sighting,
+            last_sighting,
             sightings,
             derivation,
             facts,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use gmr_core::{AnchorKey, RunSettings};
-use gmr_store::{Disposition, Queue, Settings, Ticket};
+use gmr_store::{Disposition, Queue, Seen, Settings, Sightings, Ticket};
 
 use crate::error::RuntimeError;
 use crate::policy::Policy;
@@ -10,6 +10,7 @@ use crate::policy::Policy;
 pub struct Scheduler {
     queue: Option<Arc<dyn Queue>>,
     settings: Arc<dyn Settings>,
+    sightings: Arc<dyn Sightings>,
     policy: Policy,
 }
 
@@ -17,13 +18,29 @@ impl Scheduler {
     pub(crate) fn new(
         queue: Option<Arc<dyn Queue>>,
         settings: Arc<dyn Settings>,
+        sightings: Arc<dyn Sightings>,
         policy: Policy,
     ) -> Self {
         Self {
             queue,
             settings,
+            sightings,
             policy,
         }
+    }
+
+    pub async fn sighted(&self, anchor: &AnchorKey, at: DateTime<Utc>) -> Result<(), RuntimeError> {
+        Ok(self.sightings.sighted(anchor, at).await?)
+    }
+
+    pub async fn seen(&self, anchor: &AnchorKey) -> Result<Seen, RuntimeError> {
+        Ok(self.sightings.seen(anchor).await?)
+    }
+
+    pub async fn all_seen(
+        &self,
+    ) -> Result<std::collections::BTreeMap<AnchorKey, Seen>, RuntimeError> {
+        Ok(self.sightings.all_seen().await?)
     }
 
     pub async fn settings_for(&self, anchor: &AnchorKey) -> Result<RunSettings, RuntimeError> {

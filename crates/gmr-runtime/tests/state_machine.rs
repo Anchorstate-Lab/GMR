@@ -32,6 +32,7 @@ impl World {
             .sealer(bindings.clone())
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, rt }
     }
@@ -253,6 +254,7 @@ async fn the_position_reaches_the_probe_and_the_domain_can_move_it() {
         .sealer(bindings.clone())
         .links(bindings)
         .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
         .build();
 
     let opened = rt
@@ -332,6 +334,7 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
         .sealer(bindings.clone())
         .links(bindings)
         .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
         .build();
 
     rt.open(OpenRequest {
@@ -360,18 +363,31 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
 }
 
 #[tokio::test]
-async fn nothing_moving_writes_a_still_not_a_transition() {
+async fn nothing_moving_writes_nothing_at_all() {
     let w = World::new();
     w.write(r#"{"n":1}"#);
     w.open(&[("changed(\"n\")", "{ n: obs.n }")], &[]).await;
 
+    let opened = w.rt.log().entries(&key(), 0).await.unwrap().len();
     assert_eq!(w.observe().await, Observed::Still);
     assert_eq!(w.observe().await, Observed::Still);
 
     let entries = w.rt.log().entries(&key(), 0).await.unwrap();
-    let stills = entries.iter().filter(|(_, e)| e.name() == "still").count();
-    assert_eq!(stills, 2);
+    assert_eq!(
+        entries.len(),
+        opened,
+        "a look that found the same instrument reporting the same facts about the same \
+         state settles nothing, and an append-only log is for what settled"
+    );
     assert_eq!(fold(&entries).unwrap().attempts, 0);
+
+    let view = w.rt.read(&key()).await.unwrap();
+    assert_eq!(
+        view.sightings, 3,
+        "the looks still happened and are still counted; they are counted where a tally \
+         belongs rather than as a row per look"
+    );
+    assert!(view.last_sighting.is_some());
 }
 
 #[tokio::test]
@@ -522,33 +538,39 @@ async fn a_world_that_did_not_move_stays_still_even_right_after_a_restate() {
 }
 
 #[tokio::test]
-async fn every_still_in_a_run_points_at_the_record_it_was_compared_against() {
+async fn the_look_that_ends_a_failure_streak_is_written_down() {
     let w = World::new();
     w.write(r#"{"shape":"(a)->c"}"#);
     w.open(&[("changed(\"shape\")", r#"{ shape: obs.shape }"#)], &[])
         .await;
 
-    for _ in 0..3 {
-        assert_eq!(w.observe().await, Observed::Still);
-    }
+    assert_eq!(w.observe().await, Observed::Still);
 
-    let refs: Vec<u64> =
-        w.rt.log()
-            .entries(&key(), 0)
-            .await
-            .unwrap()
-            .into_iter()
-            .filter_map(|(_, e)| match e {
-                gmr_core::Entry::Still { ref_entry, .. } => Some(ref_entry),
-                _ => None,
-            })
-            .collect();
+    w.remove();
+    assert!(matches!(w.observe().await, Observed::Attempt { .. }));
+    assert_eq!(w.rt.read(&key()).await.unwrap().attempts, 1);
+
+    w.write(r#"{"shape":"(a)->c"}"#);
+    assert_eq!(w.observe().await, Observed::Still);
+
+    let entries = w.rt.log().entries(&key(), 0).await.unwrap();
+    let refs: Vec<u64> = entries
+        .iter()
+        .filter_map(|(_, e)| match e {
+            gmr_core::Entry::Still { ref_entry, .. } => Some(*ref_entry),
+            _ => None,
+        })
+        .collect();
 
     assert_eq!(
         refs,
-        vec![1, 1, 1],
-        "each still points back to the full record, not to a chain of still entries"
+        vec![1],
+        "nothing moving is not worth a row, but a run of failures ending is: without it \
+         the streak that drives backoff could only be cleared by the world moving, and an \
+         anchor that recovered would go on looking stalled. It points back at the full \
+         record it was compared against, never at a chain of stills"
     );
+    assert_eq!(w.rt.read(&key()).await.unwrap().attempts, 0);
 }
 
 #[tokio::test]

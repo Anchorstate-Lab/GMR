@@ -552,6 +552,7 @@ mod tests {
             .links(std::sync::Arc::new(store.links()))
             .queue(std::sync::Arc::new(store.queue()))
             .settings(std::sync::Arc::new(store.queue()))
+            .sightings(std::sync::Arc::new(store.queue()))
             .provider(std::sync::Arc::new(Versions(ProviderId::new("git"))))
             .build();
         (rt, store)

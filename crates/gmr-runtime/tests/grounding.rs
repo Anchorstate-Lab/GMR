@@ -215,6 +215,7 @@ impl World {
             .sealer(bindings.clone())
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, runtime }
     }

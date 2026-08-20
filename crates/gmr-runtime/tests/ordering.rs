@@ -24,6 +24,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         .sealer(bindings.clone())
         .links(bindings.clone())
         .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
         .build();
 
     let key = AnchorKey::new("a");

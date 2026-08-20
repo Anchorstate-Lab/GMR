@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer, Settings};
+use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer, Settings, Sightings};
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
@@ -58,6 +58,7 @@ pub struct RuntimeBuilder {
     provider_warnings: Vec<ProviderWarning>,
     queue: Option<Arc<dyn Queue>>,
     settings: Option<Arc<dyn Settings>>,
+    sightings: Option<Arc<dyn Sightings>>,
     policy: Option<Policy>,
 }
 
@@ -114,6 +115,11 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn sightings(mut self, s: Arc<dyn Sightings>) -> Self {
+        self.sightings = Some(s);
+        self
+    }
+
     pub fn policy(mut self, p: Policy) -> Self {
         self.policy = Some(p);
         self
@@ -144,6 +150,8 @@ impl RuntimeBuilder {
             scheduler: Scheduler::new(
                 self.queue,
                 self.settings.expect("a Settings store is not optional"),
+                self.sightings
+                    .expect("a Sightings store is not optional: a look that found nothing new is recorded there instead of in the log"),
                 self.policy.unwrap_or_default(),
             ),
         }
@@ -180,7 +188,8 @@ mod tests {
             .bindings(bindings.clone())
             .sealer(bindings.clone())
             .links(bindings)
-            .settings(Arc::new(MemoryQueue::default()));
+            .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()));
         for id in providers {
             builder = builder.provider(Arc::new(Named(ProviderId::new(id))));
         }
@@ -207,6 +216,7 @@ mod tests {
             .sealer(bindings.clone())
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
             .provider_warning("claude-code", "$HOME is not set")
             .build();
 
@@ -225,6 +235,7 @@ mod tests {
             .sealer(bindings.clone())
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
             .build();
 
         assert!(rt.memory().provider_warnings().is_empty());
