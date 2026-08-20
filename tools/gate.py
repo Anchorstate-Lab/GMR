@@ -25,7 +25,6 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ARCH_TOML = ROOT / "architecture.toml"
-CLIFF_TOML = ROOT / "cliff.toml"
 FACADE = ROOT / "crates" / "gmr" / "src" / "lib.rs"
 ACCEPTANCE = ROOT / "acceptance.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
@@ -228,22 +227,18 @@ def latest_version_tag():
 
 
 def check_version_bump():
-    """Cargo.toml's version is a claim about what the commits since the last
-    tag warrant. release-plz used to compute that claim and got it wrong —
-    0.3.3 -> 0.3.4 shipped eleven breaking commits as a patch bump — because
-    its bump decision depended on `cargo package` succeeding, which this
-    workspace's self-referential dev-dependencies never let happen. git-cliff
-    needs none of that: it reads commit messages, not packaged crates.
+    """Patch is CI's alone: .github/workflows/release.yml bumps it on every
+    push to main and tags the result, so no PR should ever touch it. A PR
+    may only move Cargo.toml's version by claiming a new major or minor
+    line by hand — that is a stability promise a commit-message parser
+    cannot make on its own, and this project stopped asking one to (a
+    squash-merged PR collapsed its `!`-marked commits into one non-`!`
+    title, and the parser that used to sit here read that flattened title
+    and got the bump size wrong without either Cargo.toml or gate.sh
+    noticing).
 
-    This only checks the claim when someone is actively making it. On an
-    ordinary PR, Cargo.toml's version still matches the latest tag and this
-    is a no-op — git-cliff only has to be on PATH for the PR that bumps it.
-
-    The major digit is never checked against git-cliff's answer. Crossing a
-    major line is a stability promise, not a fact commit messages can settle
-    on their own — a breaking commit only ever justifies a minor bump here
-    (see cliff.toml's breaking_always_bump_major = false), and moving off
-    that line at all is deliberately left to whoever edits Cargo.toml by hand.
+    So the only two shapes a PR may leave Cargo.toml in are: unchanged, or
+    (major, minor) moved strictly past the latest tag with patch reset to 0.
     """
     with open(ROOT / "Cargo.toml", "rb") as f:
         current = tomllib.load(f)["workspace"]["package"]["version"]
@@ -254,25 +249,18 @@ def check_version_bump():
     tag_version = tag.lstrip("v")
     if current == tag_version:
         return []
-    if current.split(".", 1)[0] != tag_version.split(".", 1)[0]:
-        return []
 
-    try:
-        r = run(["git-cliff", "--bumped-version", "--unreleased", "-c", str(CLIFF_TOML)])
-    except FileNotFoundError:
+    cur_major, cur_minor, cur_patch = (int(x) for x in current.split("."))
+    tag_major, tag_minor, _ = (int(x) for x in tag_version.split("."))
+    if (cur_major, cur_minor) <= (tag_major, tag_minor):
         return [
-            f"Cargo.toml claims {current} (last tag {tag}) but git-cliff is not on PATH "
-            "to verify that bump is the right size"
+            f"Cargo.toml version is {current}, latest tag is {tag} — patch is bumped "
+            "by CI on merge, not by a PR; a PR may only move major.minor forward"
         ]
-    if r.returncode:
-        return [f"git-cliff could not compute the expected next version: {r.stderr.strip()}"]
-    expected = r.stdout.strip().lstrip("v")
-    if not expected:
-        return ["git-cliff produced no bumped version to compare against"]
-    if current != expected:
+    if cur_patch != 0:
         return [
-            f"Cargo.toml version is {current}, but commits since {tag} call for {expected} "
-            "(git-cliff --bumped-version, breaking_always_bump_major=false)"
+            f"Cargo.toml version {current} opens a new major.minor line past {tag}, "
+            "but its patch digit is nonzero — patch belongs to CI, start the line at .0"
         ]
     return []
 
