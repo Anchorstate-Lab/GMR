@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use gmr_core::{ProbeName, ProbeVersion};
 use gmr_probe::Budget;
-use gmr_survey::{Cache, Halt};
+use gmr_survey::bridge::Bridge;
+use gmr_survey::sqlite::{self, SqliteIndex};
+use gmr_survey::{Corpus, Halt};
 use gmr_transport::inproc::{ExtractError, Reach, Registered};
 use serde_json::Value;
 
@@ -34,7 +36,7 @@ pub struct Vocabulary {
     pub reads: Reads,
 }
 
-type Probe = fn(&Path, &Value, &Cache, &Budget) -> Result<Value, Halt>;
+type Probe = fn(&str, &Value, &dyn Corpus, &Budget) -> Result<Value, Halt>;
 
 const PROBES: [(Vocabulary, Probe, &str); 4] = [
     (
@@ -118,8 +120,19 @@ pub fn catchall() -> Option<&'static str> {
     }
 }
 
-fn root_of(cwd: &Path, params: &Value) -> std::path::PathBuf {
-    cwd.join(params.get("root").and_then(Value::as_str).unwrap_or("."))
+fn narrow_of(params: &Value) -> String {
+    params
+        .get("root")
+        .and_then(Value::as_str)
+        .unwrap_or(".")
+        .to_owned()
+}
+
+fn as_halt(halt: Halt) -> ExtractError {
+    match halt {
+        Halt::Spent(spent) => ExtractError::Spent(spent),
+        Halt::Refused(why) => ExtractError::Refused(why),
+    }
 }
 
 pub struct Linked {
@@ -127,28 +140,54 @@ pub struct Linked {
     pub cache_fault: Option<String>,
 }
 
-pub fn registry(state_dir: &Path) -> Linked {
-    let stamps = PROBES
-        .iter()
-        .map(|(v, _, version)| (v.name.to_owned(), (*version).to_owned()))
-        .collect();
-    let cache = Cache::load(&state_dir.join("extract-cache.json"), stamps);
-    Linked {
-        cache_fault: cache.fault().map(str::to_owned),
-        probes: bind(Arc::new(cache)),
+pub fn registry(root: &Path, state_dir: &Path) -> Linked {
+    let db = state_dir.join("survey-index.sqlite");
+    match Bridge::spawn(root, move || sqlite::open(db)) {
+        Ok(bridge) => Linked {
+            cache_fault: None,
+            probes: bind(Arc::new(bridge)),
+        },
+        Err(e) => {
+            let bridge = Bridge::spawn(root, sqlite::open_in_memory)
+                .expect("an in-memory SQLite pool cannot fail to open the way a file can");
+            Linked {
+                cache_fault: Some(format!(
+                    "the survey index would not open, held nothing on disk this run: {e}"
+                )),
+                probes: bind(Arc::new(bridge)),
+            }
+        }
     }
 }
 
 pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {
-    bind(Arc::new(Cache::disabled()))
-}
-
-fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
     PROBES
         .iter()
         .map(|(v, probe, version)| {
             let probe = *probe;
-            let cache = Arc::clone(&cache);
+            (
+                ProbeName::new(v.name),
+                Registered {
+                    version: ProbeVersion::try_new(*version)
+                        .expect("build.rs earns every version as a sha256 of its closure"),
+                    extract: Arc::new(move |reach: &Reach| {
+                        let bridge = Bridge::<SqliteIndex>::spawn(&reach.cwd, sqlite::open_in_memory)
+                            .expect("an in-memory SQLite pool cannot fail to open the way a file can");
+                        probe(&narrow_of(&reach.params), &reach.position, &bridge, &reach.budget)
+                            .map_err(as_halt)
+                    }),
+                },
+            )
+        })
+        .collect()
+}
+
+fn bind(corpus: Arc<Bridge<SqliteIndex>>) -> BTreeMap<ProbeName, Registered> {
+    PROBES
+        .iter()
+        .map(|(v, probe, version)| {
+            let probe = *probe;
+            let corpus = Arc::clone(&corpus);
             (
                 ProbeName::new(v.name),
                 Registered {
@@ -156,15 +195,12 @@ fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
                         .expect("build.rs earns every version as a sha256 of its closure"),
                     extract: Arc::new(move |reach: &Reach| {
                         probe(
-                            &root_of(&reach.cwd, &reach.params),
+                            &narrow_of(&reach.params),
                             &reach.position,
-                            &cache,
+                            corpus.as_ref(),
                             &reach.budget,
                         )
-                        .map_err(|halt| match halt {
-                            Halt::Spent(spent) => ExtractError::Spent(spent),
-                            Halt::Refused(why) => ExtractError::Refused(why),
-                        })
+                        .map_err(as_halt)
                     }),
                 },
             )

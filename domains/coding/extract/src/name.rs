@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 use gmr_probe::Budget;
 use gmr_survey as coord;
@@ -43,7 +42,7 @@ fn every(_: &str) -> bool {
     true
 }
 
-fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Fragment>) -> Result<(), String> {
     let Ok(src) = std::str::from_utf8(bytes) else {
         return Ok(());
     };
@@ -55,7 +54,7 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
         }
     }
     out.extend(here.into_iter().map(|(name, (count, line))| {
-        coord::Candidate::new(
+        coord::Fragment::new(
             format!("{rel}#{name}"),
             [("name", name), ("file", rel)]
                 .into_iter()
@@ -67,7 +66,7 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
     Ok(())
 }
 
-fn merge(fragments: &[coord::Candidate]) -> Result<BTreeMap<(&str, &str), Seen<'_>>, String> {
+fn merge(fragments: &[coord::Fragment]) -> Result<BTreeMap<(&str, &str), Seen<'_>>, String> {
     let mut seen: BTreeMap<(&str, &str), Seen> = BTreeMap::new();
     let mut walked: Option<(&str, Vec<&str>)> = None;
     for f in fragments {
@@ -90,7 +89,7 @@ fn merge(fragments: &[coord::Candidate]) -> Result<BTreeMap<(&str, &str), Seen<'
     Ok(seen)
 }
 
-fn rolled(fragments: &[coord::Candidate]) -> Result<Vec<coord::Candidate>, String> {
+fn rolled(fragments: &[coord::Fragment]) -> Result<Vec<coord::Candidate>, String> {
     Ok(merge(fragments)?
         .into_iter()
         .map(|((name, scope), s)| {
@@ -113,18 +112,19 @@ fn rolled(fragments: &[coord::Candidate]) -> Result<Vec<coord::Candidate>, Strin
 }
 
 pub fn probe(
-    root: &Path,
+    root: &str,
     pos: &Value,
-    cache: &coord::Cache,
+    corpus: &dyn coord::Corpus,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    coord::look(&RECIPE, root, pos, cache, budget)
+    coord::look(&RECIPE, root, pos, corpus, budget)
 }
 
 pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     name: "name-map",
     version: VERSION,
     items: &ITEMS,
+    narrows_on: &["name"],
     eligible: every,
     collect,
     merge: coord::Merge::Fold(rolled),
@@ -134,6 +134,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn roomy() -> Budget {
         Budget::within(std::time::Duration::from_secs(600), 1 << 24)
@@ -151,7 +152,8 @@ mod tests {
     }
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos, &coord::Cache::disabled(), &roomy()).unwrap()
+        let surveyed = coord::testkit::Surveyed::over(dir);
+        probe("", &pos, &surveyed, &roomy()).unwrap()
     }
 
     #[test]
@@ -217,17 +219,19 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.rs", "fn f(){}")]);
-        assert!(probe(&d, &json!({}), &coord::Cache::disabled(), &roomy()).is_err());
+        let surveyed = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({}), &surveyed, &roomy()).is_err());
     }
 
     #[test]
     fn an_unreadable_tree_is_our_failure_too() {
         let d = fixture("bare", &[]);
+        let surveyed = coord::testkit::Surveyed::over(&d);
         assert!(
             probe(
-                &d,
+                "",
                 &json!({"name": "x"}),
-                &coord::Cache::disabled(),
+                &surveyed,
                 &roomy()
             )
             .is_err()
@@ -251,38 +255,10 @@ mod tests {
         ]
     }
 
-    fn live_cache(tag: &str) -> (tempfile::TempDir, coord::Cache) {
-        let state = tempfile::tempdir().unwrap();
-        let cache = coord::Cache::load(
-            &state.path().join(format!("{tag}.json")),
-            [("name-map".to_owned(), VERSION.to_owned())]
-                .into_iter()
-                .collect(),
-        );
-        (state, cache)
-    }
-
     #[test]
-    fn a_second_query_reuses_what_the_first_one_read() {
-        let d = fixture("reuse", &corpus());
-        let (state, cache) = live_cache("reuse");
-        let file = state.path().join("reuse.json");
-
-        probe(&d, &json!({"name": "build", "scope": ""}), &cache, &roomy()).unwrap();
-
-        let on_disk = std::fs::read_to_string(&file).unwrap_or_default();
-        assert!(
-            on_disk.contains("name-map"),
-            "name-map wrote nothing to the cache, so it re-reads and re-tokenises the whole \
-             repository on every single query — the one probe that pays its full cost every \
-             time it is asked, forever"
-        );
-    }
-
-    #[test]
-    fn caching_changes_nothing_about_the_answer() {
+    fn a_fresh_corpus_and_a_reused_one_agree_and_repeating_the_query_does_not_move_it() {
         let d = fixture("identical", &corpus());
-        let (_state, cache) = live_cache("identical");
+        let surveyed = coord::testkit::Surveyed::over(&d);
 
         for pos in [
             json!({"name": "build", "scope": ""}),
@@ -291,11 +267,13 @@ mod tests {
             json!({"name": "build", "scope": "shell"}),
             json!({"name": "nowhere", "scope": ""}),
         ] {
-            let cold = probe(&d, &pos, &coord::Cache::disabled(), &roomy()).unwrap();
-            let warm = probe(&d, &pos, &cache, &roomy()).unwrap();
-            let again = probe(&d, &pos, &cache, &roomy()).unwrap();
-            assert_eq!(cold, warm, "a cache that changes the answer is not a cache");
-            assert_eq!(warm, again, "and it has to keep changing nothing");
+            let fresh = coord::testkit::Surveyed::over(&d);
+            let first = probe("", &pos, &fresh, &roomy()).unwrap();
+            let warm = probe("", &pos, &surveyed, &roomy()).unwrap();
+            let again = probe("", &pos, &surveyed, &roomy()).unwrap();
+            assert_eq!(first, warm, "a corpus that has never been asked before and one that \
+                        has already read this tree must report the same thing");
+            assert_eq!(warm, again, "and asking twice must not move the answer");
         }
     }
 }

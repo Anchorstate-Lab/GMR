@@ -13,7 +13,7 @@ fn every(_: &str) -> bool {
     true
 }
 
-fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(), String> {
+fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Fragment>) -> Result<(), String> {
     let name = Path::new(rel)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -26,7 +26,7 @@ fn collect(rel: &str, bytes: &[u8], out: &mut Vec<coord::Candidate>) -> Result<(
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
     .collect();
-    out.push(coord::Candidate::new(
+    out.push(coord::Fragment::new(
         c["path"].clone(),
         c,
         json!({ "bytes": bytes.len() }),
@@ -38,6 +38,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     name: "addr-map",
     version: VERSION,
     items: &ITEMS,
+    narrows_on: &ITEMS,
     eligible: every,
     collect,
     merge: coord::Merge::Concat,
@@ -45,12 +46,12 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
 };
 
 pub fn probe(
-    root: &Path,
+    root: &str,
     pos: &Value,
-    cache: &coord::Cache,
+    corpus: &dyn coord::Corpus,
     budget: &Budget,
 ) -> Result<Value, coord::Halt> {
-    coord::look(&RECIPE, root, pos, cache, budget)
+    coord::look(&RECIPE, root, pos, corpus, budget)
 }
 
 #[cfg(test)]
@@ -73,7 +74,8 @@ mod tests {
     }
 
     fn at(dir: &Path, pos: Value) -> Value {
-        probe(dir, &pos, &coord::Cache::disabled(), &roomy()).unwrap()
+        let corpus = coord::testkit::Surveyed::over(dir);
+        probe("", &pos, &corpus, &roomy()).unwrap()
     }
 
     const BODY: &str = "Anchoring is an output of design work\n";
@@ -139,21 +141,15 @@ mod tests {
     #[test]
     fn an_empty_position_is_our_failure_not_the_worlds_answer() {
         let d = fixture("empty", &[("a.md", BODY)]);
-        assert!(probe(&d, &json!({}), &coord::Cache::disabled(), &roomy()).is_err());
+        let corpus = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({}), &corpus, &roomy()).is_err());
     }
 
     #[test]
     fn an_empty_tree_is_our_failure_too() {
         let d = fixture("bare", &[]);
-        assert!(
-            probe(
-                &d,
-                &json!({"path": "a.md"}),
-                &coord::Cache::disabled(),
-                &roomy()
-            )
-            .is_err()
-        );
+        let corpus = coord::testkit::Surveyed::over(&d);
+        assert!(probe("", &json!({"path": "a.md"}), &corpus, &roomy()).is_err());
     }
 
     #[test]
