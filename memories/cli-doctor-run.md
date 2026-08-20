@@ -4,7 +4,6 @@ about:
   - domains/coding/cli/src/verbs/doctor.rs#run
   - domains/coding/cli/src/verbs/doctor.rs#Verdict
   - domains/coding/cli/src/verbs/doctor.rs#theirs_to_fix
-  - domains/coding/cli/src/verbs/doctor.rs#grounds
 watch: [sig, logic]
 ---
 
@@ -21,15 +20,27 @@ rather than running a second `memories.is_empty()` scan over the same
 `AnchorView`s doctor already has in hand — one definition of "unbound"
 instead of two that could quietly drift apart from each other.
 
+**It keeps no definition of its own for records either.** Classifying groundings
+here would be a second answer beside `edges`', over a different set of anchors,
+and the two would be free to disagree while this one holds the exit code. The
+classification lives in `CorpusHealth`, computed over `Corpus::views`, and `run`
+reads `Footing` off it. `live` is used only for the three questions it is the
+right slice for: `absent`, `unseen`, `stranded`. See [[runtime-corpus]].
+
 ## The exit code is decided by who can fix it, not by how bad it sounds
 
 `Verdict` is one `bool` per condition that turns a run red, and
 `theirs_to_fix` is the whole rule: **can the person holding this repository
 make this go away by doing something here?** `stranded`, a provider that
 failed to register, breaking note lints, `undeclared`, a record the store
-says is `gone`, a binding through a provider this binary lacks, and a
-stale installed SKILL.md all pass that test — a rebuild, an unbind, an
-edit, a re-init.
+says is `gone`, a binding through a provider this binary lacks, a stale
+installed SKILL.md, and a record left `unsupervised` all pass that test — a
+rebuild, an unbind, an edit, a re-init, a supersede.
+
+`unsupervised` is a record every one of whose anchors has closed, or which names
+an anchor nobody ever opened: a note still claiming something about the code with
+nothing observing it — the exact state this tool exists to make visible — and the
+owner can act on it three ways. [[runtime-corpus]] has the mechanism.
 
 A store that would not answer does not, and that is why `unreachable` is
 **not a field on `Verdict` at all**. Nor is `never_asked`, which is the

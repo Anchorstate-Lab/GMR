@@ -143,7 +143,7 @@ mod tests {
     use std::time::Duration;
 
     fn version(c: &str) -> ProbeVersion {
-        ProbeVersion::new(c.repeat(64))
+        ProbeVersion::try_new(c.repeat(64)).unwrap()
     }
 
     fn linked(name: &str, extract: Arc<Extract>) -> InProcess {

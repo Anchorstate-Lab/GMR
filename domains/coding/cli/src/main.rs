@@ -9,6 +9,7 @@ mod probes;
 mod prose;
 mod render;
 mod rules;
+mod settings;
 mod shapes;
 mod skill;
 mod stores;

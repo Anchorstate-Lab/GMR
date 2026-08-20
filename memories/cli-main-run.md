@@ -90,9 +90,19 @@ What each of them decides still matters and is unchanged:
   routes; the old reading reached none of them while reporting that
   somebody else's service was unavailable.
 
-`served` keeps the assembled list after building the runtime, because
-`gmr memories` dispatches over the stores that can list — the `Runtime`
-holds providers, not sources, and [[content-discovery]] says why.
+`served` keeps the assembled list after building the runtime for two reasons.
+`gmr memories` dispatches over the stores that can list — the `Runtime` holds
+providers, not sources, and [[content-discovery]] says why. And `stores.names`
+is the one book of names, minted where every source is already in hand and
+handed down from here into every verb that prints a record.
+
+That it is *handed down* rather than constructed per verb is the point. A verb
+that takes `root` and builds a declaring source of its own makes "look the name
+up" a choice at every call site, and skipping it costs nothing: `addressed()` is
+always available, always the right type, compiles, and prints like a name. What
+a reader sees then depends on which verbs happen to hold a `root` rather than on
+anything anybody decided. There is no route by which a verb can mint one. See
+[[cli-notes-source]] for why naming belongs to the address and to this domain.
 
 Registering mem0 means this binary links `reqwest`. That is why
 `gmr-provider` keeps `mem0` off by default and this crate turns it on:

@@ -185,7 +185,7 @@ async fn one(
                         transitions: decl.to_transitions()?,
                     }),
                     _ => Ok(Change::Reterminal {
-                        terminal: rules::terminal(&decl.terminal),
+                        terminal: rules::terminal(&decl.terminal)?,
                     }),
                 })
                 .collect::<Result<_, CliError>>()?;

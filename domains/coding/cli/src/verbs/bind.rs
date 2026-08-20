@@ -14,13 +14,25 @@ pub async fn run(
         return Err(CliError("provide either --anchors or --detach".into()));
     }
     let path = names.of(&reference);
-    let version = rt.current_version(&reference).await?.ok_or_else(|| {
-        CliError(format!(
-            "`{}` has no record `{}`",
-            reference.provider, reference.external_id
-        ))
-    })?;
     let address = crate::memories::addressed(&reference);
+    let version = match detach {
+        false => rt.current_version(&reference).await?.ok_or_else(|| {
+            CliError(format!(
+                "`{}` has no record `{}`",
+                reference.provider, reference.external_id
+            ))
+        })?,
+        true => rt
+            .memory()
+            .binding_of(&reference)
+            .await?
+            .map(|record| record.bound_version)
+            .ok_or_else(|| {
+                CliError(format!(
+                    "`{address}` is not bound to anything — nothing to detach"
+                ))
+            })?,
+    };
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
     rt.bind(reference, anchors.clone(), version.clone()).await?;

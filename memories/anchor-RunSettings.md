@@ -4,10 +4,13 @@ about: crates/gmr-core/src/anchor.rs#RunSettings
 
 # How it runs, not what it judges
 
-`RunSettings` is deliberately **not** inside `Anchor`. Neither field is an input
-to the transition function, and neither changes any conclusion drawn from the
-log: `retain` only decides how densely the same state gets written down,
-`cadence_secs` only decides how often we go and look.
+`RunSettings` is deliberately **not** inside `Anchor`. No field here is an input
+to the transition function, and none changes any conclusion drawn from the log:
+`retain` only decides how densely the same state gets written down,
+`cadence_secs` only decides how often we go and look, and `budget_ms` only
+decides how long one probe call may take before it refuses — a budget may
+produce no answer and must never produce a shorter one, which is what keeps it
+out of the earned version (see [[probe-budget]]).
 
 Sealing them together with the criteria would mean that changing something no
 judgment depends on still demands a sealed rationale. So they live in mutable
@@ -24,3 +27,9 @@ sealing. That is the only entry test this struct has.
 `None` does not mean "do not observe". It means "use the deployment's default
 pace". Pace is a throttle, not a criterion — so it may be absent, may be changed
 at any time, and needs no sealed rationale.
+
+That reading is also why a *declaration* of these fields has to be able to stay
+silent about one without asserting anything about it. Nothing here can be
+reconstructed from a default, so a declaration that fabricates the fields it
+cannot express destroys what it was never told — see [[cli-settings-declared]]
+for what that cost and how the domain says it now.

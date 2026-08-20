@@ -50,11 +50,11 @@ fn observation(pairs: &[(&str, serde_json::Value)]) -> Observation {
                     .into(),
             ),
         },
-        fact_address: FactAddress::new("b".repeat(64)),
+        fact_address: FactAddress::try_new("b".repeat(64)).unwrap(),
         versions: Versions {
-            declaration: gmr_core::ContentHash::new("d".repeat(64)),
+            declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
             derivation: gmr_core::Derivation {
-                version: ProbeVersion::new("a".repeat(64)),
+                version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
                 verifiability: gmr_core::Verifiability::Closed,
             },
             evaluator: "eval-1".to_owned(),
@@ -138,8 +138,8 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
 
 fn author_entry() -> Entry {
     Entry::Close {
-        context: gmr_core::ContentHash::new("e".repeat(64)),
-        rationale: gmr_core::ContentHash::new("f".repeat(64)),
+        context: gmr_core::ContentHash::try_new("e".repeat(64)).unwrap(),
+        rationale: gmr_core::ContentHash::try_new("f".repeat(64)).unwrap(),
         at: at(20),
     }
 }

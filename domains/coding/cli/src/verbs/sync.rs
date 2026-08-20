@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use gmr::{
-    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Ref, Retain, RunSettings, Runtime, State,
+    Anchor, AnchorKey, AnchorView, OpenRequest, ProbeRef, Ref, RunSettings, Runtime, State,
     Transitions, Version,
 };
 use serde::Deserialize;
@@ -36,10 +36,8 @@ pub struct AnchorDecl {
     pub rules: Vec<String>,
     #[serde(default)]
     pub terminal: Vec<String>,
-    #[serde(default)]
-    pub retain_full: bool,
-    #[serde(default)]
-    pub cadence_secs: Option<u64>,
+    #[serde(flatten)]
+    pub settings: crate::settings::Declared,
 }
 
 impl AnchorDecl {
@@ -47,7 +45,7 @@ impl AnchorDecl {
         rules::probe(
             ctx.catalog.kind_of(&self.probe),
             &self.probe,
-            &self.params.to_string(),
+            self.params.clone(),
         )
     }
 
@@ -76,18 +74,6 @@ impl AnchorDecl {
                 crate::shapes::get(name).map_err(|e| CliError(format!("{}: {e}", self.key)))?,
             )),
             (None, _) => rules::transitions(&self.rules),
-        }
-    }
-
-    fn settings(&self) -> RunSettings {
-        RunSettings {
-            budget_ms: None,
-            retain: if self.retain_full {
-                Retain::Full
-            } else {
-                Retain::Tick
-            },
-            cadence_secs: self.cadence_secs,
         }
     }
 
@@ -165,7 +151,7 @@ pub async fn run(
     let mut resettled = Vec::new();
 
     for decl in merged(&declared, notes) {
-        let key = AnchorKey::new(decl.key.clone());
+        let key = rules::key(&decl.key)?;
         steps.push(Step::Schedule(key.clone()));
         if existing.contains(&key) {
             let view = rt.read(&key).await?;
@@ -179,8 +165,9 @@ pub async fn run(
             {
                 swapped.push(decl.key.clone());
             }
-            if rt.settings_for(&key).await? != decl.settings() {
-                steps.push(Step::Resettle(key, decl.settings()));
+            let running = rt.settings_for(&key).await?;
+            if let Some(next) = decl.settings.overlaid(&running) {
+                steps.push(Step::Resettle(key, next));
                 resettled.push(decl.key.clone());
             }
             continue;
@@ -190,9 +177,9 @@ pub async fn run(
             key,
             probe: decl.to_probe(&ctx)?,
             transitions: decl.to_transitions()?,
-            terminal: rules::terminal(&decl.terminal),
+            terminal: rules::terminal(&decl.terminal)?,
             initial: decl.initial(),
-            settings: decl.settings(),
+            settings: decl.settings.at_open(),
             supersedes: None,
         })));
         opened.push(decl.key.clone());
@@ -439,7 +426,7 @@ pub fn differs(
     if anchor.transitions != decl.to_transitions()? {
         facets.push("rules");
     }
-    if anchor.terminal != rules::terminal(&decl.terminal) {
+    if anchor.terminal != rules::terminal(&decl.terminal)? {
         facets.push("terminal");
     }
     Ok(facets)
@@ -758,5 +745,35 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             .check_contract(&c)
             .unwrap_err();
         assert!(e.to_string().starts_with("k:"), "{e}");
+    }
+
+    #[test]
+    fn a_knob_the_toml_does_not_name_arrives_unsaid_rather_than_defaulted() {
+        let declared: Declared = toml::from_str(
+            r#"
+[[anchor]]
+key = "a"
+probe = "ast-map"
+cadence_secs = 60
+"#,
+        )
+        .unwrap();
+        let said = declared.anchor[0].settings;
+        assert_eq!(said.cadence_secs, Some(60));
+        assert_eq!(
+            (said.retain_full, said.budget_ms),
+            (None, None),
+            "`#[serde(flatten)]` is what carries the three knobs through both TOML and a \
+             note's YAML, and it is the one step that could quietly turn `absent` back into \
+             `false`/`None` — which is the whole difference between overlaying a declaration \
+             and replacing the settings with it"
+        );
+        assert_eq!(
+            said.at_open(),
+            gmr::RunSettings {
+                cadence_secs: Some(60),
+                ..Default::default()
+            }
+        );
     }
 }

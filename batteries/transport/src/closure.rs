@@ -5,7 +5,7 @@ use gmr_core::{ProbeVersion, content_hash_of_bytes};
 pub fn of_path(path: &Path) -> Option<ProbeVersion> {
     let mut acc = Vec::new();
     absorb(path, path, &mut acc)?;
-    Some(ProbeVersion::new(content_hash_of_bytes(&acc).into_inner()))
+    Some(ProbeVersion::of(content_hash_of_bytes(&acc)))
 }
 
 fn absorb(base: &Path, at: &Path, acc: &mut Vec<u8>) -> Option<()> {

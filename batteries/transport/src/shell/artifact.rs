@@ -15,7 +15,7 @@ pub const INSTALL_SCHEMA: &str = "gmr.probe-install.v2";
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct InstallIndex {
     schema: String,
-    installed: BTreeMap<String, String>,
+    installed: BTreeMap<ProbeName, ProbeVersion>,
 }
 
 pub struct Artifacts {
@@ -71,9 +71,7 @@ impl Artifacts {
 
     pub fn install(&self, name: &ProbeName, built: &ProbeVersion) -> Result<(), ArtifactError> {
         let mut index = self.index()?;
-        index
-            .installed
-            .insert(name.as_str().to_owned(), built.as_str().to_owned());
+        index.installed.insert(name.clone(), built.clone());
         std::fs::create_dir_all(&self.root)
             .map_err(|e| bad(format!("cannot create {:?}: {e}", self.root)))?;
         let body = serde_json::to_vec_pretty(&index).expect("install index must serialize");
@@ -82,20 +80,11 @@ impl Artifacts {
     }
 
     pub fn installed(&self, name: &ProbeName) -> Result<Option<ProbeVersion>, ArtifactError> {
-        Ok(self
-            .index()?
-            .installed
-            .get(name.as_str())
-            .map(|v| ProbeVersion::new(v.clone())))
+        Ok(self.index()?.installed.get(name).cloned())
     }
 
     pub fn names(&self) -> Result<Vec<ProbeName>, ArtifactError> {
-        Ok(self
-            .index()?
-            .installed
-            .into_keys()
-            .map(ProbeName::new)
-            .collect())
+        Ok(self.index()?.installed.into_keys().collect())
     }
 
     pub fn resolve(&self, name: &ProbeName) -> Result<Resolved, ArtifactError> {

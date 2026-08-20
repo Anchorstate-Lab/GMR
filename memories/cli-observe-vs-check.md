@@ -26,6 +26,13 @@ moved on axes nobody asked about — `gmr status` shows them." That distinction 
 entire reason `check` computes `moved`/`quiet` separately instead of just counting
 transitions.
 
+That exit-0 branch is real; the sentence quoting it is not always printed.
+`check`'s closing `match (handed.len(), quiet)` makes the two arms exclusive,
+so when a memory was handed back *and* something moved unwatched, only the
+first line prints and `quiet` is dropped from the human output. `--json` still
+carries it as `moved_unwatched`, which is the reliable reading. The exit code —
+the thing this memory is about — is unaffected either way.
+
 So `observe`'s signal is "did the state machine move at all" (every axis, every
 anchor, subscribed or not); `check`'s is "does a human need to look" (filtered through
 what memories actually watch). A script polling `gmr observe`'s exit code and a script

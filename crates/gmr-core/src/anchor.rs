@@ -32,11 +32,11 @@ fn check_status(s: &str) -> Result<(), String> {
 }
 
 string_newtype! {
-    AnchorKey, check_key
+    admitted AnchorKey, check_key
 }
 
 string_newtype! {
-    StatusId, check_status
+    admitted StatusId, check_status
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

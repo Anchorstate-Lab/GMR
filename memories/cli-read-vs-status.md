@@ -41,13 +41,18 @@ Does `status --json` grow to carry `attempts`/`sighting`/`derivation`, or any ot
 (closed anchors included), the schema argument above is gone and folding `read` into
 `status --key` becomes a real option instead of a loss of capability.
 
-## Both now take the repository root, to name memories the way their author does
+## Neither one builds the book it names memories from
 
-`read` prints the memories bound to an anchor, and it used to print each
-one's address. It takes `root` so it can ask the declaring source what that
-record is called — a name where there is one, the address where there is
-not. `status` already had `root` for its own reasons.
+Both print the memories bound to an anchor, by name. The address is not a name —
+it reads as one only for a store that happens to address records by their path,
+and a repository whose notes are files is that store, which is why printing the
+address instead reads as fine right up until a second store appears. See
+[[cli-notes-source]].
 
-The address is not a name. It reads as one only for a store that happens to
-address records by their path, and this repository is that store, which is
-exactly why nothing noticed. See [[cli-notes-source]].
+`read` takes a `Names` handed down from assembly; `status` keeps `root` for its
+own reasons — reading a note's body to decide `unwritten`, and loading the
+catalog for the criteria audit — and not for naming. See [[cli-main-run]] for
+where the book comes from and why it is not a thing a verb may mint.
+
+`read --json` still prints addresses, not names: [[cli-notes-source]] draws that
+line, and an agent handing a string back to `gmr bind` needs the address.

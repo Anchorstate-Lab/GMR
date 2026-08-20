@@ -22,19 +22,31 @@ pub fn addressed(reference: &Ref) -> String {
     format!("{}:{}", reference.provider, reference.external_id)
 }
 
+fn addressed_to(provider: &str, external_id: &str) -> Result<Ref, CliError> {
+    let named = |what: &str, e: gmr::core::NewtypeError| {
+        CliError(format!(
+            "`{provider}:{external_id}` names no record: its {what} {e}"
+        ))
+    };
+    Ok(Ref {
+        provider: gmr::ProviderId::try_new(provider).map_err(|e| named("provider", e))?,
+        external_id: gmr::ExternalId::try_new(external_id).map_err(|e| named("id", e))?,
+    })
+}
+
 pub fn located(text: &str, provider: Option<&str>, known: &[&str]) -> Result<Ref, CliError> {
     let carried = text
         .split_once(':')
         .filter(|(named, rest)| known.contains(named) && !rest.is_empty());
     match (carried, provider) {
-        (Some((named, rest)), None) => Ok(Ref::new(named, rest)),
-        (Some((named, rest)), Some(want)) if want == named => Ok(Ref::new(named, rest)),
+        (Some((named, rest)), None) => addressed_to(named, rest),
+        (Some((named, rest)), Some(want)) if want == named => addressed_to(named, rest),
         (Some((named, _)), Some(want)) => Err(CliError(format!(
             "`{text}` is addressed to `{named}` and --provider says `{want}`. One of them is \
              not what you meant, and guessing which would bind this to a store you did not name"
         ))),
-        (None, Some(want)) => Ok(Ref::new(want, text)),
-        (None, None) => Ok(Ref::new(RESOLVED_THROUGH, text)),
+        (None, Some(want)) => addressed_to(want, text),
+        (None, None) => addressed_to(RESOLVED_THROUGH, text),
     }
 }
 
@@ -105,6 +117,8 @@ struct Spec {
     rules: Vec<String>,
     #[serde(default, deserialize_with = "stated_or_empty")]
     terminal: Vec<String>,
+    #[serde(flatten)]
+    settings: crate::settings::Declared,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -146,13 +160,12 @@ fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<Anc
     Ok(AnchorDecl {
         key: about.to_owned(),
         probe: routed.probe,
-        params: json!({ "root": "." }),
+        params: routed.params,
         position: Some(routed.position),
         shape: Some(routed.shape),
         rules: Vec::new(),
         terminal: Vec::new(),
-        retain_full: false,
-        cadence_secs: None,
+        settings: crate::settings::Declared::default(),
     })
 }
 
@@ -160,13 +173,12 @@ fn from_spec(spec: Spec) -> AnchorDecl {
     AnchorDecl {
         key: spec.key,
         probe: spec.probe,
-        params: spec.params.unwrap_or_else(|| json!({ "root": "." })),
+        params: spec.params.unwrap_or_else(crate::coord::whole_repository),
         position: spec.position,
         shape: spec.shape,
         rules: spec.rules,
         terminal: spec.terminal,
-        retain_full: false,
-        cadence_secs: None,
+        settings: spec.settings,
     }
 }
 
@@ -492,6 +504,17 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     }
 
     #[test]
+    fn an_address_with_no_id_behind_it_is_refused_rather_than_bound() {
+        let e = located("", None, &STORES).unwrap_err();
+        assert!(
+            e.0.contains("names no record"),
+            "an empty id would bind an anchor to a record no provider can ever fetch, and \
+             `read` would report it as `gone` forever with nothing to restore: {}",
+            e.0
+        );
+    }
+
+    #[test]
     fn a_record_no_source_names_still_says_which_store_it_is_in() {
         let (d, _) = world(&[]);
         let names = Names::over(vec![std::sync::Arc::new(declaring(d.path()))]);
@@ -812,6 +835,40 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         assert!(
             codes(d.path(), &r).is_empty(),
             "hand-written rules are a reason"
+        );
+    }
+
+    #[test]
+    fn a_note_can_say_every_knob_the_toml_can_and_still_say_none_of_them() {
+        let (d, c) = world(&[
+            ("src/a.rs", "fn a() {}"),
+            (
+                "memories/tuned.md",
+                "---\nanchors:\n  - key: tuned\n    probe: ast-map\n    \
+                 position: { file: src/a.rs }\n    shape: roster\n    budget_ms: 1500\n---\n",
+            ),
+            ("memories/plain.md", "---\nabout: src/a.rs\n---\n"),
+        ]);
+        let scanned = scan(d.path(), &c).unwrap();
+        let said = |note: &str| {
+            scanned
+                .notes
+                .iter()
+                .find(|n| n.reference.external_id.as_str().contains(note))
+                .and_then(|n| n.wants.first())
+                .map(|w| match w {
+                    Want::Declared(decl) => decl.settings,
+                    Want::Existing(_) => panic!("both notes declare"),
+                })
+                .unwrap()
+        };
+        assert_eq!(said("tuned").budget_ms, Some(1500));
+        assert_eq!(
+            said("plain"),
+            crate::settings::Declared::default(),
+            "`about:` is one line and can only ever mean the coordinate. It has to arrive \
+             saying nothing about how the anchor runs — the alternative is a shorthand that \
+             silently resets knobs somebody set on purpose, every time sync runs"
         );
     }
 }

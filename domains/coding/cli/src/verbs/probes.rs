@@ -22,16 +22,41 @@ pub fn build(root: &Path, json: bool) -> Result<i32, CliError> {
         println!("{}", serde_json::json!({ "installed": rows }));
     } else {
         for i in &built {
-            println!(
-                "{}  {} → {}",
-                i.name,
-                &i.recipe.as_str()[..12],
-                &i.artifact.as_str()[..12]
-            );
+            println!("{}  {} → {}", i.name, i.recipe.short(), i.artifact.short());
         }
         println!("{} probes installed", built.len());
     }
     Ok(0)
+}
+
+#[derive(serde::Serialize)]
+struct ObsRow {
+    schema: String,
+    at: Vec<String>,
+    facts: Vec<String>,
+}
+
+impl ObsRow {
+    fn of(schema: &str, at: &[String], facts: &[String]) -> Self {
+        Self {
+            schema: schema.to_owned(),
+            at: at.to_vec(),
+            facts: facts.to_vec(),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct Row {
+    probe: String,
+    kind: &'static str,
+    version: Option<gmr::ProbeVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    address: Option<gmr::ProbeVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run: Option<String>,
+    handles: serde_json::Value,
+    obs: ObsRow,
 }
 
 pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
@@ -41,38 +66,42 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
     let mut rows = Vec::new();
     let builtin = coding_extract::registry_uncached();
     for v in coding_extract::vocabularies() {
-        rows.push(serde_json::json!({
-            "probe": v.name,
-            "kind": "builtin",
-            "version": builtin[&gmr::ProbeName::new(v.name)].version,
-            "handles": reads_json(v.reads),
-            "obs": { "schema": v.schema, "at": v.at, "facts": v.facts },
-        }));
+        rows.push(Row {
+            probe: v.name.to_owned(),
+            kind: "builtin",
+            version: Some(builtin[&gmr::ProbeName::new(v.name)].version.clone()),
+            address: None,
+            run: None,
+            handles: reads_json(v.reads),
+            obs: ObsRow::of(v.schema, &owned(v.at), &owned(v.facts)),
+        });
     }
     let catalog = Catalog::load(root)?;
     for (name, decl) in catalog.scripts() {
-        rows.push(serde_json::json!({
-            "probe": name,
-            "kind": "script",
-            "version": Script::new(root, catalog.script_paths())
+        rows.push(Row {
+            probe: name.to_owned(),
+            kind: "script",
+            version: Script::new(root, catalog.script_paths())
                 .resolve(&gmr::ProbeName::new(name))
-                .map(|d| d.version.as_str().to_owned()),
-            "run": decl.run,
-            "handles": decl.handles,
-            "obs": { "schema": decl.obs.schema, "at": decl.obs.at, "facts": decl.obs.facts },
-        }));
+                .map(|d| d.version),
+            address: None,
+            run: Some(decl.run.clone()),
+            handles: serde_json::json!(decl.handles),
+            obs: ObsRow::of(&decl.obs.schema, &decl.obs.at, &decl.obs.facts),
+        });
     }
     let shell = gmr_transport::shell::Shell::new(root, store_dir(root));
     for (name, recipe) in recipes.iter() {
         let probe = gmr::ProbeName::new(name);
-        rows.push(serde_json::json!({
-            "probe": name,
-            "kind": "shell",
-            "version": shell.resolve(&probe).map(|d| d.version.as_str().to_owned()),
-            "address": artifacts.installed(&probe).map_err(|e| CliError(e.0))?,
-            "handles": recipe.handles,
-            "obs": { "schema": recipe.obs.schema, "at": recipe.obs.at, "facts": recipe.obs.facts },
-        }));
+        rows.push(Row {
+            probe: name.to_owned(),
+            kind: "shell",
+            version: shell.resolve(&probe).map(|d| d.version),
+            address: artifacts.installed(&probe).map_err(|e| CliError(e.0))?,
+            run: None,
+            handles: serde_json::json!(recipe.handles),
+            obs: ObsRow::of(&recipe.obs.schema, &recipe.obs.at, &recipe.obs.facts),
+        });
     }
 
     if json {
@@ -81,22 +110,22 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
     }
 
     for row in &rows {
-        let version = match row["version"].as_str() {
-            Some(v) => v[..12].to_owned(),
+        let version = match &row.version {
+            Some(v) => v.short().to_owned(),
             None => "not installed here".to_owned(),
         };
-        println!(
-            "{}  {}  {version}",
-            row["probe"].as_str().unwrap_or(""),
-            row["kind"].as_str().unwrap_or("")
-        );
+        println!("{}  {}  {version}", row.probe, row.kind);
         if verbose {
-            println!("    obs {}", row["obs"]["schema"].as_str().unwrap_or(""));
-            println!("    at    {}", join(&row["obs"]["at"]));
-            println!("    facts {}", join(&row["obs"]["facts"]));
+            println!("    obs {}", row.obs.schema);
+            println!("    at    {}", row.obs.at.join(" · "));
+            println!("    facts {}", row.obs.facts.join(" · "));
         }
     }
     Ok(0)
+}
+
+fn owned(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_owned()).collect()
 }
 
 fn reads_json(reads: coding_extract::Reads) -> serde_json::Value {
@@ -104,17 +133,6 @@ fn reads_json(reads: coding_extract::Reads) -> serde_json::Value {
         coding_extract::Reads::Extensions(exts) => serde_json::json!(exts),
         coding_extract::Reads::Anything => serde_json::json!("*"),
     }
-}
-
-fn join(v: &serde_json::Value) -> String {
-    v.as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x.as_str())
-                .collect::<Vec<_>>()
-                .join(" · ")
-        })
-        .unwrap_or_default()
 }
 
 pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
@@ -142,7 +160,7 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
             &store_dir(root).join(artifact.as_str()),
             &probes.join(artifact.as_str()),
         )?;
-        shipped.push((name.to_owned(), artifact.as_str().to_owned()));
+        shipped.push((probe, artifact));
     }
 
     std::fs::copy(
@@ -150,7 +168,12 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
         probes.join(RECIPES_FILE),
     )
     .map_err(|e| CliError(format!("cannot copy {RECIPES_FILE}: {e}")))?;
-    write_install_index(&probes, &shipped)?;
+    let bundled = Artifacts::new(&probes);
+    for (probe, artifact) in &shipped {
+        bundled
+            .install(probe, artifact)
+            .map_err(|e| CliError(format!("cannot record `{probe}` in the bundle: {}", e.0)))?;
+    }
 
     if json {
         println!(
@@ -158,28 +181,12 @@ pub fn bundle(root: &Path, out: &Path, json: bool) -> Result<i32, CliError> {
             serde_json::json!({ "out": out.to_string_lossy(), "probes": shipped.len() })
         );
     } else {
-        for (name, artifact) in &shipped {
-            println!("{name}  {}", &artifact[..12]);
+        for (probe, artifact) in &shipped {
+            println!("{probe}  {}", artifact.short());
         }
         println!("{} probes bundled into {}", shipped.len(), out.display());
     }
     Ok(0)
-}
-
-fn write_install_index(probes: &Path, shipped: &[(String, String)]) -> Result<(), CliError> {
-    let index: serde_json::Map<String, serde_json::Value> = shipped
-        .iter()
-        .map(|(name, artifact)| (name.clone(), serde_json::Value::String(artifact.clone())))
-        .collect();
-    let body = serde_json::json!({
-        "schema": "gmr.probe-install.v2",
-        "installed": index,
-    });
-    std::fs::write(
-        probes.join("installed.json"),
-        serde_json::to_vec_pretty(&body).expect("install index must serialize"),
-    )
-    .map_err(|e| CliError(format!("cannot write the install index: {e}")))
 }
 
 fn copy_dir(from: &Path, to: &Path) -> Result<(), CliError> {

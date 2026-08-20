@@ -1,13 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
-use gmr_core::{AnchorKey, Change, ChangeKind, ContentHash, Entry, Seq, State, fold, scan};
+use gmr_core::{AnchorKey, Change, ChangeKind, ContentHash, Entry, Ref, Seq, State, scan};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
+use crate::read::{AnchorView, Footing};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AnchorHealth {
@@ -27,6 +28,37 @@ pub struct CorpusHealth {
     pub active_anchors: usize,
     pub memories_per_anchor: BTreeMap<String, usize>,
     pub barren_anchors: Vec<AnchorKey>,
+    pub unsupervised: Vec<Ref>,
+    pub footings: BTreeMap<Footing, Vec<Ref>>,
+}
+
+impl CorpusHealth {
+    pub fn on(&self, footing: Footing) -> &[Ref] {
+        self.footings.get(&footing).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn grounded_records(&self) -> usize {
+        self.footings.values().map(Vec::len).sum()
+    }
+}
+
+pub struct Corpus {
+    views: Vec<AnchorView>,
+    health: CorpusHealth,
+}
+
+impl Corpus {
+    pub fn views(&self) -> &[AnchorView] {
+        &self.views
+    }
+
+    pub fn live(&self) -> Vec<&AnchorView> {
+        self.views.iter().filter(|v| !v.closed).collect()
+    }
+
+    pub fn health(&self) -> &CorpusHealth {
+        &self.health
+    }
 }
 
 const RECENT: usize = 50;
@@ -36,8 +68,10 @@ impl Runtime {
         health(&self.log, &self.memory, key).await
     }
 
-    pub async fn corpus_health(&self) -> Result<CorpusHealth, RuntimeError> {
-        corpus_health(&self.log, &self.memory).await
+    pub async fn corpus(&self) -> Result<Corpus, RuntimeError> {
+        let views = self.read_all().await?;
+        let health = corpus_health(&self.memory, &views).await?;
+        Ok(Corpus { views, health })
     }
 }
 
@@ -113,32 +147,51 @@ async fn health(
     })
 }
 
-async fn corpus_health(log: &AnchorLog, memory: &MemoryLens) -> Result<CorpusHealth, RuntimeError> {
+async fn corpus_health(
+    memory: &MemoryLens,
+    views: &[AnchorView],
+) -> Result<CorpusHealth, RuntimeError> {
     let bindings = memory.all().await?;
-    let anchors = log.anchors().await?;
+    let open: BTreeSet<&AnchorKey> = views.iter().filter(|v| !v.closed).map(|v| &v.key).collect();
 
     let mut per_anchor: BTreeMap<String, usize> = BTreeMap::new();
-    let mut active = 0;
     let mut barren = Vec::new();
-    for key in &anchors {
+    for view in views {
         let n = bindings
             .iter()
-            .filter(|r| r.binding.anchors.contains(key))
+            .filter(|r| r.binding.anchors.contains(&view.key))
             .count();
-        per_anchor.insert(key.to_string(), n);
-        let entries = log.entries(key, 0).await?;
-        if fold(&entries).is_some_and(|s| !s.closed) {
-            active += 1;
-            if n == 0 {
-                barren.push(key.clone());
-            }
+        per_anchor.insert(view.key.to_string(), n);
+        if !view.closed && n == 0 {
+            barren.push(view.key.clone());
         }
+    }
+
+    let unsupervised = bindings
+        .iter()
+        .filter(|r| !r.binding.anchors.is_empty())
+        .filter(|r| !r.binding.anchors.iter().any(|k| open.contains(k)))
+        .map(|r| r.binding.reference.clone())
+        .collect();
+
+    let mut footings: BTreeMap<Footing, Vec<Ref>> = BTreeMap::new();
+    for m in views.iter().flat_map(|v| &v.memories) {
+        footings
+            .entry(m.footing())
+            .or_default()
+            .push(m.reference.clone());
+    }
+    for refs in footings.values_mut() {
+        refs.sort();
+        refs.dedup();
     }
 
     Ok(CorpusHealth {
         bound_refs: bindings.len(),
-        active_anchors: active,
+        active_anchors: open.len(),
         memories_per_anchor: per_anchor,
         barren_anchors: barren,
+        unsupervised,
+        footings,
     })
 }

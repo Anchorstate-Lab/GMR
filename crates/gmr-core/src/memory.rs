@@ -14,15 +14,15 @@ fn check_nonempty_128(s: &str) -> Result<(), String> {
 }
 
 string_newtype! {
-    ProviderId, check_nonempty_128
+    admitted ProviderId, check_nonempty_128
 }
 
 string_newtype! {
-    ExternalId, check_nonempty_128
+    admitted ExternalId, check_nonempty_128
 }
 
 string_newtype! {
-    Version, check_nonempty_128
+    admitted Version, check_nonempty_128
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

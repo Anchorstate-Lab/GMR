@@ -13,6 +13,16 @@ types in. Accepting a version here would let upgrading the tool (or a
 probe's implementation) look like the user changed their mind about which
 probe to use, when nothing about their declared intent changed at all.
 
+## Parsing the params is a separate step from naming the probe
+
+`probe` takes an already-parsed `serde_json::Value`; `rules::params` is what
+turns text into one. They are separate because the value does not always come
+from text: a routed coordinate answers with its own params (see
+[[cli-settings-declared]]), and a declaration already holds one — neither should
+have to round-trip through a string to get here. An `Option<String>` on the
+command line is what keeps "the user said nothing" distinguishable from "the user
+said `{}`".
+
 ## When this changes, ask
 
 Does the CLI surface gain a way to pin a specific probe version from the

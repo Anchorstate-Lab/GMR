@@ -17,7 +17,7 @@ fn check_kind(s: &str) -> Result<(), String> {
 }
 
 string_newtype! {
-    Kind, check_kind
+    admitted Kind, check_kind
 }
 
 fn check_probe_name(s: &str) -> Result<(), String> {
@@ -37,15 +37,27 @@ fn check_probe_name(s: &str) -> Result<(), String> {
 }
 
 string_newtype! {
-    ProbeName, check_probe_name
+    admitted ProbeName, check_probe_name
 }
 
 string_newtype! {
-    ProbeVersion, crate::addr::check_sha256_hex
+    minted ProbeVersion, crate::addr::check_sha256_hex
+}
+
+impl ProbeVersion {
+    pub fn of(hash: ContentHash) -> Self {
+        Self::new(hash.into_inner())
+    }
 }
 
 string_newtype! {
-    FactAddress, crate::addr::check_sha256_hex
+    minted FactAddress, crate::addr::check_sha256_hex
+}
+
+impl FactAddress {
+    pub fn of(hash: ContentHash) -> Self {
+        Self::new(hash.into_inner())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,7 +130,7 @@ impl Outcome {
             "found": matches!(self, Self::Found { .. }),
             "facts": facts,
         }))?;
-        Ok(FactAddress::new(h.into_inner()))
+        Ok(FactAddress::of(h))
     }
 }
 
@@ -128,7 +140,7 @@ mod tests {
     use serde_json::json;
 
     fn version(sha: &str) -> ProbeVersion {
-        ProbeVersion::new(sha.repeat(64))
+        ProbeVersion::try_new(sha.repeat(64)).expect("the fixture spells a hash")
     }
 
     #[test]

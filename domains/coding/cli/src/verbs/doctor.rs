@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, Runtime};
+use gmr::{AnchorKey, Footing, Runtime};
 
 use crate::error::CliError;
 use crate::probes::Catalog;
@@ -27,6 +27,7 @@ struct Verdict {
     gone: bool,
     no_provider: bool,
     skill_stale: bool,
+    unsupervised: bool,
 }
 
 impl Verdict {
@@ -38,17 +39,8 @@ impl Verdict {
             || self.gone
             || self.no_provider
             || self.skill_stale
+            || self.unsupervised
     }
-}
-
-#[derive(Default)]
-struct Grounds {
-    gone: Vec<gmr::Ref>,
-    no_provider: Vec<gmr::Ref>,
-    unreachable: Vec<gmr::Ref>,
-    never_asked: Vec<gmr::Ref>,
-    no_before: Vec<gmr::Ref>,
-    bound: usize,
 }
 
 fn addresses(refs: &[gmr::Ref]) -> Vec<String> {
@@ -60,41 +52,6 @@ fn spelled(refs: &[gmr::Ref], names: &crate::memories::Names) -> String {
         .map(|r| names.of(r))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn grounds(live: &[&gmr::AnchorView]) -> Grounds {
-    let mut out = Grounds::default();
-    for m in live.iter().flat_map(|v| &v.memories) {
-        let id = m.reference.clone();
-        out.bound += 1;
-        match &m.grounding {
-            gmr::Grounding::Gone => out.gone.push(id),
-            gmr::Grounding::NoProvider { .. } => out.no_provider.push(id),
-            gmr::Grounding::Unreachable { code, .. }
-                if *code == gmr::ContentErrorCode::BudgetSpent =>
-            {
-                out.never_asked.push(id);
-            }
-            gmr::Grounding::Unreachable { .. } => out.unreachable.push(id),
-            gmr::Grounding::Rewritten { before, .. }
-                if !matches!(before, gmr::Before::Retrieved { .. }) =>
-            {
-                out.no_before.push(id);
-            }
-            _ => {}
-        }
-    }
-    for list in [
-        &mut out.gone,
-        &mut out.no_provider,
-        &mut out.unreachable,
-        &mut out.never_asked,
-        &mut out.no_before,
-    ] {
-        list.sort();
-        list.dedup();
-    }
-    out
 }
 
 pub fn undeclared(
@@ -116,8 +73,10 @@ pub async fn run(
     cache_fault: Option<&str>,
     json: bool,
 ) -> Result<i32, CliError> {
-    let views = rt.read_all().await?;
-    let live: Vec<_> = views.iter().filter(|v| !v.closed).collect();
+    let corpus = rt.corpus().await?;
+    let views = corpus.views();
+    let live = corpus.live();
+    let ground = corpus.health();
 
     let unseen: Vec<&str> = live
         .iter()
@@ -129,10 +88,8 @@ pub async fn run(
         .filter(|v| v.sighting == gmr::Sighting::Absent)
         .map(|v| v.key.as_str())
         .collect();
-    let corpus = rt.corpus_health().await?;
-    let barren: Vec<&str> = corpus.barren_anchors.iter().map(|k| k.as_str()).collect();
+    let barren: Vec<&str> = ground.barren_anchors.iter().map(|k| k.as_str()).collect();
     let stranded = unresolvable(rt, &live);
-    let ground = grounds(&live);
     let skill_stale = crate::skill::stale(root);
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
@@ -159,9 +116,10 @@ pub async fn run(
             provider_unavailable: !provider_warnings.is_empty(),
             breaking_notes: !breaking.is_empty(),
             undeclared: !undeclared.is_empty(),
-            gone: !ground.gone.is_empty(),
-            no_provider: !ground.no_provider.is_empty(),
+            gone: !ground.on(Footing::Gone).is_empty(),
+            no_provider: !ground.on(Footing::NoProvider).is_empty(),
             skill_stale: !skill_stale.is_empty(),
+            unsupervised: !ground.unsupervised.is_empty(),
         }
         .theirs_to_fix(),
     );
@@ -177,10 +135,13 @@ pub async fn run(
                 "anchors": views.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
                 "stranded": stranded, "undeclared": undeclared,
-                "gone": addresses(&ground.gone), "no_provider": addresses(&ground.no_provider),
-                "unreachable": addresses(&ground.unreachable),
-                "never_asked": addresses(&ground.never_asked),
-                "bound": ground.bound, "no_before": addresses(&ground.no_before),
+                "gone": addresses(ground.on(Footing::Gone)),
+                "no_provider": addresses(ground.on(Footing::NoProvider)),
+                "unreachable": addresses(ground.on(Footing::Unreachable)),
+                "never_asked": addresses(ground.on(Footing::NeverAsked)),
+                "bound": ground.grounded_records(),
+                "no_before": addresses(ground.on(Footing::NoBefore)),
+                "unsupervised": addresses(&ground.unsupervised),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
@@ -241,35 +202,41 @@ pub async fn run(
             stranded.join(", ")
         );
     }
-    if !ground.gone.is_empty() {
+    if !ground.unsupervised.is_empty() {
+        println!(
+            "unsupervised {}\n             <- every anchor these are bound to has finished, or was never opened. The record still claims something about the code and nothing observes it any more — which is the state this tool exists to make visible. Supersede the anchor into a new generation, point the note somewhere still watched, or unbind it",
+            spelled(&ground.unsupervised, names)
+        );
+    }
+    if !ground.on(Footing::Gone).is_empty() {
         println!(
             "gone      {}\n          <- the provider says these records no longer exist. Restore them or detach the binding; until then these anchors are watched on behalf of nothing",
-            spelled(&ground.gone, names)
+            spelled(ground.on(Footing::Gone), names)
         );
     }
-    if !ground.no_provider.is_empty() {
+    if !ground.on(Footing::NoProvider).is_empty() {
         println!(
             "no provider {}\n            <- bound through a provider this binary does not have. Rebuild with that feature, or the binding cannot be read here at all",
-            spelled(&ground.no_provider, names)
+            spelled(ground.on(Footing::NoProvider), names)
         );
     }
-    if !ground.unreachable.is_empty() {
+    if !ground.on(Footing::Unreachable).is_empty() {
         println!(
             "unreachable {} record(s) could not be reached this run\n            <- somebody else's service, not something to fix here. Reported, never counted against the exit code",
-            ground.unreachable.len()
+            ground.on(Footing::Unreachable).len()
         );
     }
-    if !ground.never_asked.is_empty() {
+    if !ground.on(Footing::NeverAsked).is_empty() {
         println!(
             "unasked   {} of {} bound record(s) were never asked about — the total content budget ran out first\n          <- what is printed above is that partial view, not the whole repository. Raise --content-total-ms to see the rest",
-            ground.never_asked.len(),
-            ground.bound
+            ground.on(Footing::NeverAsked).len(),
+            ground.grounded_records()
         );
     }
-    if !ground.no_before.is_empty() {
+    if !ground.on(Footing::NoBefore).is_empty() {
         println!(
             "no before {} rewritten record(s) cannot show what they said at binding time\n          <- the provider keeps no history, or did not keep that version. You are still told they moved; you just have to re-read the whole thing instead of a diff",
-            ground.no_before.len()
+            ground.on(Footing::NoBefore).len()
         );
     }
     for s in &skill_stale {
@@ -311,7 +278,7 @@ mod tests {
 
     #[test]
     fn every_condition_this_repositorys_owner_can_act_on_turns_it_red() {
-        let each: [fn(&mut Verdict); 7] = [
+        let each: [fn(&mut Verdict); 8] = [
             |v| v.stranded = true,
             |v| v.provider_unavailable = true,
             |v| v.breaking_notes = true,
@@ -319,6 +286,7 @@ mod tests {
             |v| v.gone = true,
             |v| v.no_provider = true,
             |v| v.skill_stale = true,
+            |v| v.unsupervised = true,
         ];
         for set in each {
             let mut v = Verdict::default();
@@ -331,7 +299,7 @@ mod tests {
     fn a_store_that_would_not_answer_is_not_among_them() {
         assert_eq!(
             std::mem::size_of::<Verdict>(),
-            7,
+            8,
             "Verdict is one bool per condition that makes this run red, and a store being \
              unreachable is deliberately not one of them: nobody holding this repository can \
              fix somebody else's service, and a build that fails on it fails for a reason its \

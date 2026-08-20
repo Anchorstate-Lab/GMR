@@ -126,11 +126,7 @@ pub(crate) async fn swapped(
         if was.version != now.version {
             out.push((
                 key.clone(),
-                format!(
-                    "{} -> {}",
-                    &was.version.as_str()[..12],
-                    &now.version.as_str()[..12]
-                ),
+                format!("{} -> {}", was.version.short(), now.version.short()),
             ));
         }
     }
@@ -140,11 +136,11 @@ pub(crate) async fn swapped(
 pub(crate) fn sealed(context: &ContentHash, rationale: &ContentHash) {
     println!(
         "  context   {} (captured by substrate, cannot be forged)",
-        &context.as_str()[..12]
+        context.short()
     );
     println!(
         "  rationale {} (written by you; substrate only preserves tamper evidence)",
-        &rationale.as_str()[..12]
+        rationale.short()
     );
 }
 

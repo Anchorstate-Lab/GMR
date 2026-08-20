@@ -152,7 +152,8 @@ fn bind(cache: Arc<Cache>) -> BTreeMap<ProbeName, Registered> {
             (
                 ProbeName::new(v.name),
                 Registered {
-                    version: ProbeVersion::new(*version),
+                    version: ProbeVersion::try_new(*version)
+                        .expect("build.rs earns every version as a sha256 of its closure"),
                     extract: Arc::new(move |reach: &Reach| {
                         probe(
                             &root_of(&reach.cwd, &reach.params),

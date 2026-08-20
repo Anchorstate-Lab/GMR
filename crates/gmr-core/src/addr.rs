@@ -34,20 +34,8 @@ pub fn check_sha256_hex(s: &str) -> Result<(), String> {
 
 #[macro_export]
 macro_rules! string_newtype {
-    ($(#[$doc:meta])* $name:ident, $validate:expr) => {
-        $(#[$doc])*
-        #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash,
-            ::serde::Serialize, ::serde::Deserialize,
-        )]
-        #[serde(transparent)]
-        pub struct $name(String);
-
+    (@shared $name:ident, $validate:expr) => {
         impl $name {
-            pub fn new(value: impl Into<String>) -> Self {
-                Self(value.into())
-            }
-
             pub fn try_new(value: impl Into<String>) -> Result<Self, $crate::addr::NewtypeError> {
                 let s = value.into();
                 let check: fn(&str) -> Result<(), String> = $validate;
@@ -86,12 +74,63 @@ macro_rules! string_newtype {
             }
         }
     };
+
+    (admitted $(#[$doc:meta])* $name:ident, $validate:expr) => {
+        $(#[$doc])*
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash,
+            ::serde::Serialize, ::serde::Deserialize,
+        )]
+        #[serde(transparent)]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+        }
+
+        $crate::string_newtype!(@shared $name, $validate);
+    };
+
+    (minted $(#[$doc:meta])* $name:ident, $validate:expr) => {
+        $(#[$doc])*
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, ::serde::Serialize,
+        )]
+        #[serde(transparent)]
+        pub struct $name(String);
+
+        impl<'de> ::serde::Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: ::serde::Deserializer<'de>,
+            {
+                let s = <String as ::serde::Deserialize>::deserialize(deserializer)?;
+                Self::try_new(s).map_err(::serde::de::Error::custom)
+            }
+        }
+
+        impl $name {
+            pub(crate) fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+
+            pub fn short(&self) -> &str {
+                &self.0[..$crate::addr::SHORT]
+            }
+        }
+
+        $crate::string_newtype!(@shared $name, $validate);
+    };
 }
+
+pub const SHORT: usize = 12;
 
 const MAX_CANONICAL_DEPTH: usize = 1024;
 
 string_newtype! {
-    ContentHash, check_sha256_hex
+    minted ContentHash, check_sha256_hex
 }
 
 pub fn canonicalize(value: &Value) -> Result<Vec<u8>, CanonicalizeError> {
@@ -371,6 +410,50 @@ mod tests {
         assert_eq!(
             content_hash_of(&value).unwrap().as_str(),
             "e33b884a2b4ae7c112a63950164e2b781a8ad08c6a5dea3c7e8848cfb32dcf25"
+        );
+    }
+
+    fn refuses(json: &str) -> bool {
+        serde_json::from_str::<ContentHash>(json).is_err()
+            && serde_json::from_str::<crate::probe::ProbeVersion>(json).is_err()
+            && serde_json::from_str::<crate::probe::FactAddress>(json).is_err()
+    }
+
+    #[test]
+    fn a_minted_address_cannot_be_forged_through_the_wire() {
+        assert!(refuses(r#""not-a-hash""#));
+        assert!(refuses(r#""""#));
+        assert!(refuses(&format!(r#""{}""#, "A".repeat(64))));
+        assert!(refuses(&format!(r#""{}""#, "a".repeat(63))));
+
+        let good = format!(r#""{}""#, "a".repeat(64));
+        assert!(serde_json::from_str::<ContentHash>(&good).is_ok());
+        assert!(serde_json::from_str::<crate::probe::ProbeVersion>(&good).is_ok());
+        assert!(serde_json::from_str::<crate::probe::FactAddress>(&good).is_ok());
+    }
+
+    #[test]
+    fn short_is_safe_because_the_type_is_the_one_guaranteeing_it() {
+        let h = content_hash_of(&json!({})).unwrap();
+        assert_eq!(h.short().len(), SHORT);
+        assert!(h.as_str().starts_with(h.short()));
+    }
+
+    #[test]
+    fn an_admitted_name_is_not_refused_on_the_way_back_out_of_the_store() {
+        let long = format!(r#""{}""#, "k".repeat(400));
+        assert!(
+            serde_json::from_str::<crate::anchor::AnchorKey>(&long).is_ok(),
+            "an admission limit belongs at the door a value comes in through, never at the \
+             one it comes back out of: a journal is append-only, so a value already written \
+             is a fact about the past. Refusing to read it back turns a limit somebody \
+             tightened into a store nobody can open, and the entries behind the offending \
+             one go with it"
+        );
+        assert!(
+            crate::anchor::AnchorKey::try_new("k".repeat(400)).is_err(),
+            "the same value must still be refused at the door — otherwise nothing enforces \
+             the limit anywhere and the check is decorative"
         );
     }
 }
