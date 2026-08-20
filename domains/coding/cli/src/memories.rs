@@ -117,6 +117,8 @@ struct Spec {
     rules: Vec<String>,
     #[serde(default, deserialize_with = "stated_or_empty")]
     terminal: Vec<String>,
+    #[serde(flatten)]
+    settings: crate::settings::Declared,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -158,13 +160,12 @@ fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<Anc
     Ok(AnchorDecl {
         key: about.to_owned(),
         probe: routed.probe,
-        params: json!({ "root": "." }),
+        params: routed.params,
         position: Some(routed.position),
         shape: Some(routed.shape),
         rules: Vec::new(),
         terminal: Vec::new(),
-        retain_full: false,
-        cadence_secs: None,
+        settings: crate::settings::Declared::default(),
     })
 }
 
@@ -172,13 +173,12 @@ fn from_spec(spec: Spec) -> AnchorDecl {
     AnchorDecl {
         key: spec.key,
         probe: spec.probe,
-        params: spec.params.unwrap_or_else(|| json!({ "root": "." })),
+        params: spec.params.unwrap_or_else(crate::coord::whole_repository),
         position: spec.position,
         shape: spec.shape,
         rules: spec.rules,
         terminal: spec.terminal,
-        retain_full: false,
-        cadence_secs: None,
+        settings: spec.settings,
     }
 }
 
@@ -835,6 +835,40 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         assert!(
             codes(d.path(), &r).is_empty(),
             "hand-written rules are a reason"
+        );
+    }
+
+    #[test]
+    fn a_note_can_say_every_knob_the_toml_can_and_still_say_none_of_them() {
+        let (d, c) = world(&[
+            ("src/a.rs", "fn a() {}"),
+            (
+                "memories/tuned.md",
+                "---\nanchors:\n  - key: tuned\n    probe: ast-map\n    \
+                 position: { file: src/a.rs }\n    shape: roster\n    budget_ms: 1500\n---\n",
+            ),
+            ("memories/plain.md", "---\nabout: src/a.rs\n---\n"),
+        ]);
+        let scanned = scan(d.path(), &c).unwrap();
+        let said = |note: &str| {
+            scanned
+                .notes
+                .iter()
+                .find(|n| n.reference.external_id.as_str().contains(note))
+                .and_then(|n| n.wants.first())
+                .map(|w| match w {
+                    Want::Declared(decl) => decl.settings,
+                    Want::Existing(_) => panic!("both notes declare"),
+                })
+                .unwrap()
+        };
+        assert_eq!(said("tuned").budget_ms, Some(1500));
+        assert_eq!(
+            said("plain"),
+            crate::settings::Declared::default(),
+            "`about:` is one line and can only ever mean the coordinate. It has to arrive \
+             saying nothing about how the anchor runs — the alternative is a shorthand that \
+             silently resets knobs somebody set on purpose, every time sync runs"
         );
     }
 }

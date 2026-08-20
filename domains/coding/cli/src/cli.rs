@@ -296,8 +296,9 @@ pub struct OpenArgs {
     /// The probe to look with, by name. Omit it to route `key` as `path#name`.
     #[arg(long)]
     pub probe: Option<String>,
-    #[arg(long, default_value = "{}")]
-    pub params: String,
+    /// What the probe is pointed at, as JSON. Omitted, a routed coordinate says it.
+    #[arg(long)]
+    pub params: Option<String>,
     /// A named transition preset, exclusive with `--rule`.
     #[arg(long, conflicts_with = "rules")]
     pub shape: Option<String>,

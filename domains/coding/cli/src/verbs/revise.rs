@@ -48,7 +48,7 @@ pub async fn run(rt: &Runtime, root: &Path, args: ReviseArgs, json: bool) -> Res
         What::Probe => {
             let probe_name = args.probe.expect("What::Probe implies args.probe");
             let kind = Catalog::load(root)?.kind_of(&probe_name);
-            let probe = rules::probe(kind, &probe_name, &args.params)?;
+            let probe = rules::probe(kind, &probe_name, rules::params(&args.params)?)?;
             let revised = rt
                 .revise(&key, Change::Reprobe { probe }, args.why.as_bytes())
                 .await?;

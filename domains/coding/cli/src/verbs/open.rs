@@ -1,4 +1,4 @@
-use gmr::{OpenRequest, Retain, RunSettings, Runtime, State, Supersede};
+use gmr::{OpenRequest, Runtime, State, Supersede};
 
 use crate::cli::OpenArgs;
 use crate::error::CliError;
@@ -29,6 +29,11 @@ pub async fn run(
     let initial = routed
         .as_ref()
         .map(|r| State::new(serde_json::json!({ "position": r.position })));
+    let params = match (&args.params, &routed) {
+        (Some(text), _) => rules::params(text)?,
+        (None, Some(r)) => r.params.clone(),
+        (None, None) => serde_json::json!({}),
+    };
 
     let shape = routed
         .as_ref()
@@ -62,19 +67,16 @@ pub async fn run(
     let opened = rt
         .open(OpenRequest {
             key: key.clone(),
-            probe: rules::probe(catalog.kind_of(&probe_name), &probe_name, &args.params)?,
+            probe: rules::probe(catalog.kind_of(&probe_name), &probe_name, params)?,
             transitions,
             terminal: rules::terminal(&args.terminal)?,
             initial,
-            settings: RunSettings {
-                budget_ms: args.budget_ms,
-                retain: if args.retain_full {
-                    Retain::Full
-                } else {
-                    Retain::Tick
-                },
-                cadence_secs: args.cadence_secs,
-            },
+            settings: crate::settings::Declared::stated(
+                args.retain_full,
+                args.cadence_secs,
+                args.budget_ms,
+            )
+            .at_open(),
             supersedes,
         })
         .await?;

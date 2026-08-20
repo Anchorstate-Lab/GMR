@@ -14,15 +14,17 @@ pub fn key(text: &str) -> Result<AnchorKey, CliError> {
     })
 }
 
-pub fn probe(kind: Kind, name: &str, params: &str) -> Result<ProbeRef, CliError> {
+pub fn params(text: &str) -> Result<serde_json::Value, CliError> {
+    serde_json::from_str(text).map_err(|e| CliError(format!("params is not valid JSON: {e}")))
+}
+
+pub fn probe(kind: Kind, name: &str, params: serde_json::Value) -> Result<ProbeRef, CliError> {
     let name = ProbeName::try_new(name).map_err(|e| {
         CliError(format!(
             "`{name}` is not a probe name ({e}).\n\
              `probes list` prints the names this build knows."
         ))
     })?;
-    let params: serde_json::Value = serde_json::from_str(params)
-        .map_err(|e| CliError(format!("params is not valid JSON: {e}")))?;
     Ok(ProbeRef::new(kind, name, params))
 }
 

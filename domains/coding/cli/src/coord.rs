@@ -12,6 +12,11 @@ pub struct Routed {
     pub probe: String,
     pub shape: String,
     pub position: Value,
+    pub params: Value,
+}
+
+pub fn whole_repository() -> Value {
+    serde_json::json!({ "root": "." })
 }
 
 pub fn probe_for(coord: &str, catalog: &Catalog) -> Result<String, CliError> {
@@ -91,6 +96,7 @@ pub fn route(coord: &str, shape: Option<&str>, catalog: &Catalog) -> Result<Rout
         probe,
         shape,
         position,
+        params: whole_repository(),
     })
 }
 
@@ -136,6 +142,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["path", "fingerprint"], facts = ["b
                 probe: "ast-map".to_owned(),
                 shape: "contract".to_owned(),
                 position: serde_json::json!({ "file": "src/auth.rs", "name": "create_session" }),
+                params: whole_repository(),
             }
         );
     }
@@ -148,6 +155,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["path", "fingerprint"], facts = ["b
                 probe: "ast-map".to_owned(),
                 shape: "roster".to_owned(),
                 position: serde_json::json!({ "file": "src/auth.rs" }),
+                params: whole_repository(),
             }
         );
     }
@@ -160,6 +168,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["path", "fingerprint"], facts = ["b
                 probe: "prose-map".to_owned(),
                 shape: "fingerprint".to_owned(),
                 position: serde_json::json!({ "file": "docs/design.md", "heading": "Invariants" }),
+                params: whole_repository(),
             }
         );
     }
