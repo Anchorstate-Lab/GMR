@@ -12,7 +12,7 @@ use crate::index::{Built, Fault, Generation, Index, IndexError, Indexed, Located
 use crate::matching::Want;
 use crate::walk::{Held, Stamp};
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS generation (
@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS posting (
     ord        INTEGER NOT NULL,
     PRIMARY KEY (generation, item, value, rel, ord)
 );
+
+CREATE INDEX IF NOT EXISTS posting_by_rel ON posting(generation, rel);
 "#;
 
 const KINDS: [&str; 4] = ["view", "trigger", "index", "table"];
@@ -561,5 +563,66 @@ impl Index for SqliteIndex {
             rows: merged.into_values().collect(),
             ..snapshot
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opened() -> Connection {
+        let mut conn = Connection::open_in_memory().expect("an in-memory database opens");
+        ready(&mut conn, "an in-memory index").expect("a fresh database takes the schema");
+        conn
+    }
+
+    fn plan(conn: &Connection, sql: &str) -> String {
+        let blanks = vec![SqlValue::Null; sql.matches('?').count()];
+        let mut stmt = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("the statement parses");
+        let steps: Vec<String> = stmt
+            .query_map(rusqlite::params_from_iter(blanks.iter()), |r| {
+                r.get::<_, String>(3)
+            })
+            .expect("a plan has a detail column")
+            .collect::<Result<_, _>>()
+            .expect("every row reads");
+        steps.join(" | ")
+    }
+
+    #[test]
+    fn the_statements_write_repeats_once_per_file_seek_on_both_columns() {
+        let conn = opened();
+        for table in ["posting", "candidate"] {
+            let seen = plan(
+                &conn,
+                &format!("DELETE FROM {table} WHERE generation = ? AND rel = ?"),
+            );
+            assert!(
+                seen.contains("generation=? AND rel=?"),
+                "`{table}`'s per-file delete plans as `{seen}`, which narrows on the \
+                 generation and then walks it. `write` runs this once per file, so a walk \
+                 of N files pays N scans of everything written so far — quadratic, and \
+                 invisible until a repository is large enough to make it fatal. `posting` \
+                 keys on (generation, item, value, rel, ord), where `rel` is the fourth \
+                 column and no prefix reaches it; `posting_by_rel` is what makes this a \
+                 seek. A conformance suite that only compares answers cannot see this: \
+                 both backends return the same rows either way"
+            );
+        }
+    }
+
+    #[test]
+    fn a_point_query_on_one_wanted_pair_seeks_on_all_three_columns() {
+        let conn = opened();
+        let seen = plan(&conn, POINT);
+        assert!(
+            seen.contains("generation=? AND item=? AND value=?"),
+            "the point query plans as `{seen}`. `union` runs one of these per wanted pair, \
+             and the whole reason it asks per pair rather than in one OR is that an OR over \
+             (item, value) cannot reach past `generation` in the primary key. If this ever \
+             stops seeking on all three, every anchor walks the whole generation again"
+        );
     }
 }
