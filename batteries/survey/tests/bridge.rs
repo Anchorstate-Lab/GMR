@@ -123,7 +123,10 @@ fn a_bridge_told_the_tree_is_still_walks_each_generation_once() {
         .over_a_still_tree();
     let beta = serde_json::json!({ "name": "beta" });
 
-    assert_eq!(look(&RECIPE, "", &beta, &bridge, &roomy()).unwrap()["found"], true);
+    assert_eq!(
+        look(&RECIPE, "", &beta, &bridge, &roomy()).unwrap()["found"],
+        true
+    );
     std::fs::remove_file(d.path().join("b.rs")).unwrap();
 
     assert_eq!(
