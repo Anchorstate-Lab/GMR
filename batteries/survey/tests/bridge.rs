@@ -153,7 +153,7 @@ fn a_generation_this_build_does_not_carry_is_dropped() {
     let stale = gmr_survey::index::Generation::of(RECIPE.name, "v0");
 
     assert_eq!(
-        run_blocking(bridge.retain(&[mine.clone()])).unwrap(),
+        run_blocking(bridge.retain(std::slice::from_ref(&mine))).unwrap(),
         Vec::new(),
         "a generation this build carries is kept"
     );

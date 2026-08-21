@@ -551,8 +551,8 @@ impl Index for SqliteIndex {
             }
             for raw in locate(&tx, &sql, &bound)? {
                 let at = (raw.sort.clone(), raw.ord);
-                if !merged.contains_key(&at) {
-                    merged.insert(at, decode(raw)?);
+                if let std::collections::btree_map::Entry::Vacant(slot) = merged.entry(at) {
+                    slot.insert(decode(raw)?);
                 }
             }
         }
