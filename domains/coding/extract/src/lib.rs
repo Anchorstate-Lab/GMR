@@ -140,13 +140,25 @@ pub struct Linked {
     pub cache_fault: Option<String>,
 }
 
+fn carried() -> Vec<gmr_survey::index::Generation> {
+    RECIPES
+        .iter()
+        .map(|r| gmr_survey::index::Generation::of(r.name, r.version))
+        .collect()
+}
+
 pub async fn registry(root: &Path, state_dir: &Path) -> Linked {
     let db = state_dir.join("survey-index.sqlite");
     match Bridge::open(root, move || sqlite::open(db)).await {
-        Ok(bridge) => Linked {
-            cache_fault: None,
-            probes: bind(Arc::new(bridge)),
-        },
+        Ok(bridge) => {
+            let swept = bridge.retain(&carried()).await;
+            Linked {
+                cache_fault: swept.err().map(|e| {
+                    format!("the survey index kept generations this build does not carry: {e}")
+                }),
+                probes: bind(Arc::new(bridge.over_a_still_tree())),
+            }
+        }
         Err(e) => {
             let bridge = Bridge::open(root, sqlite::open_in_memory)
                 .await

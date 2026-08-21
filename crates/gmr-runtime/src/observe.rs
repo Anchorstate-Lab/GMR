@@ -99,7 +99,8 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let mine = match scheduler.budget_for(key).await? {
+    let run = scheduler.settings_for(key).await?;
+    let mine = match run.budget_ms {
         Some(ms) => budget.narrowed(std::time::Duration::from_millis(ms)),
         None => budget.clone(),
     };
@@ -122,7 +123,7 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let still_ref = if scheduler.settings_for(key).await?.retains_full() {
+    let still_ref = if run.retains_full() {
         None
     } else {
         s.latest

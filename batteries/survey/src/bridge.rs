@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use gmr_probe::Budget;
 
@@ -39,9 +41,12 @@ pub fn run_blocking<F: Future>(fut: F) -> F::Output {
     }
 }
 
+const WALK_POISONED: &str = "gmr-survey: a prior walk panicked while holding the memo";
+
 pub struct Bridge<I> {
     tree: PathBuf,
     index: I,
+    walked: Option<Mutex<BTreeMap<Generation, Result<(), Halt>>>>,
 }
 
 impl<I: Index> Bridge<I> {
@@ -53,14 +58,30 @@ impl<I: Index> Bridge<I> {
         Ok(Self {
             tree: tree.into(),
             index: open().await?,
+            walked: None,
         })
+    }
+
+    pub fn over_a_still_tree(mut self) -> Self {
+        self.walked = Some(Mutex::new(BTreeMap::new()));
+        self
+    }
+
+    pub async fn retain(&self, keep: &[Generation]) -> Result<Vec<Generation>, IndexError> {
+        let mut dropped = Vec::new();
+        for (which, _) in self.index.generations().await? {
+            if !keep.contains(&which) {
+                self.index.discard(&which).await?;
+                dropped.push(which);
+            }
+        }
+        Ok(dropped)
     }
 }
 
-impl<I: Index> Corpus for Bridge<I> {
-    fn refresh(&self, recipe: &Recipe, budget: &Budget) -> Result<(), Halt> {
-        let of = Generation::of(recipe.name, recipe.version);
-        let known = run_blocking(self.index.known(&of)).map_err(index_halt)?;
+impl<I: Index> Bridge<I> {
+    fn walk(&self, recipe: &Recipe, of: &Generation, budget: &Budget) -> Result<(), Halt> {
+        let known = run_blocking(self.index.known(of)).map_err(index_halt)?;
         let scan = corpus::rescan(&self.tree, recipe, &known, budget)?;
 
         let files: Vec<Indexed> = scan
@@ -84,15 +105,30 @@ impl<I: Index> Corpus for Bridge<I> {
                     .collect(),
             })
             .collect();
-        run_blocking(self.index.write(&of, &files)).map_err(index_halt)?;
+        run_blocking(self.index.write(of, &files)).map_err(index_halt)?;
 
         if !scan.restamped.is_empty() {
-            run_blocking(self.index.restamp(&of, &scan.restamped)).map_err(index_halt)?;
+            run_blocking(self.index.restamp(of, &scan.restamped)).map_err(index_halt)?;
         }
         if !scan.gone.is_empty() {
-            run_blocking(self.index.forget(&of, &scan.gone)).map_err(index_halt)?;
+            run_blocking(self.index.forget(of, &scan.gone)).map_err(index_halt)?;
         }
         Ok(())
+    }
+}
+
+impl<I: Index> Corpus for Bridge<I> {
+    fn refresh(&self, recipe: &Recipe, budget: &Budget) -> Result<(), Halt> {
+        let of = Generation::of(recipe.name, recipe.version);
+        let Some(memo) = &self.walked else {
+            return self.walk(recipe, &of, budget);
+        };
+        if let Some(walked) = memo.lock().expect(WALK_POISONED).get(&of) {
+            return walked.clone();
+        }
+        let walked = self.walk(recipe, &of, budget);
+        memo.lock().expect(WALK_POISONED).insert(of, walked.clone());
+        walked
     }
 
     fn populated(&self, recipe: &Recipe, root: &str) -> Result<bool, Halt> {
