@@ -10,6 +10,35 @@ about:
 watch: [sig, logic]
 ---
 
+# rusqlite, not sqlx — this is a local file, not a network call
+
+This file used to be built on `sqlx::SqlitePool`. Profiling a slow `gmr check`
+(see [[bridge-Bridge]]) traced most of the remaining wall time, after removing
+`Bridge`'s own redundant thread, to `sqlx`'s SQLite driver itself: it keeps a
+background worker thread per pooled connection and talks to it over a channel,
+because the underlying `libsqlite3` handle is blocking and `sqlx` still wants
+an async-shaped API over it. That is a real cost for a local, single-writer
+SQLite file with no concurrent I/O to overlap — there is nothing for the async
+machinery to interleave, only a thread hop to pay for pretending there is.
+
+`SqliteIndex` now holds one `std::sync::Mutex<rusqlite::Connection>` — a
+single synchronous connection, serialized the same way SQLite itself
+serializes writers. `Index`'s methods stay `async fn` (the trait is the
+pluggability seam — a future networked backend still gets real `.await`
+points) but their bodies do the rusqlite call directly, no `.await` inside;
+callers already only reach this through `Bridge::run_blocking`, which is only
+ever invoked from a context that is already safe to block in (`spawn_blocking`
+in production, a dedicated fallback runtime in tests — see [[bridge-Bridge]]).
+An `async fn` with a synchronous body is legal Rust and resolves on its first
+poll; it is not a lie here because nothing else is waiting on this thread.
+
+`write` dropped the `sqlx::QueryBuilder` multi-row batching (`BATCH = 150`,
+chunked to stay under one query's bound-parameter limit) for a prepared
+statement (`prepare_cached`) executed once per row inside one transaction.
+The parameter limit that motivated chunking does not apply to a single-row
+statement executed in a loop, and the actual cost driver — one `fsync` at
+`COMMIT`, not per-statement overhead — is unchanged either way.
+
 # A derived store is razed and rebuilt, never migrated
 
 The plan said the index would climb the same migration ladder the journal does.

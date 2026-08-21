@@ -23,10 +23,10 @@ fn file(rel: &str) -> Indexed {
     }
 }
 
-async fn stamp_of(index: &gmr_survey::sqlite::SqliteIndex) -> i64 {
-    sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(index.pool())
-        .await
+fn stamp_of(index: &gmr_survey::sqlite::SqliteIndex) -> i64 {
+    index
+        .conn()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap()
 }
 
@@ -66,27 +66,29 @@ async fn an_index_this_build_cannot_read_is_rebuilt_rather_than_refused() {
     let path = dir.path().join("index.db");
 
     let stale = open(&path).await.unwrap();
-    sqlx::raw_sql("CREATE TABLE relic (x INTEGER); PRAGMA user_version = 99")
-        .execute(stale.pool())
-        .await
+    stale
+        .conn()
+        .execute_batch("CREATE TABLE relic (x INTEGER); PRAGMA user_version = 99")
         .unwrap();
     stale.close().await;
 
     let fresh = open(&path).await.unwrap();
     assert_eq!(
-        stamp_of(&fresh).await,
+        stamp_of(&fresh),
         SCHEMA_VERSION,
         "an index is derived data. A journal from another generation has to be refused \
          because what it holds cannot be recomputed; an index can always be rebuilt from \
          the repository, so refusing to open it would cost a person their afternoon to \
          save a scan"
     );
-    let survivors: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'relic'",
-    )
-    .fetch_all(fresh.pool())
-    .await
-    .unwrap();
+    let survivors: Vec<String> = fresh
+        .conn()
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'relic'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert!(
         survivors.is_empty(),
         "a shape this build does not know is dropped, not left to be half-read"
@@ -98,41 +100,34 @@ async fn an_index_this_build_cannot_read_is_rebuilt_rather_than_refused() {
     fresh.close().await;
 }
 
-async fn holding(path: &std::path::Path, table: &str) {
-    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}?mode=rwc", path.display()))
-        .await
-        .unwrap();
-    sqlx::raw_sql(&format!(
+fn holding(path: &std::path::Path, table: &str) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch(&format!(
         "CREATE TABLE {table} (seq INTEGER PRIMARY KEY, body TEXT); \
          INSERT INTO {table} (seq, body) VALUES (1, 'a fact nobody can recompute'); \
          PRAGMA user_version = 7"
     ))
-    .execute(&pool)
-    .await
     .unwrap();
-    pool.close().await;
 }
 
-async fn tables(path: &std::path::Path) -> Vec<String> {
-    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
-        .await
-        .unwrap();
-    let named = sqlx::query_scalar(
+fn tables(path: &std::path::Path) -> Vec<String> {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
          ORDER BY name",
     )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    pool.close().await;
-    named
+    .unwrap()
+    .query_map([], |r| r.get(0))
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 
 #[tokio::test]
 async fn a_database_the_index_did_not_write_is_refused_rather_than_razed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("memory.db");
-    holding(&path, "entry").await;
+    holding(&path, "entry");
 
     let refused = open(&path)
         .await
@@ -141,7 +136,7 @@ async fn a_database_the_index_did_not_write_is_refused_rather_than_razed() {
     assert_eq!(refused.fault, gmr_survey::index::Fault::Foreign);
     assert!(refused.to_string().contains("entry"), "{refused}");
     assert_eq!(
-        tables(&path).await,
+        tables(&path),
         ["entry"],
         "the journal lives one filename away from the index, both crates export a \
          `sqlite::open`, and both stamp `PRAGMA user_version` — so a path mixed up once \
@@ -155,7 +150,7 @@ fn opened(path: std::path::PathBuf, gate: Arc<Barrier>) -> Result<i64, String> {
     gate.wait();
     rt.block_on(async move {
         let index = open(&path).await.map_err(|e| e.to_string())?;
-        let stamp = stamp_of(&index).await;
+        let stamp = stamp_of(&index);
         index.close().await;
         Ok(stamp)
     })
@@ -169,9 +164,9 @@ fn two_processes_opening_one_stale_index_both_land() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         let stale = open(&path).await.unwrap();
-        sqlx::raw_sql("PRAGMA user_version = 99")
-            .execute(stale.pool())
-            .await
+        stale
+            .conn()
+            .execute_batch("PRAGMA user_version = 99")
             .unwrap();
         stale.close().await;
     });
