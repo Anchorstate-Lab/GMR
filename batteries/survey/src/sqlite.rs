@@ -189,6 +189,7 @@ fn beneath(sql: &mut String, root: &str) -> bool {
 }
 
 struct RawFound {
+    sort: String,
     rel: String,
     ord: i64,
     id: String,
@@ -198,6 +199,7 @@ struct RawFound {
 
 fn raw_found(row: &rusqlite::Row) -> rusqlite::Result<RawFound> {
     Ok(RawFound {
+        sort: row.get("sort")?,
         rel: row.get("rel")?,
         ord: row.get("ord")?,
         id: row.get("id")?,
@@ -241,7 +243,7 @@ fn opened(tx: &Transaction, of: &Generation) -> Result<Option<Snapshot>, IndexEr
 }
 
 fn locate(tx: &Transaction, sql: &str, params: &[SqlValue]) -> Result<Vec<RawFound>, IndexError> {
-    let mut stmt = tx.prepare(sql).map_err(db_err)?;
+    let mut stmt = tx.prepare_cached(sql).map_err(db_err)?;
     stmt.query_map(rusqlite::params_from_iter(params.iter()), raw_found)
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
@@ -253,6 +255,12 @@ const READ: &str = "SELECT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
      WHERE c.generation = ?";
 
 const TAIL: &str = " ORDER BY f.sort, c.ord";
+
+const POINT: &str = "SELECT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
+     FROM posting p \
+     JOIN candidate c ON c.generation = p.generation AND c.rel = p.rel AND c.ord = p.ord \
+     JOIN file f ON f.generation = c.generation AND f.rel = c.rel \
+     WHERE p.generation = ? AND p.item = ? AND p.value = ?";
 
 #[async_trait]
 impl Index for SqliteIndex {
@@ -519,21 +527,8 @@ impl Index for SqliteIndex {
         root: &str,
         want: &Want,
     ) -> Result<Option<Snapshot>, IndexError> {
-        let mut sql = String::from(
-            "SELECT DISTINCT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
-             FROM posting p \
-             JOIN candidate c ON c.generation = p.generation AND c.rel = p.rel \
-             AND c.ord = p.ord \
-             JOIN file f ON f.generation = c.generation AND f.rel = c.rel \
-             WHERE p.generation = ?",
-        );
+        let mut sql = String::from(POINT);
         let narrowed = beneath(&mut sql, root);
-        let pairs: Vec<&str> = want
-            .iter()
-            .map(|_| "(p.item = ? AND p.value = ?)")
-            .collect();
-        sql.push_str(&format!(" AND ({})", pairs.join(" OR ")));
-        sql.push_str(TAIL);
 
         let mut conn = self.conn.lock().expect(LOCK_POISONED);
         let tx = conn.transaction().map_err(db_err)?;
@@ -541,25 +536,29 @@ impl Index for SqliteIndex {
             return Ok(None);
         };
 
-        let raw = if want.is_empty() {
-            Vec::new()
-        } else {
-            let mut bound = vec![SqlValue::Text(of.as_str().to_owned())];
+        let mut merged: BTreeMap<(String, i64), Located> = BTreeMap::new();
+        for (item, value) in want {
+            let mut bound = vec![
+                SqlValue::Text(of.as_str().to_owned()),
+                SqlValue::Text(item.clone()),
+                SqlValue::Text(value.clone()),
+            ];
             if narrowed {
                 let root_len = root.len() as i64;
                 bound.push(SqlValue::Integer(root_len));
                 bound.push(SqlValue::Text(root.to_owned()));
                 bound.push(SqlValue::Integer(root_len));
             }
-            for (item, value) in want {
-                bound.push(SqlValue::Text(item.clone()));
-                bound.push(SqlValue::Text(value.clone()));
+            for raw in locate(&tx, &sql, &bound)? {
+                let at = (raw.sort.clone(), raw.ord);
+                if !merged.contains_key(&at) {
+                    merged.insert(at, decode(raw)?);
+                }
             }
-            locate(&tx, &sql, &bound)?
-        };
+        }
         tx.commit().map_err(db_err)?;
         Ok(Some(Snapshot {
-            rows: raw.into_iter().map(decode).collect::<Result<_, _>>()?,
+            rows: merged.into_values().collect(),
             ..snapshot
         }))
     }

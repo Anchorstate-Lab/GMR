@@ -180,6 +180,37 @@ async fn suite(index: &dyn Index) {
         "the root narrows the union as well as the rows, by the same rule"
     );
 
+    assert_eq!(
+        seen(
+            index
+                .union(&ast, "", &want(&[("kind", "function"), ("name", "two")]))
+                .await
+                .unwrap()
+        ),
+        ["x:two", "b:one", "bb:five"],
+        "`x:two` matches both wanted pairs and is one row, not two. Every other union \
+         case in this suite happens to have no candidate matching more than one pair, \
+         so a backend that asks each pair separately and forgets to merge the answers \
+         passes all of them and doubles a row only here — and `report` reads `nth` as \
+         an index into what comes back, so a duplicate renames which object the anchor \
+         is about"
+    );
+
+    assert_eq!(
+        seen(
+            index
+                .union(&ast, "b", &want(&[("name", "two"), ("kind", "type")]))
+                .await
+                .unwrap()
+        ),
+        ["x:two", "x:three"],
+        "a root and several wanted pairs at once. The root has to hold for every pair, \
+         not just the first: `a:four` is a `kind=type` outside `b` and must not come \
+         back, and the two rows that do come back are ordered by `ord` within one file. \
+         A backend binding the root once for a whole query rather than per pair answers \
+         this wrongly while every single-pair case above stays green"
+    );
+
     let first = index.rows(&ast, "").await.unwrap().unwrap();
     assert_eq!(
         first.rows[0].row.facts,
