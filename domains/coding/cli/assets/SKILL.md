@@ -114,6 +114,18 @@ A note you write into this repository's `memories/` needs none of this — `gmr 
 
 `reaffirm` and `cobound` take the same `--provider`. `link` takes `--from-provider` and `--to-provider` separately, because the two ends may sit in different stores — a memory in one store can contradict a memory in another, and saying so should not require moving either of them.
 
+### A store nobody compiled in
+
+`.anchor/providers.toml` teaches this binary a store without changing it:
+
+```toml
+[provider.desk]
+fetch = "scripts/desk-fetch.sh"
+list  = "scripts/desk-list.sh"   # omit it, and this store simply cannot be listed
+```
+
+`fetch` is run with `GMR_POSITION` set to `{"id": "<external id>"}` and answers on stdout with `{"text": "..."}`, or `null` for a record that is not there — `null` means *gone*, and anything else the script can do about a failure is to exit non-zero, which reads as the store being unreachable. `list` answers `{"records": [{"id": "...", "text": "..."}, ...]}`. A memory is one JSON string: a store holding anything but text needs a provider compiled in, and so does one whose own version you need — a declared store's version is a hash of the text GMR computes itself.
+
 ### mem0
 
 Set `MEM0_API_KEY` and the scope (`MEM0_USER_ID`, optionally `MEM0_AGENT_ID` / `MEM0_APP_ID`) before running any verb, and a `mem0` provider registers itself. With no key set, nothing registers and nothing complains — not using mem0 is not a misconfiguration.

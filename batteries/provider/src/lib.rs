@@ -4,6 +4,9 @@ mod local_file;
 #[cfg(feature = "http")]
 mod http;
 
+#[cfg(feature = "declared")]
+pub mod declared;
+
 #[cfg(feature = "git")]
 pub mod git;
 

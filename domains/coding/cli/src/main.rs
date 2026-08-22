@@ -7,6 +7,7 @@ mod memories;
 mod notes;
 mod probes;
 mod prose;
+mod providers;
 mod render;
 mod rules;
 mod settings;
@@ -145,7 +146,7 @@ async fn served(
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))
         .links(Arc::new(store.links()));
-    let stores = stores::assembled(&root);
+    let stores = stores::assembled(&root)?;
     for store in &stores.built {
         builder = builder.provider(store.content());
     }

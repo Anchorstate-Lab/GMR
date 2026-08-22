@@ -589,6 +589,70 @@ echo "$out" | grep -q '"gone":\[\]' || fail "detaching left the record still rep
 echo "$out" | grep -q '"unsupervised":\[\]' \
     || fail "detaching left the record reported as unsupervised" "$out"
 
+# ── The claim D2 makes is that a store can be taught to this binary without
+#    teaching it to the compiler. Nothing but a run against the shipped
+#    tarball can hold that claim honest: a recipe, two shell scripts, and
+#    every state a compiled provider reaches — listed, bound, rewritten, gone.
+step "a store declared in a recipe, with no Rust anywhere"
+mkdir -p "$repo/scripts" "$work/desk"
+cat > "$repo/scripts/desk-fetch.sh" <<'SH'
+#!/bin/sh
+id=$(printf '%s' "$GMR_POSITION" | sed 's/.*"id":"\([^"]*\)".*/\1/')
+file="$DESK/$id"
+[ -f "$file" ] || { printf 'null'; exit 0; }
+printf '{"text":"%s"}' "$(sed 's/"/\\"/g' "$file" | tr -d '\n')"
+SH
+cat > "$repo/scripts/desk-list.sh" <<'SH'
+#!/bin/sh
+printf '{"records":['
+first=1
+for f in "$DESK"/*; do
+  [ -f "$f" ] || continue
+  [ $first -eq 1 ] || printf ','
+  first=0
+  printf '{"id":"%s","text":"%s"}' "$(basename "$f")" "$(sed 's/"/\\"/g' "$f" | tr -d '\n')"
+done
+printf ']}'
+SH
+chmod +x "$repo/scripts/desk-fetch.sh" "$repo/scripts/desk-list.sh"
+cat > "$repo/.anchor/providers.toml" <<'TOML'
+[provider.desk]
+fetch = "scripts/desk-fetch.sh"
+list = "scripts/desk-list.sh"
+TOML
+export DESK="$work/desk"
+printf 'the 30 minutes is the CDN cache window, not a security choice\n' > "$DESK/why-30.md"
+
+out=$("$gmr" --repo "$repo" memories --provider desk --json)
+echo "$out" | grep -q '"reference":"desk:why-30.md"' \
+    || fail "a store declared in a recipe did not list what it holds" "$out"
+
+"$gmr" --repo "$repo" bind 'desk:why-30.md' --anchors "$key" >/dev/null \
+    || fail "could not bind through a provider nobody compiled in" "$out"
+out=$("$gmr" --repo "$repo" read "$key")
+echo "$out" | grep -q 'desk:why-30.md' || fail "the bound record was not delivered on its anchor" "$out"
+echo "$out" | grep -qE 'never verified|rewritten|gone' \
+    && fail "a record the recipe can read did not ground as current" "$out"
+
+# The version has to move with the bytes, or nothing downstream can tell a
+# memory was rewritten -- the quietest way this system can fail.
+printf 'it is 45 minutes now, and for a different reason\n' > "$DESK/why-30.md"
+out=$("$gmr" --repo "$repo" read "$key")
+echo "$out" | grep -q 'rewritten since binding' \
+    || fail "a rewritten record read as current through a declared provider" "$out"
+
+# And the world's answer must still be distinguishable from our failure.
+rm "$DESK/why-30.md"
+set +e
+out=$("$gmr" --repo "$repo" doctor --json)
+set -e
+echo "$out" | grep -q '"gone":\["desk:why-30.md"\]' \
+    || fail "a record the script says is not there was not reported as gone" "$out"
+
+"$gmr" --repo "$repo" bind 'desk:why-30.md' --detach >/dev/null \
+    || fail "could not let go of a record held through a declared provider"
+rm "$repo/.anchor/providers.toml"
+
 # ── The main road, agent side: it writes a memory into its own store and says
 #    what that memory is about in the same breath. A store has not indexed the
 #    record yet at that moment, which is exactly when the link is most accurate

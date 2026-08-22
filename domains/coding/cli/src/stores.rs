@@ -41,7 +41,7 @@ impl Stores {
     }
 }
 
-pub fn assembled(root: &Path) -> Stores {
+pub fn assembled(root: &Path) -> Result<Stores, CliError> {
     let mut stores = Stores::default();
 
     let notes = std::sync::Arc::new(crate::memories::declaring(root));
@@ -54,7 +54,16 @@ pub fn assembled(root: &Path) -> Stores {
     if let Some(made) = from_env() {
         stores.take("mem0", made.map(Mem0::store));
     }
-    stores
+    for (name, decl) in crate::providers::declared(root)? {
+        match crate::providers::assembled(root, &name, &decl) {
+            Ok(store) => stores.built.push(store),
+            Err(CliError(message)) => stores.warnings.push(Warning {
+                provider: name,
+                message,
+            }),
+        }
+    }
+    Ok(stores)
 }
 
 fn from_env() -> Option<Result<Mem0, ContentError>> {
