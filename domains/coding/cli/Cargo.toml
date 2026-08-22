@@ -33,5 +33,8 @@ serde_yaml_ng = "0.10.0"
 base64 = "0.22"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
+[dev-dependencies]
+gmr = { path = "../../../crates/gmr", features = ["sqlite", "testkit"] }
+
 [lints]
 workspace = true

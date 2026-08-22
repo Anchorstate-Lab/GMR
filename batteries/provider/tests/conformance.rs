@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use gmr_content::ContentProvider;
-use gmr_content::testkit::{Corpus, conforms};
+use gmr_content::testkit::{Corpus, Listing, conforms, lists, retains};
 use gmr_core::ExternalId;
 
 struct Files<P> {
@@ -66,6 +66,22 @@ async fn git_conforms() {
     conforms(&corpus).await.unwrap();
 }
 
+#[cfg(feature = "git")]
+#[tokio::test]
+async fn git_retains() {
+    let corpus = Files::new(
+        |root| {
+            std::process::Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(root)
+                .status()
+                .ok();
+        },
+        |root| gmr_provider::git::Git::new(root),
+    );
+    retains(&corpus).await.unwrap();
+}
+
 #[cfg(feature = "claude-code")]
 #[tokio::test]
 async fn claude_code_conforms() {
@@ -119,7 +135,26 @@ impl Corpus for Remote {
 }
 
 #[cfg(feature = "testkit")]
+impl Listing for Remote {
+    fn source(&self) -> &dyn gmr_content::MemorySource {
+        &self.provider
+    }
+}
+
+#[cfg(feature = "testkit")]
 #[tokio::test]
 async fn mem0_conforms() {
     conforms(&Remote::new()).await.unwrap();
+}
+
+#[cfg(feature = "testkit")]
+#[tokio::test]
+async fn mem0_lists() {
+    lists(&Remote::new()).await.unwrap();
+}
+
+#[cfg(feature = "testkit")]
+#[tokio::test]
+async fn mem0_retains() {
+    retains(&Remote::new()).await.unwrap();
 }

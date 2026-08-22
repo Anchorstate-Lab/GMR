@@ -9,6 +9,7 @@ license.workspace = true
 [features]
 default = []
 sqlite = ["gmr-store/sqlite"]
+testkit = ["gmr-content/testkit", "gmr-store/testkit"]
 
 [dependencies]
 gmr-core = { path = "../gmr-core" }
