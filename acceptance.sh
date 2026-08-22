@@ -525,8 +525,34 @@ echo "$out" | grep -q '"reference":"git:memories/auth.md"' \
     || fail "the note this run bound was not in its store's listing" "$out"
 echo "$out" | grep -q '"anchors":\["src/auth.ts#createSession"\]' \
     || fail "the listing did not say which anchors a bound record is about" "$out"
-"$gmr" --repo "$repo" memories --provider claude-code >/dev/null 2>&1 \
-    && fail "a store with no way to list what it holds answered a listing anyway"
+out=$("$gmr" --repo "$repo" memories --provider claude-code --json)
+echo "$out" | grep -q '"reference":"claude-code:owned.md"' \
+    || fail "the claude-code store did not list the record this run put in it" "$out"
+
+# A store nothing here can enumerate is an answer, not an absence: same wording
+# with and without --provider, and never an error. Filtering it out is how a
+# reader stops being able to tell "holds nothing" from "cannot be asked".
+cat > "$repo/.anchor/providers.toml" <<'TOML'
+[provider.sealed]
+fetch = "scripts/desk-fetch.sh"
+TOML
+mkdir -p "$repo/scripts"
+printf '#!/bin/sh\nprintf null\n' > "$repo/scripts/desk-fetch.sh"
+chmod +x "$repo/scripts/desk-fetch.sh"
+
+named=$("$gmr" --repo "$repo" memories --provider sealed) \
+    || fail "naming a store that cannot be listed was treated as a failure" "$named"
+echo "$named" | grep -q 'cannot list what it holds' \
+    || fail "a registered store that cannot be enumerated was left out of its own listing" "$named"
+whole=$("$gmr" --repo "$repo" memories)
+echo "$whole" | grep -q "$(echo "$named" | grep 'cannot list what it holds')" \
+    || fail "the same store got different wording with and without --provider; naming a store is not a different question" "$whole"
+
+set +e
+out=$("$gmr" --repo "$repo" memories --provider nothing-registered-here 2>&1); code=$?
+set -e
+[ "$code" -ne 0 ] || fail "a store name this binary never registered was answered instead of refused" "$out"
+rm "$repo/.anchor/providers.toml"
 
 # ── SKILL.md tells an agent to hand an address straight back to the verbs. That
 #    sentence is a promise about two things that are edited in different files,

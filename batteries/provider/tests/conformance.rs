@@ -97,6 +97,23 @@ async fn claude_code_conforms() {
     conforms(&corpus).await.unwrap();
 }
 
+#[cfg(feature = "claude-code")]
+impl Listing for Files<gmr_provider::claude_code::ClaudeMemory> {
+    fn source(&self) -> &dyn gmr_content::MemorySource {
+        &self.provider
+    }
+}
+
+#[cfg(feature = "claude-code")]
+#[tokio::test]
+async fn claude_code_lists() {
+    let corpus = Files::new(
+        |_| {},
+        |root| gmr_provider::claude_code::ClaudeMemory::at(root),
+    );
+    lists(&corpus).await.unwrap();
+}
+
 #[cfg(feature = "testkit")]
 struct Remote {
     store: gmr_provider::mem0::testkit::Memories,
