@@ -29,7 +29,7 @@ impl BindingStore for SqliteBindings {
         )
         .bind(ref_key(&binding.reference))
         .bind(&body)
-        .bind(asserted.bound_version.as_str())
+        .bind(asserted.bound_version.as_ref().map(Version::as_str))
         .bind(asserted.bound_at_seq.map(|s| s as i64))
         .bind(asserted.source.as_str())
         .bind(asserted.at.to_rfc3339())
@@ -206,14 +206,7 @@ fn decode_one(seq: Seq, row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, S
         serde_json::from_str(&row.get::<String, _>("body")).map_err(decode_err)?;
     let bound_version = row
         .get::<Option<String>, _>("bound_version")
-        .map(Version::new)
-        .ok_or_else(|| {
-            StoreError::other(
-                "this assertion carries no version, meaning no fetch has ever answered for \
-                 the record it names. The column allows that and this build does not yet \
-                 produce it; a database holding one was written by a later generation",
-            )
-        })?;
+        .map(Version::new);
     let raw = row.get::<String, _>("source");
     let source = Source::parse(&raw).ok_or_else(|| {
         StoreError::other(format!(

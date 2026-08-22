@@ -72,6 +72,11 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
 fn grounding(g: &Grounding) -> String {
     match g {
         Grounding::Current { .. } => String::new(),
+        Grounding::Unverified { .. } => {
+            "  never verified: nothing has yet compared this record against what the store \
+             holds"
+                .to_owned()
+        }
         Grounding::Rewritten { before, .. } => {
             format!("  (rewritten since binding){}", was(before))
         }

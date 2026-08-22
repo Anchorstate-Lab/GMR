@@ -49,7 +49,7 @@ impl MemoryLens {
         &self,
         log: &AnchorLog,
         binding: &Binding,
-        bound_version: &Version,
+        bound_version: Option<&Version>,
         source: Source,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
@@ -64,7 +64,7 @@ impl MemoryLens {
             .bindings
             .bind(&Asserted {
                 binding: binding.clone(),
-                bound_version: bound_version.clone(),
+                bound_version: bound_version.cloned(),
                 bound_at_seq,
                 source,
                 at,
@@ -143,6 +143,11 @@ impl MemoryLens {
         let reference = baseline.binding.reference.clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
+        let baseline_at = asserted
+            .iter()
+            .filter(|r| r.bound_version.is_some())
+            .map(|r| r.seq)
+            .max();
         let asserted_at = asserted.iter().filter_map(|r| r.asserted_at).min();
         let sources: std::collections::BTreeSet<Source> =
             asserted.iter().map(|r| r.source).collect();
@@ -154,17 +159,25 @@ impl MemoryLens {
         Ok(MemoryView {
             links: self.links.links_of(&reference).await?,
             grounded: !anchors.is_empty(),
-            grounding: self.ground(&reference, &bound_version, budget).await,
+            grounding: self
+                .ground(&reference, bound_version.as_ref(), budget)
+                .await,
             reference,
             bound_version,
             bound_at_seq,
+            baseline_at,
             sources,
             asserted_at,
             stale: None,
         })
     }
 
-    async fn ground(&self, reference: &Ref, bound_version: &Version, budget: &Budget) -> Grounding {
+    async fn ground(
+        &self,
+        reference: &Ref,
+        bound_version: Option<&Version>,
+        budget: &Budget,
+    ) -> Grounding {
         let Some(provider) = self.provider_for(reference) else {
             return Grounding::NoProvider {
                 provider: reference.provider.clone(),
@@ -186,6 +199,12 @@ impl MemoryLens {
             }
             Ok(None) => return Grounding::Gone,
             Ok(Some(fetched)) => fetched,
+        };
+        let Some(bound_version) = bound_version else {
+            return Grounding::Unverified {
+                version: fetched.version,
+                content: fetched.bytes,
+            };
         };
         if &fetched.version == bound_version {
             return Grounding::Current {

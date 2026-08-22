@@ -49,10 +49,13 @@ pub struct Grounded {
 #[derive(Debug, Clone, Serialize)]
 pub struct MemoryView {
     pub reference: Ref,
-    pub bound_version: Version,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bound_version: Option<Version>,
     pub grounded: bool,
     pub links: Vec<Link>,
     pub bound_at_seq: Option<Seq>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_at: Option<Seq>,
     pub sources: std::collections::BTreeSet<Source>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asserted_at: Option<DateTime<Utc>>,
@@ -65,6 +68,11 @@ pub struct MemoryView {
 #[serde(tag = "grounding", rename_all = "snake_case")]
 pub enum Grounding {
     Current {
+        version: Version,
+        #[serde(serialize_with = "as_text")]
+        content: Vec<u8>,
+    },
+    Unverified {
         version: Version,
         #[serde(serialize_with = "as_text")]
         content: Vec<u8>,
@@ -89,6 +97,7 @@ pub enum Grounding {
 #[serde(rename_all = "snake_case")]
 pub enum Footing {
     Current,
+    Unverified,
     Rewritten,
     NoBefore,
     Gone,
@@ -107,6 +116,7 @@ impl Grounding {
     pub fn footing(&self) -> Footing {
         match self {
             Self::Current { .. } => Footing::Current,
+            Self::Unverified { .. } => Footing::Unverified,
             Self::Rewritten { before, .. } => match before {
                 Before::Retrieved { .. } => Footing::Rewritten,
                 _ => Footing::NoBefore,

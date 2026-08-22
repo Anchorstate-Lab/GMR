@@ -398,7 +398,7 @@ async fn corpus_health_sees_barren_anchors() {
         .bind(
             Ref::new("git", "m.md"),
             vec![key()],
-            Version::new("v1"),
+            Some(Version::new("v1")),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -423,7 +423,7 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
         .bind(
             note.clone(),
             vec![key()],
-            Version::new("v1"),
+            Some(Version::new("v1")),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -467,7 +467,7 @@ async fn a_record_bound_to_an_anchor_nobody_ever_opened_is_stranded_too() {
         .bind(
             note.clone(),
             vec![AnchorKey::new("never-opened")],
-            Version::new("v1"),
+            Some(Version::new("v1")),
             gmr_core::Source::Adjudicated,
         )
         .await

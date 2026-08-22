@@ -202,7 +202,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
 fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq>) -> Asserted {
     Asserted {
         binding: binding.clone(),
-        bound_version: Version::new(version),
+        bound_version: Some(Version::new(version)),
         bound_at_seq,
         source: gmr_core::Source::Adjudicated,
         at: chrono::Utc::now(),
@@ -225,7 +225,7 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
         .unwrap();
     assert_eq!(on.len(), 1);
     assert_eq!(on[0].binding, binding);
-    assert_eq!(on[0].bound_version, bound_version);
+    assert_eq!(on[0].bound_version, Some(bound_version));
     assert_eq!(on[0].bound_at_seq, Some(7));
     assert_eq!(on[0].source, gmr_core::Source::Adjudicated);
 

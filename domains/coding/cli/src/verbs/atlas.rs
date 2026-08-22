@@ -75,6 +75,7 @@ fn memory_tone(m: &MemoryView) -> (Tone, Option<&'static str>) {
             Before::Retrieved { .. } => (Tone::Notice, Some("rewritten since binding")),
             _ => (Tone::Alarm, Some("bound version lost")),
         },
+        Grounding::Unverified { .. } => (Tone::Notice, Some("never verified")),
         Grounding::Current { .. } => (Tone::Calm, None),
     }
 }
@@ -312,8 +313,9 @@ mod tests {
     fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
-            bound_version: gmr::Version::new("v1"),
+            bound_version: Some(gmr::Version::new("v1")),
             sources: std::collections::BTreeSet::from([gmr::Source::Adjudicated]),
+            baseline_at: None,
             asserted_at: None,
             grounding: if rewritten {
                 Grounding::Rewritten {

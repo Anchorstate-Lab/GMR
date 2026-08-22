@@ -251,7 +251,7 @@ impl World {
             .bind(
                 Ref::new("git", format!("memories/{name}")),
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
-                Version::new(version),
+                Some(Version::new(version)),
                 gmr_core::Source::Adjudicated,
             )
             .await
@@ -266,7 +266,7 @@ impl World {
             .bind(
                 reference,
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
-                Version::new(version),
+                Some(Version::new(version)),
                 gmr_core::Source::Adjudicated,
             )
             .await
@@ -340,7 +340,7 @@ async fn reaffirming_clears_rewritten_without_touching_anchors() {
     let bytes = std::fs::read(w.dir.path().join("memories/a.md")).unwrap();
     let current = gmr_core::content_hash_of_bytes(&bytes).into_inner();
     w.runtime
-        .reaffirm(&reference, Version::new(current))
+        .reaffirm(&reference, Some(Version::new(current)))
         .await
         .unwrap();
 
@@ -363,7 +363,7 @@ async fn reaffirming_an_unbound_reference_is_refused() {
         .runtime
         .reaffirm(
             &Ref::new("git", "memories/never-bound.md"),
-            Version::new("v"),
+            Some(Version::new("v")),
         )
         .await
         .unwrap_err();
@@ -474,7 +474,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .bind(
             Ref::new("git", "memories/bound.md"),
             vec![AnchorKey::new("a")],
-            Version::new("v1"),
+            Some(Version::new("v1")),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -483,7 +483,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .bind(
             Ref::new("git", "memories/loose.md"),
             vec![],
-            Version::new("v1"),
+            Some(Version::new("v1")),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -513,6 +513,58 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
     assert_eq!(
         by_id("memories/loose.md").content(),
         Some(b"This one is not anchored, but the one above links to it.".as_slice())
+    );
+}
+
+#[tokio::test]
+async fn an_assertion_made_when_the_store_could_not_answer_is_unverified_not_refused() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+
+    let reference = Ref::new("git", "memories/a.md");
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("a")],
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let held = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        held.memories[0].footing(),
+        gmr_runtime::Footing::Unverified,
+        "an agent binds the moment it writes a memory, which is when the link is most \
+         accurate and when the store is least likely to answer yet. Refusing there throws \
+         that link away; reporting the assertion as though a baseline stood behind it \
+         would claim a comparison nobody made"
+    );
+    assert!(
+        held.memories[0].bound_version.is_none(),
+        "there is no baseline to name, and a placeholder would be indistinguishable from \
+         one the store really issued"
+    );
+
+    w.runtime
+        .reaffirm(
+            &reference,
+            w.runtime.current_version(&reference).await.unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        w.runtime
+            .grounded(&AnchorKey::new("a"))
+            .await
+            .unwrap()
+            .memories[0]
+            .footing(),
+        gmr_runtime::Footing::Current,
+        "a later act that does reach the store establishes the baseline. Nothing on the \
+         read path writes one — a read says what it found, it does not settle anything"
     );
 }
 
@@ -562,7 +614,7 @@ async fn asserting_an_empty_anchor_set_takes_nothing_away() {
         .bind(
             reference.clone(),
             vec![],
-            Version::new("v"),
+            Some(Version::new("v")),
             gmr_core::Source::Adjudicated,
         )
         .await

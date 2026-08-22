@@ -8,7 +8,7 @@ use crate::error::StoreError;
 pub struct BindingRecord {
     pub seq: Seq,
     pub binding: Binding,
-    pub bound_version: Version,
+    pub bound_version: Option<Version>,
     pub bound_at_seq: Option<Seq>,
     pub source: Source,
     pub asserted_at: Option<DateTime<Utc>>,
@@ -32,7 +32,7 @@ pub struct Revocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asserted {
     pub binding: Binding,
-    pub bound_version: Version,
+    pub bound_version: Option<Version>,
     pub bound_at_seq: Option<Seq>,
     pub source: Source,
     pub at: DateTime<Utc>,

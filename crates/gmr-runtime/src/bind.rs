@@ -12,7 +12,7 @@ impl Runtime {
         &self,
         reference: Ref,
         anchors: Vec<AnchorKey>,
-        bound_version: Version,
+        bound_version: Option<Version>,
         source: Source,
     ) -> Result<Landed, RuntimeError> {
         let mut landed = Landed::default();
@@ -32,7 +32,7 @@ impl Runtime {
                     reference,
                     anchors: landed.anchors.clone(),
                 },
-                &bound_version,
+                bound_version.as_ref(),
                 source,
                 Utc::now(),
             )
@@ -151,7 +151,7 @@ impl Runtime {
     pub async fn reaffirm(
         &self,
         reference: &Ref,
-        bound_version: Version,
+        bound_version: Option<Version>,
     ) -> Result<(), RuntimeError> {
         reaffirm(&self.log, &self.memory, reference, bound_version).await
     }
@@ -161,7 +161,7 @@ async fn reaffirm(
     log: &AnchorLog,
     memory: &MemoryLens,
     reference: &Ref,
-    bound_version: Version,
+    bound_version: Option<Version>,
 ) -> Result<(), RuntimeError> {
     let asserted = memory.binding_of(reference).await?;
     if asserted.is_empty() {
@@ -177,7 +177,7 @@ async fn reaffirm(
         .bind(
             log,
             &binding,
-            &bound_version,
+            bound_version.as_ref(),
             Source::Adjudicated,
             Utc::now(),
         )

@@ -212,7 +212,7 @@ pub async fn run(
                         rt.revoke_on(&reference, &dropped, gmr::Source::Derived)
                             .await?;
                     }
-                    rt.bind(reference, anchors, version, gmr::Source::Derived)
+                    rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
                         .await?;
                 }
             }
@@ -408,7 +408,7 @@ async fn align_bindings(
         let settled = !current.is_empty()
             && had == want
             && derived_throughout
-            && latest.is_some_and(|r| r.bound_version == version);
+            && latest.is_some_and(|r| r.bound_version.as_ref() == Some(&version));
         if settled {
             continue;
         }
@@ -600,7 +600,7 @@ mod tests {
         );
 
         for (reference, anchors, version, _) in plan {
-            rt.bind(reference, anchors, version, gmr::Source::Derived)
+            rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
                 .await
                 .unwrap();
         }

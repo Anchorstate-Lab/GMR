@@ -741,7 +741,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
         w.rt.bind(
             reference.clone(),
             vec![key()],
-            Version::new("v1"),
+            Some(Version::new("v1")),
             Source::SelfAttested,
         )
         .await
@@ -774,7 +774,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
                 reference: carried.clone(),
                 anchors: vec![key()],
             },
-            &Version::new("v1"),
+            Some(&Version::new("v1")),
             Source::Adjudicated,
             chrono::Utc::now(),
         )

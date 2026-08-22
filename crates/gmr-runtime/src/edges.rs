@@ -44,14 +44,14 @@ pub enum Standing {
     Rewritten {
         anchor: AnchorKey,
         reference: gmr_core::Ref,
-        bound_version: Version,
+        bound_version: Option<Version>,
         current_version: Version,
         before: crate::read::Before,
     },
     Gone {
         anchor: AnchorKey,
         reference: gmr_core::Ref,
-        bound_version: Version,
+        bound_version: Option<Version>,
     },
     NoProvider {
         anchor: AnchorKey,
@@ -76,6 +76,7 @@ impl Standing {
         } = view;
         match grounding {
             crate::read::Grounding::Current { .. } => None,
+            crate::read::Grounding::Unverified { .. } => None,
             crate::read::Grounding::Rewritten {
                 version, before, ..
             } => Some(Self::Rewritten {
@@ -249,11 +250,12 @@ mod tests {
     fn viewed(grounding: Grounding) -> MemoryView {
         MemoryView {
             reference: Ref::new("git", "m.md"),
-            bound_version: Version::new("v1"),
+            bound_version: Some(Version::new("v1")),
             grounded: true,
             links: Vec::new(),
             bound_at_seq: None,
             sources: std::collections::BTreeSet::from([gmr_core::Source::Adjudicated]),
+            baseline_at: None,
             asserted_at: None,
             stale: None,
             grounding,

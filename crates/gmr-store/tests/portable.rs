@@ -102,7 +102,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 reference: Ref::new("git", "memories/one.md"),
                 anchors: vec![key.clone()],
             },
-            bound_version: Version::new("v1"),
+            bound_version: Some(Version::new("v1")),
             bound_at_seq: Some(open_seq),
             source: gmr_core::Source::Adjudicated,
             at: chrono::Utc::now(),

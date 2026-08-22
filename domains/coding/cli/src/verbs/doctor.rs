@@ -141,6 +141,7 @@ pub async fn run(
                 "never_asked": addresses(ground.on(Footing::NeverAsked)),
                 "bound": ground.grounded_records(),
                 "no_before": addresses(ground.on(Footing::NoBefore)),
+                "unverified": addresses(ground.on(Footing::Unverified)),
                 "unsupervised": addresses(&ground.unsupervised),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
@@ -231,6 +232,12 @@ pub async fn run(
             "unasked   {} of {} bound record(s) were never asked about — the total content budget ran out first\n          <- what is printed above is that partial view, not the whole repository. Raise --content-total-ms to see the rest",
             ground.on(Footing::NeverAsked).len(),
             ground.grounded_records()
+        );
+    }
+    if !ground.on(Footing::Unverified).is_empty() {
+        println!(
+            "unverified {} record(s) have never been compared against what the store holds\n          <- they were asserted when the store could not answer, so there is no baseline to move away from. A `gmr bind` or `gmr reaffirm` that reaches the store establishes one",
+            ground.on(Footing::Unverified).len()
         );
     }
     if !ground.on(Footing::NoBefore).is_empty() {

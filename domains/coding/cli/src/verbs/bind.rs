@@ -21,12 +21,7 @@ pub async fn run(
         return detached(&path, &address, &cleared, json);
     }
 
-    let version = rt.current_version(&reference).await?.ok_or_else(|| {
-        CliError(format!(
-            "`{}` has no record `{}`",
-            reference.provider, reference.external_id
-        ))
-    })?;
+    let version = rt.current_version(&reference).await.unwrap_or(None);
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
     let landed = rt
@@ -38,7 +33,6 @@ pub async fn run(
         )
         .await?;
     let anchors = landed.anchors.clone();
-    let version = version.into_inner();
 
     if json {
         println!(
@@ -54,7 +48,16 @@ pub async fn run(
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        println!("  bound version {}", &version[..12.min(version.len())]);
+        match &version {
+            Some(v) => {
+                let v = v.as_str();
+                println!("  bound version {}", &v[..12.min(v.len())]);
+            }
+            None => println!(
+                "  no version: the store could not answer for this record, so nothing has \
+                 been verified about it yet"
+            ),
+        }
         for (named, living) in &landed.moved {
             println!("  {named} is closed and superseded; this landed on {living}");
         }
