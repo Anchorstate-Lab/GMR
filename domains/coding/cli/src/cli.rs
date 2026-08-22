@@ -189,6 +189,22 @@ pub enum Command {
         provider: Option<String>,
     },
 
+    /// Say that a memory you just wrote is about these anchors. Records the
+    /// assertion as self-attested: you wrote the record and you are vouching
+    /// for it, and no reader should mistake that for a second opinion. Never
+    /// needs the store to answer first — a record too fresh to be readable is
+    /// exactly the moment the link is most accurate.
+    #[command(hide = true)]
+    Attest {
+        /// `<provider>:<id>`, or the id the store just handed back with --provider.
+        path: String,
+        #[arg(long, value_delimiter = ',', required = true)]
+        anchors: Vec<String>,
+        /// Which registered ContentProvider `path` is resolved through.
+        #[arg(long)]
+        provider: Option<String>,
+    },
+
     /// Re-stamp a binding's content version without changing which anchors it's about.
     #[command(hide = true)]
     Reaffirm {

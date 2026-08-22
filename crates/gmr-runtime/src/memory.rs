@@ -136,18 +136,19 @@ impl MemoryLens {
         asserted: Vec<BindingRecord>,
         budget: &Budget,
     ) -> Result<MemoryView, RuntimeError> {
-        let baseline = asserted
+        let standing = asserted
             .iter()
             .max_by_key(|r| r.seq)
             .expect("a view is only assembled from at least one assertion");
-        let reference = baseline.binding.reference.clone();
-        let bound_version = baseline.bound_version.clone();
-        let bound_at_seq = baseline.bound_at_seq;
-        let baseline_at = asserted
+        let baseline = asserted
             .iter()
             .filter(|r| r.bound_version.is_some())
-            .map(|r| r.seq)
-            .max();
+            .max_by_key(|r| r.seq)
+            .unwrap_or(standing);
+        let reference = standing.binding.reference.clone();
+        let bound_version = baseline.bound_version.clone();
+        let bound_at_seq = baseline.bound_at_seq;
+        let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
         let asserted_at = asserted.iter().filter_map(|r| r.asserted_at).min();
         let sources: std::collections::BTreeSet<Source> =
             asserted.iter().map(|r| r.source).collect();

@@ -569,6 +569,37 @@ async fn an_assertion_made_when_the_store_could_not_answer_is_unverified_not_ref
 }
 
 #[tokio::test]
+async fn a_later_assertion_that_verified_nothing_does_not_unverify_what_was_verified() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+
+    let reference = Ref::new("git", "memories/a.md");
+    let pinned = w.runtime.current_version(&reference).await.unwrap();
+
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("a")],
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let held = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        held.memories[0].bound_version, pinned,
+        "an agent re-attesting before the store can answer says the record is still \
+             about this anchor. It compared nothing, so it has nothing to overwrite \
+             the standing baseline with, and taking its silence as the new baseline \
+             would throw away a reading somebody really took"
+    );
+    assert_eq!(held.memories[0].footing(), gmr_runtime::Footing::Current);
+}
+
+#[tokio::test]
 async fn a_revoked_record_is_no_longer_listed_under_the_anchor() {
     let w = World::new(true);
     w.memory("a.md", "One.");

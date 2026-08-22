@@ -14,7 +14,9 @@ the outside, the same signal `observe` uses internally to catch it.
 
 `MemoryView.bound_at_seq` is the same field `BindingRecord` carries (see
 [[store-binding-record]]) — `None` unless the binding names exactly one
-anchor. `MemoryView.stale` is derived from it inside `read`, relative to
+anchor — taken from the assertion that established the standing baseline
+rather than from the newest one, for the reason in
+[[runtime-standing-baseline]]. `MemoryView.stale` is derived from it inside `read`, relative to
 *this* anchor's current head (`seq < s.head`): a bound-at seq behind the
 head means the anchor has moved since the binding was made. `stale` stays
 `None` when there is nothing to compare against, which includes every

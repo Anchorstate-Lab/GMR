@@ -40,5 +40,5 @@ jobs:
       run: |
         set -o pipefail
         sh acceptance.sh | tee /tmp/acceptance.out
-        grep -q 'ACCEPTANCE COMPLETE steps=21' /tmp/acceptance.out \
+        grep -q 'ACCEPTANCE COMPLETE steps=22' /tmp/acceptance.out \
           || { echo "acceptance.sh did not run every step it declares"; exit 1; }

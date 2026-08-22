@@ -589,6 +589,56 @@ echo "$out" | grep -q '"gone":\[\]' || fail "detaching left the record still rep
 echo "$out" | grep -q '"unsupervised":\[\]' \
     || fail "detaching left the record reported as unsupervised" "$out"
 
+# ── The main road, agent side: it writes a memory into its own store and says
+#    what that memory is about in the same breath. A store has not indexed the
+#    record yet at that moment, which is exactly when the link is most accurate
+#    and least provable — so the assertion lands unverified rather than refused,
+#    and says out loud that only its own writer stands behind it.
+step "an agent binds what it just wrote, before any store can answer for it"
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+rm -f "$mem/fresh.md"
+
+set +e
+out=$("$gmr" --repo "$repo" attest 'claude-code:fresh.md' --anchors "$key" --json); code=$?
+set -e
+[ "$code" -eq 0 ] \
+    || fail "a record the store could not answer for was refused, and that is the one link nothing else can reconstruct" "$out"
+echo "$out" | grep -q '"source":"self_attested"' \
+    || fail "the agent's own say-so was recorded as something else" "$out"
+echo "$out" | grep -q '"vouched":false' \
+    || fail "an agent vouching for its own record was reported as independently established" "$out"
+echo "$out" | grep -q '"version":null' \
+    || fail "a version was claimed for a record no store had answered for" "$out"
+
+# The store catches up. Nothing on the read path settles a baseline, so the
+# record is readable and still never compared.
+printf 'written by the agent, indexed a moment later\n' > "$mem/fresh.md"
+out=$("$gmr" --repo "$repo" read "$key")
+echo "$out" | grep -q 'never verified' \
+    || fail "a record nothing has ever compared read as though a baseline stood behind it" "$out"
+echo "$out" | grep -q 'only the writer of this record' \
+    || fail "nothing said this link rests on the agent's own say-so; a reader cannot weigh what is not shown" "$out"
+
+# The same verb again is how an agent stamps the baseline it could not take the
+# first time. `reaffirm` would record a person's judgement, and no agent gets to
+# launder its own say-so into one by running a second command.
+"$gmr" --repo "$repo" attest 'claude-code:fresh.md' --anchors "$key" >/dev/null \
+    || fail "re-attesting an already bound record was refused"
+out=$("$gmr" --repo "$repo" read "$key")
+echo "$out" | grep -q 'never verified' \
+    && fail "an assertion that did reach the store left the record still unverified" "$out"
+echo "$out" | grep -q 'only the writer of this record' \
+    || fail "a second act by the same agent was reported as though somebody else had vouched for the link" "$out"
+
+# And a later assertion that reached nothing does not undo the baseline above.
+rm "$mem/fresh.md"
+"$gmr" --repo "$repo" attest 'claude-code:fresh.md' --anchors "$key" >/dev/null \
+    || fail "attesting a record the store no longer answers for was refused"
+printf 'written by the agent, indexed a moment later\n' > "$mem/fresh.md"
+out=$("$gmr" --repo "$repo" read "$key")
+echo "$out" | grep -q 'never verified' \
+    && fail "an assertion that compared nothing threw away a reading somebody really took" "$out"
+
 echo
 echo "Accepted: a stranger's repo, no toolchain, no downloaded probes. Memory and"
 echo "          fact are tied together — in the source and outside it — and when the"

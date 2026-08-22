@@ -64,7 +64,7 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 
 ## The verbs behind the front door
 
-`gmr --help` shows seven. The rest still work and are reachable through `gmr help <name>`: `sync`, `open`, `observe`, `pass`, `read`, `doctor`, `health`, `edges`, `requeue`, `bind`, `reaffirm`, `cobound`, `link`, `probes`, `publish`, `export`, `import`, and the five revise verbs. Reach for them to drive one part by hand, not for ordinary work.
+`gmr --help` shows seven. The rest still work and are reachable through `gmr help <name>`: `sync`, `open`, `observe`, `pass`, `read`, `doctor`, `health`, `edges`, `requeue`, `bind`, `attest`, `reaffirm`, `cobound`, `link`, `probes`, `publish`, `export`, `import`, and the five revise verbs. Reach for them to drive one part by hand, not for ordinary work.
 
 ## Reading `gmr doctor --json`
 
@@ -91,6 +91,22 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 - `skill_stale` — an installed copy of this doc is not the one in the binary (it differs, or it cannot be read at all; never installed is neither). `gmr init` only ever writes it when absent, so an upgrade leaves the old text in place and agents keep reading contracts this build no longer honours. Both copies are checked — the project's and `~/.claude/skills/gmr/SKILL.md` — and the line names the one command that rewrites that copy: plain `gmr init` never touches the global one.
 - `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it fail with "no provider named `<name>` is registered in this binary" until the underlying cause is fixed. That message means the store is unreachable from here, **not** that the record is gone — a provider that is registered and simply has no such record says "`<provider>` has no record `<path>`" instead. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
 - `notes` — lint findings over every file under `memories/`, independent of the anchors above. `breaks: true` means the note names no live anchor at all; `breaks: false` is advisory. Codes: `unclaimed` (no frontmatter, so nothing observes whether this note still holds), `bare-key` (an `anchors:` entry binds to a key without declaring it, and nothing else in the repo declares that key either), `long-hand` (an explicit `anchors:` entry states exactly what `about: <coord>` would already route to — safe to simplify), `retired` (the note names a shape/axis word this build no longer has — stale, or a deliberate record of something buried; only you can tell which).
+
+## Binding a memory you just wrote
+
+When the memory is one *you* wrote — into your own memory store, a mem0 scope, anywhere that is not this repository's `memories/` — say what it is about in the same breath:
+
+```
+gmr attest <provider>:<id> --anchors src/auth.ts#createSession
+```
+
+Run it the moment the store hands the id back. It never asks the store to answer first, because a record too fresh to be readable is exactly when the link is most accurate and only you know it. The assertion lands as **self-attested** and every reader is shown that: you wrote the record and you are the only thing saying what it is about. That is worth recording — it is not a second opinion, and nothing here will pretend it is.
+
+Run the same command again once the store can answer, and it stamps the baseline it could not take the first time. Use `attest`, not `reaffirm`: `reaffirm` records a person's judgement, and running it about your own memory would launder your say-so into somebody else's.
+
+`attest` only ever adds. Ending a link is a judgement call, so it goes through `gmr bind <address> --detach`.
+
+A note you write into this repository's `memories/` needs none of this — `gmr anchor` writes the file and its `about:` line, and the binding is *derived* from what the note declares about itself.
 
 ## Binding non-git content
 

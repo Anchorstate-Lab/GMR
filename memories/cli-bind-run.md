@@ -1,5 +1,8 @@
 ---
-about: domains/coding/cli/src/verbs/bind.rs#run
+about:
+  - domains/coding/cli/src/verbs/bind.rs#run
+  - domains/coding/cli/src/verbs/bind.rs#attest
+  - domains/coding/cli/src/verbs/bind.rs#asserted
 watch: [logic]
 ---
 
@@ -36,6 +39,44 @@ A bind typed here is `Source::Adjudicated`: a person named the reference and
 named the anchors. `sync` records `Source::Derived` for the same relation
 reached another way. The two are told apart by kind of act, not by who ran
 the command — see [[store-binding-record]].
+
+## `attest` is a verb, not a flag on `bind`
+
+`attest` is where `Source::SelfAttested` is born: an agent wrote a record
+into some store and is saying, itself, what that record is about. Both verbs
+run `asserted`, which differs in nothing but the `Source` it hands down.
+
+That one difference is why it is a separate door rather than `bind
+--self-attested`. A flag has a default, and the default would be
+`Adjudicated` — so an agent that forgot the flag would file its own say-so
+as a person's judgement, which is the single reading `independent()` exists
+to keep honest. A verb cannot be forgotten: you call it or you call `bind`.
+
+Two consequences follow from what the act is, not from convenience:
+
+- **`attest` only adds.** Ending a tie is a judgement about somebody's
+  assertion, so `--detach` stays on `bind`.
+- **An agent re-stamps a pending baseline by attesting again**, never by
+  `reaffirm` (see [[runtime-reaffirm]]) — that verb records `Adjudicated`,
+  and a second command must not launder the same agent's say-so into a
+  second opinion. Attesting again is the same act again, and it carries a
+  version whenever the store can answer by then.
+
+A record too fresh for its store to answer for is the ordinary case here,
+not the exception — it is the moment the link is most accurate — so
+`asserted` binds with no version rather than refusing; see
+[[runtime-standing-baseline]] for what a later reading does with that.
+
+## A link nothing independent stands behind says so where it is read
+
+`render.rs` marks a memory whose live assertions are all non-independent, so
+the reader sees it at the same moment they read the memory. Two different
+sentences, because the two are not the same claim: `Unknown` alone means
+nobody recorded where the link came from, while a self-attestation means we
+know exactly where it came from and it is the record's own writer.
+
+Recording the source and then only ever showing it under `--json` would put
+the fact in the store and out of sight of the person it is for.
 
 ## When this changes, ask
 

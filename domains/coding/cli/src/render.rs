@@ -1,4 +1,4 @@
-use gmr::{Before, Grounded, Grounding};
+use gmr::{Before, Grounded, Grounding, Source};
 use serde_json::Value;
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
@@ -58,6 +58,9 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
         let mark = if m.grounded { "*" } else { "?" };
         out.push_str(&format!("  {mark} {}", names.of(&m.reference)));
         out.push_str(&grounding(&m.grounding));
+        if let Some(said) = vouching(&m.sources) {
+            out.push_str(said);
+        }
         if !m.grounded {
             out.push_str("  ungrounded");
         }
@@ -67,6 +70,16 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
         out.push('\n');
     }
     out
+}
+
+fn vouching(sources: &std::collections::BTreeSet<Source>) -> Option<&'static str> {
+    if sources.iter().any(|s| s.independent()) {
+        return None;
+    }
+    match sources.iter().all(|s| *s == Source::Unknown) {
+        true => Some("  where this link came from was never recorded"),
+        false => Some("  only the writer of this record says it is about this anchor"),
+    }
 }
 
 fn grounding(g: &Grounding) -> String {

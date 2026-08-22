@@ -202,6 +202,14 @@ async fn served(
             let reference = stores.locate(&path, provider.as_deref())?;
             verbs::bind::run(&rt, names, reference, anchors, detach, json).await
         }
+        Command::Attest {
+            path,
+            anchors,
+            provider,
+        } => {
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::bind::attest(&rt, names, reference, anchors, json).await
+        }
         Command::Reaffirm { path, provider } => {
             let reference = stores.locate(&path, provider.as_deref())?;
             verbs::reaffirm::run(&rt, names, reference, json).await
