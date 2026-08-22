@@ -122,7 +122,10 @@ A note you write into this repository's `memories/` needs none of this — `gmr 
 [provider.desk]
 fetch = "scripts/desk-fetch.sh"
 list  = "scripts/desk-list.sh"   # omit it, and this store simply cannot be listed
+ids   = "readable"               # or "opaque" — required; nobody but you knows which
 ```
+
+`gmr doctor` says what each declared store can and cannot do at assembly, rather than leaving you to find out by watching it fail — and a store with `ids = "opaque"` and no `list` is told plainly that only memories written after it was wired up can ever be anchored, because nothing can enumerate it and its ids are not ones you could write down. `--json` carries this under `declared_providers`.
 
 `fetch` is run with `GMR_POSITION` set to `{"id": "<external id>"}` and answers on stdout with `{"text": "..."}`, or `null` for a record that is not there — `null` means *gone*, and anything else the script can do about a failure is to exit non-zero, which reads as the store being unreachable. `list` answers `{"records": [{"id": "...", "text": "..."}, ...]}`. A memory is one JSON string: a store holding anything but text needs a provider compiled in, and so does one whose own version you need — a declared store's version is a hash of the text GMR computes itself.
 

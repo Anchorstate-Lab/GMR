@@ -27,6 +27,16 @@ classification lives in `CorpusHealth`, computed over `Corpus::views`, and `run`
 reads `Footing` off it. `live` is used only for the three questions it is the
 right slice for: `absent`, `unseen`, `stranded`. See [[runtime-corpus]].
 
+## What a declared store can do is printed, and never weighed
+
+The `provider` lines describe every store `.anchor/providers.toml` declares
+(see [[cli-providers-recipe]]) and are not a `Verdict` field, because a
+description is not a condition. A store that cannot be listed is not broken,
+and nothing here can be done about it — but a reader who learns it by
+watching a command fail reads every such failure as the store being down.
+Saying it at assembly is the whole point, and colouring the run for it would
+undo it.
+
 ## The exit code is decided by who can fix it, not by how bad it sounds
 
 `Verdict` is one `bool` per condition that turns a run red, and

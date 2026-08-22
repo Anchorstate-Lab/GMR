@@ -535,10 +535,19 @@ echo "$out" | grep -q '"reference":"claude-code:owned.md"' \
 cat > "$repo/.anchor/providers.toml" <<'TOML'
 [provider.sealed]
 fetch = "scripts/desk-fetch.sh"
+ids = "opaque"
 TOML
 mkdir -p "$repo/scripts"
 printf '#!/bin/sh\nprintf null\n' > "$repo/scripts/desk-fetch.sh"
 chmod +x "$repo/scripts/desk-fetch.sh"
+
+set +e
+out=$("$gmr" --repo "$repo" doctor --json)
+set -e
+echo "$out" | grep -q '"provider":"sealed"' \
+    || fail "a store declared in a recipe was not described at assembly; a reader finds out what it cannot do by watching it fail" "$out"
+echo "$out" | grep -q 'only memories written after it was wired up' \
+    || fail "a store that can neither be listed nor have its ids guessed did not say so" "$out"
 
 named=$("$gmr" --repo "$repo" memories --provider sealed) \
     || fail "naming a store that cannot be listed was treated as a failure" "$named"
@@ -645,6 +654,7 @@ cat > "$repo/.anchor/providers.toml" <<'TOML'
 [provider.desk]
 fetch = "scripts/desk-fetch.sh"
 list = "scripts/desk-list.sh"
+ids = "readable"
 TOML
 export DESK="$work/desk"
 printf 'the 30 minutes is the CDN cache window, not a security choice\n' > "$DESK/why-30.md"
