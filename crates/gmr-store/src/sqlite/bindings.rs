@@ -1,4 +1,4 @@
-use crate::{Asserted, BindingRecord, BindingStore, Sealer, StoreError};
+use crate::{Asserted, BindingRecord, BindingStore, Revocation, Sealer, StoreError};
 use async_trait::async_trait;
 use gmr_core::{AnchorKey, Binding, ContentHash, Ref, Seq, Source, Version, content_hash_of_bytes};
 use sqlx::{Row, SqlitePool};
@@ -49,47 +49,104 @@ impl BindingStore for SqliteBindings {
         Ok(())
     }
 
-    async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<BindingRecord>, StoreError> {
+    async fn revoke(&self, revocation: &Revocation) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        let seq: i64 = sqlx::query_scalar(
+            "INSERT INTO binding_revocations (reference, anchor, source, revoked_at) \
+             VALUES (?1, ?2, ?3, ?4) RETURNING seq",
+        )
+        .bind(ref_key(&revocation.reference))
+        .bind(revocation.at.as_str())
+        .bind(revocation.source.as_str())
+        .bind(revocation.when.to_rfc3339())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db_err)?;
+
+        for tag in &revocation.tags {
+            sqlx::query(
+                "INSERT OR IGNORE INTO binding_revoked_tags (revocation, binding, anchor) \
+                 VALUES (?1, ?2, ?3)",
+            )
+            .bind(seq)
+            .bind(tag.binding as i64)
+            .bind(tag.anchor.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        }
+        tx.commit().await.map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn bindings_on(&self, anchors: &[AnchorKey]) -> Result<Vec<BindingRecord>, StoreError> {
+        if anchors.is_empty() {
+            return Ok(Vec::new());
+        }
+        let slots = placeholders(anchors.len(), 1);
+        let sql = format!(
+            r#"
+            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at,
+                   ba.anchor AS live_anchor
+            FROM bindings b
+            JOIN binding_anchors ba ON ba.seq = b.seq
+            WHERE ba.anchor IN ({slots})
+              AND NOT EXISTS (
+                  SELECT 1 FROM binding_revoked_tags rt
+                  JOIN binding_revocations r ON r.seq = rt.revocation
+                  WHERE rt.binding = b.seq AND rt.anchor = ba.anchor
+                    AND r.anchor IN ({slots})
+              )
+            ORDER BY b.seq, ba.anchor
+            "#
+        );
+        let mut q = sqlx::query(&sql);
+        for anchor in anchors {
+            q = q.bind(anchor.as_str());
+        }
+        gathered(q.fetch_all(&self.pool).await.map_err(db_err)?)
+    }
+
+    async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at FROM bindings b
-            JOIN binding_anchors ba ON ba.seq = b.seq
-            WHERE ba.anchor = ?1
-              AND b.seq = (SELECT MAX(seq) FROM bindings WHERE reference = b.reference)
-            ORDER BY b.seq
+            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at,
+                   ba.anchor AS live_anchor
+            FROM bindings b
+            LEFT JOIN binding_anchors ba ON ba.seq = b.seq
+              AND NOT EXISTS (
+                  SELECT 1 FROM binding_revoked_tags rt
+                  WHERE rt.binding = b.seq AND rt.anchor = ba.anchor
+              )
+            WHERE b.reference = ?1
+            ORDER BY b.seq, ba.anchor
             "#,
         )
-        .bind(anchor.as_str())
+        .bind(ref_key(reference))
         .fetch_all(&self.pool)
         .await
         .map_err(db_err)?;
-        decode_all(rows)
-    }
-
-    async fn binding_of(&self, reference: &Ref) -> Result<Option<BindingRecord>, StoreError> {
-        let row = sqlx::query(
-            "SELECT body, bound_version, bound_at_seq, source, asserted_at FROM bindings WHERE reference = ?1 ORDER BY seq DESC LIMIT 1",
-        )
-        .bind(ref_key(reference))
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(db_err)?;
-
-        row.map(decode_one).transpose()
+        gathered(rows)
     }
 
     async fn all(&self) -> Result<Vec<BindingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at FROM bindings b
-            WHERE b.seq = (SELECT MAX(seq) FROM bindings WHERE reference = b.reference)
-            ORDER BY b.seq
+            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at,
+                   ba.anchor AS live_anchor
+            FROM bindings b
+            LEFT JOIN binding_anchors ba ON ba.seq = b.seq
+              AND NOT EXISTS (
+                  SELECT 1 FROM binding_revoked_tags rt
+                  WHERE rt.binding = b.seq AND rt.anchor = ba.anchor
+              )
+            ORDER BY b.seq, ba.anchor
             "#,
         )
         .fetch_all(&self.pool)
         .await
         .map_err(db_err)?;
-        decode_all(rows)
+        gathered(rows)
     }
 }
 
@@ -116,7 +173,35 @@ impl Sealer for SqliteBindings {
     }
 }
 
-fn decode_one(row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, StoreError> {
+fn placeholders(n: usize, from: usize) -> String {
+    (from..from + n)
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn gathered(rows: Vec<sqlx::sqlite::SqliteRow>) -> Result<Vec<BindingRecord>, StoreError> {
+    let mut out: Vec<BindingRecord> = Vec::new();
+    for row in rows {
+        let seq = row.get::<i64, _>("seq") as Seq;
+        let live = row
+            .get::<Option<String>, _>("live_anchor")
+            .map(AnchorKey::new);
+        match out.last_mut() {
+            Some(last) if last.seq == seq => {
+                last.binding.anchors.extend(live);
+                continue;
+            }
+            _ => {}
+        }
+        let mut record = decode_one(seq, row)?;
+        record.binding.anchors = live.into_iter().collect();
+        out.push(record);
+    }
+    Ok(out)
+}
+
+fn decode_one(seq: Seq, row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, StoreError> {
     let binding: Binding =
         serde_json::from_str(&row.get::<String, _>("body")).map_err(decode_err)?;
     let bound_version = row
@@ -137,6 +222,7 @@ fn decode_one(row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, StoreError>
         ))
     })?;
     Ok(BindingRecord {
+        seq,
         binding,
         bound_version,
         bound_at_seq: row.get::<Option<i64>, _>("bound_at_seq").map(|s| s as Seq),
@@ -146,8 +232,4 @@ fn decode_one(row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, StoreError>
             .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
             .map(|t| t.with_timezone(&chrono::Utc)),
     })
-}
-
-fn decode_all(rows: Vec<sqlx::sqlite::SqliteRow>) -> Result<Vec<BindingRecord>, StoreError> {
-    rows.into_iter().map(decode_one).collect()
 }

@@ -45,15 +45,17 @@ pub async fn run(
         let source = store.source().expect("filtered to stores that list");
         for record in source.list(&budget).await? {
             let bound = rt.memory().binding_of(&record.reference).await?;
+            let anchors = (!bound.is_empty()).then(|| {
+                bound
+                    .iter()
+                    .flat_map(|b| b.binding.anchors.iter().map(|a| a.to_string()))
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            });
             rows.push((
                 crate::memories::addressed(&record.reference),
-                bound.map(|b| {
-                    b.binding
-                        .anchors
-                        .iter()
-                        .map(|a| a.to_string())
-                        .collect::<Vec<_>>()
-                }),
+                anchors,
                 excerpt(&record.bytes),
             ));
         }

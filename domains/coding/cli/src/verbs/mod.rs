@@ -103,7 +103,7 @@ pub(crate) async fn recapture(
 pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<gmr::Ref>, CliError> {
     Ok(rt
         .memory()
-        .bindings_on(key)
+        .bindings_on(rt.log(), key)
         .await?
         .into_iter()
         .map(|b| b.binding.reference)

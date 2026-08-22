@@ -220,80 +220,37 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
         .unwrap();
 
     let on = b
-        .bindings_on(&AnchorKey::new("core::modules"))
+        .bindings_on(&[AnchorKey::new("core::modules")])
         .await
         .unwrap();
+    assert_eq!(on.len(), 1);
+    assert_eq!(on[0].binding, binding);
+    assert_eq!(on[0].bound_version, bound_version);
+    assert_eq!(on[0].bound_at_seq, Some(7));
+    assert_eq!(on[0].source, gmr_core::Source::Adjudicated);
+
     assert_eq!(
-        on,
-        vec![gmr_store::BindingRecord {
-            binding: binding.clone(),
-            bound_version: bound_version.clone(),
-            bound_at_seq: Some(7),
-            source: gmr_core::Source::Adjudicated,
-            asserted_at: on[0].asserted_at,
-        }]
-    );
-    assert_eq!(
-        b.binding_of(&binding.reference)
-            .await
-            .unwrap()
-            .unwrap()
-            .bound_version,
-        Version::new("blob-v1"),
-        "the bound version must be retained from day one"
+        b.binding_of(&binding.reference).await.unwrap().len(),
+        1,
+        "the reverse direction answers about the same one assertion"
     );
 }
 
 async fn a_binding_naming_several_anchors_has_no_single_bound_at_seq<B: BindingStore>(b: &B) {
     let binding = Binding {
-        reference: Ref::new("git", "memories/shared.md"),
+        reference: Ref::new("git", "memories/many.md"),
         anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
     };
     b.bind(&asserted(&binding, "v", None)).await.unwrap();
 
     assert_eq!(
-        b.binding_of(&binding.reference)
-            .await
-            .unwrap()
-            .unwrap()
-            .bound_at_seq,
+        b.binding_of(&binding.reference).await.unwrap()[0].bound_at_seq,
         None,
         "which anchor's head would this be? there is no single answer, so it is not stored"
     );
 }
 
-async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
-    let reference = Ref::new("git", "memories/m.md");
-    for v in ["v1", "v2"] {
-        b.bind(&asserted(
-            &Binding {
-                reference: reference.clone(),
-                anchors: vec![AnchorKey::new("a")],
-            },
-            v,
-            None,
-        ))
-        .await
-        .unwrap();
-    }
-
-    assert_eq!(
-        b.binding_of(&reference)
-            .await
-            .unwrap()
-            .unwrap()
-            .bound_version,
-        Version::new("v2")
-    );
-    assert_eq!(
-        b.all().await.unwrap().len(),
-        1,
-        "one reference counts once in the current view"
-    );
-    assert_eq!(b.bindings_on(&AnchorKey::new("a")).await.unwrap().len(), 1);
-}
-
-async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
+async fn asserting_a_second_anchor_does_not_take_the_first_away<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/moved.md");
     for anchor in ["from", "to"] {
         b.bind(&asserted(
@@ -307,13 +264,158 @@ async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
         .await
         .unwrap();
     }
-    assert!(
-        b.bindings_on(&AnchorKey::new("from"))
+
+    assert_eq!(
+        b.bindings_on(&[AnchorKey::new("from")])
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        1,
+        "an assertion is an add, not a replacement. Under latest-wins this record silently \
+         left `from` the moment something asserted it on `to` — which is how an agent \
+         binding what it just wrote erased what a person had put there. Delivering one \
+         anchor too many is a reader's judgement to make; delivering one too few is a \
+         memory nobody is told about"
     );
-    assert_eq!(b.bindings_on(&AnchorKey::new("to")).await.unwrap().len(), 1);
+    assert_eq!(
+        b.bindings_on(&[AnchorKey::new("to")]).await.unwrap().len(),
+        1
+    );
+}
+
+async fn asserting_the_same_anchor_twice_still_delivers_it_once<B: BindingStore>(b: &B) {
+    let reference = Ref::new("git", "memories/twice.md");
+    for v in ["v1", "v2"] {
+        b.bind(&asserted(
+            &Binding {
+                reference: reference.clone(),
+                anchors: vec![AnchorKey::new("same")],
+            },
+            v,
+            None,
+        ))
+        .await
+        .unwrap();
+    }
+
+    let on = b.bindings_on(&[AnchorKey::new("same")]).await.unwrap();
+    assert_eq!(
+        on.iter()
+            .flat_map(|r| r.binding.anchors.iter())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        1,
+        "the set is a set of anchors, so an agent re-asserting the same coordinate every \
+         session leaves the delivered set exactly where it was"
+    );
+}
+
+async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
+    let reference = Ref::new("git", "memories/orset.md");
+    let at = AnchorKey::new("g");
+    b.bind(&asserted(
+        &Binding {
+            reference: reference.clone(),
+            anchors: vec![at.clone()],
+        },
+        "v1",
+        None,
+    ))
+    .await
+    .unwrap();
+
+    let first = b.bindings_on(std::slice::from_ref(&at)).await.unwrap();
+    b.revoke(&gmr_store::Revocation {
+        reference: reference.clone(),
+        at: at.clone(),
+        tags: vec![gmr_store::Tag {
+            binding: first[0].seq,
+            anchor: at.clone(),
+        }],
+        source: gmr_core::Source::Adjudicated,
+        when: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
+    assert!(
+        b.bindings_on(std::slice::from_ref(&at))
+            .await
+            .unwrap()
+            .is_empty(),
+        "a revocation that names a tag has to actually take it out of the delivered set"
+    );
+
+    b.bind(&asserted(
+        &Binding {
+            reference: reference.clone(),
+            anchors: vec![at.clone()],
+        },
+        "v2",
+        None,
+    ))
+    .await
+    .unwrap();
+    assert_eq!(
+        b.bindings_on(std::slice::from_ref(&at))
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "the later assertion is a tag the revocation never observed, so it wins. Without \
+         this, a revocation is a permanent ban on a coordinate rather than a claim about \
+         particular assertions — and an agent that re-derives a link the criteria now \
+         support could never say so again"
+    );
+}
+
+async fn a_revocation_does_not_reach_a_generation_it_was_not_made_at<B: BindingStore>(b: &B) {
+    let reference = Ref::new("git", "memories/generations.md");
+    let older = AnchorKey::new("older");
+    let heir = AnchorKey::new("heir");
+    b.bind(&asserted(
+        &Binding {
+            reference: reference.clone(),
+            anchors: vec![older.clone()],
+        },
+        "v1",
+        None,
+    ))
+    .await
+    .unwrap();
+    let seq = b.bindings_on(std::slice::from_ref(&older)).await.unwrap()[0].seq;
+
+    b.revoke(&gmr_store::Revocation {
+        reference: reference.clone(),
+        at: heir.clone(),
+        tags: vec![gmr_store::Tag {
+            binding: seq,
+            anchor: older.clone(),
+        }],
+        source: gmr_core::Source::Adjudicated,
+        when: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        b.bindings_on(&[heir.clone(), older.clone()])
+            .await
+            .unwrap()
+            .is_empty(),
+        "read from the heir, whose chain contains the generation this revocation was made \
+         at, it applies"
+    );
+    assert_eq!(
+        b.bindings_on(std::slice::from_ref(&older))
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "read from the older generation alone, it does not. The assertion was correct for \
+         the criteria that stood there, and a revocation made under later criteria is not \
+         a statement about it. Filtering revocations by the chain being read is what makes \
+         that hold without anyone remembering to check"
+    );
 }
 
 async fn sealing_is_content_addressed_and_idempotent<S: Sealer>(b: &S) {
@@ -409,8 +511,10 @@ journal_conformance!(
 bindings_conformance!(
     bindings_record_the_version_they_bound,
     a_binding_naming_several_anchors_has_no_single_bound_at_seq,
-    rebinding_appends_and_the_latest_wins,
-    rebinding_can_move_a_record_off_an_anchor,
+    asserting_a_second_anchor_does_not_take_the_first_away,
+    asserting_the_same_anchor_twice_still_delivers_it_once,
+    a_revocation_kills_only_the_tags_it_named,
+    a_revocation_does_not_reach_a_generation_it_was_not_made_at,
     sealing_is_content_addressed_and_idempotent,
 );
 

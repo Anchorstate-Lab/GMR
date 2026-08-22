@@ -24,7 +24,7 @@ pub use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 pub use gmr_runtime::{
     AnchorHealth, AnchorLog, AnchorView, Before, Corpus, CorpusHealth, Edge, Edges, Footing,
     Grounded, Grounding, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Passed, Policy,
-    Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
+    Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede, anchors_of,
 };
 pub use gmr_store::{
     BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, LinkStore, Queue, Sealer,

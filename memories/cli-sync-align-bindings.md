@@ -8,10 +8,31 @@ watch: [logic]
 Binding is append-only in the store (see [[store-binding-record]]), so a
 `bind` call that repeats an already-true relation still adds a new row
 saying the same thing again. `align_bindings` computes `settled` — same
-anchor set, same bound version — before deciding whether to call `rt.bind`
-at all, specifically so that running `sync` repeatedly over an unchanged
-repository does not grow the bindings table forever with identical
-entries.
+anchor set, same bound version, and every assertion behind it already
+`Derived` — before deciding whether to call `rt.bind` at all, specifically
+so that running `sync` repeatedly over an unchanged repository does not grow
+the bindings table forever with identical entries.
+
+The source clause is what re-derives the rows a schema migration could only
+honestly mark `Unknown`: the next `sync` finds them unsettled, re-asserts
+them as `Derived`, and the provenance question can answer for them. It
+reaches only notes, so a record in another store keeps saying `Unknown`,
+which is the true answer for it.
+
+## A note declares its whole coordinate set, so dropping a line revokes
+
+`about:` states everything the note is about, which makes `had - want` a
+removal the note is asking for — `align_bindings` emits a revocation for it,
+recorded as `Derived` like the assertion it undoes. Under
+[[store-orset-projection]] an add can no longer take anything away, so
+without this a line deleted from a note would leave its anchor bound
+forever.
+
+**Except when it looks like a rename.** Then the note is added to as usual,
+no revocation is emitted, and the pair is reported for a person to judge —
+so the new anchor is asserted without the old assertion being silently
+dropped. Both anchors deliver in the meantime, which is the direction a
+union should fail in.
 
 That is one of two things this function decides. The other — whether a note
 that dropped one key and gained another is a rename or a typo — lives in

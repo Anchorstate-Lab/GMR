@@ -161,8 +161,8 @@ async fn changed_since(
                 });
             }
 
-            for binding in memory.bindings_on(&key).await? {
-                let view = memory.fetch_memory(binding, &total.narrowed(call)).await?;
+            for asserted in crate::memory::by_reference(memory.bindings_on(log, &key).await?) {
+                let view = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
                 standing.extend(Standing::of(key.clone(), view));
             }
         }
@@ -253,7 +253,7 @@ mod tests {
             grounded: true,
             links: Vec::new(),
             bound_at_seq: None,
-            source: gmr_core::Source::Adjudicated,
+            sources: std::collections::BTreeSet::from([gmr_core::Source::Adjudicated]),
             asserted_at: None,
             stale: None,
             grounding,

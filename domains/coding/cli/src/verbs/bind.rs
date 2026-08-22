@@ -15,24 +15,18 @@ pub async fn run(
     }
     let path = names.of(&reference);
     let address = crate::memories::addressed(&reference);
-    let version = match detach {
-        false => rt.current_version(&reference).await?.ok_or_else(|| {
-            CliError(format!(
-                "`{}` has no record `{}`",
-                reference.provider, reference.external_id
-            ))
-        })?,
-        true => rt
-            .memory()
-            .binding_of(&reference)
-            .await?
-            .map(|record| record.bound_version)
-            .ok_or_else(|| {
-                CliError(format!(
-                    "`{address}` is not bound to anything — nothing to detach"
-                ))
-            })?,
-    };
+
+    if detach {
+        let cleared = rt.revoke(&reference, Source::Adjudicated).await?;
+        return detached(&path, &address, &cleared, json);
+    }
+
+    let version = rt.current_version(&reference).await?.ok_or_else(|| {
+        CliError(format!(
+            "`{}` has no record `{}`",
+            reference.provider, reference.external_id
+        ))
+    })?;
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
     rt.bind(
@@ -49,8 +43,6 @@ pub async fn run(
             "{}",
             serde_json::json!({ "bound": address, "version": version, "anchors": anchors, "detached": detach })
         );
-    } else if detach {
-        println!("{path} detached; history remains in the table");
     } else {
         println!(
             "{path} → {}",
@@ -62,5 +54,22 @@ pub async fn run(
         );
         println!("  bound version {}", &version[..12.min(version.len())]);
     }
+    Ok(0)
+}
+
+fn detached(path: &str, address: &str, cleared: &[AnchorKey], json: bool) -> Result<i32, CliError> {
+    let named: Vec<String> = cleared.iter().map(|a| a.to_string()).collect();
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "detached": address, "revoked_on": named })
+        );
+        return Ok(0);
+    }
+    match named.is_empty() {
+        true => println!("{path} was on no anchor; nothing to revoke"),
+        false => println!("{path} revoked on {}", named.join(", ")),
+    }
+    println!("  the assertions stay in the table, and so does this revocation");
     Ok(0)
 }

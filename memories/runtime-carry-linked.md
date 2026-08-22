@@ -5,6 +5,12 @@ watch: [sig, logic]
 
 # Grounding does not propagate along links, and a link is only followed one hop
 
+A linked reference is carried when it has any assertion at all, and dropped
+when it has none — "known to GMR" is the test, not "currently on an anchor".
+A record whose every tag has been revoked is still carried, and still marked
+ungrounded, because that is exactly the state a reader has to be able to
+see.
+
 `carry_linked` pulls in memories that are linked from an already-fetched
 memory but are not themselves bound to any anchor — and marks every one of
 them `grounded: false`. That flag has to stay visible on the carried-in

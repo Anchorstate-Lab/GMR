@@ -165,21 +165,23 @@ async fn corpus_health(
 
     let mut per_anchor: BTreeMap<String, usize> = BTreeMap::new();
     let mut barren = Vec::new();
-    for view in views() {
-        let n = bindings
-            .iter()
-            .filter(|r| r.binding.anchors.contains(&view.key))
-            .count();
-        per_anchor.insert(view.key.to_string(), n);
-        if !view.closed && n == 0 {
-            barren.push(view.key.clone());
+    for held in grounded {
+        let n = held.memories.len();
+        per_anchor.insert(held.view.key.to_string(), n);
+        if !held.view.closed && n == 0 {
+            barren.push(held.view.key.clone());
         }
     }
 
+    let delivered: BTreeSet<&Ref> = grounded
+        .iter()
+        .filter(|g| !g.view.closed)
+        .flat_map(|g| g.memories.iter().map(|m| &m.reference))
+        .collect();
     let unsupervised = bindings
         .iter()
         .filter(|r| !r.binding.anchors.is_empty())
-        .filter(|r| !r.binding.anchors.iter().any(|k| open.contains(k)))
+        .filter(|r| !delivered.contains(&r.binding.reference))
         .map(|r| r.binding.reference.clone())
         .collect();
 
@@ -196,7 +198,11 @@ async fn corpus_health(
     }
 
     Ok(CorpusHealth {
-        bound_refs: bindings.len(),
+        bound_refs: bindings
+            .iter()
+            .map(|r| &r.binding.reference)
+            .collect::<BTreeSet<_>>()
+            .len(),
         active_anchors: open.len(),
         memories_per_anchor: per_anchor,
         barren_anchors: barren,

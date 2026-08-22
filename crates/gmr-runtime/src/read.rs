@@ -53,7 +53,7 @@ pub struct MemoryView {
     pub grounded: bool,
     pub links: Vec<Link>,
     pub bound_at_seq: Option<Seq>,
-    pub source: Source,
+    pub sources: std::collections::BTreeSet<Source>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asserted_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -183,6 +183,7 @@ impl Runtime {
         let policy = self.scheduler.policy();
         let (view, head) = projected(&self.log, key, &self.scheduler.seen(key).await?).await?;
         ground(
+            &self.log,
             &self.memory,
             view,
             head,
@@ -203,7 +204,7 @@ impl Runtime {
     }
 
     pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
-        cobound(&self.memory, reference).await
+        cobound(&self.log, &self.memory, reference).await
     }
 
     pub async fn grounded_all(&self) -> Result<Vec<Grounded>, RuntimeError> {
@@ -215,7 +216,7 @@ impl Runtime {
         for key in self.log.anchors().await? {
             let looks = seen.get(&key).copied().unwrap_or_default();
             let (view, head) = projected(&self.log, &key, &looks).await?;
-            out.push(ground(&self.memory, view, head, &total, call).await?);
+            out.push(ground(&self.log, &self.memory, view, head, &total, call).await?);
         }
         Ok(out)
     }
@@ -267,6 +268,7 @@ async fn projected(
 }
 
 async fn ground(
+    log: &AnchorLog,
     memory: &MemoryLens,
     view: AnchorView,
     head: Seq,
@@ -274,8 +276,8 @@ async fn ground(
     call: Duration,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
-    for binding in memory.bindings_on(&view.key).await? {
-        let mut held = memory.fetch_memory(binding, &total.narrowed(call)).await?;
+    for asserted in crate::memory::by_reference(memory.bindings_on(log, &view.key).await?) {
+        let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
         held.stale = held.bound_at_seq.map(|seq| seq < head);
         memories.push(held);
     }
@@ -283,13 +285,15 @@ async fn ground(
     Ok(Grounded { view, memories })
 }
 
-async fn cobound(memory: &MemoryLens, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
-    let Some(record) = memory.binding_of(reference).await? else {
-        return Ok(Vec::new());
-    };
+async fn cobound(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    reference: &Ref,
+) -> Result<Vec<Ref>, RuntimeError> {
+    let asserted = memory.binding_of(reference).await?;
     let mut out: Vec<Ref> = Vec::new();
-    for anchor in &record.binding.anchors {
-        for other in memory.bindings_on(anchor).await? {
+    for anchor in crate::memory::anchors_of(&asserted) {
+        for other in memory.bindings_on(log, &anchor).await? {
             let other_reference = other.binding.reference;
             if &other_reference != reference && !out.contains(&other_reference) {
                 out.push(other_reference);

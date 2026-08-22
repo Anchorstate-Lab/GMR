@@ -28,6 +28,18 @@ reference.
 `root` is not in the signature: it was here for that check and nothing else in
 this verb needs it.
 
+## `--detach` revokes; it does not assert an empty set
+
+Detaching writes a revocation naming every live tag the record has, one per
+anchor, each recorded at that anchor. It never fetches — the state that most
+needs an unbind is the one where the record can no longer be retrieved at
+all, which is exactly what `doctor` sends the reader here for.
+
+It used to write another assertion with an empty anchor set, which worked
+only while the latest row replaced the whole set. Under
+[[store-orset-projection]] such an assertion adds no tag and so removes
+nothing.
+
 ## What it records about itself
 
 A bind typed at this verb is `Source::Adjudicated`: a person named the

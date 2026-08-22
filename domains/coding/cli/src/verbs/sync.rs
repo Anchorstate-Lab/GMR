@@ -189,7 +189,9 @@ pub async fn run(
     steps.extend(
         binds
             .into_iter()
-            .map(|(reference, anchors, version)| Step::Bind(reference, anchors, version)),
+            .map(|(reference, anchors, version, dropped)| {
+                Step::Bind(reference, anchors, version, dropped)
+            }),
     );
 
     let mut warnings = Vec::new();
@@ -205,7 +207,11 @@ pub async fn run(
                         warnings.push(format!("{key}: {w}"));
                     }
                 }
-                Step::Bind(reference, anchors, version) => {
+                Step::Bind(reference, anchors, version, dropped) => {
+                    if !dropped.is_empty() {
+                        rt.revoke_on(&reference, &dropped, gmr::Source::Derived)
+                            .await?;
+                    }
                     rt.bind(reference, anchors, version, gmr::Source::Derived)
                         .await?;
                 }
@@ -345,13 +351,13 @@ fn ambiguous(had: &[AnchorKey], want: &[AnchorKey], closed: &[AnchorKey]) -> Opt
     (!dropped.is_empty() && !gained.is_empty()).then_some(Rename { dropped, gained })
 }
 
-type Binding = (Ref, Vec<AnchorKey>, Version);
+type Binding = (Ref, Vec<AnchorKey>, Version, Vec<AnchorKey>);
 
 enum Step {
     Schedule(AnchorKey),
     Resettle(AnchorKey, RunSettings),
     Open(Box<OpenRequest>),
-    Bind(Ref, Vec<AnchorKey>, Version),
+    Bind(Ref, Vec<AnchorKey>, Version, Vec<AnchorKey>),
 }
 
 async fn align_bindings(
@@ -375,24 +381,20 @@ async fn align_bindings(
         want.dedup();
 
         let current = rt.memory().binding_of(&reference).await?;
-        if let Some(record) = &current {
-            let mut had = record.binding.anchors.clone();
-            had.sort();
-            let mut closed = Vec::new();
-            for key in had.iter().filter(|k| !want.contains(k)) {
-                if matches!(rt.read(key).await, Ok(view) if view.closed) {
-                    closed.push(key.clone());
-                }
-            }
-            if let Some(rename) = ambiguous(&had, &want, &closed) {
-                renamed.push(format!(
-                    "{named}: dropped {}, gained {}",
-                    rename.joined(&rename.dropped),
-                    rename.joined(&rename.gained)
-                ));
-                continue;
+        let had = gmr::anchors_of(&current);
+        let mut closed = Vec::new();
+        for key in had.iter().filter(|k| !want.contains(k)) {
+            if matches!(rt.read(key).await, Ok(view) if view.closed) {
+                closed.push(key.clone());
             }
         }
+        let looks_renamed = ambiguous(&had, &want, &closed).inspect(|rename| {
+            renamed.push(format!(
+                "{named}: dropped {}, gained {}",
+                rename.joined(&rename.dropped),
+                rename.joined(&rename.gained)
+            ));
+        });
 
         let version = rt.current_version(&reference).await?.ok_or_else(|| {
             CliError(format!(
@@ -401,16 +403,22 @@ async fn align_bindings(
                 reference.provider
             ))
         })?;
-        let settled = current.is_some_and(|r| {
-            let mut had = r.binding.anchors.clone();
-            had.sort();
-            had == want && r.bound_version == version
-        });
+        let derived_throughout = current.iter().all(|r| r.source == gmr::Source::Derived);
+        let latest = current.iter().max_by_key(|r| r.seq);
+        let settled = !current.is_empty()
+            && had == want
+            && derived_throughout
+            && latest.is_some_and(|r| r.bound_version == version);
         if settled {
             continue;
         }
+
+        let dropped: Vec<AnchorKey> = match looks_renamed.is_some() {
+            true => Vec::new(),
+            false => had.iter().filter(|k| !want.contains(k)).cloned().collect(),
+        };
         bound.push(named);
-        planned.push((reference, want, version));
+        planned.push((reference, want, version, dropped));
     }
     Ok((planned, bound, renamed))
 }
@@ -584,20 +592,20 @@ mod tests {
              reader learns to distrust both"
         );
         assert!(
-            rt.memory().binding_of(&reference).await.unwrap().is_none(),
+            rt.memory().binding_of(&reference).await.unwrap().is_empty(),
             "resolution has to finish before the first write, because the journal is \
              append-only and there is no rollback. Writing as it went is how a sync that \
              failed on the last note left 346 anchors open with nothing bound to them — a \
              state `check` and `doctor` both read as perfectly fine"
         );
 
-        for (reference, anchors, version) in plan {
+        for (reference, anchors, version, _) in plan {
             rt.bind(reference, anchors, version, gmr::Source::Derived)
                 .await
                 .unwrap();
         }
         assert!(
-            rt.memory().binding_of(&reference).await.unwrap().is_some(),
+            !rt.memory().binding_of(&reference).await.unwrap().is_empty(),
             "and the plan really does bind when applied — without this the assertion above \
              would pass just as well against a fixture that could never bind at all"
         );

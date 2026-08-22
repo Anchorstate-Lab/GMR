@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version, fold};
-use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Sealer};
+use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Revocation, Sealer};
 use serde::Serialize;
 
 use crate::error::RuntimeError;
@@ -74,13 +74,19 @@ impl MemoryLens {
 
     pub async fn bindings_on(
         &self,
+        log: &AnchorLog,
         anchor: &AnchorKey,
     ) -> Result<Vec<BindingRecord>, RuntimeError> {
-        Ok(self.bindings.bindings_on(anchor).await?)
+        let chain = chain_from(log, anchor).await?;
+        Ok(self.bindings.bindings_on(&chain).await?)
     }
 
-    pub async fn binding_of(&self, reference: &Ref) -> Result<Option<BindingRecord>, RuntimeError> {
+    pub async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, RuntimeError> {
         Ok(self.bindings.binding_of(reference).await?)
+    }
+
+    pub async fn revoke(&self, revocation: &Revocation) -> Result<(), RuntimeError> {
+        Ok(self.bindings.revoke(revocation).await?)
     }
 
     pub async fn all(&self) -> Result<Vec<BindingRecord>, RuntimeError> {
@@ -127,26 +133,32 @@ impl MemoryLens {
 
     pub(crate) async fn fetch_memory(
         &self,
-        record: BindingRecord,
+        asserted: Vec<BindingRecord>,
         budget: &Budget,
     ) -> Result<MemoryView, RuntimeError> {
-        let BindingRecord {
-            binding,
-            bound_version,
-            bound_at_seq,
-            source,
-            asserted_at,
-        } = record;
+        let baseline = asserted
+            .iter()
+            .max_by_key(|r| r.seq)
+            .expect("a view is only assembled from at least one assertion");
+        let reference = baseline.binding.reference.clone();
+        let bound_version = baseline.bound_version.clone();
+        let bound_at_seq = baseline.bound_at_seq;
+        let asserted_at = asserted.iter().filter_map(|r| r.asserted_at).min();
+        let sources: std::collections::BTreeSet<Source> =
+            asserted.iter().map(|r| r.source).collect();
+        let anchors: std::collections::BTreeSet<AnchorKey> = asserted
+            .iter()
+            .flat_map(|r| r.binding.anchors.iter().cloned())
+            .collect();
+
         Ok(MemoryView {
-            links: self.links.links_of(&binding.reference).await?,
-            grounded: !binding.anchors.is_empty(),
-            grounding: self
-                .ground(&binding.reference, &bound_version, budget)
-                .await,
-            reference: binding.reference,
+            links: self.links.links_of(&reference).await?,
+            grounded: !anchors.is_empty(),
+            grounding: self.ground(&reference, &bound_version, budget).await,
+            reference,
             bound_version,
             bound_at_seq,
-            source,
+            sources,
             asserted_at,
             stale: None,
         })
@@ -219,10 +231,11 @@ impl MemoryLens {
             if memories.iter().any(|m| m.reference == reference) {
                 continue;
             }
-            let Some(binding) = self.bindings.binding_of(&reference).await? else {
+            let asserted = self.bindings.binding_of(&reference).await?;
+            if asserted.is_empty() {
                 continue;
-            };
-            memories.push(self.fetch_memory(binding, &total.narrowed(call)).await?);
+            }
+            memories.push(self.fetch_memory(asserted, &total.narrowed(call)).await?);
         }
         Ok(())
     }
@@ -233,4 +246,53 @@ fn spent() -> ContentError {
         "this read had a total budget for reaching content stores and it ran out before \
          this record's turn; nothing was asked, so nothing is known about it",
     )
+}
+
+pub(crate) const GENERATIONS: usize = 64;
+
+pub(crate) async fn chain_from(
+    log: &AnchorLog,
+    from: &AnchorKey,
+) -> Result<Vec<AnchorKey>, RuntimeError> {
+    let mut out = vec![from.clone()];
+    let mut seen = std::collections::BTreeSet::from([from.clone()]);
+    let mut at = from.clone();
+
+    for _ in 0..GENERATIONS {
+        let Some(state) = fold(&log.entries(&at, 0).await?) else {
+            break;
+        };
+        let Some(older) = state.anchor.supersedes.as_ref().map(|s| s.key.clone()) else {
+            break;
+        };
+        if !seen.insert(older.clone()) {
+            break;
+        }
+        out.push(older.clone());
+        at = older;
+    }
+    Ok(out)
+}
+
+pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Vec<BindingRecord>> {
+    let mut out: Vec<Vec<BindingRecord>> = Vec::new();
+    for record in records {
+        match out
+            .iter_mut()
+            .find(|group| group[0].binding.reference == record.binding.reference)
+        {
+            Some(group) => group.push(record),
+            None => out.push(vec![record]),
+        }
+    }
+    out
+}
+
+pub fn anchors_of(records: &[BindingRecord]) -> Vec<AnchorKey> {
+    records
+        .iter()
+        .flat_map(|r| r.binding.anchors.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }

@@ -441,10 +441,8 @@ async fn cobound_is_derived_from_binds_not_stored() {
     );
 
     w.runtime
-        .bind(
-            Ref::new("git", "memories/b.md"),
-            vec![],
-            Version::new("v"),
+        .revoke(
+            &Ref::new("git", "memories/b.md"),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -454,7 +452,9 @@ async fn cobound_is_derived_from_binds_not_stored() {
             .cobound(&Ref::new("git", "memories/a.md"))
             .await
             .unwrap()
-            .is_empty()
+            .is_empty(),
+        "cobound reads the same delivered set `read` does, so revoking one of the two \
+         records takes it out of the other's neighbours too"
     );
 }
 
@@ -517,21 +517,46 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
 }
 
 #[tokio::test]
-async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
+async fn a_revoked_record_is_no_longer_listed_under_the_anchor() {
     let w = World::new(true);
     w.memory("a.md", "One.");
     w.open("a").await;
     w.bind("a.md", &["a"]).await;
 
     let reference = Ref::new("git", "memories/a.md");
-    let bound = w
+    let bound = w.runtime.memory().binding_of(&reference).await.unwrap();
+    assert!(!gmr_runtime::anchors_of(&bound).is_empty());
+
+    let cleared = w
         .runtime
-        .memory()
-        .binding_of(&reference)
+        .revoke(&reference, gmr_core::Source::Adjudicated)
         .await
-        .unwrap()
         .unwrap();
-    assert!(!bound.binding.anchors.is_empty());
+    assert_eq!(cleared, vec![AnchorKey::new("a")]);
+
+    assert!(
+        gmr_runtime::anchors_of(&w.runtime.memory().binding_of(&reference).await.unwrap())
+            .is_empty(),
+        "revoked, while every assertion and the revocation itself remain in the table"
+    );
+    assert!(
+        w.runtime
+            .grounded(&AnchorKey::new("a"))
+            .await
+            .unwrap()
+            .memories
+            .is_empty(),
+        "no longer delivered under this anchor"
+    );
+}
+
+#[tokio::test]
+async fn asserting_an_empty_anchor_set_takes_nothing_away() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    let reference = Ref::new("git", "memories/a.md");
 
     w.runtime
         .bind(
@@ -543,25 +568,13 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
         .await
         .unwrap();
 
-    let detached = w
-        .runtime
-        .memory()
-        .binding_of(&reference)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(
-        detached.binding.anchors.is_empty(),
-        "detached, while history remains in the table"
-    );
-    assert!(
-        w.runtime
-            .grounded(&AnchorKey::new("a"))
-            .await
-            .unwrap()
-            .memories
-            .is_empty(),
-        "no longer attached to this anchor"
+    assert_eq!(
+        gmr_runtime::anchors_of(&w.runtime.memory().binding_of(&reference).await.unwrap()),
+        vec![AnchorKey::new("a")],
+        "an assertion naming no anchor adds no tag, so it can take none away either. \
+         Writing one used to be how a record was detached — under latest-wins it replaced \
+         the whole set. A caller that means to remove something now has to say which tags \
+         it observed, which is the only form a reader can audit"
     );
 }
 

@@ -313,7 +313,7 @@ mod tests {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
             bound_version: gmr::Version::new("v1"),
-            source: gmr::Source::Adjudicated,
+            sources: std::collections::BTreeSet::from([gmr::Source::Adjudicated]),
             asserted_at: None,
             grounding: if rewritten {
                 Grounding::Rewritten {

@@ -14,6 +14,13 @@ back. Both wrap a `Binding` with the write-time metadata that is not part of
 the relation itself — see [[memory-Binding]] for why that split exists at
 all.
 
+**A record is one assertion, not one reference.** Its `seq` names the row,
+and its `binding.anchors` holds the anchors of that assertion that are still
+live — so a caller can revoke exactly what it saw. A reference with three
+assertions comes back as three records; folding them into one view is the
+runtime's job, because that is where `MemoryView` lives. See
+[[store-orset-projection]] for what "still live" means.
+
 ## `Source` is a fact about how GMR learned the link, not about the domain
 
 The five words are `Derived` (the record declared its own coordinate, in

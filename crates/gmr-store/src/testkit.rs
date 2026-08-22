@@ -3,12 +3,13 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq, content_hash_of_bytes,
+    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq,
+    content_hash_of_bytes,
 };
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::bindings::{Asserted, BindingRecord, BindingStore};
+use crate::bindings::{Asserted, BindingRecord, BindingStore, Revocation};
 use crate::error::StoreError;
 use crate::journal::{Fence, Journal};
 use crate::links::LinkStore;
@@ -73,6 +74,7 @@ impl Journal for MemoryJournal {
 #[derive(Default)]
 struct BindingInner {
     bindings: Vec<BindingRecord>,
+    revocations: Vec<Revocation>,
     sealed: HashMap<ContentHash, Vec<u8>>,
     links: Vec<(Ref, Link)>,
 }
@@ -83,25 +85,51 @@ pub struct MemoryBindings {
 }
 
 impl MemoryBindings {
-    fn latest(&self) -> Vec<BindingRecord> {
+    fn live(&self, within: Option<&[AnchorKey]>) -> Vec<BindingRecord> {
         let inner = self.inner.lock().unwrap();
-        let mut seen: Vec<&Ref> = Vec::new();
-        let mut out: Vec<BindingRecord> = Vec::new();
-        for r in inner.bindings.iter().rev() {
-            if !seen.contains(&&r.binding.reference) {
-                seen.push(&r.binding.reference);
-                out.push(r.clone());
-            }
-        }
-        out.reverse();
-        out
+        let killed = |seq: Seq, anchor: &AnchorKey| {
+            inner.revocations.iter().any(|rev| {
+                within.is_none_or(|chain| chain.contains(&rev.at))
+                    && rev
+                        .tags
+                        .iter()
+                        .any(|t| t.binding == seq && &t.anchor == anchor)
+            })
+        };
+        inner
+            .bindings
+            .iter()
+            .filter_map(|r| {
+                let anchors: Vec<AnchorKey> = r
+                    .binding
+                    .anchors
+                    .iter()
+                    .filter(|a| within.is_none_or(|chain| chain.contains(a)))
+                    .filter(|a| !killed(r.seq, a))
+                    .cloned()
+                    .collect();
+                if within.is_some() && anchors.is_empty() {
+                    return None;
+                }
+                Some(BindingRecord {
+                    binding: Binding {
+                        reference: r.binding.reference.clone(),
+                        anchors,
+                    },
+                    ..r.clone()
+                })
+            })
+            .collect()
     }
 }
 
 #[async_trait]
 impl BindingStore for MemoryBindings {
     async fn bind(&self, asserted: &Asserted) -> Result<(), StoreError> {
-        self.inner.lock().unwrap().bindings.push(BindingRecord {
+        let mut inner = self.inner.lock().unwrap();
+        let seq = inner.bindings.len() as Seq + 1;
+        inner.bindings.push(BindingRecord {
+            seq,
             binding: asserted.binding.clone(),
             bound_version: asserted.bound_version.clone(),
             bound_at_seq: asserted.bound_at_seq,
@@ -111,26 +139,29 @@ impl BindingStore for MemoryBindings {
         Ok(())
     }
 
-    async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<BindingRecord>, StoreError> {
+    async fn revoke(&self, revocation: &Revocation) -> Result<(), StoreError> {
+        self.inner
+            .lock()
+            .unwrap()
+            .revocations
+            .push(revocation.clone());
+        Ok(())
+    }
+
+    async fn bindings_on(&self, anchors: &[AnchorKey]) -> Result<Vec<BindingRecord>, StoreError> {
+        Ok(self.live(Some(anchors)))
+    }
+
+    async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, StoreError> {
         Ok(self
-            .latest()
+            .live(None)
             .into_iter()
-            .filter(|r| r.binding.anchors.contains(anchor))
+            .filter(|r| &r.binding.reference == reference)
             .collect())
     }
 
-    async fn binding_of(&self, reference: &Ref) -> Result<Option<BindingRecord>, StoreError> {
-        let inner = self.inner.lock().unwrap();
-        Ok(inner
-            .bindings
-            .iter()
-            .rev()
-            .find(|r| &r.binding.reference == reference)
-            .cloned())
-    }
-
     async fn all(&self) -> Result<Vec<BindingRecord>, StoreError> {
-        Ok(self.latest())
+        Ok(self.live(None))
     }
 }
 
