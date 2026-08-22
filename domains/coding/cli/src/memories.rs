@@ -133,6 +133,18 @@ struct Frontmatter {
     watch: Option<Vec<String>>,
 }
 
+const FRONTMATTER_WORDS: [&str; 4] = ["about", "anchors", "shape", "watch"];
+
+fn foreign_words(said: &Value) -> Vec<String> {
+    let Some(map) = said.as_object() else {
+        return Vec::new();
+    };
+    map.keys()
+        .filter(|k| !FRONTMATTER_WORDS.contains(&k.as_str()))
+        .map(|k| format!("`{k}`"))
+        .collect()
+}
+
 #[derive(Debug)]
 pub enum Want {
     Existing(String),
@@ -266,6 +278,21 @@ fn claims_of(
         }
         Claim::Says(value) => value,
     };
+    let foreign = foreign_words(said);
+    if !foreign.is_empty() {
+        faults.push(at(
+            "unrecognised",
+            format!(
+                "names {}, which this note format has no words for. A header that is read \
+                 but not understood declares nothing, so nothing observes whether what this \
+                 note says still holds — and unlike a note with no frontmatter at all, this \
+                 one looks from the outside like it declared something. The words are {}",
+                foreign.join(" "),
+                FRONTMATTER_WORDS.map(|w| format!("`{w}`")).join(" · ")
+            ),
+            Weight::Breaks,
+        ));
+    }
     let fm: Frontmatter = match serde_json::from_value(said.clone()) {
         Ok(fm) => fm,
         Err(e) => {
@@ -787,6 +814,60 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
              like it would if it were"
         );
         assert!(lint(d.path(), &r).unwrap()[0].breaks());
+    }
+
+    #[test]
+    fn a_header_in_another_products_format_is_louder_than_no_header_at_all() {
+        let (d, r) = world(&[(
+            "memories/claude.md",
+            "---\nname: commit-messages-in-english\ndescription: \"be terse\"\nmetadata:\n               type: feedback\n---\n\n# note\n",
+        )]);
+
+        assert!(
+            scan(d.path(), &r).unwrap().notes.is_empty(),
+            "it names no coordinate this format knows, so it declares no anchor"
+        );
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("claude".to_owned(), "unrecognised")],
+            "a note whose header is another tool's format used to be the quietest failure \
+             here: serde dropped every word it did not know, the note declared nothing, and \
+             nothing complained. That is worse than no frontmatter at all, which at least \
+             reports `unclaimed` — this one looks from the outside like it declared \
+             something, and the author has no reason to look again"
+        );
+        assert!(lint(d.path(), &r).unwrap()[0].breaks());
+    }
+
+    #[test]
+    fn a_misspelt_word_is_foreign_like_any_other() {
+        let (d, r) = world(&[("memories/typo.md", "---\nabuot: src/a.ts\n---\n\n# note\n")]);
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("typo".to_owned(), "unrecognised")],
+            "one transposed pair of letters and the note silently stopped declaring \
+             anything; the same check that catches another tool's format catches this"
+        );
+    }
+
+    #[test]
+    fn a_note_that_declares_and_also_says_something_foreign_still_declares() {
+        let (d, r) = world(&[(
+            "memories/both.md",
+            "---\nabout: src/a.ts\nauthor: someone\n---\n\n# note\n",
+        )]);
+
+        let scanned = scan(d.path(), &r).unwrap();
+        assert_eq!(
+            scanned.notes[0].wants.len(),
+            1,
+            "the words this format knows are still read; a foreign one beside them does not \
+             cost the note its anchor"
+        );
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("both".to_owned(), "unrecognised")]
+        );
     }
 
     #[test]
