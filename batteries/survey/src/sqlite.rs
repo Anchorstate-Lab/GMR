@@ -1,18 +1,18 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::pool::PoolConnection;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use sqlx::{Row as _, SqlitePool};
+use rusqlite::types::Value as SqlValue;
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::index::{Built, Fault, Generation, Index, IndexError, Indexed, Located, Row, Snapshot};
 use crate::matching::Want;
 use crate::walk::{Held, Stamp};
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS generation (
@@ -50,17 +50,22 @@ CREATE TABLE IF NOT EXISTS posting (
     ord        INTEGER NOT NULL,
     PRIMARY KEY (generation, item, value, rel, ord)
 );
+
+CREATE INDEX IF NOT EXISTS posting_by_rel ON posting(generation, rel);
 "#;
 
 const KINDS: [&str; 4] = ["view", "trigger", "index", "table"];
 
 const MARKER: &str = "generation";
 
-fn db_err(e: sqlx::Error) -> IndexError {
+const LOCK_POISONED: &str = "gmr-survey: a prior SQLite call panicked while holding the lock";
+
+fn db_err(e: rusqlite::Error) -> IndexError {
     let fault = match &e {
-        sqlx::Error::Database(db) if db.message().contains("locked") => Fault::Busy,
-        sqlx::Error::Database(_) => Fault::Corrupt,
-        sqlx::Error::Io(_) => Fault::Io,
+        rusqlite::Error::SqliteFailure(err, _) => match err.code {
+            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked => Fault::Busy,
+            _ => Fault::Corrupt,
+        },
         _ => Fault::Other,
     };
     IndexError::new(fault, e.to_string())
@@ -75,124 +80,100 @@ fn unreadable(what: &str, e: serde_json::Error) -> IndexError {
 
 #[derive(Debug)]
 pub struct SqliteIndex {
-    pool: SqlitePool,
+    conn: Mutex<Connection>,
 }
 
 impl SqliteIndex {
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
-    }
+    pub async fn close(&self) {}
 
-    pub async fn close(&self) {
-        self.pool.close().await;
+    pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().expect(LOCK_POISONED)
     }
 }
 
 pub async fn open(file: impl AsRef<Path>) -> Result<SqliteIndex, IndexError> {
     let file = file.as_ref();
-    let options = SqliteConnectOptions::new()
-        .filename(file)
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .busy_timeout(Duration::from_secs(5));
-    let pool = SqlitePoolOptions::new()
-        .max_connections(4)
-        .connect_with(options)
-        .await
+    let mut conn = Connection::open(file).map_err(db_err)?;
+    conn.execute_batch("PRAGMA journal_mode = WAL")
         .map_err(db_err)?;
-    ready(&pool, &file.display().to_string()).await?;
-    Ok(SqliteIndex { pool })
+    conn.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
+    ready(&mut conn, &file.display().to_string())?;
+    Ok(SqliteIndex {
+        conn: Mutex::new(conn),
+    })
 }
 
 pub async fn open_in_memory() -> Result<SqliteIndex, IndexError> {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .min_connections(1)
-        .idle_timeout(None)
-        .max_lifetime(None)
-        .connect_with(SqliteConnectOptions::new().in_memory(true))
-        .await
-        .map_err(db_err)?;
-    ready(&pool, "an in-memory index").await?;
-    Ok(SqliteIndex { pool })
-}
-
-async fn ready(pool: &SqlitePool, what: &str) -> Result<(), IndexError> {
-    let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(pool)
-        .await
-        .map_err(db_err)?;
-    if stamped == SCHEMA_VERSION {
-        return Ok(());
-    }
-    let mut held = pool.acquire().await.map_err(db_err)?;
-    sqlx::query("BEGIN IMMEDIATE")
-        .execute(&mut *held)
-        .await
-        .map_err(db_err)?;
-    let raised = raise(&mut held, what).await;
-    let closed = sqlx::query(match raised.is_ok() {
-        true => "COMMIT",
-        false => "ROLLBACK",
+    let mut conn = Connection::open_in_memory().map_err(db_err)?;
+    ready(&mut conn, "an in-memory index")?;
+    Ok(SqliteIndex {
+        conn: Mutex::new(conn),
     })
-    .execute(&mut *held)
-    .await;
-    raised?;
-    closed.map_err(db_err)?;
-    Ok(())
 }
 
-async fn raise(held: &mut PoolConnection<sqlx::Sqlite>, what: &str) -> Result<(), IndexError> {
-    let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(&mut **held)
-        .await
+fn ready(conn: &mut Connection, what: &str) -> Result<(), IndexError> {
+    let stamped: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(db_err)?;
     if stamped == SCHEMA_VERSION {
         return Ok(());
     }
-    let holds = strangers(held).await?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(db_err)?;
+    raise(&tx, what)?;
+    tx.commit().map_err(db_err)
+}
+
+fn raise(tx: &Transaction, what: &str) -> Result<(), IndexError> {
+    let stamped: i64 = tx
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(db_err)?;
+    if stamped == SCHEMA_VERSION {
+        return Ok(());
+    }
+    let holds = strangers(tx)?;
     if !holds.is_empty() {
         return Err(IndexError::foreign(what, &holds));
     }
-    raze(held).await?;
-    sqlx::raw_sql(SCHEMA)
-        .execute(&mut **held)
-        .await
-        .map_err(db_err)?;
-    sqlx::query(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
-        .execute(&mut **held)
-        .await
+    raze(tx)?;
+    tx.execute_batch(SCHEMA).map_err(db_err)?;
+    tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
         .map_err(db_err)?;
     Ok(())
 }
 
-async fn strangers(held: &mut PoolConnection<sqlx::Sqlite>) -> Result<Vec<String>, IndexError> {
-    let named: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
-    )
-    .fetch_all(&mut **held)
-    .await
-    .map_err(db_err)?;
+fn strangers(tx: &Transaction) -> Result<Vec<String>, IndexError> {
+    let mut stmt = tx
+        .prepare("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name")
+        .map_err(db_err)?;
+    let named: Vec<String> = stmt
+        .query_map([], |r| r.get(0))
+        .map_err(db_err)?
+        .collect::<Result<_, _>>()
+        .map_err(db_err)?;
     match named.iter().any(|name| name == MARKER) {
         true => Ok(Vec::new()),
         false => Ok(named),
     }
 }
 
-async fn raze(held: &mut PoolConnection<sqlx::Sqlite>) -> Result<(), IndexError> {
+fn raze(tx: &Transaction) -> Result<(), IndexError> {
     for kind in KINDS {
-        let named: Vec<String> = sqlx::query_scalar(
-            "SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%'",
-        )
-        .bind(kind)
-        .fetch_all(&mut **held)
-        .await
-        .map_err(db_err)?;
+        let named: Vec<String> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%'",
+                )
+                .map_err(db_err)?;
+            stmt.query_map([kind], |r| r.get(0))
+                .map_err(db_err)?
+                .collect::<Result<_, _>>()
+                .map_err(db_err)?
+        };
         for name in named {
             let quoted = name.replace('"', "\"\"");
-            sqlx::query(&format!("DROP {kind} IF EXISTS \"{quoted}\""))
-                .execute(&mut **held)
-                .await
+            tx.execute_batch(&format!("DROP {kind} IF EXISTS \"{quoted}\""))
                 .map_err(db_err)?;
         }
     }
@@ -209,38 +190,66 @@ fn beneath(sql: &mut String, root: &str) -> bool {
     }
 }
 
-fn found(row: &sqlx::sqlite::SqliteRow) -> Result<Located, IndexError> {
-    let coord: String = row.get("coord");
-    let facts: String = row.get("facts");
+struct RawFound {
+    sort: String,
+    rel: String,
+    ord: i64,
+    id: String,
+    coord: String,
+    facts: String,
+}
+
+fn raw_found(row: &rusqlite::Row) -> rusqlite::Result<RawFound> {
+    Ok(RawFound {
+        sort: row.get("sort")?,
+        rel: row.get("rel")?,
+        ord: row.get("ord")?,
+        id: row.get("id")?,
+        coord: row.get("coord")?,
+        facts: row.get("facts")?,
+    })
+}
+
+fn decode(raw: RawFound) -> Result<Located, IndexError> {
     Ok(Located {
-        rel: row.get("rel"),
+        rel: raw.rel,
         row: Row {
-            ord: row.get::<i64, _>("ord") as u32,
-            id: row.get("id"),
-            coord: serde_json::from_str(&coord).map_err(|e| unreadable("coordinate", e))?,
-            facts: serde_json::from_str(&facts).map_err(|e| unreadable("fact", e))?,
+            ord: raw.ord as u32,
+            id: raw.id,
+            coord: serde_json::from_str(&raw.coord).map_err(|e| unreadable("coordinate", e))?,
+            facts: serde_json::from_str(&raw.facts).map_err(|e| unreadable("fact", e))?,
         },
     })
 }
 
-fn stamped(row: &sqlx::sqlite::SqliteRow) -> Option<DateTime<Utc>> {
-    row.get::<Option<i64>, _>("sealed_at")
+fn stamped(row: &rusqlite::Row) -> Option<DateTime<Utc>> {
+    row.get::<_, Option<i64>>("sealed_at")
+        .ok()
+        .flatten()
         .and_then(|s| DateTime::from_timestamp(s, 0))
 }
 
-async fn opened(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    of: &Generation,
-) -> Result<Option<Snapshot>, IndexError> {
-    let row = sqlx::query("SELECT sealed_at FROM generation WHERE id = ?")
-        .bind(of.as_str())
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(db_err)?;
-    Ok(row.map(|r| Snapshot {
-        sealed_at: stamped(&r),
-        rows: Vec::new(),
-    }))
+fn opened(tx: &Transaction, of: &Generation) -> Result<Option<Snapshot>, IndexError> {
+    tx.query_row(
+        "SELECT sealed_at FROM generation WHERE id = ?",
+        [of.as_str()],
+        |r| {
+            Ok(Snapshot {
+                sealed_at: stamped(r),
+                rows: Vec::new(),
+            })
+        },
+    )
+    .optional()
+    .map_err(db_err)
+}
+
+fn locate(tx: &Transaction, sql: &str, params: &[SqlValue]) -> Result<Vec<RawFound>, IndexError> {
+    let mut stmt = tx.prepare_cached(sql).map_err(db_err)?;
+    stmt.query_map(rusqlite::params_from_iter(params.iter()), raw_found)
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)
 }
 
 const READ: &str = "SELECT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
@@ -249,157 +258,144 @@ const READ: &str = "SELECT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
 
 const TAIL: &str = " ORDER BY f.sort, c.ord";
 
+const POINT: &str = "SELECT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
+     FROM posting p \
+     JOIN candidate c ON c.generation = p.generation AND c.rel = p.rel AND c.ord = p.ord \
+     JOIN file f ON f.generation = c.generation AND f.rel = c.rel \
+     WHERE p.generation = ? AND p.item = ? AND p.value = ?";
+
 #[async_trait]
 impl Index for SqliteIndex {
     async fn built(&self, of: &Generation) -> Result<Option<Built>, IndexError> {
-        let row = sqlx::query(
+        let conn = self.conn.lock().expect(LOCK_POISONED);
+        conn.query_row(
             "SELECT sealed_at, \
              (SELECT COUNT(*) FROM file WHERE generation = g.id) AS files, \
              (SELECT COUNT(*) FROM candidate WHERE generation = g.id) AS rows \
              FROM generation g WHERE g.id = ?",
+            [of.as_str()],
+            |r| {
+                Ok(Built {
+                    files: r.get::<_, i64>("files")? as u64,
+                    rows: r.get::<_, i64>("rows")? as u64,
+                    sealed_at: stamped(r),
+                })
+            },
         )
-        .bind(of.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(db_err)?;
-
-        Ok(row.map(|r| Built {
-            files: r.get::<i64, _>("files") as u64,
-            rows: r.get::<i64, _>("rows") as u64,
-            sealed_at: stamped(&r),
-        }))
+        .optional()
+        .map_err(db_err)
     }
 
     async fn known(&self, of: &Generation) -> Result<BTreeMap<String, Held>, IndexError> {
-        let rows = sqlx::query("SELECT rel, hash, mtime_ns, size FROM file WHERE generation = ?")
-            .bind(of.as_str())
-            .fetch_all(&self.pool)
-            .await
+        let conn = self.conn.lock().expect(LOCK_POISONED);
+        let mut stmt = conn
+            .prepare("SELECT rel, hash, mtime_ns, size FROM file WHERE generation = ?")
             .map_err(db_err)?;
-        Ok(rows
-            .iter()
-            .map(|r| {
-                let stamp = match (
-                    r.get::<Option<i64>, _>("mtime_ns"),
-                    r.get::<Option<i64>, _>("size"),
-                ) {
-                    (Some(mtime_ns), Some(size)) => Some(Stamp {
-                        mtime_ns,
-                        size: size as u64,
-                    }),
-                    _ => None,
-                };
-                (
-                    r.get("rel"),
-                    Held {
-                        hash: r.get("hash"),
-                        stamp,
-                    },
-                )
-            })
-            .collect())
+        stmt.query_map([of.as_str()], |r| {
+            let stamp = match (
+                r.get::<_, Option<i64>>("mtime_ns")?,
+                r.get::<_, Option<i64>>("size")?,
+            ) {
+                (Some(mtime_ns), Some(size)) => Some(Stamp {
+                    mtime_ns,
+                    size: size as u64,
+                }),
+                _ => None,
+            };
+            Ok((
+                r.get::<_, String>("rel")?,
+                Held {
+                    hash: r.get("hash")?,
+                    stamp,
+                },
+            ))
+        })
+        .map_err(db_err)?
+        .collect::<Result<BTreeMap<_, _>, _>>()
+        .map_err(db_err)
     }
 
     async fn write(&self, of: &Generation, files: &[Indexed]) -> Result<(), IndexError> {
-        const BATCH: usize = 150;
+        let mut conn = self.conn.lock().expect(LOCK_POISONED);
+        let tx = conn.transaction().map_err(db_err)?;
 
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
-
-        sqlx::query(
+        tx.execute(
             "INSERT INTO generation (id, probe, version, sealed_at) VALUES (?, ?, ?, NULL) \
              ON CONFLICT(id) DO UPDATE SET sealed_at = NULL",
+            params![of.as_str(), of.probe(), of.version()],
         )
-        .bind(of.as_str())
-        .bind(of.probe())
-        .bind(of.version())
-        .execute(&mut *tx)
-        .await
         .map_err(db_err)?;
 
-        for chunk in files.chunks(BATCH) {
-            for table in ["posting", "candidate"] {
-                let mut qb =
-                    sqlx::QueryBuilder::new(format!("DELETE FROM {table} WHERE generation = "));
-                qb.push_bind(of.as_str());
-                qb.push(" AND rel IN (");
-                let mut sep = qb.separated(", ");
-                for file in chunk {
-                    sep.push_bind(&file.rel);
-                }
-                sep.push_unseparated(")");
-                qb.build().execute(&mut *tx).await.map_err(db_err)?;
-            }
+        {
+            let mut del_posting = tx
+                .prepare_cached("DELETE FROM posting WHERE generation = ? AND rel = ?")
+                .map_err(db_err)?;
+            let mut del_candidate = tx
+                .prepare_cached("DELETE FROM candidate WHERE generation = ? AND rel = ?")
+                .map_err(db_err)?;
+            let mut put_file = tx
+                .prepare_cached(
+                    "INSERT INTO file (generation, rel, hash, sort, mtime_ns, size) \
+                     VALUES (?, ?, ?, ?, ?, ?) \
+                     ON CONFLICT(generation, rel) DO UPDATE SET hash = excluded.hash, \
+                     sort = excluded.sort, mtime_ns = excluded.mtime_ns, size = excluded.size",
+                )
+                .map_err(db_err)?;
+            let mut put_candidate = tx
+                .prepare_cached(
+                    "INSERT INTO candidate (generation, rel, ord, id, coord, facts) \
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                )
+                .map_err(db_err)?;
+            let mut put_posting = tx
+                .prepare_cached(
+                    "INSERT INTO posting (generation, item, value, rel, ord) VALUES (?, ?, ?, ?, ?)",
+                )
+                .map_err(db_err)?;
 
-            let mut qb = sqlx::QueryBuilder::new(
-                "INSERT INTO file (generation, rel, hash, sort, mtime_ns, size) ",
-            );
-            qb.push_values(chunk, |mut b, file| {
-                b.push_bind(of.as_str())
-                    .push_bind(&file.rel)
-                    .push_bind(&file.hash)
-                    .push_bind(&file.sort)
-                    .push_bind(file.stamp.map(|s| s.mtime_ns))
-                    .push_bind(file.stamp.map(|s| s.size as i64));
-            });
-            qb.push(
-                " ON CONFLICT(generation, rel) DO UPDATE SET hash = excluded.hash, \
-                 sort = excluded.sort, mtime_ns = excluded.mtime_ns, size = excluded.size",
-            );
-            qb.build().execute(&mut *tx).await.map_err(db_err)?;
-        }
+            for file in files {
+                del_posting
+                    .execute(params![of.as_str(), &file.rel])
+                    .map_err(db_err)?;
+                del_candidate
+                    .execute(params![of.as_str(), &file.rel])
+                    .map_err(db_err)?;
+                put_file
+                    .execute(params![
+                        of.as_str(),
+                        &file.rel,
+                        &file.hash,
+                        &file.sort,
+                        file.stamp.map(|s| s.mtime_ns),
+                        file.stamp.map(|s| s.size as i64),
+                    ])
+                    .map_err(db_err)?;
 
-        let mut candidates: Vec<(&str, u32, &str, String, String)> = Vec::new();
-        for file in files {
-            for row in &file.rows {
-                let coord = serde_json::to_string(&row.coord)
-                    .map_err(|e| IndexError::new(Fault::Other, e.to_string()))?;
-                let facts = serde_json::to_string(&row.facts)
-                    .map_err(|e| IndexError::new(Fault::Other, e.to_string()))?;
-                candidates.push((file.rel.as_str(), row.ord, row.id.as_str(), coord, facts));
-            }
-        }
-        for chunk in candidates.chunks(BATCH) {
-            let mut qb = sqlx::QueryBuilder::new(
-                "INSERT INTO candidate (generation, rel, ord, id, coord, facts) ",
-            );
-            qb.push_values(chunk, |mut b, (rel, ord, id, coord, facts)| {
-                b.push_bind(of.as_str())
-                    .push_bind(rel)
-                    .push_bind(*ord as i64)
-                    .push_bind(id)
-                    .push_bind(coord)
-                    .push_bind(facts);
-            });
-            qb.build().execute(&mut *tx).await.map_err(db_err)?;
-        }
-
-        let mut postings: Vec<(&str, &str, &str, i64)> = Vec::new();
-        for file in files {
-            for row in &file.rows {
-                for (item, value) in &row.coord {
-                    postings.push((
-                        item.as_str(),
-                        value.as_str(),
-                        file.rel.as_str(),
-                        row.ord as i64,
-                    ));
+                for row in &file.rows {
+                    let coord = serde_json::to_string(&row.coord)
+                        .map_err(|e| IndexError::new(Fault::Other, e.to_string()))?;
+                    let facts = serde_json::to_string(&row.facts)
+                        .map_err(|e| IndexError::new(Fault::Other, e.to_string()))?;
+                    put_candidate
+                        .execute(params![
+                            of.as_str(),
+                            &file.rel,
+                            row.ord as i64,
+                            &row.id,
+                            &coord,
+                            &facts
+                        ])
+                        .map_err(db_err)?;
+                    for (item, value) in &row.coord {
+                        put_posting
+                            .execute(params![of.as_str(), item, value, &file.rel, row.ord as i64])
+                            .map_err(db_err)?;
+                    }
                 }
             }
         }
-        for chunk in postings.chunks(BATCH) {
-            let mut qb =
-                sqlx::QueryBuilder::new("INSERT INTO posting (generation, item, value, rel, ord) ");
-            qb.push_values(chunk, |mut b, (item, value, rel, ord)| {
-                b.push_bind(of.as_str())
-                    .push_bind(item)
-                    .push_bind(value)
-                    .push_bind(rel)
-                    .push_bind(ord);
-            });
-            qb.build().execute(&mut *tx).await.map_err(db_err)?;
-        }
 
-        tx.commit().await.map_err(db_err)
+        tx.commit().map_err(db_err)
     }
 
     async fn restamp(
@@ -407,94 +403,98 @@ impl Index for SqliteIndex {
         of: &Generation,
         restamped: &[(String, Option<Stamp>)],
     ) -> Result<(), IndexError> {
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
-        for (rel, stamp) in restamped {
-            sqlx::query("UPDATE file SET mtime_ns = ?, size = ? WHERE generation = ? AND rel = ?")
-                .bind(stamp.map(|s| s.mtime_ns))
-                .bind(stamp.map(|s| s.size as i64))
-                .bind(of.as_str())
-                .bind(rel)
-                .execute(&mut *tx)
-                .await
+        let mut conn = self.conn.lock().expect(LOCK_POISONED);
+        let tx = conn.transaction().map_err(db_err)?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "UPDATE file SET mtime_ns = ?, size = ? WHERE generation = ? AND rel = ?",
+                )
                 .map_err(db_err)?;
-        }
-        tx.commit().await.map_err(db_err)
-    }
-
-    async fn forget(&self, of: &Generation, gone: &[String]) -> Result<(), IndexError> {
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
-        for rel in gone {
-            for table in ["posting", "candidate", "file"] {
-                sqlx::query(&format!(
-                    "DELETE FROM {table} WHERE generation = ? AND rel = ?"
-                ))
-                .bind(of.as_str())
-                .bind(rel)
-                .execute(&mut *tx)
-                .await
+            for (rel, stamp) in restamped {
+                stmt.execute(params![
+                    stamp.map(|s| s.mtime_ns),
+                    stamp.map(|s| s.size as i64),
+                    of.as_str(),
+                    rel,
+                ])
                 .map_err(db_err)?;
             }
         }
-        tx.commit().await.map_err(db_err)
+        tx.commit().map_err(db_err)
+    }
+
+    async fn forget(&self, of: &Generation, gone: &[String]) -> Result<(), IndexError> {
+        let mut conn = self.conn.lock().expect(LOCK_POISONED);
+        let tx = conn.transaction().map_err(db_err)?;
+        for table in ["posting", "candidate", "file"] {
+            let mut stmt = tx
+                .prepare_cached(&format!(
+                    "DELETE FROM {table} WHERE generation = ? AND rel = ?"
+                ))
+                .map_err(db_err)?;
+            for rel in gone {
+                stmt.execute(params![of.as_str(), rel]).map_err(db_err)?;
+            }
+        }
+        tx.commit().map_err(db_err)
     }
 
     async fn seal(&self, of: &Generation, at: DateTime<Utc>) -> Result<(), IndexError> {
-        let done = sqlx::query("UPDATE generation SET sealed_at = ? WHERE id = ?")
-            .bind(at.timestamp())
-            .bind(of.as_str())
-            .execute(&self.pool)
-            .await
+        let conn = self.conn.lock().expect(LOCK_POISONED);
+        let affected = conn
+            .execute(
+                "UPDATE generation SET sealed_at = ? WHERE id = ?",
+                params![at.timestamp(), of.as_str()],
+            )
             .map_err(db_err)?;
-        match done.rows_affected() {
+        match affected {
             0 => Err(IndexError::unopened(of)),
             _ => Ok(()),
         }
     }
 
     async fn generations(&self) -> Result<Vec<(Generation, Built)>, IndexError> {
-        let rows = sqlx::query(
-            "SELECT probe, version, sealed_at, \
-             (SELECT COUNT(*) FROM file WHERE generation = g.id) AS files, \
-             (SELECT COUNT(*) FROM candidate WHERE generation = g.id) AS rows \
-             FROM generation g ORDER BY probe, version",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(db_err)?;
-
-        Ok(rows
-            .iter()
-            .map(|r| {
-                (
-                    Generation::of(
-                        r.get::<String, _>("probe").as_str(),
-                        r.get::<String, _>("version").as_str(),
-                    ),
-                    Built {
-                        files: r.get::<i64, _>("files") as u64,
-                        rows: r.get::<i64, _>("rows") as u64,
-                        sealed_at: stamped(r),
-                    },
-                )
-            })
-            .collect())
+        let conn = self.conn.lock().expect(LOCK_POISONED);
+        let mut stmt = conn
+            .prepare(
+                "SELECT probe, version, sealed_at, \
+                 (SELECT COUNT(*) FROM file WHERE generation = g.id) AS files, \
+                 (SELECT COUNT(*) FROM candidate WHERE generation = g.id) AS rows \
+                 FROM generation g ORDER BY probe, version",
+            )
+            .map_err(db_err)?;
+        stmt.query_map([], |r| {
+            Ok((
+                Generation::of(
+                    &r.get::<_, String>("probe")?,
+                    &r.get::<_, String>("version")?,
+                ),
+                Built {
+                    files: r.get::<_, i64>("files")? as u64,
+                    rows: r.get::<_, i64>("rows")? as u64,
+                    sealed_at: stamped(r),
+                },
+            ))
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)
     }
 
     async fn discard(&self, of: &Generation) -> Result<(), IndexError> {
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        let mut conn = self.conn.lock().expect(LOCK_POISONED);
+        let tx = conn.transaction().map_err(db_err)?;
         for table in ["posting", "candidate", "file"] {
-            sqlx::query(&format!("DELETE FROM {table} WHERE generation = ?"))
-                .bind(of.as_str())
-                .execute(&mut *tx)
-                .await
-                .map_err(db_err)?;
-        }
-        sqlx::query("DELETE FROM generation WHERE id = ?")
-            .bind(of.as_str())
-            .execute(&mut *tx)
-            .await
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE generation = ?"),
+                params![of.as_str()],
+            )
             .map_err(db_err)?;
-        tx.commit().await.map_err(db_err)
+        }
+        tx.execute("DELETE FROM generation WHERE id = ?", params![of.as_str()])
+            .map_err(db_err)?;
+        tx.commit().map_err(db_err)
     }
 
     async fn rows(&self, of: &Generation, root: &str) -> Result<Option<Snapshot>, IndexError> {
@@ -502,21 +502,23 @@ impl Index for SqliteIndex {
         let narrowed = beneath(&mut sql, root);
         sql.push_str(TAIL);
 
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let Some(snapshot) = opened(&mut tx, of).await? else {
+        let mut conn = self.conn.lock().expect(LOCK_POISONED);
+        let tx = conn.transaction().map_err(db_err)?;
+        let Some(snapshot) = opened(&tx, of)? else {
             return Ok(None);
         };
-        let mut query = sqlx::query(&sql).bind(of.as_str());
+
+        let mut bound = vec![SqlValue::Text(of.as_str().to_owned())];
         if narrowed {
-            query = query
-                .bind(root.len() as i64)
-                .bind(root)
-                .bind(root.len() as i64);
+            let root_len = root.len() as i64;
+            bound.push(SqlValue::Integer(root_len));
+            bound.push(SqlValue::Text(root.to_owned()));
+            bound.push(SqlValue::Integer(root_len));
         }
-        let rows = query.fetch_all(&mut *tx).await.map_err(db_err)?;
-        tx.commit().await.map_err(db_err)?;
+        let raw = locate(&tx, &sql, &bound)?;
+        tx.commit().map_err(db_err)?;
         Ok(Some(Snapshot {
-            rows: rows.iter().map(found).collect::<Result<_, _>>()?,
+            rows: raw.into_iter().map(decode).collect::<Result<_, _>>()?,
             ..snapshot
         }))
     }
@@ -527,46 +529,100 @@ impl Index for SqliteIndex {
         root: &str,
         want: &Want,
     ) -> Result<Option<Snapshot>, IndexError> {
-        let mut sql = String::from(
-            "SELECT DISTINCT f.sort, f.rel, c.ord, c.id, c.coord, c.facts \
-             FROM posting p \
-             JOIN candidate c ON c.generation = p.generation AND c.rel = p.rel \
-             AND c.ord = p.ord \
-             JOIN file f ON f.generation = c.generation AND f.rel = c.rel \
-             WHERE p.generation = ?",
-        );
+        let mut sql = String::from(POINT);
         let narrowed = beneath(&mut sql, root);
-        let pairs: Vec<&str> = want
-            .iter()
-            .map(|_| "(p.item = ? AND p.value = ?)")
-            .collect();
-        sql.push_str(&format!(" AND ({})", pairs.join(" OR ")));
-        sql.push_str(TAIL);
 
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let Some(snapshot) = opened(&mut tx, of).await? else {
+        let mut conn = self.conn.lock().expect(LOCK_POISONED);
+        let tx = conn.transaction().map_err(db_err)?;
+        let Some(snapshot) = opened(&tx, of)? else {
             return Ok(None);
         };
-        let rows = match want.is_empty() {
-            true => Vec::new(),
-            false => {
-                let mut query = sqlx::query(&sql).bind(of.as_str());
-                if narrowed {
-                    query = query
-                        .bind(root.len() as i64)
-                        .bind(root)
-                        .bind(root.len() as i64);
-                }
-                for (item, value) in want {
-                    query = query.bind(item).bind(value);
-                }
-                query.fetch_all(&mut *tx).await.map_err(db_err)?
+
+        let mut merged: BTreeMap<(String, i64), Located> = BTreeMap::new();
+        for (item, value) in want {
+            let mut bound = vec![
+                SqlValue::Text(of.as_str().to_owned()),
+                SqlValue::Text(item.clone()),
+                SqlValue::Text(value.clone()),
+            ];
+            if narrowed {
+                let root_len = root.len() as i64;
+                bound.push(SqlValue::Integer(root_len));
+                bound.push(SqlValue::Text(root.to_owned()));
+                bound.push(SqlValue::Integer(root_len));
             }
-        };
-        tx.commit().await.map_err(db_err)?;
+            for raw in locate(&tx, &sql, &bound)? {
+                let at = (raw.sort.clone(), raw.ord);
+                if let std::collections::btree_map::Entry::Vacant(slot) = merged.entry(at) {
+                    slot.insert(decode(raw)?);
+                }
+            }
+        }
+        tx.commit().map_err(db_err)?;
         Ok(Some(Snapshot {
-            rows: rows.iter().map(found).collect::<Result<_, _>>()?,
+            rows: merged.into_values().collect(),
             ..snapshot
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opened() -> Connection {
+        let mut conn = Connection::open_in_memory().expect("an in-memory database opens");
+        ready(&mut conn, "an in-memory index").expect("a fresh database takes the schema");
+        conn
+    }
+
+    fn plan(conn: &Connection, sql: &str) -> String {
+        let blanks = vec![SqlValue::Null; sql.matches('?').count()];
+        let mut stmt = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("the statement parses");
+        let steps: Vec<String> = stmt
+            .query_map(rusqlite::params_from_iter(blanks.iter()), |r| {
+                r.get::<_, String>(3)
+            })
+            .expect("a plan has a detail column")
+            .collect::<Result<_, _>>()
+            .expect("every row reads");
+        steps.join(" | ")
+    }
+
+    #[test]
+    fn the_statements_write_repeats_once_per_file_seek_on_both_columns() {
+        let conn = opened();
+        for table in ["posting", "candidate"] {
+            let seen = plan(
+                &conn,
+                &format!("DELETE FROM {table} WHERE generation = ? AND rel = ?"),
+            );
+            assert!(
+                seen.contains("generation=? AND rel=?"),
+                "`{table}`'s per-file delete plans as `{seen}`, which narrows on the \
+                 generation and then walks it. `write` runs this once per file, so a walk \
+                 of N files pays N scans of everything written so far — quadratic, and \
+                 invisible until a repository is large enough to make it fatal. `posting` \
+                 keys on (generation, item, value, rel, ord), where `rel` is the fourth \
+                 column and no prefix reaches it; `posting_by_rel` is what makes this a \
+                 seek. A conformance suite that only compares answers cannot see this: \
+                 both backends return the same rows either way"
+            );
+        }
+    }
+
+    #[test]
+    fn a_point_query_on_one_wanted_pair_seeks_on_all_three_columns() {
+        let conn = opened();
+        let seen = plan(&conn, POINT);
+        assert!(
+            seen.contains("generation=? AND item=? AND value=?"),
+            "the point query plans as `{seen}`. `union` runs one of these per wanted pair, \
+             and the whole reason it asks per pair rather than in one OR is that an OR over \
+             (item, value) cannot reach past `generation` in the primary key. If this ever \
+             stops seeking on all three, every anchor walks the whole generation again"
+        );
     }
 }

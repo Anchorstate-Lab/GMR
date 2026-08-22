@@ -12,12 +12,10 @@ license.workspace = true
 
 [features]
 default = []
-# ── 后端：一个 feature 一个，跟 gmr-store 同一个惯例。
-sqlite = ["dep:sqlx"]
-# 契约自带的参考实现。不是部署选项 —— 它撑不过进程重启。
+sqlite = ["dep:rusqlite"]
+# The contract's own reference implementation. Not a deployment option — it
+# does not survive a process restart.
 testkit = []
-# Corpus（同步）到 Index（异步）的桥，专用线程 + 自带 runtime。不认识任何具体后端，
-# 跟哪个 Index 实现搭配是调用方的事（见 domains/coding/extract 怎么接 sqlite feature）。
 bridge = ["dep:tokio"]
 
 [dependencies]
@@ -28,7 +26,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-sqlx = { workspace = true, optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 tokio = { workspace = true, optional = true }
 
 # 测试跑一致性套件：两个后端各一遍。
@@ -36,7 +34,6 @@ tokio = { workspace = true, optional = true }
 gmr-survey = { path = ".", features = ["sqlite", "testkit", "bridge"] }
 tempfile = { workspace = true }
 tokio = { workspace = true }
-sqlx = { workspace = true }
 
 [lints]
 workspace = true
