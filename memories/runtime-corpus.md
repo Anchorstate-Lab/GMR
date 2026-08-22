@@ -11,14 +11,6 @@ watch: [sig, logic]
 
 # "Which anchors are alive" and "which records this corpus holds" are two questions, and only one of them takes a filter
 
-**The counts come from what was delivered, not from re-deriving it.**
-`per_anchor`, `barren` and `unsupervised` all read `grounded` — the views
-`ground` already produced by folding the OR-Set over each anchor's chain.
-Counting instead by scanning `all()` for `binding.anchors.contains(key)`
-reads the anchors as they were *asserted*: it misses revocations, and it
-misses a memory carried forward from a superseded generation, so an heir
-holding a full corpus reports barren. See [[store-orset-projection]].
-
 `!v.closed` is the right slice for the anchor-level lists — `absent`, `unseen`,
 `stranded`. It is the wrong one for anything about records: a binding does not
 stop existing when the anchor it hangs on closes, and a corpus-level count taken
@@ -34,6 +26,13 @@ one is not a judgement call it can get wrong.
 `corpus_health` takes the views `read_all` already produced rather than re-folding
 every journal, so there is one projection of the log rather than two that can
 disagree.
+
+**The counts read that same delivered set.** `per_anchor`, `barren` and
+`unsupervised` all come from `grounded`, never from scanning `all()` for
+`binding.anchors.contains(key)`. That scan reads the anchors as *asserted*:
+it misses revocations, and it misses a memory carried forward from a
+superseded generation, so an heir holding a full corpus reports barren. See
+[[store-orset-projection]].
 
 ## `Footing` is the one classifier
 

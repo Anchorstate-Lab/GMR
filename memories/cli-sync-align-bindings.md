@@ -13,11 +13,10 @@ anchor set, same bound version, and every assertion behind it already
 so that running `sync` repeatedly over an unchanged repository does not grow
 the bindings table forever with identical entries.
 
-The source clause is what re-derives the rows a schema migration could only
-honestly mark `Unknown`: the next `sync` finds them unsettled, re-asserts
-them as `Derived`, and the provenance question can answer for them. It
-reaches only notes, so a record in another store keeps saying `Unknown`,
-which is the true answer for it.
+The source clause is what makes a note's binding say `Derived` and keep
+saying it: any row behind the reference that does not, the next `sync` finds
+unsettled and re-asserts. It reaches only notes, so a record in another
+store keeps whatever source it has, which is the true answer for it.
 
 ## A note declares its whole coordinate set, so dropping a line revokes
 
@@ -43,22 +42,19 @@ row nobody has authorised.
 
 ## The reference is the source's, not one this function builds
 
-The address a note is bound at used to be assembled here, out of a global
-constant naming one provider and the note's path. It is now
-`note.reference` — the `Ref` the source stamped on the record it handed
-over, carried through untouched.
+The address a note is bound at is `note.reference` — the `Ref` the source
+stamped on the record it handed over, carried through untouched. It is never
+reassembled here from a provider constant and the note's path.
 
-The difference is invisible while one store exists, because a constant and
-a carried value produce the same bytes. It stops being invisible the moment
-a second source appears: the constant keeps naming the first one, so every
-record from the second is looked up in a store that has never heard of it.
-The symptom is this function refusing to bind anything, blaming a provider
-that is working fine.
+Reassembling is invisible while one store exists, because a constant and a
+carried value produce the same bytes. With a second source the constant
+keeps naming the first, so every record from the second is looked up in a
+store that has never heard of it, and this function refuses to bind
+anything while blaming a provider that is working fine.
 
-That is the shape of the defect, not just one instance of it — the same
-"throw the answer away and re-derive it from a constant" appeared again in
-the subscription lookup ([[delivery-standing]]) and in how a note's name was
-spelled. A `Ref` handed down is the fix in all three.
+The rule is wider than this call site: an answer already handed down is not
+re-derived from a constant. The same applies in the subscription lookup
+([[delivery-standing]]) and in how a note's name is spelled.
 
 ## It resolves; it does not write
 

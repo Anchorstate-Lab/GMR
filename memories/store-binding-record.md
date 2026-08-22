@@ -10,62 +10,52 @@ watch: [sig]
 # An assertion carries how it came to be, and only two of the ways stand on their own
 
 `Asserted` is what a caller hands the store; `BindingRecord` is what comes
-back. Both wrap a `Binding` with the write-time metadata that is not part of
-the relation itself — see [[memory-Binding]] for why that split exists at
-all.
+back. Both wrap a `Binding` with write-time metadata that is not part of the
+relation — see [[memory-Binding]].
 
-**A record is one assertion, not one reference.** Its `seq` names the row,
-and its `binding.anchors` holds the anchors of that assertion that are still
-live — so a caller can revoke exactly what it saw. A reference with three
-assertions comes back as three records; folding them into one view is the
-runtime's job, because that is where `MemoryView` lives. See
-[[store-orset-projection]] for what "still live" means.
+**A record is one assertion, not one reference.** `seq` names the row;
+`binding.anchors` holds that assertion's still-live tags, so a caller can
+revoke exactly what it saw. A reference with three assertions comes back as
+three records; folding them into one view is the runtime's job, where
+`MemoryView` lives. [[store-orset-projection]] defines "live".
 
-## `Source` is a fact about how GMR learned the link, not about the domain
+## `Source` says how GMR learned the link
 
-The five words are `Derived` (the record declared its own coordinate, in
-content that goes through review), `SelfAttested` (the agent that wrote or
-used the record asserted it), `Adjudicated` (someone reviewed and affirmed
-or revoked), `Configured` (a provider recipe declared it), and `Unknown`.
+`Derived` — the record declared its own coordinate, in content that goes
+through review. `SelfAttested` — the agent that wrote or used the record
+asserted it. `Adjudicated` — someone reviewed and affirmed or revoked.
+`Configured` — a provider recipe declared it. `Unknown` — nothing was
+recorded.
 
-They live in `gmr-core` rather than the domain because the base is the one
-holding the assertion, and the base is what answers `independent()`. Put the
-vocabulary in the domain and every domain re-derives what counts as evidence
-— which is the one judgement a reader is relying on this layer not to
+It lives in `gmr-core` because the base holds the assertion and the base
+answers `independent()`. Put in the domain, every domain re-derives what
+counts as evidence — the one judgement a reader relies on this layer not to
 invent.
 
-**`independent()` is `Derived | Adjudicated`.** A memory whose aboutness has
-only self-attestation behind it is the agent vouching for itself: worth
-recording, because that is the most accurate moment the link can be made,
-but not something a reader can weigh against the agent. `Configured` is
-self-report with a longer life. `Unknown` is not counted, and that direction
-matters — an assertion from before this column may well have been judged by
-a person, and calling it independent would invent exactly the fact being
-relied on. Under-crediting is the safe error here; over-crediting is not.
+**`independent()` is `Derived | Adjudicated`.** Self-attestation is the
+agent vouching for itself: worth recording, since that is the most accurate
+moment the link can be made, but not something a reader can weigh against
+it. `Configured` is self-report with a longer life. `Unknown` is not
+counted — claiming it would invent the fact being relied on. Under-crediting
+is the safe error here; over-crediting is not.
 
-## `bound_at_seq` is only meaningful when there is one anchor to have a head
+## `bound_at_seq` is only meaningful with one anchor to have a head
 
-`Option<Seq>` rather than `Seq` because "the bound anchor's head at bind
-time" only has one unambiguous answer when the binding names exactly one
-anchor; a binding naming several has several heads, so there is no single
-`Seq` to record and the field is `None`.
+`Option<Seq>`: "the bound anchor's head at bind time" has one unambiguous
+answer only when the binding names exactly one anchor.
 
 ## The clock is the caller's
 
-`Asserted` takes `at` as a field rather than reading `Utc::now()` where the
-row is written. The store is handed the time the same way `Entry::Close`
-is, so a replay puts back the moment the assertion was made rather than the
-moment it was read.
+`Asserted` takes `at` rather than reading `Utc::now()` where the row is
+written, the same way `Entry::Close` is handed its time, so a replay puts
+back the moment the assertion was made.
 
 ## When this changes, ask
 
-Does a new caller assume `bound_at_seq` is always `Some` for some anchor
-count other than exactly one? A multi-anchor binding still has to leave this
-`None` — inventing a `Seq` for it (first anchor's head? most recent?) would
-silently pick one anchor's history as more important than the others.
+Does a caller assume `bound_at_seq` is `Some` for some anchor count other
+than one? Inventing a `Seq` for a multi-anchor binding picks one anchor's
+history as more important than the others.
 
 Does a sixth `Source` arrive? Ask what it answers `independent()` with
-before naming it. A word that has to be argued about is a word that will be
-argued about differently by the next reader, and the whole point of splitting
-by *kind of act* rather than by *who acted* is that no identity has to be
-verified to tell them apart.
+first. Splitting by kind of act rather than by who acted is what keeps any
+unverifiable identity out of the question.

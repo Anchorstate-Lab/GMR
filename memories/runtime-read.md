@@ -28,14 +28,19 @@ field, `MemoryView.grounding`, and is written up in [[runtime-grounding]].
 other: `stale` is about this anchor moving, `grounding` is about the record
 moving.
 
-## A `MemoryView` carries how its assertion arose
+## A `MemoryView` carries how its assertions arose
 
-`source` and `asserted_at` ride along with every view, so a reader deciding
-whether to trust a memory can see whether anything but the agent's own
-say-so stands behind the link — the question [[store-binding-record]]'s
-`independent()` answers. `asserted_at` is `Option` and skipped from JSON
-when absent, because an assertion made before that column existed has no
-honest timestamp to give.
+`sources` is the set of `Source`s behind the reference's live assertions and
+`asserted_at` the earliest of their times, so a reader can see whether
+anything beyond the agent's own say-so stands behind the link — the question
+[[store-binding-record]]'s `independent()` answers.
+
+Both are per reference, because a view is. [[store-orset-projection]] can
+leave several live assertions on one record, and a view per assertion would
+show the same memory three times.
+
+`asserted_at` is `Option` and skipped from JSON when absent: an assertion
+with no recorded time has none to give.
 
 ## When this changes, ask
 

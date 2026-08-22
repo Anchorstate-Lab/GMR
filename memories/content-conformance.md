@@ -82,10 +82,11 @@ twice, and five `default_value = "git"` in the CLI — so the rule would have
 shipped with a whitelist, and a rule that needs exceptions on its first day
 is one the next person routes around rather than argues with.
 
-A test that `fetch_at` is never *called* on a provider with no history was
-also dropped: `history()` returns `Option<&dyn History>`, so `None` leaves
-nothing to call. It was a test of the compiler. `retains` is not that test —
-it asks what `fetch_at` answers, which no signature carries.
+There is no test that `fetch_at` is never *called* on a provider with no
+history: `history()` returns `Option<&dyn History>`, so `None` leaves
+nothing to call, and a test of that would be a test of the compiler.
+`retains` asks a different thing — what `fetch_at` answers — which no
+signature carries.
 
 The rule this leaves behind is worth stating: **what a type can express, a
 check should not.** A check is a wall — cheap to route around, and silent
