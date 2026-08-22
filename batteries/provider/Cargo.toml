@@ -33,9 +33,12 @@ claude-code = ["dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-tr
 # mem0 走网络，所以它带 reqwest —— architecture.toml 把 reqwest 归在 io，
 # 而 gmr-provider 的 forbidden_default 禁 io，于是这一条只能是非默认 feature。
 mem0 = [
-    "dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait",
-    "dep:serde", "dep:serde_json", "dep:reqwest",
+    "http", "dep:gmr-core", "dep:gmr-content", "dep:gmr-probe", "dep:async-trait",
+    "dep:serde", "dep:serde_json",
 ]
+# 走 HTTP 的后端共用的脚手架。不是部署选项：每个走网络的后端 feature 自己打开它，
+# 于是门控读作「任一 http provider」，而不是某一个后端的名字。
+http = ["dep:gmr-content", "dep:gmr-probe", "dep:async-trait", "dep:reqwest"]
 # 一个住在内存里的 mem0，让走网络的后端也能跑本地后端跑的那套一致性套件。
 # 不是部署选项 —— 跟 gmr-store 的 testkit 同一个惯例。
 testkit = ["mem0"]

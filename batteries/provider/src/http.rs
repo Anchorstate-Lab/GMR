@@ -21,13 +21,21 @@ pub(crate) struct Credential {
 pub(crate) struct Reqwest {
     client: reqwest::Client,
     credential: Option<Credential>,
+    store: &'static str,
 }
 
 impl Reqwest {
-    pub(crate) fn new(credential: Option<Credential>) -> Result<Self, ContentError> {
+    pub(crate) fn new(
+        store: &'static str,
+        credential: Option<Credential>,
+    ) -> Result<Self, ContentError> {
         reqwest::Client::builder()
             .build()
-            .map(|client| Self { client, credential })
+            .map(|client| Self {
+                client,
+                credential,
+                store,
+            })
             .map_err(|e| ContentError::new(format!("cannot build an HTTP client: {e}")))
     }
 }
@@ -37,20 +45,23 @@ impl Http for Reqwest {
     async fn get(&self, url: &str, budget: &Budget) -> Result<Answer, ContentError> {
         let left = budget
             .remaining()
-            .ok_or_else(|| ContentError::spent("no time left to call mem0"))?;
+            .ok_or_else(|| ContentError::spent(format!("no time left to call {}", self.store)))?;
         let mut request = self.client.get(url).timeout(left);
         if let Some(credential) = &self.credential {
             request = request.header(credential.header, &credential.value);
         }
         let response = request.send().await.map_err(|e| match e.is_timeout() {
-            true => ContentError::spent(format!("mem0 did not answer within the budget: {e}")),
-            false => ContentError::new(format!("cannot reach mem0: {e}")),
+            true => ContentError::spent(format!(
+                "{} did not answer within the budget: {e}",
+                self.store
+            )),
+            false => ContentError::new(format!("cannot reach {}: {e}", self.store)),
         })?;
         let status = response.status().as_u16();
         let body = response
             .text()
             .await
-            .map_err(|e| ContentError::new(format!("cannot read mem0's answer: {e}")))?;
+            .map_err(|e| ContentError::new(format!("cannot read {}'s answer: {e}", self.store)))?;
         Ok(Answer { status, body })
     }
 }

@@ -1,6 +1,9 @@
 #[cfg(any(feature = "git", feature = "claude-code"))]
 mod local_file;
 
+#[cfg(feature = "http")]
+mod http;
+
 #[cfg(feature = "git")]
 pub mod git;
 
