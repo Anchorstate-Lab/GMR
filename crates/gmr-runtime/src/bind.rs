@@ -1,5 +1,5 @@
 use chrono::Utc;
-use gmr_core::{AnchorKey, Binding, Ref, Source, Version};
+use gmr_core::{AnchorKey, Binding, Ref, Source, Version, fold};
 use gmr_store::BindingRecord;
 
 use crate::assembly::Runtime;
@@ -14,16 +14,62 @@ impl Runtime {
         anchors: Vec<AnchorKey>,
         bound_version: Version,
         source: Source,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Landed, RuntimeError> {
+        let mut landed = Landed::default();
+        for named in anchors {
+            let living = self.living(&named).await?;
+            if living != named {
+                landed.moved.push((named, living.clone()));
+            }
+            if !landed.anchors.contains(&living) {
+                landed.anchors.push(living);
+            }
+        }
         self.memory
             .bind(
                 &self.log,
-                &Binding { reference, anchors },
+                &Binding {
+                    reference,
+                    anchors: landed.anchors.clone(),
+                },
                 &bound_version,
                 source,
                 Utc::now(),
             )
-            .await
+            .await?;
+        Ok(landed)
+    }
+
+    pub async fn living(&self, key: &AnchorKey) -> Result<AnchorKey, RuntimeError> {
+        let mut at = key.clone();
+        let mut seen = std::collections::BTreeSet::from([at.clone()]);
+        for _ in 0..crate::memory::GENERATIONS {
+            let Some(state) = fold(&self.log.entries(&at, 0).await?) else {
+                break;
+            };
+            if !state.closed {
+                break;
+            }
+            let Some(heir) = self.heir_of(&at).await? else {
+                break;
+            };
+            if !seen.insert(heir.clone()) {
+                break;
+            }
+            at = heir;
+        }
+        Ok(at)
+    }
+
+    async fn heir_of(&self, key: &AnchorKey) -> Result<Option<AnchorKey>, RuntimeError> {
+        for candidate in self.anchors().await? {
+            let superseded = fold(&self.log.entries(&candidate, 0).await?)
+                .and_then(|s| s.anchor.supersedes.map(|x| x.key));
+            if superseded.as_ref() == Some(key) {
+                return Ok(Some(candidate));
+            }
+        }
+        Ok(None)
     }
 
     pub async fn revoke(
@@ -136,4 +182,10 @@ async fn reaffirm(
             Utc::now(),
         )
         .await
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Landed {
+    pub anchors: Vec<AnchorKey>,
+    pub moved: Vec<(AnchorKey, AnchorKey)>,
 }

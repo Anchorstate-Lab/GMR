@@ -25,9 +25,18 @@ record and accepted it. That is the difference between a version stamp with
 a person behind it and one a script refreshed, and it is what
 [[store-binding-record]]'s `independent()` reads.
 
-It does **not** yet separate `reaffirm` from a hand-typed `gmr bind`, which
-also records `Adjudicated` — both are judgements, and no field distinguishes
-which verb made them.
+It does **not** separate `reaffirm` from a hand-typed `gmr bind`, and that
+is deliberate rather than pending. Both are judgements, and no reader
+answers anything differently for knowing which verb produced one. The
+difference that does exist — reaffirming says "I read this version", binding
+says "this is what the record is about" — is a claim about what a person
+attested to, and that is precisely what the assertion layer records the
+*act* of rather than interprets.
+
+The anchors it re-stamps are the union of the reference's live tags, not one
+row's copy. Under [[store-orset-projection]] a reference can hold several
+live assertions, and re-stamping only one of them would quietly drop the
+rest.
 
 ## When this changes, ask
 

@@ -29,13 +29,15 @@ pub async fn run(
     })?;
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
-    rt.bind(
-        reference,
-        anchors.clone(),
-        version.clone(),
-        Source::Adjudicated,
-    )
-    .await?;
+    let landed = rt
+        .bind(
+            reference,
+            anchors.clone(),
+            version.clone(),
+            Source::Adjudicated,
+        )
+        .await?;
+    let anchors = landed.anchors.clone();
     let version = version.into_inner();
 
     if json {
@@ -53,6 +55,9 @@ pub async fn run(
                 .join(", ")
         );
         println!("  bound version {}", &version[..12.min(version.len())]);
+        for (named, living) in &landed.moved {
+            println!("  {named} is closed and superseded; this landed on {living}");
+        }
     }
     Ok(0)
 }

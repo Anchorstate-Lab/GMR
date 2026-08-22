@@ -706,6 +706,98 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
 }
 
 #[tokio::test]
+async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
+    use gmr_core::{Ref, Source, Version};
+    use gmr_runtime::Supersede;
+
+    let w = World::new();
+    w.write(r#"{"n":50}"#);
+    w.open(&[("obs.n > 10", r#"{ status: "settled" }"#)], &["settled"])
+        .await;
+    assert!(w.rt.read(&key()).await.unwrap().closed);
+
+    let heir = AnchorKey::new("a@2");
+    w.rt.open(OpenRequest {
+        key: heir.clone(),
+        probe: cat_probe(w.dir.path()),
+        transitions: transitions(&[("obs.n > 100", r#"{ status: "settled" }"#)]),
+        terminal: [StatusId::new("settled")].into_iter().collect(),
+        initial: None,
+        settings: RunSettings {
+            budget_ms: None,
+            retain: Retain::Tick,
+            cadence_secs: None,
+        },
+        supersedes: Some(Supersede {
+            key: key(),
+            rationale: "threshold was wrong".as_bytes().to_vec(),
+        }),
+    })
+    .await
+    .unwrap();
+
+    let reference = Ref::new("git", "memories/m.md");
+    let landed =
+        w.rt.bind(
+            reference.clone(),
+            vec![key()],
+            Version::new("v1"),
+            Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        landed.anchors,
+        vec![heir.clone()],
+        "an agent naming a coordinate has no idea which generation stands there now. Left \
+         on the superseded one, every self-bind would reach the current generation only by \
+         being carried forward, when it is native to it — and a superseded generation is \
+         frozen, so a tag added there would also slip past any revocation made on the heir"
+    );
+    assert_eq!(
+        landed.moved,
+        vec![(key(), heir.clone())],
+        "walking a sealed supersede is not a guess, but it is still a substitution, and \
+         the caller has to be told which one was made"
+    );
+    assert_eq!(
+        gmr_runtime::anchors_of(&w.rt.memory().binding_of(&reference).await.unwrap()),
+        vec![heir.clone()],
+    );
+
+    let carried = Ref::new("git", "memories/older.md");
+    w.rt.memory()
+        .bind(
+            w.rt.log(),
+            &gmr_core::Binding {
+                reference: carried.clone(),
+                anchors: vec![key()],
+            },
+            &Version::new("v1"),
+            Source::Adjudicated,
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+
+    let delivered: Vec<Ref> =
+        w.rt.grounded(&heir)
+            .await
+            .unwrap()
+            .memories
+            .into_iter()
+            .map(|m| m.reference)
+            .collect();
+    assert!(
+        delivered.contains(&carried),
+        "a memory asserted on the superseded generation still reaches the reader through \
+         the heir. Not carrying it forward is what made `doctor` tell people to supersede \
+         and then leave every one of their memories unsupervised anyway: {delivered:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_new_generation_supersedes_the_finished_one_with_a_sealed_reason() {
     use gmr_runtime::Supersede;
 
