@@ -28,6 +28,15 @@ field, `MemoryView.grounding`, and is written up in [[runtime-grounding]].
 other: `stale` is about this anchor moving, `grounding` is about the record
 moving.
 
+## A `MemoryView` carries how its assertion arose
+
+`source` and `asserted_at` ride along with every view, so a reader deciding
+whether to trust a memory can see whether anything but the agent's own
+say-so stands behind the link — the question [[store-binding-record]]'s
+`independent()` answers. `asserted_at` is `Option` and skipped from JSON
+when absent, because an assertion made before that column existed has no
+honest timestamp to give.
+
 ## When this changes, ask
 
 Is `view.stale` still computed only for records actually bound to this

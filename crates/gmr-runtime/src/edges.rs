@@ -253,6 +253,8 @@ mod tests {
             grounded: true,
             links: Vec::new(),
             bound_at_seq: None,
+            source: gmr_core::Source::Adjudicated,
+            asserted_at: None,
             stale: None,
             grounding,
         }

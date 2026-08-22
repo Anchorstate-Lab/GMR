@@ -3,8 +3,8 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, State, StatusId,
-    Version, scan,
+    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, Source, State,
+    StatusId, Version, scan,
 };
 use gmr_probe::Budget;
 use gmr_store::Seen;
@@ -53,6 +53,9 @@ pub struct MemoryView {
     pub grounded: bool,
     pub links: Vec<Link>,
     pub bound_at_seq: Option<Seq>,
+    pub source: Source,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asserted_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale: Option<bool>,
     pub grounding: Grounding,

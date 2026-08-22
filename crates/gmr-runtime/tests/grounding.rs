@@ -252,6 +252,7 @@ impl World {
                 Ref::new("git", format!("memories/{name}")),
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
                 Version::new(version),
+                gmr_core::Source::Adjudicated,
             )
             .await
             .unwrap();
@@ -266,6 +267,7 @@ impl World {
                 reference,
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
                 Version::new(version),
+                gmr_core::Source::Adjudicated,
             )
             .await
             .unwrap();
@@ -439,7 +441,12 @@ async fn cobound_is_derived_from_binds_not_stored() {
     );
 
     w.runtime
-        .bind(Ref::new("git", "memories/b.md"), vec![], Version::new("v"))
+        .bind(
+            Ref::new("git", "memories/b.md"),
+            vec![],
+            Version::new("v"),
+            gmr_core::Source::Adjudicated,
+        )
         .await
         .unwrap();
     assert!(
@@ -468,6 +475,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
             Ref::new("git", "memories/bound.md"),
             vec![AnchorKey::new("a")],
             Version::new("v1"),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -476,6 +484,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
             Ref::new("git", "memories/loose.md"),
             vec![],
             Version::new("v1"),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -525,7 +534,12 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
     assert!(!bound.binding.anchors.is_empty());
 
     w.runtime
-        .bind(reference.clone(), vec![], Version::new("v"))
+        .bind(
+            reference.clone(),
+            vec![],
+            Version::new("v"),
+            gmr_core::Source::Adjudicated,
+        )
         .await
         .unwrap();
 

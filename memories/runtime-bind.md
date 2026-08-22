@@ -14,6 +14,15 @@ whether the anchor has moved since. `gmr-store` itself cannot compute this
 is handed. For any other anchor count the value stays `None`, for the same
 reason `BindingRecord` documents: there is no single head to name.
 
+## The source and the clock arrive from outside
+
+`bind` takes `source` and `at` rather than deciding either. The source is
+the caller's fact — `sync` reaching a coordinate through a note is
+`Derived`, a person naming one at the CLI is `Adjudicated` — and the runtime
+has no way to tell them apart from here. The clock is passed for the reason
+[[store-binding-record]] gives: replay should put back the moment the
+assertion was made, not the moment it was read back.
+
 ## When this changes, ask
 
 Does the new binding path still fold the named anchor's own entries to get

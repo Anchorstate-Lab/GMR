@@ -34,8 +34,14 @@ enum Line {
         seq: i64,
         reference: String,
         body: serde_json::Value,
-        bound_version: String,
+        bound_version: Option<String>,
         bound_at_seq: Option<i64>,
+        #[serde(default = "unknown_source")]
+        source: String,
+        #[serde(default)]
+        asserted_at: Option<String>,
+        #[serde(default)]
+        baseline_at_seq: Option<i64>,
     },
     BindingAnchors {
         seq: i64,
@@ -115,7 +121,8 @@ impl SqliteStore {
         }
 
         let rows = sqlx::query(
-            "SELECT seq, reference, body, bound_version, bound_at_seq FROM bindings ORDER BY seq",
+            "SELECT seq, reference, body, bound_version, bound_at_seq, source, asserted_at, \
+             baseline_at_seq FROM bindings ORDER BY seq",
         )
         .fetch_all(&mut *tx)
         .await
@@ -129,8 +136,11 @@ impl SqliteStore {
                     seq: r.get("seq"),
                     reference: r.get("reference"),
                     body,
-                    bound_version: r.get("bound_version"),
+                    bound_version: r.get::<Option<String>, _>("bound_version"),
                     bound_at_seq: r.get::<Option<i64>, _>("bound_at_seq"),
+                    source: r.get("source"),
+                    asserted_at: r.get::<Option<String>, _>("asserted_at"),
+                    baseline_at_seq: r.get::<Option<i64>, _>("baseline_at_seq"),
                 },
             )?;
             summary.bindings += 1;
@@ -246,17 +256,24 @@ impl SqliteStore {
                     body,
                     bound_version,
                     bound_at_seq,
+                    source,
+                    asserted_at,
+                    baseline_at_seq,
                 } => {
                     let body = serde_json::to_string(&body)
                         .map_err(|e| StoreError::other(format!("line {}: {e}", n + 1)))?;
                     let landed: i64 = sqlx::query_scalar(
-                        "INSERT INTO bindings (reference, body, bound_version, bound_at_seq) \
-                         VALUES (?1, ?2, ?3, ?4) RETURNING seq",
+                        "INSERT INTO bindings (reference, body, bound_version, bound_at_seq, \
+                         source, asserted_at, baseline_at_seq) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING seq",
                     )
                     .bind(&reference)
                     .bind(&body)
                     .bind(&bound_version)
                     .bind(bound_at_seq)
+                    .bind(&source)
+                    .bind(&asserted_at)
+                    .bind(baseline_at_seq)
                     .fetch_one(&mut *tx)
                     .await
                     .map_err(db_err)?;
@@ -311,4 +328,8 @@ impl SqliteStore {
         tx.commit().await.map_err(db_err)?;
         Ok(summary)
     }
+}
+
+fn unknown_source() -> String {
+    gmr_core::Source::Unknown.as_str().to_owned()
 }

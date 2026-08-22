@@ -18,6 +18,17 @@ have to re-supply the second thing too, and a caller that got it slightly
 wrong would silently rebind the reference to different anchors while
 believing it was just refreshing a version stamp.
 
+## What it records is a judgement, and the store can see that
+
+`reaffirm` writes `Source::Adjudicated`: somebody looked at the rewritten
+record and accepted it. That is the difference between a version stamp with
+a person behind it and one a script refreshed, and it is what
+[[store-binding-record]]'s `independent()` reads.
+
+It does **not** yet separate `reaffirm` from a hand-typed `gmr bind`, which
+also records `Adjudicated` — both are judgements, and no field distinguishes
+which verb made them.
+
 ## When this changes, ask
 
 Does the new code path let a version refresh also change `anchors` in the

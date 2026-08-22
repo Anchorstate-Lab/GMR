@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Version, fold};
-use gmr_store::{BindingRecord, BindingStore, LinkStore, Sealer};
+use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version, fold};
+use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Sealer};
 use serde::Serialize;
 
 use crate::error::RuntimeError;
@@ -50,6 +50,8 @@ impl MemoryLens {
         log: &AnchorLog,
         binding: &Binding,
         bound_version: &Version,
+        source: Source,
+        at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
         let bound_at_seq = match binding.anchors.as_slice() {
             [only] => {
@@ -60,7 +62,13 @@ impl MemoryLens {
         };
         Ok(self
             .bindings
-            .bind(binding, bound_version, bound_at_seq)
+            .bind(&Asserted {
+                binding: binding.clone(),
+                bound_version: bound_version.clone(),
+                bound_at_seq,
+                source,
+                at,
+            })
             .await?)
     }
 
@@ -126,6 +134,8 @@ impl MemoryLens {
             binding,
             bound_version,
             bound_at_seq,
+            source,
+            asserted_at,
         } = record;
         Ok(MemoryView {
             links: self.links.links_of(&binding.reference).await?,
@@ -136,6 +146,8 @@ impl MemoryLens {
             reference: binding.reference,
             bound_version,
             bound_at_seq,
+            source,
+            asserted_at,
             stale: None,
         })
     }

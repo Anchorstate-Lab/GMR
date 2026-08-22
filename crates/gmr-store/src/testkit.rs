@@ -3,13 +3,12 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq, Version,
-    content_hash_of_bytes,
+    AnchorKey, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq, content_hash_of_bytes,
 };
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::bindings::{BindingRecord, BindingStore};
+use crate::bindings::{Asserted, BindingRecord, BindingStore};
 use crate::error::StoreError;
 use crate::journal::{Fence, Journal};
 use crate::links::LinkStore;
@@ -101,16 +100,13 @@ impl MemoryBindings {
 
 #[async_trait]
 impl BindingStore for MemoryBindings {
-    async fn bind(
-        &self,
-        binding: &Binding,
-        bound_version: &Version,
-        bound_at_seq: Option<Seq>,
-    ) -> Result<(), StoreError> {
+    async fn bind(&self, asserted: &Asserted) -> Result<(), StoreError> {
         self.inner.lock().unwrap().bindings.push(BindingRecord {
-            binding: binding.clone(),
-            bound_version: bound_version.clone(),
-            bound_at_seq,
+            binding: asserted.binding.clone(),
+            bound_version: asserted.bound_version.clone(),
+            bound_at_seq: asserted.bound_at_seq,
+            source: asserted.source,
+            asserted_at: Some(asserted.at),
         });
         Ok(())
     }

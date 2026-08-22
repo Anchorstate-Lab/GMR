@@ -1,4 +1,4 @@
-use gmr::{AnchorKey, Ref, Runtime};
+use gmr::{AnchorKey, Ref, Runtime, Source};
 
 use crate::error::CliError;
 
@@ -35,7 +35,13 @@ pub async fn run(
     };
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
 
-    rt.bind(reference, anchors.clone(), version.clone()).await?;
+    rt.bind(
+        reference,
+        anchors.clone(),
+        version.clone(),
+        Source::Adjudicated,
+    )
+    .await?;
     let version = version.into_inner();
 
     if json {

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Binding, Ref, Seq, Version};
+use chrono::{DateTime, Utc};
+use gmr_core::{AnchorKey, Binding, Ref, Seq, Source, Version};
 
 use crate::error::StoreError;
 
@@ -8,16 +9,22 @@ pub struct BindingRecord {
     pub binding: Binding,
     pub bound_version: Version,
     pub bound_at_seq: Option<Seq>,
+    pub source: Source,
+    pub asserted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asserted {
+    pub binding: Binding,
+    pub bound_version: Version,
+    pub bound_at_seq: Option<Seq>,
+    pub source: Source,
+    pub at: DateTime<Utc>,
 }
 
 #[async_trait]
 pub trait BindingStore: Send + Sync {
-    async fn bind(
-        &self,
-        binding: &Binding,
-        bound_version: &Version,
-        bound_at_seq: Option<Seq>,
-    ) -> Result<(), StoreError>;
+    async fn bind(&self, asserted: &Asserted) -> Result<(), StoreError>;
 
     async fn bindings_on(&self, anchor: &AnchorKey) -> Result<Vec<BindingRecord>, StoreError>;
 

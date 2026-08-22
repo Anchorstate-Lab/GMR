@@ -206,7 +206,8 @@ pub async fn run(
                     }
                 }
                 Step::Bind(reference, anchors, version) => {
-                    rt.bind(reference, anchors, version).await?;
+                    rt.bind(reference, anchors, version, gmr::Source::Derived)
+                        .await?;
                 }
             }
         }
@@ -591,7 +592,9 @@ mod tests {
         );
 
         for (reference, anchors, version) in plan {
-            rt.bind(reference, anchors, version).await.unwrap();
+            rt.bind(reference, anchors, version, gmr::Source::Derived)
+                .await
+                .unwrap();
         }
         assert!(
             rt.memory().binding_of(&reference).await.unwrap().is_some(),

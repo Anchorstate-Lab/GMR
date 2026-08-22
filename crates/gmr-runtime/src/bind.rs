@@ -1,4 +1,5 @@
-use gmr_core::{AnchorKey, Binding, Ref, Version};
+use chrono::Utc;
+use gmr_core::{AnchorKey, Binding, Ref, Source, Version};
 use gmr_store::BindingRecord;
 
 use crate::assembly::Runtime;
@@ -12,9 +13,16 @@ impl Runtime {
         reference: Ref,
         anchors: Vec<AnchorKey>,
         bound_version: Version,
+        source: Source,
     ) -> Result<(), RuntimeError> {
         self.memory
-            .bind(&self.log, &Binding { reference, anchors }, &bound_version)
+            .bind(
+                &self.log,
+                &Binding { reference, anchors },
+                &bound_version,
+                source,
+                Utc::now(),
+            )
             .await
     }
 
@@ -46,5 +54,13 @@ async fn reaffirm(
         .ok_or_else(|| RuntimeError::NotBound {
             reference: reference.clone(),
         })?;
-    memory.bind(log, &record.binding, &bound_version).await
+    memory
+        .bind(
+            log,
+            &record.binding,
+            &bound_version,
+            Source::Adjudicated,
+            Utc::now(),
+        )
+        .await
 }

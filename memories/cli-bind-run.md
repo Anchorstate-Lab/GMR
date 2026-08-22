@@ -28,6 +28,15 @@ reference.
 `root` is not in the signature: it was here for that check and nothing else in
 this verb needs it.
 
+## What it records about itself
+
+A bind typed at this verb is `Source::Adjudicated`: a person named the
+reference and named the anchors. `sync` records `Source::Derived` for the
+same relation reached a different way, and the two are told apart by the
+kind of act rather than by who ran the command — see
+[[store-binding-record]] for why that distinction refuses to depend on an
+identity nothing can verify.
+
 ## A detach does not stand on the record, it stands on the tie
 
 Binding to anchors needs the record's current version, because the binding states

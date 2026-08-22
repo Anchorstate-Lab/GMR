@@ -3,7 +3,7 @@ use gmr_core::{
     ProbeName, ProbeRef, ProbeVersion, ReasonClass, Ref, Rule, State, Transitions, Version,
     Versions, fold,
 };
-use gmr_store::{BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
+use gmr_store::{Asserted, BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()
@@ -199,13 +199,25 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
     assert_eq!(state.attempts, 0);
 }
 
+fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq>) -> Asserted {
+    Asserted {
+        binding: binding.clone(),
+        bound_version: Version::new(version),
+        bound_at_seq,
+        source: gmr_core::Source::Adjudicated,
+        at: chrono::Utc::now(),
+    }
+}
+
 async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     let binding = Binding {
         reference: Ref::new("git", "memories/core-modules.md"),
         anchors: vec![AnchorKey::new("core::modules")],
     };
     let bound_version = Version::new("blob-v1");
-    b.bind(&binding, &bound_version, Some(7)).await.unwrap();
+    b.bind(&asserted(&binding, bound_version.as_str(), Some(7)))
+        .await
+        .unwrap();
 
     let on = b
         .bindings_on(&AnchorKey::new("core::modules"))
@@ -217,6 +229,8 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
             binding: binding.clone(),
             bound_version: bound_version.clone(),
             bound_at_seq: Some(7),
+            source: gmr_core::Source::Adjudicated,
+            asserted_at: on[0].asserted_at,
         }]
     );
     assert_eq!(
@@ -235,7 +249,7 @@ async fn a_binding_naming_several_anchors_has_no_single_bound_at_seq<B: BindingS
         reference: Ref::new("git", "memories/shared.md"),
         anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
     };
-    b.bind(&binding, &Version::new("v"), None).await.unwrap();
+    b.bind(&asserted(&binding, "v", None)).await.unwrap();
 
     assert_eq!(
         b.binding_of(&binding.reference)
@@ -251,14 +265,14 @@ async fn a_binding_naming_several_anchors_has_no_single_bound_at_seq<B: BindingS
 async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/m.md");
     for v in ["v1", "v2"] {
-        b.bind(
+        b.bind(&asserted(
             &Binding {
                 reference: reference.clone(),
                 anchors: vec![AnchorKey::new("a")],
             },
-            &Version::new(v),
+            v,
             None,
-        )
+        ))
         .await
         .unwrap();
     }
@@ -282,14 +296,14 @@ async fn rebinding_appends_and_the_latest_wins<B: BindingStore>(b: &B) {
 async fn rebinding_can_move_a_record_off_an_anchor<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/moved.md");
     for anchor in ["from", "to"] {
-        b.bind(
+        b.bind(&asserted(
             &Binding {
                 reference: reference.clone(),
                 anchors: vec![AnchorKey::new(anchor)],
             },
-            &Version::new("v"),
+            "v",
             None,
-        )
+        ))
         .await
         .unwrap();
     }

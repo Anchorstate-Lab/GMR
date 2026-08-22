@@ -13,7 +13,7 @@ pub mod sqlite;
 #[cfg(feature = "testkit")]
 pub mod testkit;
 
-pub use bindings::{BindingRecord, BindingStore};
+pub use bindings::{Asserted, BindingRecord, BindingStore};
 pub use error::{ErrorCode, ErrorKind, StoreError};
 pub use journal::{Fence, Journal};
 pub use links::LinkStore;

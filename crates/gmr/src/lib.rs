@@ -16,7 +16,7 @@ pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, CanonicalizeError, Change, ChangeKind, ContentHash,
     Derivation, Entry, Expr, ExternalId, Facts, FailureCode, Kind, Link, LinkKind, NewtypeError,
     OUTCOME_CONTRACT, Observation, Outcome, ProbeName, ProbeRef, ProbeVersion, ProviderId,
-    ReasonClass, Ref, Retain, Rule, RunSettings, State, StatusId, Superseded, Transitions,
+    ReasonClass, Ref, Retain, Rule, RunSettings, Source, State, StatusId, Superseded, Transitions,
     Verifiability, Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;

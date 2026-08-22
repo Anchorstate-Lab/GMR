@@ -395,7 +395,12 @@ async fn corpus_health_sees_barren_anchors() {
     assert_eq!(c.bound_refs, 0);
 
     w.runtime
-        .bind(Ref::new("git", "m.md"), vec![key()], Version::new("v1"))
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Version::new("v1"),
+            gmr_core::Source::Adjudicated,
+        )
         .await
         .unwrap();
     let corpus = w.runtime.corpus().await.unwrap();
@@ -415,7 +420,12 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
         .unwrap();
     let note = Ref::new("git", "m.md");
     w.runtime
-        .bind(note.clone(), vec![key()], Version::new("v1"))
+        .bind(
+            note.clone(),
+            vec![key()],
+            Version::new("v1"),
+            gmr_core::Source::Adjudicated,
+        )
         .await
         .unwrap();
 
@@ -458,6 +468,7 @@ async fn a_record_bound_to_an_anchor_nobody_ever_opened_is_stranded_too() {
             note.clone(),
             vec![AnchorKey::new("never-opened")],
             Version::new("v1"),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
