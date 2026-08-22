@@ -12,12 +12,11 @@ watch: [sig, logic]
 A store with no `MemorySource` gets a line saying it is registered and
 cannot list what it holds — it is not empty, not broken, and not absent.
 
-Filtering it away was the earlier behaviour and it produced the exact
-failure [[content-discovery]] was written to prevent one layer down: a
-reader who cannot see a store cannot tell "this store holds nothing" from
-"nothing here can enumerate this store", and the repair for those is not
-the same. The trait already refuses to answer "I have none"; the CLI must
-not reintroduce that answer by omission.
+Filtering it away produces the exact failure [[content-discovery]] prevents
+one layer down: a reader who cannot see a store cannot tell "this store
+holds nothing" from "nothing here can enumerate this store", and the repair
+for those is not the same. The trait refuses to answer "I have none"; the
+CLI must not reintroduce that answer by omission.
 
 ## The wording does not change with `--provider`
 
