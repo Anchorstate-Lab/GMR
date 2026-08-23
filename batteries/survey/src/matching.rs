@@ -95,6 +95,7 @@ pub const MAX_BYTES: usize = 900_000;
 pub fn report(
     extractor: &str,
     want: &Want,
+    identity: &[&str],
     nth: usize,
     candidates: &[Candidate],
 ) -> Result<Value, String> {
@@ -103,10 +104,23 @@ pub fn report(
             .map(|(k, v)| c.coord.get(k) == Some(v))
             .collect()
     };
-    let best = candidates.iter().map(vector).max();
+    let declared: Vec<bool> = want
+        .iter()
+        .map(|(k, _)| identity.contains(&k.as_str()))
+        .collect();
+    let gate: Vec<bool> = match declared.iter().any(|d| *d) {
+        true => declared,
+        false => vec![true; want.len()],
+    };
+    let identifies = |v: &[bool]| v.iter().zip(&gate).any(|(hit, id)| *hit && *id);
+    let eligible: Vec<&Candidate> = candidates
+        .iter()
+        .filter(|c| identifies(&vector(c)))
+        .collect();
+    let best = eligible.iter().map(|c| vector(c)).max();
     let names = || want.iter().map(|(k, _)| k).collect::<Vec<_>>();
 
-    let Some(best) = best.filter(|b| b.iter().any(|hit| *hit)) else {
+    let Some(best) = best else {
         return Ok(json!({
             "schema": COORD_REPORT_SCHEMA,
             "extractor": extractor, "found": false,
@@ -116,7 +130,11 @@ pub fn report(
             "priority": names(),
         }));
     };
-    let tied: Vec<&Candidate> = candidates.iter().filter(|c| vector(c) == best).collect();
+    let tied: Vec<&Candidate> = eligible
+        .iter()
+        .copied()
+        .filter(|c| vector(c) == best)
+        .collect();
     let Some(pick) = tied.get(nth) else {
         return Err(format!(
             "the position has nth={nth}, but only {} equally good candidates exist.\n\
@@ -184,7 +202,7 @@ mod tests {
             cand(&[("name", "keep"), ("scope", "core")]),
             cand(&[("name", "moved"), ("scope", "")]),
         ];
-        let r = report("x", &w, 0, &cands).unwrap();
+        let r = report("x", &w, &[], 0, &cands).unwrap();
         assert_eq!(r["matched"], json!(["name"]));
         assert_eq!(r["missed"], json!(["scope"]));
         assert_eq!(r["candidates"], 1);
@@ -195,6 +213,7 @@ mod tests {
         let r = report(
             "x",
             &want(&[("a", "1"), ("b", "2")]),
+            &[],
             0,
             &[cand(&[("a", "1"), ("b", "2")])],
         )
@@ -209,6 +228,7 @@ mod tests {
         let r = report(
             "x",
             &want(&[("a", "1"), ("b", "2")]),
+            &[],
             0,
             &[
                 cand(&[("a", "1"), ("b", "999")]),
@@ -228,12 +248,12 @@ mod tests {
             cand(&[("file", "a"), ("name", "x")]),
             cand(&[("file", "a"), ("name", "y")]),
         ];
-        assert_eq!(report("x", &w, 0, &tied).unwrap()["candidates"], 2);
+        assert_eq!(report("x", &w, &[], 0, &tied).unwrap()["candidates"], 2);
     }
 
     #[test]
     fn nothing_matching_at_all_is_found_false() {
-        let r = report("x", &want(&[("a", "1")]), 0, &[cand(&[("a", "2")])]).unwrap();
+        let r = report("x", &want(&[("a", "1")]), &[], 0, &[cand(&[("a", "2")])]).unwrap();
         assert_eq!(r["found"], false);
         assert_eq!(r["at"], Value::Null);
     }
@@ -245,8 +265,8 @@ mod tests {
             cand(&[("a", "1"), ("id", "p")]),
             cand(&[("a", "1"), ("id", "q")]),
         ];
-        assert_eq!(report("x", &w, 0, &tied).unwrap()["at"]["id"], "p");
-        assert_eq!(report("x", &w, 1, &tied).unwrap()["at"]["id"], "q");
+        assert_eq!(report("x", &w, &[], 0, &tied).unwrap()["at"]["id"], "p");
+        assert_eq!(report("x", &w, &[], 1, &tied).unwrap()["at"]["id"], "q");
     }
 
     #[test]
@@ -256,7 +276,7 @@ mod tests {
             cand(&[("a", "1"), ("id", "p")]),
             cand(&[("a", "1"), ("id", "q")]),
         ];
-        let e = report("x", &w, 99, &tied).unwrap_err();
+        let e = report("x", &w, &[], 99, &tied).unwrap_err();
         assert!(e.contains("only 2 equally good candidates"), "{e}");
         assert!(
             e.contains("Refusing to clamp"),
@@ -270,6 +290,7 @@ mod tests {
         let out = report(
             "x",
             &w,
+            &[],
             0,
             &[
                 cand(&[("name", "assess"), ("file", "moved.rs")]),
@@ -297,11 +318,11 @@ mod tests {
             cand(&[("kind", "function"), ("name", "beta")]),
             cand(&[("kind", "type"), ("name", "S")]),
         ];
-        let r = report("x", &w, 0, &all).unwrap();
+        let r = report("x", &w, &[], 0, &all).unwrap();
         assert_eq!(r["candidates"], 2);
         assert_eq!(r["roll"], "alpha\nbeta");
         let one = want(&[("kind", "function"), ("name", "alpha")]);
-        let r = report("x", &one, 0, &all).unwrap();
+        let r = report("x", &one, &[], 0, &all).unwrap();
         assert_eq!(r["candidates"], 1);
         assert_eq!(r["roll"], "alpha");
     }
@@ -310,9 +331,9 @@ mod tests {
     fn exact_says_whether_every_item_matched_or_this_is_a_fallback() {
         let w = want(&[("kind", "module"), ("vis", "pub")]);
         let hit = [cand(&[("kind", "module"), ("vis", "pub")])];
-        assert_eq!(report("x", &w, 0, &hit).unwrap()["exact"], true);
+        assert_eq!(report("x", &w, &[], 0, &hit).unwrap()["exact"], true);
         let fallback = [cand(&[("kind", "type"), ("vis", "pub")])];
-        let r = report("x", &w, 0, &fallback).unwrap();
+        let r = report("x", &w, &[], 0, &fallback).unwrap();
         assert_eq!(r["exact"], false);
         assert_eq!(r["missed"], json!(["kind"]));
     }
@@ -324,7 +345,7 @@ mod tests {
             cand(&[("kind", "function"), ("name", "a")]),
             cand(&[("kind", "function"), ("name", "a")]),
         ];
-        let out = report("x", &want(&[("kind", "function")]), 0, &all).unwrap();
+        let out = report("x", &want(&[("kind", "function")]), &[], 0, &all).unwrap();
         let roll = out["roll"].as_str().unwrap();
         assert_eq!(
             roll.lines().count(),
@@ -350,7 +371,7 @@ mod tests {
                 )
             })
             .collect();
-        let e = report("x", &w, 0, &many).unwrap_err();
+        let e = report("x", &w, &[], 0, &many).unwrap_err();
         assert!(e.contains("coordinate is too broad"), "{e}");
         assert!(e.contains("Refusing to truncate"), "{e}");
     }
@@ -365,7 +386,7 @@ mod tests {
     #[test]
     fn no_candidates_at_all_is_found_false_not_a_panic() {
         assert_eq!(
-            report("x", &want(&[("a", "1")]), 0, &[]).unwrap()["found"],
+            report("x", &want(&[("a", "1")]), &[], 0, &[]).unwrap()["found"],
             false
         );
     }
@@ -379,8 +400,8 @@ mod tests {
     #[test]
     fn both_branches_report_the_same_keys_and_they_are_the_declared_ones() {
         let w = want(&[("kind", "function")]);
-        let hit = report("x", &w, 0, &[cand(&[("kind", "function")])]).unwrap();
-        let miss = report("x", &w, 0, &[cand(&[("kind", "type")])]).unwrap();
+        let hit = report("x", &w, &[], 0, &[cand(&[("kind", "function")])]).unwrap();
+        let miss = report("x", &w, &[], 0, &[cand(&[("kind", "type")])]).unwrap();
         assert_eq!(
             miss["found"], false,
             "the second call must take found:false"

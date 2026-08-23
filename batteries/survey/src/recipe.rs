@@ -20,6 +20,7 @@ pub struct Recipe {
     pub version: &'static str,
     pub items: &'static [&'static str],
     pub narrows_on: &'static [&'static str],
+    pub identity: &'static [&'static str],
     pub eligible: Eligible,
     pub collect: Collect,
     pub merge: Merge,
@@ -61,7 +62,13 @@ pub fn look(
         Merge::Concat => fragments.into_iter().map(Candidate::verbatim).collect(),
         Merge::Fold(fold) => fold(&fragments)?,
     };
-    Ok(report(recipe.version, &want, nth(pos), &candidates)?)
+    Ok(report(
+        recipe.version,
+        &want,
+        recipe.identity,
+        nth(pos),
+        &candidates,
+    )?)
 }
 
 #[cfg(test)]
@@ -97,6 +104,7 @@ pub(crate) mod fixture {
             name: "p",
             version: "v1",
             items: &["file", "name"],
+            identity: &[],
             narrows_on: match merge {
                 Merge::Concat => &["file", "name"],
                 Merge::Fold(_) => &[],
