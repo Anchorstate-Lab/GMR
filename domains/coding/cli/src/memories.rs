@@ -130,7 +130,14 @@ struct Frontmatter {
     #[serde(default)]
     shape: Option<String>,
     #[serde(default)]
-    watch: Option<Vec<String>>,
+    watch: Option<Watch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum Watch {
+    Axes(Vec<String>),
+    When(String),
 }
 
 const FRONTMATTER_WORDS: [&str; 4] = ["about", "anchors", "shape", "watch"];
@@ -164,7 +171,7 @@ impl Want {
 pub struct Note {
     pub reference: Ref,
     pub wants: Vec<Want>,
-    pub watch: Option<Vec<String>>,
+    pub watch: Option<Watch>,
 }
 
 fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<AnchorDecl, CliError> {
@@ -601,8 +608,8 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
         )]);
         let notes = scan(d.path(), &r).unwrap().notes;
         assert_eq!(
-            notes[0].watch.as_deref(),
-            Some(["logic".to_owned()].as_ref())
+            notes[0].watch,
+            Some(Watch::Axes(vec!["logic".to_owned()]))
         );
 
         let Want::Declared(decl) = &notes[0].wants[0] else {

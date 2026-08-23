@@ -166,7 +166,7 @@ pub async fn run(
             .collect();
         let delivering = bound
             .iter()
-            .any(|note| subs.delivers(shape, note, &view.state, false));
+            .any(|note| subs.delivers(shape, note, &view.state, false).unwrap_or(true));
         let moved = crate::delivery::axes_set(&view.state).is_some_and(|set| !set.is_empty());
         let unclaimed = bound.is_empty() && moved;
         if bound.is_empty() {

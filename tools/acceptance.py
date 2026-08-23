@@ -130,6 +130,11 @@ def run_mutations(binary, jobs):
     if not ok:
         return [f"the tree does not build before any mutation was applied\n{err}"]
 
+    # What the files held before anything was applied. `git diff` cannot tell a
+    # leftover mutation from the work in progress that is being tested, and a
+    # gate that cries wolf during ordinary work gets ignored during real work.
+    before = {m["file"]: (ROOT / m["file"]).read_text() for m in mutations.live()}
+
     targets = {}
     for m in mutations.live():
         targets[m["id"]] = [
@@ -180,14 +185,9 @@ def run_mutations(binary, jobs):
     ok, err = rebuild()
     if not ok:
         faults.append(f"the tree does not build after reverting every mutation\n{err}")
-    dirty = subprocess.run(
-        ["git", "diff", "--name-only", "--", *{m["file"] for m in mutations.live()}],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    ).stdout.split()
-    if dirty:
-        faults.append(f"a mutation was left in the tree: {' '.join(dirty)}")
+    left = [f for f, text in before.items() if (ROOT / f).read_text() != text]
+    if left:
+        faults.append(f"a mutation was left in the tree: {' '.join(left)}")
     return faults
 
 

@@ -38,8 +38,8 @@ MUTATIONS = [
     {
         "id": "every-memory-is-handed-back-every-time",
         "file": "domains/coding/cli/src/delivery.rs",
-        "find": "        let Some(shape) = shape else {\n            return moved;\n        };",
-        "replace": "        if moved {\n            return true;\n        }\n        let Some(shape) = shape else {\n            return moved;\n        };",
+        "find": "            gmr::expr::Evaluated::Value(Value::Bool(on)) => Ok(on),",
+        "replace": "            gmr::expr::Evaluated::Value(Value::Bool(on)) => Ok(on || true),",
         "breaks": ["a-memory-that-asked-about-another-axis-stays-put"],
         "why": "a reader buried in memories learns to discount all of them",
     },

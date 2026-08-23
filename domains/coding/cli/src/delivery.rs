@@ -5,7 +5,7 @@ use gmr::{Ref, State};
 use serde_json::Value;
 
 use crate::error::CliError;
-use crate::memories::{Fault, Names, Note, Weight};
+use crate::memories::{Fault, Names, Note, Watch, Weight};
 use crate::probes::Catalog;
 use crate::verbs::sync::{DEFAULT_FILE, merged, read_declared};
 
@@ -28,7 +28,40 @@ pub fn axes_set(state: &State) -> Option<Vec<String>> {
 
 #[derive(Debug, Default)]
 pub struct Subscriptions {
-    per_note: BTreeMap<Ref, Vec<String>>,
+    per_note: BTreeMap<Ref, gmr::expr::Node>,
+}
+
+pub fn axes_predicate(axes: &[impl AsRef<str>]) -> String {
+    match axes.is_empty() {
+        true => "false".to_owned(),
+        false => axes
+            .iter()
+            .map(|a| {
+                let axis = a.as_ref();
+                format!("(exists(state.v.{axis}) and state.v.{axis})")
+            })
+            .collect::<Vec<_>>()
+            .join(" or "),
+    }
+}
+
+fn compile(watch: &Watch) -> Result<gmr::expr::Node, String> {
+    let source = match watch {
+        Watch::Axes(axes) => axes_predicate(axes),
+        Watch::When(src) => src.clone(),
+    };
+    gmr::expr::parse(&source).map_err(|e| format!("`{source}`: {e}"))
+}
+
+fn unwritable(
+    paths: &std::collections::BTreeSet<String>,
+    writes: &crate::contract::Writes,
+) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|p| !writes.reaches(p))
+        .cloned()
+        .collect()
 }
 
 impl Subscriptions {
@@ -41,46 +74,66 @@ impl Subscriptions {
         let declared = read_declared(root, DEFAULT_FILE)?;
 
         let mut faults = Vec::new();
-        let mut axes_by_anchor: BTreeMap<&str, Vec<&'static str>> = BTreeMap::new();
+        let mut writes_by_anchor: BTreeMap<&str, crate::contract::Writes> = BTreeMap::new();
         for decl in merged(&declared, &notes) {
-            let Some(name) = &decl.shape else { continue };
-            match crate::shapes::get(name) {
-                Ok(shape) => {
-                    axes_by_anchor.insert(&decl.key, crate::shapes::axes_of(shape));
+            if let Some(name) = &decl.shape {
+                if let Err(e) = crate::shapes::get(name) {
+                    faults.push(Fault {
+                        note: declaring(&notes, names, &decl.key),
+                        key: Some(decl.key.clone()),
+                        code: "unknown-shape",
+                        detail: format!("`{}`: {e}", decl.key),
+                        weight: Weight::Breaks,
+                    });
+                    continue;
                 }
-                Err(e) => faults.push(Fault {
-                    note: declaring(&notes, names, &decl.key),
-                    key: Some(decl.key.clone()),
-                    code: "unknown-shape",
-                    detail: format!("`{}`: {e}", decl.key),
-                    weight: Weight::Breaks,
-                }),
+            }
+            if let Ok(transitions) = decl.to_transitions() {
+                if let Ok(writes) = crate::contract::writes_of(&transitions) {
+                    writes_by_anchor.insert(&decl.key, writes);
+                }
             }
         }
 
         let mut per_note = BTreeMap::new();
         'note: for note in &notes {
             let Some(watch) = &note.watch else { continue };
+            let node = match compile(watch) {
+                Ok(node) => node,
+                Err(detail) => {
+                    faults.push(Fault {
+                        note: names.of(&note.reference),
+                        key: note.wants.first().map(|w| w.key().to_owned()),
+                        code: "watch-invalid",
+                        detail: format!("`watch:` does not parse: {detail}"),
+                        weight: Weight::Breaks,
+                    });
+                    continue;
+                }
+            };
+            let named = crate::contract::state_paths(&node);
             for want in &note.wants {
-                let Some(axes) = axes_by_anchor.get(want.key()) else {
+                let Some(writes) = writes_by_anchor.get(want.key()) else {
                     continue;
                 };
-                if let Some(bad) = watch.iter().find(|w| !axes.contains(&w.as_str())) {
+                let bad = unwritable(&named, writes);
+                if !bad.is_empty() {
                     faults.push(Fault {
                         note: names.of(&note.reference),
                         key: Some(want.key().to_owned()),
                         code: "watch-invalid",
                         detail: format!(
-                            "`watch: {bad}` names no axis of `{}`; it has {}",
+                            "`watch:` names {}, which no rule of `{}` ever writes; it writes {}",
+                            bad.join(" · "),
                             want.key(),
-                            axes.join(" · ")
+                            writes.render()
                         ),
                         weight: Weight::Breaks,
                     });
                     continue 'note;
                 }
             }
-            per_note.insert(note.reference.clone(), watch.clone());
+            per_note.insert(note.reference.clone(), node);
         }
 
         Ok((Self { per_note }, faults))
@@ -92,20 +145,28 @@ impl Subscriptions {
         note: &Ref,
         state: &State,
         moved: bool,
-    ) -> bool {
-        let Some(shape) = shape else {
-            return moved;
-        };
-        let set = axes_set(state).unwrap_or_default();
-        if set.is_empty() {
-            return false;
-        }
-        match self.per_note.get(note) {
-            Some(watch) => set.iter().any(|a| watch.contains(a)),
+    ) -> Result<bool, String> {
+        let owned;
+        let node = match self.per_note.get(note) {
+            Some(node) => node,
             None => {
-                let watch = crate::shapes::watch_of(shape);
-                set.iter().any(|a| watch.contains(&a.as_str()))
+                let Some(shape) = shape else {
+                    return Ok(moved);
+                };
+                let source = axes_predicate(crate::shapes::watch_of(shape));
+                owned = gmr::expr::parse(&source).map_err(|e| format!("`{source}`: {e}"))?;
+                &owned
             }
+        };
+        let nothing = Value::Null;
+        let ctx = gmr::expr::Ctx::new(&nothing, state.as_value());
+        match gmr::expr::eval(node, ctx) {
+            gmr::expr::Evaluated::Value(Value::Bool(on)) => Ok(on),
+            gmr::expr::Evaluated::Value(other) => Err(format!(
+                "`watch:` answered with {other}, which is not a yes or a no"
+            )),
+            gmr::expr::Evaluated::Absent => Ok(false),
+            gmr::expr::Evaluated::Fault(f) => Err(format!("`watch:` could not be settled: {f:?}")),
         }
     }
 }
@@ -126,9 +187,13 @@ mod tests {
         Subscriptions {
             per_note: BTreeMap::from([(
                 at("git", "memories/a.md"),
-                note.iter().map(|s| (*s).to_owned()).collect(),
+                gmr::expr::parse(&axes_predicate(note)).unwrap(),
             )]),
         }
+    }
+
+    fn hands(s: &Subscriptions, note: &Ref, st: &State) -> bool {
+        s.delivers(contract(), note, st, true).unwrap()
     }
 
     fn contract() -> Option<&'static crate::shapes::Shape> {
@@ -139,10 +204,10 @@ mod tests {
     fn an_unwatched_axis_moves_without_handing_back_the_memory() {
         let s = narrowed(&["logic"]);
         let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
-        assert!(!s.delivers(contract(), &at("git", "memories/a.md"), &moved_place, true));
+        assert!(!hands(&s, &at("git", "memories/a.md"), &moved_place));
 
         let moved_logic = state(serde_json::json!({ "logic": true, "place": false }));
-        assert!(s.delivers(contract(), &at("git", "memories/a.md"), &moved_logic, true));
+        assert!(hands(&s, &at("git", "memories/a.md"), &moved_logic));
     }
 
     #[test]
@@ -150,9 +215,9 @@ mod tests {
         let s = narrowed(&["logic"]);
         let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
 
-        assert!(!s.delivers(contract(), &at("git", "memories/a.md"), &moved_place, true));
+        assert!(!hands(&s, &at("git", "memories/a.md"), &moved_place));
         assert!(
-            s.delivers(contract(), &at("mem0", "memories/a.md"), &moved_place, true),
+            hands(&s, &at("mem0", "memories/a.md"), &moved_place),
             "a subscription belongs to one record in one store. Keyed by the bare id, a note \
              in a second store would silently inherit the narrowing of a note it merely shares \
              a name with — and the symptom is a memory that stops being handed back, which \
@@ -165,7 +230,7 @@ mod tests {
         let s = narrowed(&["logic"]);
         let moved_place = state(serde_json::json!({ "logic": false, "place": true }));
         assert!(
-            s.delivers(contract(), &at("git", "memories/b.md"), &moved_place, true),
+            hands(&s, &at("git", "memories/b.md"), &moved_place),
             "contract watches every axis, and this note asked for nothing else"
         );
     }
@@ -173,11 +238,10 @@ mod tests {
     #[test]
     fn a_settled_vector_hands_back_nothing() {
         let s = Subscriptions::default();
-        assert!(!s.delivers(
-            contract(),
+        assert!(!hands(
+            &s,
             &at("git", "memories/a.md"),
-            &state(serde_json::json!({ "sig": false })),
-            true
+            &state(serde_json::json!({ "sig": false }))
         ));
     }
 
@@ -185,16 +249,28 @@ mod tests {
     fn a_set_bit_keeps_handing_the_memory_back_after_the_observation_that_set_it() {
         let s = narrowed(&["sig"]);
         let carried = state(serde_json::json!({ "sig": true }));
-        assert!(s.delivers(contract(), &at("git", "memories/a.md"), &carried, false));
-        assert!(s.delivers(contract(), &at("git", "memories/b.md"), &carried, false));
+        assert!(
+            s.delivers(contract(), &at("git", "memories/a.md"), &carried, false)
+                .unwrap()
+        );
+        assert!(
+            s.delivers(contract(), &at("git", "memories/b.md"), &carried, false)
+                .unwrap()
+        );
     }
 
     #[test]
     fn an_anchor_with_no_shape_falls_back_to_the_transition_edge() {
         let s = Subscriptions::default();
         let hand = State::new(serde_json::json!({ "position": {}, "n": 3, "status": "moved" }));
-        assert!(s.delivers(None, &at("git", "memories/a.md"), &hand, true));
-        assert!(!s.delivers(None, &at("git", "memories/a.md"), &hand, false));
+        assert!(
+            s.delivers(None, &at("git", "memories/a.md"), &hand, true)
+                .unwrap()
+        );
+        assert!(
+            !s.delivers(None, &at("git", "memories/a.md"), &hand, false)
+                .unwrap()
+        );
     }
 
     fn book(root: &Path) -> Names {
@@ -243,7 +319,8 @@ mod tests {
         let roster = crate::shapes::get("roster").ok();
         let moved_roll = state(serde_json::json!({ "roll": true }));
         assert!(
-            subs.delivers(roster, &at("git", "memories/good.md"), &moved_roll, true),
+            subs.delivers(roster, &at("git", "memories/good.md"), &moved_roll, true)
+                .unwrap(),
             "the well-formed note in the same load still narrows correctly"
         );
     }

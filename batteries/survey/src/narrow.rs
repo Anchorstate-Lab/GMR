@@ -264,7 +264,7 @@ mod tests {
     fn a_candidate_that_hits_nothing_can_never_be_the_one_reported() {
         let want = w(&[("file", "a.rs"), ("name", "wanted")]);
         let all = [
-            cand(&[("file", "a.rs"), ("name", "other")]),
+            cand(&[("file", "a.rs"), ("name", "wanted")]),
             cand(&[("file", "z.rs"), ("name", "unrelated")]),
         ];
         assert!(!touches(&all[1].coord, &want));

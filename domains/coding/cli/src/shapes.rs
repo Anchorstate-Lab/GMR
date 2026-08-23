@@ -305,6 +305,7 @@ mod tests {
         crate::probes::Obs {
             schema: schema.to_owned(),
             at: at.iter().map(|s| s.to_string()).collect(),
+            identity: Vec::new(),
             facts: facts.iter().map(|s| s.to_string()).collect(),
         }
     }
