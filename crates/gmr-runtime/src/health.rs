@@ -178,11 +178,13 @@ async fn corpus_health(
         .filter(|g| !g.view.closed)
         .flat_map(|g| g.memories.iter().map(|m| &m.reference))
         .collect();
-    let unsupervised = bindings
+    let unsupervised: Vec<Ref> = bindings
         .iter()
         .filter(|r| !r.binding.anchors.is_empty())
         .filter(|r| !delivered.contains(&r.binding.reference))
         .map(|r| r.binding.reference.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect();
 
     let mut footings: BTreeMap<Footing, Vec<Ref>> = BTreeMap::new();

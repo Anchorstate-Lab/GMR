@@ -440,12 +440,29 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
     let corpus = w.runtime.corpus().await.unwrap();
     assert_eq!(
         corpus.health().unsupervised,
-        vec![note],
+        vec![note.clone()],
         "closing the last anchor a record hangs on is how a memory leaves the supervised \
          set, and it used to leave without a word: every corpus-level list filtered to the \
          open anchors first, so the record stopped being counted rather than being reported. \
          A note that still claims something about the code while nothing observes it is the \
          exact state this tool exists to make visible"
+    );
+
+    w.runtime
+        .bind(
+            note.clone(),
+            vec![key()],
+            Some(Version::new("v2")),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        w.runtime.corpus().await.unwrap().health().unsupervised,
+        vec![note.clone()],
+        "one memory is named once however many assertions stand behind it. This list is \
+         read as a roster of records, and a reference repeated once per assertion reads as \
+         several memories in trouble where there is one"
     );
     assert!(
         corpus.health().barren_anchors.is_empty(),

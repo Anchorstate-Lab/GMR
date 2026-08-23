@@ -27,6 +27,10 @@ one is not a judgement call it can get wrong.
 every journal, so there is one projection of the log rather than two that can
 disagree.
 
+**Every record-level list names a reference once**, however many assertions
+stand behind it. `all()` answers per assertion, so a reference with three
+live ones reads as three memories in trouble unless the list is collapsed.
+
 **The counts read that same delivered set.** `per_anchor`, `barren` and
 `unsupervised` all come from `grounded`, never from scanning `all()` for
 `binding.anchors.contains(key)`. That scan reads the anchors as *asserted*:
