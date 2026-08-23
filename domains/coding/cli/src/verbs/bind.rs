@@ -57,6 +57,7 @@ async fn asserted(
             serde_json::json!({
                 "bound": address, "version": version, "anchors": anchors,
                 "source": source.as_str(), "vouched": source.independent(),
+                "recorded": landed.recorded,
             })
         );
         return Ok(0);
@@ -88,6 +89,9 @@ async fn asserted(
     }
     for (named, living) in &landed.moved {
         println!("  {named} is closed and superseded; this landed on {living}");
+    }
+    if !landed.recorded {
+        println!("  nothing written: these anchors, this version and this reading already stand");
     }
     Ok(0)
 }

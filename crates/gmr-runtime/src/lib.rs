@@ -24,7 +24,7 @@ pub use edges::{Edge, Edges, Standing};
 pub use error::RuntimeError;
 pub use health::{AnchorHealth, Corpus, CorpusHealth};
 pub use log::AnchorLog;
-pub use memory::{MemoryLens, anchors_of};
+pub use memory::{Bound, MemoryLens};
 pub use observe::Observed;
 pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;

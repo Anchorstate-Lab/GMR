@@ -608,7 +608,7 @@ async fn a_revoked_record_is_no_longer_listed_under_the_anchor() {
 
     let reference = Ref::new("git", "memories/a.md");
     let bound = w.runtime.memory().binding_of(&reference).await.unwrap();
-    assert!(!gmr_runtime::anchors_of(&bound).is_empty());
+    assert!(!bound.anchors().is_empty());
 
     let cleared = w
         .runtime
@@ -618,7 +618,12 @@ async fn a_revoked_record_is_no_longer_listed_under_the_anchor() {
     assert_eq!(cleared, vec![AnchorKey::new("a")]);
 
     assert!(
-        gmr_runtime::anchors_of(&w.runtime.memory().binding_of(&reference).await.unwrap())
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .anchors()
             .is_empty(),
         "revoked, while every assertion and the revocation itself remain in the table"
     );
@@ -652,7 +657,12 @@ async fn asserting_an_empty_anchor_set_takes_nothing_away() {
         .unwrap();
 
     assert_eq!(
-        gmr_runtime::anchors_of(&w.runtime.memory().binding_of(&reference).await.unwrap()),
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .anchors(),
         vec![AnchorKey::new("a")],
         "an assertion naming no anchor adds no tag, so it can take none away either. \
          Writing one used to be how a record was detached — under latest-wins it replaced \
@@ -870,5 +880,160 @@ async fn one_record_running_out_of_budget_does_not_take_the_others_with_it() {
          make this record's answer depend on how many others happened to be walked first: \
          {:?}",
         by_id("memories/quick.md").grounding
+    );
+}
+
+#[tokio::test]
+async fn an_assertion_that_says_what_already_stands_writes_nothing() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    w.bind("a.md", &["a"]).await;
+    w.bind("a.md", &["a"]).await;
+
+    assert_eq!(
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .assertions()
+            .len(),
+        1,
+        "the table is append-only, so a repeated assertion is a row nobody can take back \
+         that no reader can act on: the anchor union, the baseline, the source set and the \
+         first-asserted time all come out identical. Whether a write says anything new is a \
+         question about the projection, and it has to be asked before the write — a writer \
+         deciding it for itself is how every re-run of every writer grows the table forever"
+    );
+}
+
+#[tokio::test]
+async fn a_second_kind_of_assertion_on_the_same_link_is_not_a_repeat() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    let version = w
+        .runtime
+        .memory()
+        .binding_of(&reference)
+        .await
+        .unwrap()
+        .bound_version()
+        .cloned();
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("a")],
+            version,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let bound = w.runtime.memory().binding_of(&reference).await.unwrap();
+    assert_eq!(
+        bound.assertions().len(),
+        2,
+        "who says a link holds is part of what an assertion says, so a second party \
+         asserting it is new information even at the same version. This is also what lets a \
+         binding recorded before its origin was known be re-derived exactly once: the \
+         re-derivation says something the projection did not, and the run after it does not"
+    );
+    assert_eq!(
+        bound.sources(),
+        std::collections::BTreeSet::from([
+            gmr_core::Source::Adjudicated,
+            gmr_core::Source::SelfAttested
+        ]),
+    );
+}
+
+#[tokio::test]
+async fn reaffirm_records_a_reading_and_a_reading_is_never_a_repeat() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    let version = w
+        .runtime
+        .memory()
+        .binding_of(&reference)
+        .await
+        .unwrap()
+        .bound_version()
+        .cloned();
+    w.runtime.reaffirm(&reference, version).await.unwrap();
+
+    assert_eq!(
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .assertions()
+            .len(),
+        2,
+        "`reaffirm` takes no anchors because it states no aboutness — it stamps a reading \
+         taken at a moment. Two readings of the same bytes at different moments are two \
+         readings, so the guard that suppresses a repeated assertion must not reach this \
+         path, or the one way to say `I have looked at this again` disappears"
+    );
+}
+
+#[tokio::test]
+async fn an_anchor_names_each_memory_once_however_many_assertions_stand_on_it() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    let version = w
+        .runtime
+        .memory()
+        .binding_of(&reference)
+        .await
+        .unwrap()
+        .bound_version()
+        .cloned();
+    for source in [gmr_core::Source::SelfAttested, gmr_core::Source::Configured] {
+        w.runtime
+            .bind(
+                reference.clone(),
+                vec![AnchorKey::new("a")],
+                version.clone(),
+                source,
+            )
+            .await
+            .unwrap();
+    }
+
+    let on = w.runtime.bindings_on(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        on.len(),
+        1,
+        "three parties asserting one link is three assertions and one memory. Both \
+         directions of the projection answer per reference, so a roster cannot repeat a \
+         name by forgetting to collapse one: `check` printed a memory once per assertion \
+         while `doctor` printed it once, and neither verb's type said they disagreed"
+    );
+    assert_eq!(on[0].assertions().len(), 3);
+    assert_eq!(
+        w.runtime
+            .grounded(&AnchorKey::new("a"))
+            .await
+            .unwrap()
+            .memories
+            .len(),
+        1,
     );
 }

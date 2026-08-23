@@ -5,18 +5,22 @@ watch: [logic]
 
 # `align_bindings` writes only when the binding relation actually changed
 
-Binding is append-only in the store (see [[store-binding-record]]), so a
-`bind` call that repeats an already-true relation still adds a new row
-saying the same thing again. `align_bindings` computes `settled` — same
-anchor set, same bound version, and every assertion behind it already
-`Derived` — before deciding whether to call `rt.bind` at all, specifically
-so that running `sync` repeatedly over an unchanged repository does not grow
-the bindings table forever with identical entries.
+`settled` is `had == want` plus `Bound::says` — the same predicate every
+other writer is held to ([[runtime-bound]]), asked here as well so a note
+that needs nothing produces no plan entry and no line in the report.
 
-The source clause is what makes a note's binding say `Derived` and keep
-saying it: any row behind the reference that does not, the next `sync` finds
-unsettled and re-asserts. It reaches only notes, so a record in another
-store keeps whatever source it has, which is the true answer for it.
+The two halves ask different things. `says` answers whether asserting would
+move the projection; `had == want` is `align_bindings`' own extra question,
+because a note that dropped a coordinate needs a revocation and `says` would
+be satisfied without one.
+
+A note whose live assertions do not yet include a `Derived` one is
+unsettled, so `sync` derives it, once. The older assertions keep whatever
+source they were recorded with — the table is append-only and an origin
+that was never recorded really is unknown. Asking instead whether *every*
+assertion behind the reference is `Derived` is a question about an immutable
+past: it can never come back true, and every pass over an unchanged
+repository re-asserts the whole corpus.
 
 ## A note declares its whole coordinate set, so dropping a line revokes
 

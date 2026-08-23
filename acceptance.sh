@@ -754,6 +754,28 @@ out=$("$gmr" --repo "$repo" read "$key")
 echo "$out" | grep -q 'never verified' \
     && fail "an assertion that compared nothing threw away a reading somebody really took" "$out"
 
+# The idempotence checked back at "one line of frontmatter" is the easy half:
+# every assertion there came from sync itself. A note somebody also bound by
+# hand carries a live assertion of another kind forever, because the table is
+# append-only -- and a settled test that asks whether every assertion ever made
+# was derived can never come back true for it again.
+step "a note bound by hand as well is still settled afterwards"
+printf -- '---\nabout: %s\n---\n\n# Bound twice, changed once\n' "$key" \
+    > "$repo/memories/twice.md"
+(cd "$repo" && git add -A && git -c user.email=a@b -c user.name=t commit -qm twice)
+"$gmr" --repo "$repo" sync >/dev/null || fail "syncing a new note was refused"
+"$gmr" --repo "$repo" bind 'git:memories/twice.md' --anchors "$key" >/dev/null \
+    || fail "binding a note by hand was refused"
+
+"$gmr" --repo "$repo" sync >/dev/null || fail "sync refused"
+out=$("$gmr" --repo "$repo" sync)
+echo "$out" | grep -q -- "+ twice" \
+    && fail "a pass over an unchanged note re-asserted it. Nothing can take an appended row back, so every run of every writer would grow the table forever" "$out"
+
+out=$("$gmr" --repo "$repo" attest 'claude-code:fresh.md' --anchors "$key" --json)
+echo "$out" | grep -q '"recorded":false' \
+    || fail "an agent re-stating a link the projection already holds recorded it a second time" "$out"
+
 echo
 echo "Accepted: a stranger's repo, no toolchain, no downloaded probes. Memory and"
 echo "          fact are tied together — in the source and outside it — and when the"

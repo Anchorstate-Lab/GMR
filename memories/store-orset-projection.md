@@ -61,7 +61,9 @@ answers.
 Does anything derive liveness from `binding.anchors` directly instead of
 asking the projection? That reads the anchors as asserted and misses both
 revocations and ancestors, so a memory carried forward from a superseded
-generation counts as nobody's and its heir reports barren.
+generation counts as nobody's and its heir reports barren. Reaching them at
+all now means going through `Bound::assertions` ([[runtime-bound]]), which is
+there for revocation and for nothing else.
 
 Does a revocation gain a form that does not name tags? Check what happens
 when the same coordinate is asserted again. If it stays dead, add-wins is

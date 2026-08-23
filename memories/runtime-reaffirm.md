@@ -21,6 +21,13 @@ The union, not one row's copy: [[store-orset-projection]] can leave several
 live assertions on a reference, and re-stamping one of them would drop the
 rest.
 
+Stating no aboutness is also why `reaffirm` writes through
+`MemoryLens::bind` rather than `Runtime::bind`: it is not held to
+[[runtime-bound]]'s idempotence guard. An assertion repeated says nothing
+new, but a reading taken again at a later moment is a second reading, and
+suppressing it would remove the only way to say "I have looked at this
+again".
+
 ## What it records is a judgement, and the store can see that
 
 `reaffirm` writes `Source::Adjudicated` — somebody looked at the rewritten

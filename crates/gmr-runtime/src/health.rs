@@ -159,7 +159,7 @@ async fn corpus_health(
     memory: &MemoryLens,
     grounded: &[Grounded],
 ) -> Result<CorpusHealth, RuntimeError> {
-    let bindings = memory.all().await?;
+    let bindings = crate::memory::by_reference(memory.all().await?);
     let views = || grounded.iter().map(|g| &g.view);
     let open: BTreeSet<&AnchorKey> = views().filter(|v| !v.closed).map(|v| &v.key).collect();
 
@@ -180,11 +180,9 @@ async fn corpus_health(
         .collect();
     let unsupervised: Vec<Ref> = bindings
         .iter()
-        .filter(|r| !r.binding.anchors.is_empty())
-        .filter(|r| !delivered.contains(&r.binding.reference))
-        .map(|r| r.binding.reference.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
+        .filter(|b| !b.anchors().is_empty())
+        .filter_map(|b| b.standing().map(|r| r.binding.reference.clone()))
+        .filter(|reference| !delivered.contains(reference))
         .collect();
 
     let mut footings: BTreeMap<Footing, Vec<Ref>> = BTreeMap::new();
@@ -200,11 +198,7 @@ async fn corpus_health(
     }
 
     Ok(CorpusHealth {
-        bound_refs: bindings
-            .iter()
-            .map(|r| &r.binding.reference)
-            .collect::<BTreeSet<_>>()
-            .len(),
+        bound_refs: bindings.len(),
         active_anchors: open.len(),
         memories_per_anchor: per_anchor,
         barren_anchors: barren,

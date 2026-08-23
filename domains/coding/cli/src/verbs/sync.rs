@@ -381,7 +381,7 @@ async fn align_bindings(
         want.dedup();
 
         let current = rt.memory().binding_of(&reference).await?;
-        let had = gmr::anchors_of(&current);
+        let had = current.anchors().to_vec();
         let mut closed = Vec::new();
         for key in had.iter().filter(|k| !want.contains(k)) {
             if matches!(rt.read(key).await, Ok(view) if view.closed) {
@@ -403,12 +403,7 @@ async fn align_bindings(
                 reference.provider
             ))
         })?;
-        let derived_throughout = current.iter().all(|r| r.source == gmr::Source::Derived);
-        let latest = current.iter().max_by_key(|r| r.seq);
-        let settled = !current.is_empty()
-            && had == want
-            && derived_throughout
-            && latest.is_some_and(|r| r.bound_version.as_ref() == Some(&version));
+        let settled = had == want && current.says(&want, Some(&version), gmr::Source::Derived);
         if settled {
             continue;
         }
@@ -608,6 +603,54 @@ mod tests {
             !rt.memory().binding_of(&reference).await.unwrap().is_empty(),
             "and the plan really does bind when applied — without this the assertion above \
              would pass just as well against a fixture that could never bind at all"
+        );
+        store.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_binding_recorded_before_its_origin_was_known_is_re_derived_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (rt, store) = runtime(dir.path()).await;
+        let reference = Ref::new("git", "memories/a.md");
+        let notes = vec![crate::memories::Note {
+            reference: reference.clone(),
+            wants: vec![crate::memories::Want::Existing("some::key".to_owned())],
+            watch: None,
+        }];
+        let names = crate::memories::Names::over(vec![std::sync::Arc::new(
+            crate::memories::declaring(dir.path()),
+        )]);
+
+        rt.bind(
+            reference.clone(),
+            keys(&["some::key"]),
+            Some(Version::new("v1")),
+            gmr::Source::Unknown,
+        )
+        .await
+        .unwrap();
+
+        let (plan, _, _) = align_bindings(&rt, &notes, &names).await.unwrap();
+        assert_eq!(
+            plan.len(),
+            1,
+            "a row saying nothing about where it came from is not a derivation, so sync \
+             owes the record one"
+        );
+        for (reference, anchors, version, _) in plan {
+            rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
+                .await
+                .unwrap();
+        }
+
+        let (plan, _, _) = align_bindings(&rt, &notes, &names).await.unwrap();
+        assert!(
+            plan.is_empty(),
+            "and exactly one. The row it was owed is now on the record; the older one stays \
+             `unknown` because the table is append-only and its origin really is unknown. \
+             Asking instead whether every assertion ever made was derived is a question about \
+             an immutable past, so it can never come back true, and every sync over an \
+             unchanged repository re-asserts the whole corpus forever"
         );
         store.close().await;
     }

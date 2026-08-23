@@ -1,6 +1,5 @@
 use chrono::Utc;
 use gmr_core::{AnchorKey, Binding, Ref, Source, Version, fold};
-use gmr_store::BindingRecord;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -25,6 +24,11 @@ impl Runtime {
                 landed.anchors.push(living);
             }
         }
+        let bound = self.memory.binding_of(&reference).await?;
+        if bound.says(&landed.anchors, bound_version.as_ref(), source) {
+            return Ok(landed);
+        }
+        landed.recorded = true;
         self.memory
             .bind(
                 &self.log,
@@ -77,33 +81,25 @@ impl Runtime {
         reference: &Ref,
         source: Source,
     ) -> Result<Vec<AnchorKey>, RuntimeError> {
-        let asserted = self.memory.binding_of(reference).await?;
-        if asserted.is_empty() {
+        let bound = self.memory.binding_of(reference).await?;
+        if bound.is_empty() {
             return Err(RuntimeError::NotBound {
                 reference: reference.clone(),
             });
         }
         let when = Utc::now();
         let mut cleared = Vec::new();
-        for anchor in crate::memory::anchors_of(&asserted) {
-            let tags: Vec<gmr_store::Tag> = asserted
-                .iter()
-                .filter(|r| r.binding.anchors.contains(&anchor))
-                .map(|r| gmr_store::Tag {
-                    binding: r.seq,
-                    anchor: anchor.clone(),
-                })
-                .collect();
+        for anchor in bound.anchors() {
             self.memory
                 .revoke(&gmr_store::Revocation {
                     reference: reference.clone(),
                     at: anchor.clone(),
-                    tags,
+                    tags: bound.tags_on(anchor),
                     source,
                     when,
                 })
                 .await?;
-            cleared.push(anchor);
+            cleared.push(anchor.clone());
         }
         Ok(cleared)
     }
@@ -114,17 +110,10 @@ impl Runtime {
         anchors: &[AnchorKey],
         source: Source,
     ) -> Result<(), RuntimeError> {
-        let asserted = self.memory.binding_of(reference).await?;
+        let bound = self.memory.binding_of(reference).await?;
         let when = Utc::now();
         for anchor in anchors {
-            let tags: Vec<gmr_store::Tag> = asserted
-                .iter()
-                .filter(|r| r.binding.anchors.contains(anchor))
-                .map(|r| gmr_store::Tag {
-                    binding: r.seq,
-                    anchor: anchor.clone(),
-                })
-                .collect();
+            let tags = bound.tags_on(anchor);
             if tags.is_empty() {
                 continue;
             }
@@ -144,7 +133,7 @@ impl Runtime {
     pub async fn bindings_on(
         &self,
         anchor: &AnchorKey,
-    ) -> Result<Vec<BindingRecord>, RuntimeError> {
+    ) -> Result<Vec<crate::memory::Bound>, RuntimeError> {
         self.memory.bindings_on(&self.log, anchor).await
     }
 
@@ -163,15 +152,15 @@ async fn reaffirm(
     reference: &Ref,
     bound_version: Option<Version>,
 ) -> Result<(), RuntimeError> {
-    let asserted = memory.binding_of(reference).await?;
-    if asserted.is_empty() {
+    let bound = memory.binding_of(reference).await?;
+    if bound.is_empty() {
         return Err(RuntimeError::NotBound {
             reference: reference.clone(),
         });
     }
     let binding = Binding {
         reference: reference.clone(),
-        anchors: crate::memory::anchors_of(&asserted),
+        anchors: bound.anchors().to_vec(),
     };
     memory
         .bind(
@@ -188,4 +177,5 @@ async fn reaffirm(
 pub struct Landed {
     pub anchors: Vec<AnchorKey>,
     pub moved: Vec<(AnchorKey, AnchorKey)>,
+    pub recorded: bool,
 }

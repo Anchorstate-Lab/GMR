@@ -76,13 +76,13 @@ impl MemoryLens {
         &self,
         log: &AnchorLog,
         anchor: &AnchorKey,
-    ) -> Result<Vec<BindingRecord>, RuntimeError> {
+    ) -> Result<Vec<Bound>, RuntimeError> {
         let chain = chain_from(log, anchor).await?;
-        Ok(self.bindings.bindings_on(&chain).await?)
+        Ok(by_reference(self.bindings.bindings_on(&chain).await?))
     }
 
-    pub async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, RuntimeError> {
-        Ok(self.bindings.binding_of(reference).await?)
+    pub async fn binding_of(&self, reference: &Ref) -> Result<Bound, RuntimeError> {
+        Ok(Bound::fold(self.bindings.binding_of(reference).await?))
     }
 
     pub async fn revoke(&self, revocation: &Revocation) -> Result<(), RuntimeError> {
@@ -133,33 +133,23 @@ impl MemoryLens {
 
     pub(crate) async fn fetch_memory(
         &self,
-        asserted: Vec<BindingRecord>,
+        bound: Bound,
         budget: &Budget,
     ) -> Result<MemoryView, RuntimeError> {
-        let standing = asserted
-            .iter()
-            .max_by_key(|r| r.seq)
+        let standing = bound
+            .standing()
             .expect("a view is only assembled from at least one assertion");
-        let baseline = asserted
-            .iter()
-            .filter(|r| r.bound_version.is_some())
-            .max_by_key(|r| r.seq)
-            .unwrap_or(standing);
+        let baseline = bound.baseline().unwrap_or(standing);
         let reference = standing.binding.reference.clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
         let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
-        let asserted_at = asserted.iter().filter_map(|r| r.asserted_at).min();
-        let sources: std::collections::BTreeSet<Source> =
-            asserted.iter().map(|r| r.source).collect();
-        let anchors: std::collections::BTreeSet<AnchorKey> = asserted
-            .iter()
-            .flat_map(|r| r.binding.anchors.iter().cloned())
-            .collect();
+        let asserted_at = bound.first_asserted();
+        let sources = bound.sources();
 
         Ok(MemoryView {
             links: self.links.links_of(&reference).await?,
-            grounded: !anchors.is_empty(),
+            grounded: !bound.anchors().is_empty(),
             grounding: self
                 .ground(&reference, bound_version.as_ref(), budget)
                 .await,
@@ -251,11 +241,11 @@ impl MemoryLens {
             if memories.iter().any(|m| m.reference == reference) {
                 continue;
             }
-            let asserted = self.bindings.binding_of(&reference).await?;
-            if asserted.is_empty() {
+            let bound = self.binding_of(&reference).await?;
+            if bound.is_empty() {
                 continue;
             }
-            memories.push(self.fetch_memory(asserted, &total.narrowed(call)).await?);
+            memories.push(self.fetch_memory(bound, &total.narrowed(call)).await?);
         }
         Ok(())
     }
@@ -294,7 +284,7 @@ pub(crate) async fn chain_from(
     Ok(out)
 }
 
-pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Vec<BindingRecord>> {
+pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Bound> {
     let mut out: Vec<Vec<BindingRecord>> = Vec::new();
     for record in records {
         match out
@@ -305,14 +295,76 @@ pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Vec<BindingRecord>> {
             None => out.push(vec![record]),
         }
     }
-    out
+    out.into_iter().map(Bound::fold).collect()
 }
 
-pub fn anchors_of(records: &[BindingRecord]) -> Vec<AnchorKey> {
-    records
-        .iter()
-        .flat_map(|r| r.binding.anchors.iter().cloned())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect()
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Bound {
+    asserted: Vec<BindingRecord>,
+    anchors: Vec<AnchorKey>,
+}
+
+impl Bound {
+    pub fn fold(asserted: Vec<BindingRecord>) -> Self {
+        let anchors = asserted
+            .iter()
+            .flat_map(|r| r.binding.anchors.iter().cloned())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        Self { asserted, anchors }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.asserted.is_empty()
+    }
+
+    pub fn anchors(&self) -> &[AnchorKey] {
+        &self.anchors
+    }
+
+    pub fn assertions(&self) -> &[BindingRecord] {
+        &self.asserted
+    }
+
+    pub fn standing(&self) -> Option<&BindingRecord> {
+        self.asserted.iter().max_by_key(|r| r.seq)
+    }
+
+    pub fn baseline(&self) -> Option<&BindingRecord> {
+        self.asserted
+            .iter()
+            .filter(|r| r.bound_version.is_some())
+            .max_by_key(|r| r.seq)
+    }
+
+    pub fn bound_version(&self) -> Option<&Version> {
+        self.baseline().and_then(|r| r.bound_version.as_ref())
+    }
+
+    pub fn sources(&self) -> std::collections::BTreeSet<Source> {
+        self.asserted.iter().map(|r| r.source).collect()
+    }
+
+    pub fn first_asserted(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.asserted.iter().filter_map(|r| r.asserted_at).min()
+    }
+
+    pub fn tags_on(&self, anchor: &AnchorKey) -> Vec<gmr_store::Tag> {
+        self.asserted
+            .iter()
+            .filter(|r| r.binding.anchors.contains(anchor))
+            .map(|r| gmr_store::Tag {
+                binding: r.seq,
+                anchor: anchor.clone(),
+            })
+            .collect()
+    }
+
+    pub fn says(&self, anchors: &[AnchorKey], version: Option<&Version>, source: Source) -> bool {
+        !self.asserted.is_empty()
+            && anchors.iter().all(|a| self.anchors.contains(a))
+            && self.sources().contains(&source)
+            && self.bound_version() == version
+    }
 }

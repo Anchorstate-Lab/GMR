@@ -286,7 +286,7 @@ async fn ground(
     call: Duration,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
-    for asserted in crate::memory::by_reference(memory.bindings_on(log, &view.key).await?) {
+    for asserted in memory.bindings_on(log, &view.key).await? {
         let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
         held.stale = held.bound_at_seq.map(|seq| seq < head);
         memories.push(held);
@@ -300,11 +300,14 @@ async fn cobound(
     memory: &MemoryLens,
     reference: &Ref,
 ) -> Result<Vec<Ref>, RuntimeError> {
-    let asserted = memory.binding_of(reference).await?;
+    let bound = memory.binding_of(reference).await?;
     let mut out: Vec<Ref> = Vec::new();
-    for anchor in crate::memory::anchors_of(&asserted) {
-        for other in memory.bindings_on(log, &anchor).await? {
-            let other_reference = other.binding.reference;
+    for anchor in bound.anchors() {
+        for other in memory.bindings_on(log, anchor).await? {
+            let Some(other_reference) = other.standing().map(|r| r.binding.reference.clone())
+            else {
+                continue;
+            };
             if &other_reference != reference && !out.contains(&other_reference) {
                 out.push(other_reference);
             }

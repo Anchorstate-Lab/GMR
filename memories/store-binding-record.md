@@ -16,8 +16,9 @@ relation — see [[memory-Binding]].
 **A record is one assertion, not one reference.** `seq` names the row;
 `binding.anchors` holds that assertion's still-live tags, so a caller can
 revoke exactly what it saw. A reference with three assertions comes back as
-three records; folding them into one view is the runtime's job, where
-`MemoryView` lives. [[store-orset-projection]] defines "live".
+three records; folding them into one answer is the runtime's job, where
+`Bound` lives ([[runtime-bound]]). [[store-orset-projection]] defines
+"live".
 
 ## `Source` says how GMR learned the link
 

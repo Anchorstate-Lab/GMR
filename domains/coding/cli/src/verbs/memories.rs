@@ -55,10 +55,9 @@ pub async fn run(
             let bound = rt.memory().binding_of(&record.reference).await?;
             let anchors = (!bound.is_empty()).then(|| {
                 bound
+                    .anchors()
                     .iter()
-                    .flat_map(|b| b.binding.anchors.iter().map(|a| a.to_string()))
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
+                    .map(|a| a.to_string())
                     .collect::<Vec<_>>()
             });
             rows.push((

@@ -162,7 +162,7 @@ async fn changed_since(
                 });
             }
 
-            for asserted in crate::memory::by_reference(memory.bindings_on(log, &key).await?) {
+            for asserted in memory.bindings_on(log, &key).await? {
                 let view = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
                 standing.extend(Standing::of(key.clone(), view));
             }

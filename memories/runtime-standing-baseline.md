@@ -1,6 +1,7 @@
 ---
 about:
   - crates/gmr-runtime/src/memory.rs#fetch_memory
+  - crates/gmr-runtime/src/memory.rs#baseline
 watch: [sig, logic]
 ---
 
@@ -10,8 +11,8 @@ A reference can hold several live assertions ([[store-orset-projection]]),
 and since an assertion may be made while the store cannot answer for the
 record, some of them carry no `bound_version` at all.
 
-Two different questions are answered from that set, and `fetch_memory`
-keeps them apart:
+Two different questions are answered from that set, and `Bound` keeps them
+apart so that every reader gets the same two answers ([[runtime-bound]]):
 
 - **`standing`** — the newest assertion, whatever it says. It names the
   reference the view is about.
@@ -27,7 +28,8 @@ silence as the new baseline turns a memory somebody verified into
 afterwards. An assertion that verified nothing has nothing to overwrite a
 verification with.
 
-`baseline` falls back to `standing` when no assertion ever cited a version.
+`Bound::baseline` is `None` when no assertion ever cited a version, and
+`fetch_memory` falls back to `standing` for that case.
 That is the genuinely unverified case, and `baseline_at` stays `None` for it
 rather than pointing at an assertion that established nothing.
 

@@ -105,8 +105,8 @@ pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<gmr
         .memory()
         .bindings_on(rt.log(), key)
         .await?
-        .into_iter()
-        .map(|b| b.binding.reference)
+        .iter()
+        .filter_map(|b| b.standing().map(|r| r.binding.reference.clone()))
         .collect())
 }
 

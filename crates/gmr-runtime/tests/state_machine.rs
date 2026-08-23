@@ -762,7 +762,11 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
          the caller has to be told which one was made"
     );
     assert_eq!(
-        gmr_runtime::anchors_of(&w.rt.memory().binding_of(&reference).await.unwrap()),
+        w.rt.memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .anchors(),
         vec![heir.clone()],
     );
 
