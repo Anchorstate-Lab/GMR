@@ -48,6 +48,7 @@ STAGING = "staging"
 class World(base.World):
     name = "deploy"
     derives_from_source = False
+    has_axes = False
     expresses = base.UNIVERSAL
 
     @property

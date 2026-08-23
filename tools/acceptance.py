@@ -24,12 +24,13 @@ import argparse
 import concurrent.futures
 import pathlib
 import sys
+import subprocess
 import time
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from accept import matrix, predicates, spec  # noqa: E402
+from accept import matrix, mutations, predicates, spec  # noqa: E402
 from accept.cell import Cell  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -102,12 +103,74 @@ def report(outcomes, faults, seconds):
     return total_red
 
 
+def rebuild():
+    r = subprocess.run(
+        ["cargo", "build", "--release", "-p", "coding-anchor"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return r.returncode == 0, r.stderr[-2000:]
+
+
+def run_mutations(binary, jobs):
+    """Land a known break and insist the promises notice.
+
+    A promise no mutation here can break is a promise nothing is really
+    checking, so a mutation that lands with every cell still green is the gate
+    reporting on itself.
+    """
+    faults = []
+    for m in mutations.live():
+        print(f"\n── mutation: {m['id']}")
+        original = mutations.apply(ROOT, m)
+        try:
+            ok, err = rebuild()
+            if not ok:
+                faults.append(f"{m['id']}: the mutated tree does not build\n{err}")
+                continue
+            cells = [
+                c
+                for c in matrix.expand(spec.SCENARIOS)
+                if c.scenario["id"] in m["breaks"] and not c.declined
+            ]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+                outcomes = list(pool.map(lambda c: run_cell(binary, c), cells))
+            caught = [o for o in outcomes if o.red]
+            print(f"   {len(caught)}/{len(outcomes)} cells noticed")
+            if not caught:
+                faults.append(
+                    f"{m['id']}: nothing noticed. {m['why']} — "
+                    f"the assertions behind {', '.join(m['breaks'])} have gone hollow"
+                )
+        finally:
+            mutations.revert(ROOT, m, original)
+
+    ok, err = rebuild()
+    if not ok:
+        faults.append(f"the tree does not build after reverting every mutation\n{err}")
+    dirty = subprocess.run(
+        ["git", "diff", "--name-only", "--", *{m["file"] for m in mutations.live()}],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    if dirty:
+        faults.append(f"a mutation was left in the tree: {' '.join(dirty)}")
+    return faults
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--binary", default=str(ROOT / "target" / "release" / "gmr"))
     ap.add_argument("--only", default=None, help="substring filter over cell ids")
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--list", action="store_true")
+    ap.add_argument(
+        "--mutations",
+        action="store_true",
+        help="land known breaks and insist the promises notice; rebuilds the binary",
+    )
     args = ap.parse_args()
 
     cells = matrix.expand(spec.SCENARIOS)
@@ -130,6 +193,14 @@ def main():
         outcomes = list(pool.map(lambda c: run_cell(args.binary, c), cells))
 
     red = report(outcomes, faults, time.time() - started)
+
+    if args.mutations:
+        hollow = run_mutations(args.binary, args.jobs)
+        if hollow:
+            print("\n× sentinels")
+            for h in hollow:
+                print(f"    {h}")
+        red += len(hollow)
     print(f"\nACCEPTANCE {'BROKEN' if red else 'KEPT'} cells={len(outcomes)} promises={len(spec.SCENARIOS)}")
     return 1 if red else 0
 

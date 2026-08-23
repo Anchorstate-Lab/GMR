@@ -76,6 +76,22 @@ def only_the_memories_about_what_moved_come_back(c):
     p.handed_back_exactly(c.gmr, res, {mine})
 
 
+@scenario(
+    "G1",
+    "a memory that asked about one axis: does another axis moving leave it alone?",
+    needs=("per_note_watch", "has_axes"),
+)
+def a_memory_that_asked_about_another_axis_stays_put(c):
+    watchful, _ = c.put("watchful.md")
+    c.bind(watchful)
+    narrow = c.subscribe("narrow.md", axes=["surface"])
+    c.settle()
+
+    c.happen("reading_changed")
+    res = c.gmr.check()
+
+    p.handed_back_exactly(c.gmr, res, {watchful})
+
 @scenario("G1", "an agent binds what it just wrote, before any store can answer")
 def a_memory_bound_before_the_store_can_answer_still_arrives(c):
     address = c.store.address("fresh.md")
@@ -193,6 +209,11 @@ def a_record_the_store_says_is_gone_is_reported(c):
 def a_spent_budget_refuses_and_never_becomes_state(c):
     address, _ = c.put("why.md")
     c.bind(address)
+    # A budget has to be out of reach by construction, not by being small enough
+    # on a fast machine. A margin thinner than the runner's own noise goes
+    # flaky, and a flaky assertion is worse than no assertion: it teaches
+    # whoever meets it to re-run until green, and then to delete it.
+    c.world.declare_many(c.gmr, c.repo, 150)
     c.settle()
 
     starved = c.gmr.check(budget_ms=1)

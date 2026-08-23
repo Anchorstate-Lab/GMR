@@ -46,6 +46,11 @@ class Store(abc.ABC):
     prefix = None
     env_key = None
 
+    # Whether a record kept here can say for itself which axes should wake it.
+    # Only a store whose records live in the repository can: the subscription is
+    # read out of the note's own frontmatter.
+    per_note_watch = False
+
     @property
     def store_can_vanish(self):
         """Whether this store lives somewhere that can stop answering.
@@ -78,6 +83,7 @@ class Store(abc.ABC):
 class Git(Store):
     name = "git"
     prefix = "git"
+    per_note_watch = True
 
     def address(self, mid):
         return f"git:memories/{mid}"

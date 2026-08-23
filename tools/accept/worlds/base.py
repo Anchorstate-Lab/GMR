@@ -46,6 +46,11 @@ class World(abc.ABC):
     # the claim that GMR is a coding tool, and it would run on every commit.
     derives_from_source = True
 
+    # Whether readings from this signal carry named axes a memory can subscribe
+    # to. A deploy sha has a value, not a vector, and says so rather than
+    # pretending the question applies.
+    has_axes = True
+
     @abc.abstractmethod
     def build(self, repo):
         """Lay the fixture down. Called before `gmr init`."""

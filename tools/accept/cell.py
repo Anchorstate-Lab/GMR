@@ -82,6 +82,21 @@ class Cell:
     def bind(self, address, signals=None):
         return self.gmr.bind(address, anchors=signals or [self.world.signal])
 
+    def subscribe(self, mid, axes):
+        """A memory that says for itself which axes should wake it.
+
+        Only a store whose records live in the repository can express this: the
+        subscription is read out of the record's own frontmatter, which is why
+        the promise that uses it declines every other store rather than
+        pretending to have covered it.
+        """
+        body = "---\nabout: {}\nwatch: [{}]\n---\n\n{}\n".format(
+            self.world.signal, ", ".join(axes), self.marker("narrow")
+        )
+        address, _ = self.put(mid, text=body.rstrip("\n"))
+        self.gmr.bind(address, anchors=[self.world.signal])
+        return address
+
     def without_store(self):
         """The same instance, with this store pointed somewhere that is not there."""
         if not self.store.env_key:
