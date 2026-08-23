@@ -51,6 +51,11 @@ class World(abc.ABC):
     # pretending the question applies.
     has_axes = True
 
+    # Whether this world's instrument can be swapped without rebuilding the
+    # binary. Only a probe declared as a recipe can; a built-in extractor's
+    # identity moves when the binary does.
+    swappable_instrument = False
+
     @abc.abstractmethod
     def build(self, repo):
         """Lay the fixture down. Called before `gmr init`."""

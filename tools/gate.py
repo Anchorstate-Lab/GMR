@@ -266,29 +266,23 @@ def check_version_bump():
 
 
 def check_acceptance_intact():
-    """The sentinel exists, says how many steps ran, and CI checks that number.
+    """The portal's sentinel exists, says how many steps ran, and CI greps that number.
 
     This exists because the file was once truncated mid-heredoc by an editing
     pass. `sh` treats an unterminated `<<'EOF'` as delimited by end-of-file, so
     the script still parsed, still exited 0, and tested almost nothing for two
-    days. `sh -n` does not catch it.
+    days. `sh -n` does not catch it; the sentinel does.
 
-    What catches it is the sentinel, and only the sentinel. An unterminated
-    heredoc swallows every line after it -- including the `step` calls that
-    increment the counter and the final echo itself -- so the run either prints
-    nothing or prints a number lower than the workflow greps for. This function
-    does not read the script for balanced `<<'EOF'` / `EOF` pairs any more. That
-    count was a heuristic, it could not see a marker inside a heredoc body (this
-    script writes shell scripts into heredocs), and it happened to balance only
-    because the paragraph above it is a comment the reader stripped. A check
-    that passes for the wrong reason is worse than one that is not there.
+    The portal is now small and the promises live in Python, where a truncated
+    module raises instead of passing quietly. So this guards the half that can
+    still fail that way, and `check_sentinels_still_aimed` guards the way the
+    other half can go hollow.
     """
     errors = []
     lines = ACCEPTANCE.read_text().splitlines()
 
     tail = next((line for line in reversed(lines) if line.strip()), "")
-    m = re.match(r'^echo "ACCEPTANCE COMPLETE steps=\$steps"$', tail.strip())
-    if not m:
+    if not re.match(r'^echo "ACCEPTANCE COMPLETE steps=\$steps"$', tail.strip()):
         errors.append(
             f"acceptance.sh must end with the sentinel echo, found: {tail.strip()[:60]!r}"
         )
@@ -299,6 +293,12 @@ def check_acceptance_intact():
             "acceptance.sh's step() must increment $steps — the sentinel prints that "
             "counter, and a step() that does not touch it makes the number a constant "
             "and every check below it decorative"
+        )
+
+    if "tools/acceptance.py" not in body:
+        errors.append(
+            "acceptance.sh no longer hands the shipped binary to tools/acceptance.py, "
+            "so the packaging steps are all that runs and no promise is checked at all"
         )
 
     declared = len(re.findall(r"^step ", body, re.MULTILINE))
@@ -317,6 +317,47 @@ def check_acceptance_intact():
     return errors
 
 
+def check_sentinels_still_aimed():
+    """Every mutation still points at code that exists, and at a promise that exists.
+
+    The mutation sentinels are what keep the acceptance assertions from going
+    hollow, so they have their own way of dying: the code moves, a mutation's
+    anchor stops matching anything, and the sentinel silently stops meaning
+    what it says. That failure only surfaces on a full `--mutations` run, which
+    rebuilds the binary once per mutation and is far too slow to be the thing
+    standing between this drift and `main`.
+
+    So it is checked statically here, on every PR, for nothing.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        from accept import mutations, spec
+    except ImportError as e:
+        return [f"the acceptance suite does not import: {e}"]
+
+    promises = {s["id"] for s in spec.SCENARIOS}
+    errors = []
+    for m in mutations.MUTATIONS:
+        for promise in m["breaks"]:
+            if promise not in promises:
+                errors.append(
+                    f"mutation `{m['id']}` says it breaks `{promise}`, and no promise "
+                    "by that name exists any more"
+                )
+        if m.get("skip"):
+            continue
+        source = ROOT / m["file"]
+        if not source.exists():
+            errors.append(f"mutation `{m['id']}` aims at {m['file']}, which is gone")
+        elif m["find"] not in source.read_text():
+            errors.append(
+                f"mutation `{m['id']}` no longer matches anything in {m['file']} — "
+                "the code moved and this sentinel stopped meaning anything. Re-aim it "
+                "at what the code does now rather than deleting it"
+            )
+    return errors
+
+
 CHECKS = [
     ("pure roots: zero workspace dependencies", check_pure_roots),
     ("dependency forbidden zones", check_forbidden_dependencies),
@@ -327,6 +368,7 @@ CHECKS = [
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
+    ("every mutation sentinel still aims at code and at a promise", check_sentinels_still_aimed),
     ("Cargo.toml version, if touched, only claims a major.minor line — patch is CI's", check_version_bump),
 ]
 

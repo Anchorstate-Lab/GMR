@@ -277,6 +277,43 @@ def a_judgment_pins_a_fresh_look_not_the_last_reading(c):
     p.silent(c.gmr, c.gmr.check(), "the world was put back and then judged")
 
 
+@scenario("G4b", "is the instrument named by what it is, rather than by its bytes?", varies=())
+def an_instrument_is_named_by_what_it_is(c):
+    listed = c.gmr.raw("probes", "list", json_out=True).body or {}
+    unearned = [
+        row.get("probe")
+        for row in listed.get("probes", [])
+        if len(row.get("version") or "") != 64
+    ]
+    if unearned:
+        raise p.Broken(
+            "G4b",
+            "an instrument whose identity is not a hash over everything that can "
+            f"change its answer cannot be compared across machines: {unearned}",
+        )
+
+
+@scenario(
+    "G4b",
+    "the instrument was swapped: is a reading it did not take reported as such?",
+    varies=("world",),
+    needs=("swappable_instrument",),
+)
+def a_swapped_instrument_is_not_mistaken_for_a_moved_signal(c):
+    address, _ = c.put("why.md")
+    c.bind(address)
+    c.settle()
+
+    c.world.swap_instrument(c.repo)
+    res = c.gmr.check()
+
+    p.loud(res, "the reading on file was taken by an instrument this build no longer has")
+    p.reported(res, "instrument_swapped", c.world.signal, "a swapped instrument")
+
+    c.gmr.recapture("the instrument changed; recapture against the one this build has", every=True)
+    p.silent(c.gmr, c.gmr.check(), "the reading was recaptured with the instrument at hand")
+
+
 # ── G5 变化可辨 ─────────────────────────────────────────────────────────────
 
 

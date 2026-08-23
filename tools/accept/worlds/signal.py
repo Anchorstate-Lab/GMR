@@ -49,6 +49,7 @@ class World(base.World):
     name = "deploy"
     derives_from_source = False
     has_axes = False
+    swappable_instrument = True
     expresses = base.UNIVERSAL
 
     @property
@@ -102,6 +103,12 @@ class World(base.World):
 
     def ceased(self, repo):
         self._reads(repo, STAGING, "null")
+
+    def swap_instrument(self, repo):
+        """Same readings, a different thing doing the reading."""
+        p = repo / "scripts" / "deploy.sh"
+        p.write_text(READER.replace("cat \"$f\"", "cat \"$f\" | cat"))
+        p.chmod(0o755)
 
     def many(self, repo, n):
         blocks = [ANCHOR.format(key=self.signal, env=STAGING)]
