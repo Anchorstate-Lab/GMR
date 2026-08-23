@@ -317,6 +317,45 @@ def check_acceptance_intact():
     return errors
 
 
+def check_criteria_inside_the_closure():
+    """Anything that decides an extractor's answer is hashed with the extractor.
+
+    Rule 5 says a plugin version is an earned hash over everything that can
+    change its output. `identity` decides whether a candidate is eligible at
+    all, so it is such a thing, and it lives in the per-extractor sources that
+    build.rs feeds into the closure.
+
+    Moving it next to `at`/`facts` in lib.rs would read like tidying -- they are
+    all lists of item names -- and would quietly take a criterion out of the
+    hash. Nothing would then be reported as a swapped instrument, and readings
+    taken under different matching criteria would be compared as though they
+    were comparable. `at` and `facts` are outside the closure correctly: they
+    say what the probe reports, and the CLI uses them to route. `identity` says
+    what the probe decides on. The two look alike and belong on opposite sides.
+    """
+    extractors = ROOT / "domains" / "coding" / "extract" / "src"
+    build = (extractors.parent / "build.rs").read_text()
+    closure = re.findall(r'^\s*\(\s*"(\w+)",', build, re.MULTILINE)
+    errors = []
+    for name in closure:
+        f = extractors / f"{name}.rs"
+        if not f.exists():
+            errors.append(f"build.rs hashes `{name}.rs`, which is not there")
+        elif "identity:" not in f.read_text():
+            errors.append(
+                f"{name}.rs declares no `identity`, so either it lost a criterion or "
+                "the criterion moved somewhere build.rs does not hash"
+            )
+    outside = extractors / "lib.rs"
+    if "identity" in outside.read_text():
+        errors.append(
+            "lib.rs mentions `identity`, and build.rs does not hash lib.rs. A criterion "
+            "outside the closure never moves the earned hash, so nothing is ever reported "
+            "as a swapped instrument and old readings are compared under new criteria"
+        )
+    return errors
+
+
 def check_sentinels_still_aimed():
     """Every mutation still points at code that exists, and at a promise that exists.
 
@@ -369,6 +408,7 @@ CHECKS = [
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
     ("every mutation sentinel still aims at code and at a promise", check_sentinels_still_aimed),
+    ("what decides an extractor's answer is hashed with it", check_criteria_inside_the_closure),
     ("Cargo.toml version, if touched, only claims a major.minor line — patch is CI's", check_version_bump),
 ]
 
