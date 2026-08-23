@@ -163,3 +163,53 @@ def not_reported(res, bucket, containing, why):
     flat = {r if isinstance(r, str) else r.get("anchor") or r.get("note") for r in rows}
     if containing in flat:
         raise Broken("G4b", f"{why}: `{bucket}` should not name {containing}")
+
+
+# ── G5  变化可辨 ────────────────────────────────────────────────────────────
+
+
+def distinguishable(prints, why):
+    """Different things happening to a signal leave different reports.
+
+    GMR does not decide what a change means — the reader does, by recapturing
+    the anchor or by rewriting the memory. That division only works if the
+    report says *which* change happened. If a renamed signal, a relocated one
+    and a deleted one all read the same, the reader has been told something
+    moved and given nothing to act on, and the runtime has handed its own
+    judgment problem back as a guess.
+    """
+    seen = {}
+    for name, fp in prints.items():
+        k = tuple(sorted(fp.items()))
+        seen.setdefault(k, []).append(name)
+    collisions = [names for names in seen.values() if len(names) > 1]
+    if collisions:
+        detail = "; ".join(" and ".join(sorted(c)) for c in collisions)
+        raise Broken("G5", f"{why}: indistinguishable reports for {detail}")
+
+
+# ── G6  runtime 的「一定」 ──────────────────────────────────────────────────
+
+
+def converges(rounds, why):
+    """Every due signal is reached in finite rounds, however tight the budget.
+
+    A runtime promises that a change is noticed, not that it is noticed this
+    instant. The operational form of that promise is convergence: the backlog
+    falls and reaches zero, and no signal is starved while others are served.
+    Without it, `a change is always handed back` degrades into `handed back if
+    the budget happened to reach it`, which is not a promise at all.
+    """
+    backlog = [r["skipped"] for r in rounds]
+    if backlog[-1] != 0:
+        raise Broken(
+            "G6", f"{why}: after {len(rounds)} rounds the backlog is still {backlog[-1]} ({backlog})"
+        )
+    if any(b - a > 0 for a, b in zip(backlog, backlog[1:])):
+        raise Broken("G6", f"{why}: the backlog grew instead of draining ({backlog})")
+
+
+def starves_nobody(seen, expected, why):
+    if set(seen) != set(expected):
+        missing = sorted(set(expected) - set(seen))
+        raise Broken("G6", f"{why}: never observed at all across every round: {missing}")

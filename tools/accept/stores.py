@@ -14,6 +14,7 @@ import abc
 import subprocess
 
 DESK_FETCH = """#!/bin/sh
+[ -d "$DESK" ] || { echo "the desk is not mounted" >&2; exit 3; }
 id=$(printf '%s' "$GMR_POSITION" | sed 's/.*"id":"\\([^"]*\\)".*/\\1/')
 file="$DESK/$id"
 [ -f "$file" ] || { printf 'null'; exit 0; }
@@ -21,6 +22,7 @@ printf '{"text":"%s"}' "$(sed 's/"/\\\\"/g' "$file" | tr -d '\\n')"
 """
 
 DESK_LIST = """#!/bin/sh
+[ -d "$DESK" ] || { echo "the desk is not mounted" >&2; exit 3; }
 printf '{"records":['
 first=1
 for f in "$DESK"/*; do
@@ -42,6 +44,17 @@ ids = "readable"
 class Store(abc.ABC):
     name = None
     prefix = None
+    env_key = None
+
+    @property
+    def store_can_vanish(self):
+        """Whether this store lives somewhere that can stop answering.
+
+        A store kept inside the repository cannot go unreachable, so the
+        scenario about unreachability declines that cell rather than
+        pretending to have run it.
+        """
+        return self.env_key is not None
 
     def prepare(self, repo, work):
         """Make the store exist. Returns env the driver must carry."""
@@ -93,6 +106,7 @@ class Git(Store):
 class ClaudeCode(Store):
     name = "claude-code"
     prefix = "claude-code"
+    env_key = "GMR_CLAUDE_MEMORY_DIR"
 
     def _dir(self, work):
         d = work / "claude-memory"
@@ -120,6 +134,7 @@ class Desk(Store):
 
     name = "desk"
     prefix = "desk"
+    env_key = "DESK"
 
     def _dir(self, work):
         d = work / "desk"

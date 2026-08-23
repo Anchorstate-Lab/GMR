@@ -19,23 +19,35 @@ run = "scripts/deploy.sh"
 obs = { schema = "gmr.probe-deploy.v1", at = [], facts = ["sha"] }
 """
 
-ANCHORS = """[[anchor]]
-key = "deploy::staging"
+# The script is the instrument, so it must never change: rewriting it would
+# change the probe's earned identity, and every reading taken before would stop
+# being comparable. What the instrument reads sits beside it in a file, exactly
+# as an extractor reads a source tree it does not own.
+READER = """#!/bin/sh
+env=$(printf '%s' "$GMR_POSITION" | sed 's/.*"env":"\\([^"]*\\)".*/\\1/')
+f="$GMR_ROOT/deploy-state/$env"
+[ -f "$f" ] || f="deploy-state/$env"
+[ -f "$f" ] || { printf 'null'; exit 0; }
+cat "$f"
+"""
+
+ANCHOR = """
+[[anchor]]
+key = "{key}"
 probe = "deploy-sha"
-position = { env = "staging" }
+position = {{ env = "{env}" }}
 rules = [
-  'not exists(state.sha) => { position: state.position, sha: obs.sha, status: "captured" }',
-  'obs.sha != state.sha => { position: state.position, sha: obs.sha, was: state.sha, status: "redeployed" }',
+  'not exists(state.sha) => {{ position: state.position, sha: obs.sha, status: "captured" }}',
+  'obs.sha != state.sha => {{ position: state.position, sha: obs.sha, was: state.sha, status: "redeployed" }}',
 ]
 """
 
-
-def _script(body):
-    return "#!/bin/sh\n" + body
+STAGING = "staging"
 
 
 class World(base.World):
     name = "deploy"
+    derives_from_source = False
     expresses = base.UNIVERSAL
 
     @property
@@ -44,12 +56,17 @@ class World(base.World):
 
     @property
     def signal(self):
-        return "deploy::staging"
+        return f"deploy::{STAGING}"
 
     def build(self, repo):
         (repo / "scripts").mkdir(parents=True, exist_ok=True)
-        self._emit(repo, '{"sha":"a1b2c3d"}')
-        (repo / "README.md").write_text("a service whose deployments nothing in here records\n")
+        p = repo / "scripts" / "deploy.sh"
+        p.write_text(READER)
+        p.chmod(0o755)
+        self._reads(repo, STAGING, '{"sha":"a1b2c3d"}')
+        (repo / "README.md").write_text(
+            "a service whose deployments nothing in this tree records\n"
+        )
         subprocess.run(["git", "init", "-q", "."], cwd=repo, check=True, capture_output=True)
         subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
         subprocess.run(
@@ -59,23 +76,40 @@ class World(base.World):
             capture_output=True,
         )
 
-    def declare(self, gmr, repo):
-        (repo / ".anchor" / "probes.toml").write_text(PROBES)
-        (repo / ".anchor" / "anchors.toml").write_text(ANCHORS)
-        gmr.declare()
+    def _reads(self, repo, env, payload):
+        d = repo / "deploy-state"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / env).write_text(payload)
 
-    def _emit(self, repo, payload):
-        p = repo / "scripts" / "deploy.sh"
-        p.write_text(_script(f"printf '{payload}\\n'\n"))
-        p.chmod(0o755)
+    def recipes(self, repo):
+        (repo / ".anchor" / "probes.toml").write_text(PROBES)
+        declared = repo / ".anchor" / "anchors.toml"
+        if not declared.exists():
+            declared.write_text(ANCHOR.format(key=self.signal, env=STAGING))
+
+    def declare(self, gmr, repo):
+        self.recipes(repo)
+        gmr.declare()
 
     # ── events ──────────────────────────────────────────────────────────────
 
     def reading_changed(self, repo):
-        self._emit(repo, '{"sha":"9f8e7d6"}')
+        self._reads(repo, STAGING, '{"sha":"9f8e7d6"}')
 
     def noise(self, repo):
-        self._emit(repo, '{  "sha" :  "a1b2c3d"  }')
+        self._reads(repo, STAGING, '{  "sha" :  "a1b2c3d"  }')
 
     def ceased(self, repo):
-        self._emit(repo, "null")
+        self._reads(repo, STAGING, "null")
+
+    def many(self, repo, n):
+        blocks = [ANCHOR.format(key=self.signal, env=STAGING)]
+        keys = []
+        for i in range(n):
+            env = f"bulk{i}"
+            key = f"deploy::{env}"
+            blocks.append(ANCHOR.format(key=key, env=env))
+            self._reads(repo, env, '{"sha":"0000%03d"}' % i)
+            keys.append(key)
+        (repo / ".anchor" / "anchors.toml").write_text("".join(blocks))
+        return keys

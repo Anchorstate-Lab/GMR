@@ -25,6 +25,7 @@ def _commit(repo, message):
 
 class World(base.World):
     name = "coding"
+    derives_from_source = True
     expresses = base.UNIVERSAL + base.SHAPED
 
     @property
@@ -109,3 +110,14 @@ export function createSession(userId: string, ttl: number): Session {
 export const verify = (token: string) => token.length > 0;
 """,
         )
+
+    def many(self, repo, n):
+        (repo / "src").mkdir(parents=True, exist_ok=True)
+        keys = []
+        for i in range(n):
+            (repo / "src" / f"bulk{i}.ts").write_text(
+                f"export function build{i}(x: number): number {{ return x + {i}; }}\n"
+            )
+            keys.append(f"src/bulk{i}.ts#build{i}")
+        _commit(repo, "bulk")
+        return keys

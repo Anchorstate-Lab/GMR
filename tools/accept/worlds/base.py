@@ -40,12 +40,27 @@ class World(abc.ABC):
     name = None
     expresses = ()
 
+    # Whether this world's signal is derived from the source tree. `matrix.py`
+    # refuses a suite in which every world answers True: a matrix made only of
+    # parse trees would be the most persuasive artefact in this repository for
+    # the claim that GMR is a coding tool, and it would run on every commit.
+    derives_from_source = True
+
     @abc.abstractmethod
     def build(self, repo):
         """Lay the fixture down. Called before `gmr init`."""
 
+    def recipes(self, repo):
+        """Lay down whatever recipe files this world's probe needs.
+
+        Separate from `declare` because a migrated instance needs the recipe but
+        must not re-declare: what it watches arrives in the import, not from a
+        second pass over the fixture.
+        """
+
     def declare(self, gmr, repo):
         """Make the runtime watch this signal. Called after `gmr init`."""
+        self.recipes(repo)
         gmr.declare(self.coordinate)
 
     @property
@@ -83,3 +98,22 @@ class World(abc.ABC):
 
     def neighborhood_changed(self, repo):
         raise NotImplementedError
+
+    def many(self, repo, n):
+        """Lay down `n` signals of this kind and return their keys.
+
+        Only the liveness scenario needs this, and it needs it in every world:
+        a runtime that starves one kind of signal under a tight budget starves
+        it whatever the domain.
+        """
+        raise NotImplementedError
+
+    def declare_many(self, gmr, repo, n):
+        """Lay down `n` more signals and put every one of them under watch."""
+        keys = self.many(repo, n)
+        if self.coordinate is None:
+            gmr.declare()
+        else:
+            for k in keys:
+                gmr.declare(k)
+        return keys

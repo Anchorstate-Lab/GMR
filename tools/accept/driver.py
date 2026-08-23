@@ -59,7 +59,7 @@ class Gmr:
 
     # ── invocation ──────────────────────────────────────────────────────────
 
-    def _run(self, argv, json_out=False, check=True, drop_env=()):
+    def _run(self, argv, json_out=False, check=True, drop_env=(), codes=(0, 1)):
         env = dict(os.environ)
         env.update(self.env)
         for k in drop_env:
@@ -68,7 +68,7 @@ class Gmr:
         if json_out:
             full.append("--json")
         p = subprocess.run(full, capture_output=True, text=True, env=env)
-        if check and p.returncode not in (0, 1):
+        if check and p.returncode not in codes:
             raise CliError(argv, p.returncode, p.stdout, p.stderr)
         body = None
         if json_out and p.stdout.strip():
@@ -192,7 +192,7 @@ class Gmr:
         return self._run(["export", "--out", str(out)])
 
     def import_(self, path):
-        return self._run(["import", str(path)])
+        return self._run(["import", str(path)], codes=(0, 1, 2))
 
     # ── derived reads, still in the promise's vocabulary ────────────────────
 
@@ -259,3 +259,78 @@ class Gmr:
             for v in views
             for m in v.get("memories", [])
         }
+
+    def axes_set(self, key):
+        """Which axes of the reading are standing, when the reading has axes.
+
+        Not every signal source has axes — a deploy sha has a value, not a
+        vector — so this is empty rather than absent for worlds without them.
+        """
+        body = self.read(key).body or []
+        views = body if isinstance(body, list) else [body]
+        for v in views:
+            if v.get("key") != key:
+                continue
+            axes = (v.get("state") or {}).get("v")
+            if isinstance(axes, dict):
+                return frozenset(k for k, on in axes.items() if on is True)
+        return frozenset()
+
+    def doctor_buckets(self, key):
+        """Every typed `doctor` bucket that names this signal or a memory on it."""
+        body = self.doctor().body or {}
+        named = set()
+        for bucket, rows in body.items():
+            if not isinstance(rows, list):
+                continue
+            for r in rows:
+                text = r if isinstance(r, str) else (r.get("anchor") or r.get("note") or "")
+                if text == key:
+                    named.add(bucket)
+        return frozenset(named)
+
+    def fingerprint(self, key, address=None):
+        """What this runtime says about one signal right now, as a structure.
+
+        The point is discrimination, not description. A reader who cannot tell a
+        renamed signal from a deleted one cannot choose between recapturing the
+        anchor and retiring the memory, so `GMR reports the change` is only kept
+        if different changes leave different fingerprints. Nothing in here is a
+        sentence; every field comes out of `--json`.
+        """
+        chk = self.check(key)
+        body = self.read(key).body or []
+        views = body if isinstance(body, list) else [body]
+        view = next((v for v in views if v.get("key") == key), {})
+        facts = view.get("facts") or {}
+        return {
+            "exit": chk.code,
+            "handed": address in self.handed_back(chk) if address else None,
+            "status": view.get("status"),
+            "sighting": view.get("sighting"),
+            "axes": tuple(sorted(self.axes_set(key))),
+            "doctor": tuple(sorted(self.doctor_buckets(key))),
+            "found": facts.get("found"),
+            "exact": facts.get("exact"),
+            "matched": tuple(facts.get("matched") or ()),
+            "missed": tuple(facts.get("missed") or ()),
+        }
+
+    # `candidates` and `roll` are deliberately left out of the fingerprint. They
+    # describe what else happens to sit in the neighbourhood, not what happened
+    # to this signal: a rename shows up in them only because the new name is
+    # still nearby, and the same rename with the symbol carried out of the file
+    # reads exactly like a deletion again. Letting an incidental neighbour count
+    # as discrimination would report this promise as kept on an accident.
+
+    def signals(self):
+        """Every signal this instance watches."""
+        body = self.read().body or []
+        views = body if isinstance(body, list) else [body]
+        return {v["key"] for v in views if "key" in v}
+
+    def seen_keys(self):
+        """Every signal this instance has actually looked at at least once."""
+        body = self.read().body or []
+        views = body if isinstance(body, list) else [body]
+        return {v["key"] for v in views if (v.get("sightings") or 0) > 0}
