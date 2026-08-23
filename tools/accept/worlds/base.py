@@ -157,3 +157,22 @@ class World(abc.ABC):
     @property
     def has_neighbour(self):
         return self.neighbour() is not None
+
+    def uncooperative(self, repo):
+        """Rewrite this world's rules so they put an open obligation away themselves.
+
+        A domain owns its state machine and may do this. Whether the runtime then
+        forgets that a judgement was ever owed is a different question, and one
+        promise below turns on the answer.
+        """
+        raise NotImplementedError
+
+    @property
+    def can_be_uncooperative(self):
+        try:
+            self.uncooperative(None)
+        except NotImplementedError:
+            return False
+        except Exception:
+            return True
+        return True

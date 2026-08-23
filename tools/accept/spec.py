@@ -425,6 +425,41 @@ def recapturing_an_instrument_does_not_answer_an_open_judgement(c):
         )
 
 
+@scenario(
+    "G8",
+    "the rules put the obligation away themselves: is it still not discarded?",
+    varies=("world",),
+    needs=("can_be_uncooperative",),
+)
+def an_obligation_the_rules_put_away_is_still_not_discarded(c):
+    c.world.uncooperative(c.repo)
+    c.gmr.declare()
+    c.gmr.adjudicate(c.world.signal, "take the rules as declared", criteria=True)
+    address, _ = c.put("why.md")
+    c.bind(address)
+    c.gmr.check()
+    c.gmr.check()
+
+    c.happen("reading_changed")
+    p.loud(c.gmr.check(), "the signal moved")
+    quiet = c.gmr.check()
+
+    if address in c.gmr.handed_back(quiet):
+        raise RuntimeError("these rules did not put the obligation away; the fixture proves nothing")
+
+    refused = c.gmr.recapture("the instrument changed", keys=[c.world.signal])
+    if refused.code == 0:
+        raise p.Broken(
+            "G8",
+            "the rules put the obligation away, so delivery went quiet -- that is the "
+            "domain's call. But recapturing then pinned the world with a judgement still "
+            "unanswered and nothing recorded that one had been owed. Whether a memory is "
+            "handed over now is a question about the present; whether one was ever owed "
+            "and never answered is a question about the past, and the journal already "
+            "holds the answer",
+        )
+
+
 # ── G5 变化可辨 ─────────────────────────────────────────────────────────────
 
 

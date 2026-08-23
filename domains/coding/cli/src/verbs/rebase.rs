@@ -8,17 +8,6 @@ use crate::memories::Names;
 use crate::probes::Catalog;
 use crate::verbs::sealed;
 
-async fn standing(
-    rt: &Runtime,
-    subs: &Subscriptions,
-    key: &AnchorKey,
-) -> Result<Vec<gmr::Ref>, CliError> {
-    let view = rt.read(key).await?;
-    let shape = crate::shapes::of(&view.anchor.transitions);
-    let mut unclaimed = Vec::new();
-    super::observe::delivered(rt, subs, key, shape, &view.state, false, &mut unclaimed).await
-}
-
 pub async fn run(
     rt: &Runtime,
     root: &Path,
@@ -56,7 +45,7 @@ pub async fn run(
     let mut refused = Vec::new();
     let mut recapturing = Vec::new();
     for key in keys {
-        match standing(rt, &subs, &key).await? {
+        match super::owed(rt, &subs, &key).await? {
             owed if owed.is_empty() => recapturing.push(key),
             owed => refused.push((key, owed)),
         }

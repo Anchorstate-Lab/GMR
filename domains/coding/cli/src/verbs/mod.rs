@@ -100,6 +100,42 @@ pub(crate) async fn recapture(
     Ok(revised)
 }
 
+pub(crate) async fn owed(
+    rt: &Runtime,
+    subs: &crate::delivery::Subscriptions,
+    key: &AnchorKey,
+) -> Result<Vec<gmr::Ref>, CliError> {
+    let view = rt.read(key).await?;
+    let shape = crate::shapes::of(&view.anchor.transitions);
+    let bound = memories_on(rt, key).await?;
+    if bound.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let entries = rt.log().entries(key, 0).await?;
+    let sealed = entries
+        .iter()
+        .filter(|(_, e)| matches!(e, gmr::Entry::Revise { .. }))
+        .map(|(seq, _)| *seq)
+        .next_back()
+        .unwrap_or(0);
+
+    let mut out = Vec::new();
+    for m in bound {
+        let raised = entries.iter().filter(|(seq, _)| *seq >= sealed).any(|(_, e)| {
+            let state = match e {
+                gmr::Entry::Open { state, .. } | gmr::Entry::Transition { state, .. } => state,
+                _ => return false,
+            };
+            subs.delivers(key.as_str(), shape, &m, state).unwrap_or(false)
+        });
+        if raised {
+            out.push(m);
+        }
+    }
+    Ok(out)
+}
+
 pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<gmr::Ref>, CliError> {
     Ok(rt
         .memory()

@@ -80,6 +80,15 @@ MUTATIONS = [
         "anchor would again take up whatever else shares its file",
     },
     {
+        "id": "what-is-owed-is-only-what-is-owed-right-now",
+        "file": "domains/coding/cli/src/verbs/mod.rs",
+        "find": "        let raised = entries.iter().filter(|(seq, _)| *seq >= sealed).any(|(_, e)| {",
+        "replace": "        let raised = entries.iter().filter(|(seq, _)| *seq >= sealed).last().iter().any(|(_, e)| {",
+        "breaks": ["an-obligation-the-rules-put-away-is-still-not-discarded"],
+        "why": "reading only the present would let a domain's own rules erase the record "
+        "that a judgement was ever owed",
+    },
+    {
         "id": "migration-drops-what-it-was-carrying",
         "file": "domains/coding/cli/src/verbs/import.rs",
         "find": "",

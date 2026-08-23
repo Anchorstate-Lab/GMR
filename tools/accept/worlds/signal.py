@@ -122,3 +122,11 @@ class World(base.World):
             keys.append(key)
         (repo / ".anchor" / "anchors.toml").write_text("".join(blocks))
         return keys
+
+    def uncooperative(self, repo):
+        rules_back = ANCHOR.format(key=self.signal, env=STAGING).replace(
+            "]\nwatch",
+            "  'state.status == \"redeployed\" => { position: state.position, sha: state.sha,"
+            " status: \"captured\" }',\n]\nwatch",
+        )
+        (repo / ".anchor" / "anchors.toml").write_text(rules_back)
