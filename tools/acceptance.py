@@ -171,6 +171,12 @@ def main():
         action="store_true",
         help="land known breaks and insist the promises notice; rebuilds the binary",
     )
+    ap.add_argument(
+        "--sentinels-only",
+        action="store_true",
+        help="judge only whether the assertions still have teeth, not whether the "
+        "promises hold — so a broken promise and a hollow one stay separate answers",
+    )
     args = ap.parse_args()
 
     cells = matrix.expand(spec.SCENARIOS)
@@ -187,6 +193,13 @@ def main():
     if not pathlib.Path(args.binary).exists():
         print(f"accept: no binary at {args.binary}", file=sys.stderr)
         return 2
+
+    if args.sentinels_only:
+        hollow = run_mutations(args.binary, args.jobs)
+        for h in hollow:
+            print(f"\n× {h}")
+        print(f"\nSENTINELS {'HOLLOW' if hollow else 'SHARP'} count={len(mutations.live())}")
+        return 1 if hollow else 0
 
     started = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:

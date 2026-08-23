@@ -42,3 +42,22 @@ jobs:
         sh acceptance.sh | tee /tmp/acceptance.out
         grep -q 'ACCEPTANCE COMPLETE steps=4' /tmp/acceptance.out \
           || { echo "acceptance.sh did not run every step it declares"; exit 1; }
+
+  # Layer 3 of the gate: land a known break in the product and insist the
+  # promises notice. A promise no mutation can break is a promise nothing is
+  # really checking, and that is how a suite spends years green while testing
+  # nothing -- this repository has already lost two days to that exact failure.
+  #
+  # It rebuilds the binary once per mutation, so it does not stand in front of
+  # every pull request. What does is tools/gate.py's static half, which checks
+  # on every PR that each mutation still aims at code that exists and at a
+  # promise that exists -- the way this layer would otherwise rot silently.
+  sentinels:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Do the promises still have teeth?
+      run: |
+        cargo build --release -p coding-anchor
+        python3 tools/acceptance.py --sentinels-only
