@@ -70,8 +70,8 @@ MUTATIONS = [
     {
         "id": "any-hit-counts-as-still-being-there",
         "file": "batteries/survey/src/matching.rs",
-        "find": "    let identifies = |v: &[bool]| v.iter().zip(&gate).any(|(hit, id)| *hit && *id);",
-        "replace": "    let identifies = |v: &[bool]| {\n        let _ = &gate;\n        v.iter().any(|hit| *hit)\n    };",
+        "find": "        true => v.iter().zip(&declared).any(|(hit, id)| *hit && *id),\n        false => v.iter().all(|hit| *hit),",
+        "replace": "        true => v.iter().any(|hit| *hit),\n        false => v.iter().any(|hit| *hit),",
         "breaks": [
             "a-signal-that-is-gone-can-say-it-is-gone",
             "an-anchor-never-silently-takes-up-a-different-object",

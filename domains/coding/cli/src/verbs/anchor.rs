@@ -140,7 +140,8 @@ pub async fn run(
     };
 
     let catalog = Catalog::load(root)?;
-    let routed = crate::coord::route(&coord, None, &catalog)?;
+    let mut routed = crate::coord::route(&coord, None, &catalog)?;
+    routed.position = crate::coord::resolve(rt, &routed, &catalog).await?;
 
     let declared = already_declared(root, &catalog, &coord)?;
     let mut note = None;

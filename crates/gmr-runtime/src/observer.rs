@@ -42,9 +42,18 @@ impl Observer {
         position: &serde_json::Value,
         budget: &Budget,
     ) -> Result<Outcome, ProbeError> {
-        self.transport(&anchor.probe)?
+        self.sample(&anchor.probe, position, budget).await
+    }
+
+    pub(crate) async fn sample(
+        &self,
+        probe: &ProbeRef,
+        position: &serde_json::Value,
+        budget: &Budget,
+    ) -> Result<Outcome, ProbeError> {
+        self.transport(probe)?
             .invoke(&ProbeCall {
-                probe: &anchor.probe,
+                probe,
                 position,
                 budget,
             })

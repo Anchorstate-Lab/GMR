@@ -81,6 +81,42 @@ fn shape_for(coord: &str, obs: &crate::probes::Obs) -> Result<String, CliError> 
     )))
 }
 
+pub async fn resolve(
+    rt: &gmr::Runtime,
+    routed: &Routed,
+    catalog: &Catalog,
+) -> Result<Value, CliError> {
+    let obs = catalog.obs_of(&routed.probe)?;
+    if obs.identity.is_empty() {
+        return Ok(routed.position.clone());
+    }
+    let probe = crate::rules::probe(
+        catalog.kind_of(&routed.probe),
+        &routed.probe,
+        routed.params.clone(),
+    )?;
+    let Ok(gmr::Outcome::Found { facts }) = rt.sample(&probe, &routed.position).await else {
+        return Ok(routed.position.clone());
+    };
+    let facts = facts.as_value();
+    if facts.get("exact").and_then(Value::as_bool) != Some(true) {
+        return Ok(routed.position.clone());
+    }
+    let Some(at) = facts.get("at").and_then(Value::as_object) else {
+        return Ok(routed.position.clone());
+    };
+    let mut out = match &routed.position {
+        Value::Object(map) => map.clone(),
+        _ => Map::new(),
+    };
+    for item in &obs.identity {
+        if let Some(v @ Value::String(_)) = at.get(item) {
+            out.insert(item.clone(), v.clone());
+        }
+    }
+    Ok(Value::Object(out))
+}
+
 pub fn route(coord: &str, shape: Option<&str>, catalog: &Catalog) -> Result<Routed, CliError> {
     let probe = probe_for(coord, catalog)?;
     let obs = catalog.obs_of(&probe)?;

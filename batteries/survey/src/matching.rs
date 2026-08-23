@@ -108,11 +108,10 @@ pub fn report(
         .iter()
         .map(|(k, _)| identity.contains(&k.as_str()))
         .collect();
-    let gate: Vec<bool> = match declared.iter().any(|d| *d) {
-        true => declared,
-        false => vec![true; want.len()],
+    let identifies = |v: &[bool]| match declared.iter().any(|d| *d) {
+        true => v.iter().zip(&declared).any(|(hit, id)| *hit && *id),
+        false => v.iter().all(|hit| *hit),
     };
-    let identifies = |v: &[bool]| v.iter().zip(&gate).any(|(hit, id)| *hit && *id);
     let eligible: Vec<&Candidate> = candidates
         .iter()
         .filter(|c| identifies(&vector(c)))
@@ -202,7 +201,7 @@ mod tests {
             cand(&[("name", "keep"), ("scope", "core")]),
             cand(&[("name", "moved"), ("scope", "")]),
         ];
-        let r = report("x", &w, &[], 0, &cands).unwrap();
+        let r = report("x", &w, &["name"], 0, &cands).unwrap();
         assert_eq!(r["matched"], json!(["name"]));
         assert_eq!(r["missed"], json!(["scope"]));
         assert_eq!(r["candidates"], 1);
@@ -228,7 +227,7 @@ mod tests {
         let r = report(
             "x",
             &want(&[("a", "1"), ("b", "2")]),
-            &[],
+            &["a"],
             0,
             &[
                 cand(&[("a", "1"), ("b", "999")]),
@@ -248,7 +247,7 @@ mod tests {
             cand(&[("file", "a"), ("name", "x")]),
             cand(&[("file", "a"), ("name", "y")]),
         ];
-        assert_eq!(report("x", &w, &[], 0, &tied).unwrap()["candidates"], 2);
+        assert_eq!(report("x", &w, &["file"], 0, &tied).unwrap()["candidates"], 2);
     }
 
     #[test]
@@ -290,7 +289,7 @@ mod tests {
         let out = report(
             "x",
             &w,
-            &[],
+            &["name"],
             0,
             &[
                 cand(&[("name", "assess"), ("file", "moved.rs")]),
@@ -331,9 +330,9 @@ mod tests {
     fn exact_says_whether_every_item_matched_or_this_is_a_fallback() {
         let w = want(&[("kind", "module"), ("vis", "pub")]);
         let hit = [cand(&[("kind", "module"), ("vis", "pub")])];
-        assert_eq!(report("x", &w, &[], 0, &hit).unwrap()["exact"], true);
+        assert_eq!(report("x", &w, &["vis"], 0, &hit).unwrap()["exact"], true);
         let fallback = [cand(&[("kind", "type"), ("vis", "pub")])];
-        let r = report("x", &w, &[], 0, &fallback).unwrap();
+        let r = report("x", &w, &["vis"], 0, &fallback).unwrap();
         assert_eq!(r["exact"], false);
         assert_eq!(r["missed"], json!(["kind"]));
     }
