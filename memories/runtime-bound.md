@@ -24,6 +24,11 @@ one. Three parties asserting a link is three assertions and one memory, and
 a verb that lists per row reports three memories in trouble where there is
 one — with nothing in its type to say it disagrees with the verb beside it.
 
+`by_reference` groups through a map keyed by `Ref`, not by scanning the
+groups it has built so far. `corpus_health` hands it the whole table, so the
+scan would be quadratic in the corpus rather than in one anchor's share of
+it.
+
 Each dimension is folded exactly once, here:
 
 - `anchors()` — the union across live assertions, which is the OR-Set

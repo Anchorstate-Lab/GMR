@@ -285,17 +285,13 @@ pub(crate) async fn chain_from(
 }
 
 pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Bound> {
-    let mut out: Vec<Vec<BindingRecord>> = Vec::new();
+    let mut out: std::collections::BTreeMap<Ref, Vec<BindingRecord>> = Default::default();
     for record in records {
-        match out
-            .iter_mut()
-            .find(|group| group[0].binding.reference == record.binding.reference)
-        {
-            Some(group) => group.push(record),
-            None => out.push(vec![record]),
-        }
+        out.entry(record.binding.reference.clone())
+            .or_default()
+            .push(record);
     }
-    out.into_iter().map(Bound::fold).collect()
+    out.into_values().map(Bound::fold).collect()
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
