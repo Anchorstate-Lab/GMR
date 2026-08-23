@@ -36,6 +36,8 @@ pub struct AnchorDecl {
     pub rules: Vec<String>,
     #[serde(default)]
     pub terminal: Vec<String>,
+    #[serde(default)]
+    pub watch: Option<crate::memories::Watch>,
     #[serde(flatten)]
     pub settings: crate::settings::Declared,
 }
@@ -583,6 +585,7 @@ mod tests {
             shape: Some("contract".to_owned()),
             rules: Vec::new(),
             terminal: Vec::new(),
+            watch: None,
             settings: crate::settings::Declared::default(),
         }
     }

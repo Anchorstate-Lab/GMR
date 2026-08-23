@@ -40,6 +40,7 @@ rules = [
   'not exists(state.sha) => {{ position: state.position, sha: obs.sha, status: "captured" }}',
   'obs.sha != state.sha => {{ position: state.position, sha: obs.sha, was: state.sha, status: "redeployed" }}',
 ]
+watch = 'state.status != "captured"'
 """
 
 STAGING = "staging"

@@ -29,6 +29,7 @@ pub fn axes_set(state: &State) -> Option<Vec<String>> {
 #[derive(Debug, Default)]
 pub struct Subscriptions {
     per_note: BTreeMap<Ref, gmr::expr::Node>,
+    per_anchor: BTreeMap<String, gmr::expr::Node>,
 }
 
 pub fn axes_predicate(axes: &[impl AsRef<str>]) -> String {
@@ -74,6 +75,8 @@ impl Subscriptions {
         let declared = read_declared(root, DEFAULT_FILE)?;
 
         let mut faults = Vec::new();
+        let mut per_anchor = BTreeMap::new();
+        let mut undecidable = std::collections::BTreeSet::new();
         let mut writes_by_anchor: BTreeMap<&str, crate::contract::Writes> = BTreeMap::new();
         for decl in merged(&declared, &notes) {
             if let Some(name) = &decl.shape {
@@ -92,6 +95,23 @@ impl Subscriptions {
                 if let Ok(writes) = crate::contract::writes_of(&transitions) {
                     writes_by_anchor.insert(&decl.key, writes);
                 }
+            }
+            if let Some(watch) = &decl.watch {
+                match compile(watch) {
+                    Ok(node) => {
+                        per_anchor.insert(decl.key.clone(), node);
+                    }
+                    Err(detail) => faults.push(Fault {
+                        note: declaring(&notes, names, &decl.key),
+                        key: Some(decl.key.clone()),
+                        code: "watch-invalid",
+                        detail: format!("`{}`'s own `watch:` does not parse: {detail}", decl.key),
+                        weight: Weight::Breaks,
+                    }),
+                }
+            }
+            if decl.shape.is_none() && decl.watch.is_none() {
+                undecidable.insert(decl.key.clone());
             }
         }
 
@@ -136,22 +156,54 @@ impl Subscriptions {
             per_note.insert(note.reference.clone(), node);
         }
 
-        Ok((Self { per_note }, faults))
+        for note in &notes {
+            if note.watch.is_some() {
+                continue;
+            }
+            for want in &note.wants {
+                if !undecidable.contains(want.key()) {
+                    continue;
+                }
+                faults.push(Fault {
+                    note: names.of(&note.reference),
+                    key: Some(want.key().to_owned()),
+                    code: "watch-missing",
+                    detail: format!(
+                        "`{}` writes its own rules, so nothing says when this memory should \
+                         come back. Give the note a `watch:`, or the anchor a default one",
+                        want.key()
+                    ),
+                    weight: Weight::Breaks,
+                });
+            }
+        }
+
+        Ok((
+            Self {
+                per_note,
+                per_anchor,
+            },
+            faults,
+        ))
     }
 
     pub fn delivers(
         &self,
+        key: &str,
         shape: Option<&crate::shapes::Shape>,
         note: &Ref,
         state: &State,
-        moved: bool,
     ) -> Result<bool, String> {
         let owned;
-        let node = match self.per_note.get(note) {
+        let node = match self.per_note.get(note).or_else(|| self.per_anchor.get(key)) {
             Some(node) => node,
             None => {
                 let Some(shape) = shape else {
-                    return Ok(moved);
+                    return Err(
+                        "nothing says when this memory should come back: the anchor writes its \
+                         own rules and neither it nor the note carries a `watch:`"
+                            .to_owned(),
+                    );
                 };
                 let source = axes_predicate(crate::shapes::watch_of(shape));
                 owned = gmr::expr::parse(&source).map_err(|e| format!("`{source}`: {e}"))?;
@@ -189,11 +241,12 @@ mod tests {
                 at("git", "memories/a.md"),
                 gmr::expr::parse(&axes_predicate(note)).unwrap(),
             )]),
+            per_anchor: BTreeMap::new(),
         }
     }
 
     fn hands(s: &Subscriptions, note: &Ref, st: &State) -> bool {
-        s.delivers(contract(), note, st, true).unwrap()
+        s.delivers("k", contract(), note, st).unwrap()
     }
 
     fn contract() -> Option<&'static crate::shapes::Shape> {
@@ -250,26 +303,24 @@ mod tests {
         let s = narrowed(&["sig"]);
         let carried = state(serde_json::json!({ "sig": true }));
         assert!(
-            s.delivers(contract(), &at("git", "memories/a.md"), &carried, false)
+            s.delivers("k", contract(), &at("git", "memories/a.md"), &carried)
                 .unwrap()
         );
         assert!(
-            s.delivers(contract(), &at("git", "memories/b.md"), &carried, false)
+            s.delivers("k", contract(), &at("git", "memories/b.md"), &carried)
                 .unwrap()
         );
     }
 
     #[test]
-    fn an_anchor_with_no_shape_falls_back_to_the_transition_edge() {
+    fn an_anchor_with_no_shape_and_no_watch_refuses_to_guess() {
         let s = Subscriptions::default();
         let hand = State::new(serde_json::json!({ "position": {}, "n": 3, "status": "moved" }));
         assert!(
-            s.delivers(None, &at("git", "memories/a.md"), &hand, true)
-                .unwrap()
-        );
-        assert!(
-            !s.delivers(None, &at("git", "memories/a.md"), &hand, false)
-                .unwrap()
+            s.delivers("k", None, &at("git", "memories/a.md"), &hand)
+                .is_err(),
+            "delivering on the transition edge announced the obligation once and lost it; \
+             staying quiet would lose the memory. Neither is an answer this layer may invent"
         );
     }
 
@@ -319,7 +370,7 @@ mod tests {
         let roster = crate::shapes::get("roster").ok();
         let moved_roll = state(serde_json::json!({ "roll": true }));
         assert!(
-            subs.delivers(roster, &at("git", "memories/good.md"), &moved_roll, true)
+            subs.delivers("k", roster, &at("git", "memories/good.md"), &moved_roll)
                 .unwrap(),
             "the well-formed note in the same load still narrows correctly"
         );

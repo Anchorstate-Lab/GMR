@@ -113,6 +113,7 @@ fn declaration(coord: &str, routed: &crate::coord::Routed) -> crate::verbs::sync
         shape: Some(routed.shape.clone()),
         rules: Vec::new(),
         terminal: Vec::new(),
+        watch: None,
         settings: crate::settings::Declared::default(),
     }
 }

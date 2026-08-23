@@ -117,7 +117,7 @@ pub(crate) async fn settled(
     }
     let mut out = Vec::new();
     for m in bound {
-        match subs.delivers(shape, &m, to, moved) {
+        match subs.delivers(key.as_str(), shape, &m, to) {
             Ok(true) => out.push(m),
             Ok(false) => {}
             Err(why) => snags.push((key.clone(), m, why)),

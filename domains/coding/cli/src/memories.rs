@@ -184,6 +184,7 @@ fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<Anc
         shape: Some(routed.shape),
         rules: Vec::new(),
         terminal: Vec::new(),
+        watch: None,
         settings: crate::settings::Declared::default(),
     })
 }
@@ -197,6 +198,7 @@ fn from_spec(spec: Spec) -> AnchorDecl {
         shape: spec.shape,
         rules: spec.rules,
         terminal: spec.terminal,
+        watch: None,
         settings: spec.settings,
     }
 }
