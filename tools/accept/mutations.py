@@ -68,6 +68,18 @@ MUTATIONS = [
         "why": "an argument whose backing nobody can read is not traceable",
     },
     {
+        "id": "any-hit-counts-as-still-being-there",
+        "file": "batteries/survey/src/matching.rs",
+        "find": "    let identifies = |v: &[bool]| v.iter().zip(&gate).any(|(hit, id)| *hit && *id);",
+        "replace": "    let identifies = |v: &[bool]| {\n        let _ = &gate;\n        v.iter().any(|hit| *hit)\n    };",
+        "breaks": [
+            "a-signal-that-is-gone-can-say-it-is-gone",
+            "an-anchor-never-silently-takes-up-a-different-object",
+        ],
+        "why": "one hit on a category would again keep a dead coordinate alive, and an "
+        "anchor would again take up whatever else shares its file",
+    },
+    {
         "id": "migration-drops-what-it-was-carrying",
         "file": "domains/coding/cli/src/verbs/import.rs",
         "find": "",
