@@ -373,6 +373,58 @@ def an_anchor_never_silently_takes_up_a_different_object(c):
         )
 
 
+# ── G8 义务持久 ─────────────────────────────────────────────────────────────
+
+
+@scenario(
+    "G8",
+    "the signal moved and nobody has judged it: does the next run still say so?",
+    varies=("world",),
+)
+def an_outstanding_judgement_is_announced_until_it_is_answered(c):
+    address, _ = c.put("why.md")
+    c.bind(address)
+    c.settle()
+
+    c.happen("reading_changed")
+    p.loud(c.gmr.check(), "the signal moved")
+
+    again = c.gmr.check()
+    if address not in c.gmr.handed_back(again):
+        raise p.Broken(
+            "G8",
+            "the memory was handed back once and then never again, with nobody having "
+            "judged it. Whoever was not watching that one run is never told, and the "
+            "whole guarantee reduces to `you had to be looking at the right moment`",
+        )
+
+
+@scenario(
+    "G8",
+    "the instrument is recaptured: does that answer a judgement nobody made?",
+    varies=("world",),
+    needs=("has_axes",),
+)
+def recapturing_an_instrument_does_not_answer_an_open_judgement(c):
+    address, _ = c.put("why.md")
+    c.bind(address)
+    c.settle()
+
+    c.happen("reading_changed")
+    p.loud(c.gmr.check(), "the signal moved")
+
+    c.gmr.recapture("the instrument changed", keys=[c.world.signal])
+
+    after = c.gmr.check()
+    if address not in c.gmr.handed_back(after):
+        raise p.Broken(
+            "G8",
+            "recapturing pinned the world as it is now and the outstanding judgement "
+            "went quiet with it. Nobody looked, nothing was sealed, and the anchor now "
+            "reads as settled",
+        )
+
+
 # ── G5 变化可辨 ─────────────────────────────────────────────────────────────
 
 
