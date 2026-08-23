@@ -89,6 +89,15 @@ MUTATIONS = [
         "that a judgement was ever owed",
     },
     {
+        "id": "a-position-is-only-what-was-typed",
+        "file": "domains/coding/cli/src/coord.rs",
+        "find": "    if obs.identity.is_empty() {\n        return Ok(routed.position.clone());\n    }",
+        "replace": "    if true {\n        let _ = &obs;\n        return Ok(routed.position.clone());\n    }",
+        "breaks": ["different-changes-leave-different-reports"],
+        "why": "a position carrying only what the coordinate string carried leaves a rename "
+        "with nothing that survives it, and a renamed signal reads as a deleted one again",
+    },
+    {
         "id": "migration-drops-what-it-was-carrying",
         "file": "domains/coding/cli/src/verbs/import.rs",
         "find": "",
