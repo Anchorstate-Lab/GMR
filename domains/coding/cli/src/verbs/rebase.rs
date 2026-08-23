@@ -1,15 +1,28 @@
+use std::path::Path;
+
 use gmr::{AnchorKey, Runtime};
 
+use crate::delivery::Subscriptions;
 use crate::error::CliError;
+use crate::memories::Names;
+use crate::probes::Catalog;
 use crate::verbs::sealed;
 
-async fn standing(rt: &Runtime, key: &AnchorKey) -> Result<Vec<String>, CliError> {
+async fn standing(
+    rt: &Runtime,
+    subs: &Subscriptions,
+    key: &AnchorKey,
+) -> Result<Vec<gmr::Ref>, CliError> {
     let view = rt.read(key).await?;
-    Ok(crate::delivery::axes_set(&view.state).unwrap_or_default())
+    let shape = crate::shapes::of(&view.anchor.transitions);
+    let mut unclaimed = Vec::new();
+    super::observe::delivered(rt, subs, key, shape, &view.state, false, &mut unclaimed).await
 }
 
 pub async fn run(
     rt: &Runtime,
+    root: &Path,
+    names: &Names,
     keys: Vec<String>,
     all: bool,
     why: String,
@@ -39,12 +52,13 @@ pub async fn run(
         return Ok(0);
     }
 
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?, names)?;
     let mut refused = Vec::new();
     let mut recapturing = Vec::new();
     for key in keys {
-        match standing(rt, &key).await? {
-            axes if axes.is_empty() => recapturing.push(key),
-            axes => refused.push((key, axes)),
+        match standing(rt, &subs, &key).await? {
+            owed if owed.is_empty() => recapturing.push(key),
+            owed => refused.push((key, owed)),
         }
     }
 
@@ -61,8 +75,8 @@ pub async fn run(
             "{}",
             serde_json::json!({
                 "rebased": done.iter().map(|(k, _)| k).collect::<Vec<_>>(),
-                "refused": refused.iter().map(|(k, axes)| serde_json::json!({
-                    "anchor": k, "standing": axes
+                "refused": refused.iter().map(|(k, owed)| serde_json::json!({
+                    "anchor": k, "owed": super::observe::addressed_all(owed)
                 })).collect::<Vec<_>>(),
                 "context": done.first().map(|(_, r)| &r.context),
                 "rationale": done.first().map(|(_, r)| &r.rationale),
@@ -85,8 +99,11 @@ pub async fn run(
              without anybody having looked.",
             refused.len()
         );
-        for (key, axes) in &refused {
-            println!("  ! {key}   {}", axes.join(" · "));
+        for (key, owed) in &refused {
+            println!(
+                "  ! {key}   {}",
+                owed.iter().map(|m| names.of(m)).collect::<Vec<_>>().join(" · ")
+            );
         }
         println!(
             "\nRead each one and say what you decided — `gmr accept <key> --why \"...\"` \
