@@ -31,11 +31,13 @@ This repository uses GMR to supervise itself, hence it contains “usage data”
 - `.anchor/probes.toml` – probe recipes used by these anchors (name → what that name means).
 - `.codegraph/` – local index of CodeGraph.
 
-**No `.anchor/anchors.toml`.**  
-It is optional; `gmr init` does not create it. A repo whose anchors come entirely from notes has no such file. (It existed briefly because legacy notes used bare keys that only bound, not declared; with full frontmatter `- key/probe/position/shape`, declaration and memory live in the same file, making that TOML redundant – any anchor not claimed by a memory is reported as *barren* by `gmr doctor`.)
+**No `.anchor/anchors.toml` in this repository.**  
+`gmr init` does not create it, and this repo has none – every anchor here comes from a note, whose frontmatter carries `about:` so that declaration and memory live in the same file. That is the git provider's storage layout, not a privilege: a note can declare because it is *in* the repository.
+
+The file is the declaration channel for every anchor whose memory is **not**. `gmr anchor <coordinate>` writes it – appending only, never rewriting what is already declared, since re-routing a coordinate is a criteria change and goes through `revise`/`accept --criteria`. A user keeping memories in Claude Code's own store, in mem0, or behind a `providers.toml` recipe declares here and binds the record by address; nothing is copied into the repository. See [[cli-anchor-declares]].
 
 Machine‑readable recipes live in `.anchor/`; human‑written memories stay outside. This is not aesthetic: TOML at the repo root would be mistaken as project code by Agents, while memories hidden in dot directories would be invisible – both break the system.  
-`.anchor/` tracks only `probes.toml` in git; logs and artefacts are ignored (see `.anchor/.gitignore`).
+`.anchor/` tracks `probes.toml`, `providers.toml` and `anchors.toml` in git – declarations and recipes travel with the repository; logs, state and artefacts are ignored (see `.anchor/.gitignore`).
 
 These files are **not** the same layer as the GMR crates in `crates/`. Do not treat them as built‑in capabilities, default rules, product manifests, or crate dependencies.
 

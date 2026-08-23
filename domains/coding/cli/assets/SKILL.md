@@ -15,7 +15,7 @@ An anchor watching a named symbol keeps a **vector**, one bit per axis: `missing
 
 ## Detection
 
-If `.anchor/` exists at the repo root, this repository is managed by `gmr`. Don't look for `.anchor/anchors.toml` specifically — most repos have none; a repo whose anchors all come from notes with full frontmatter never creates one, and that's normal, not broken. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
+If `.anchor/` exists at the repo root, this repository is managed by `gmr`. Don't look for `.anchor/anchors.toml` specifically — a repo whose anchors all come from notes with full frontmatter never creates one, and that's normal, not broken; it is the declaration channel for anchors whose memories live outside the repository. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
 
 ```
 gmr status --json
@@ -29,7 +29,12 @@ Every `--json` field that names a record — `check`/`observe`/`pass` under `"me
 This is a loop you run yourself as part of normal work — not a human-only ritual you wait to be asked for:
 
 1. `gmr init` — creates `.anchor/`, installs bundled probes, and (if not already present) writes this skill doc to `.claude/skills/gmr/SKILL.md` in the project, or `~/.claude/skills/gmr/SKILL.md` with `--global`. Idempotent, safe to rerun — but it never overwrites a file that's already there, including this one, so re-running `init` after a `gmr` upgrade won't refresh a stale copy of this doc; delete it first if you want the bundled version back.
-2. `gmr anchor src/auth.ts#createSession -m "sessions expire after 30 minutes because ..."` — routes the coordinate to a probe, a shape and a position, writes the note, opens the anchor and binds the memory. Say nothing but the coordinate and it all follows; the note is left for you to write and reported as `unwritten` until you do.
+2. `gmr anchor src/auth.ts#createSession` — routes the coordinate to a probe, a shape and a position, declares it in `.anchor/anchors.toml`, and opens it. **It puts no memory anywhere.** The anchor now says "there ought to be a memory about this", and `doctor` reports it as `barren` until one is bound. Then name the memory, whichever way you keep them:
+   - `--record <provider>:<id>` — you already wrote it, in your own memory system. One command declares and binds; nothing is copied into the repository.
+   - `-m "sessions expire after 30 minutes because ..."` — you keep no memories of your own, so GMR writes one into this repository as a note. In git a note is the memory and the declaration in one file, which is why this path writes no `anchors.toml` entry.
+   - neither — write the memory wherever you keep it, then `gmr attest <provider>:<id> --anchors <key>` (see below). This is the agent's road: you wrote the record, so you are the one vouching for the link.
+
+   These are three ways to say which memory, not three kinds of anchor. Whatever the store, what happens afterwards is identical.
 3. `gmr check` — did anything move on an axis a memory asked about? Exits 1 if so, and hands you the memories to re-read. It also flags two other conditions that make what it reports untrustworthy: anchors whose declaration no longer matches their live criteria (`gmr accept --all --criteria --why "..."` to take the new criteria), and anchors standing on a reading a different probe instrument took (`gmr rebase --all --why "..."` to recapture). Resolve those before trusting a quiet `check`.
 4. `gmr accept <key> --why "..."` — you looked, and what it shows is the new baseline. Clears the vector, seals the reason. If both a baseline drift and a criteria drift are pending at once, plain `--why` refuses and asks you to say which with `--baseline` or `--criteria` — they're different judgments and don't share one reason.
 5. `gmr status` — everything being watched, its axes, its memories. Reads only.
@@ -143,5 +148,5 @@ Two things worth knowing when reading a report about mem0 records: mem0's own co
 
 ## Don't
 
-- Don't hand-edit `.anchor/anchors.toml`, `.anchor/probes.toml`, or anything under `.anchor/state/` — go through the verbs so the journal stays the one source of truth.
+- Don't hand-edit `.anchor/anchors.toml`, `.anchor/probes.toml`, or anything under `.anchor/state/` — go through the verbs so the journal stays the one source of truth. `gmr anchor <coordinate>` is the verb that writes `anchors.toml`; it appends and never rewrites what is already declared, so a declaration you want changed is a criteria change and goes through `gmr revise` / `gmr accept --criteria`.
 - Don't retry a failed transition condition expecting it to eventually succeed — an eval failure means the rule is wrong, not that the world is slow. Fix the rule.

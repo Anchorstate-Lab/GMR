@@ -93,6 +93,53 @@ pub fn read_declared(root: &Path, file: &str) -> Result<Declared, CliError> {
     }
 }
 
+#[derive(serde::Serialize)]
+struct Written<'a> {
+    key: &'a str,
+    probe: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shape: Option<&'a String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<&'a serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<&'a serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+struct Block<'a> {
+    anchor: Vec<Written<'a>>,
+}
+
+pub fn declare(root: &Path, file: &str, decl: &AnchorDecl) -> Result<(), CliError> {
+    let block = Block {
+        anchor: vec![Written {
+            key: &decl.key,
+            probe: &decl.probe,
+            shape: decl.shape.as_ref(),
+            params: (!decl.params.is_null()).then_some(&decl.params),
+            position: decl.position.as_ref(),
+        }],
+    };
+    let written = toml::to_string(&block).map_err(|e| {
+        CliError(format!(
+            "cannot write a declaration for `{}`: {e}",
+            decl.key
+        ))
+    })?;
+
+    let path = root.join(file);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CliError(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    let mut held = std::fs::read_to_string(&path).unwrap_or_default();
+    if !held.is_empty() && !held.ends_with('\n') {
+        held.push('\n');
+    }
+    std::fs::write(&path, format!("{held}{written}"))
+        .map_err(|e| CliError(format!("cannot write {}: {e}", path.display())))
+}
+
 pub fn merged<'a>(
     declared: &'a Declared,
     notes: &'a [crate::memories::Note],
@@ -526,6 +573,62 @@ pub fn audit<'a>(
 mod tests {
     use super::*;
     use gmr::{ContentProvider, ExternalId, Fetched, ProviderId};
+
+    fn stated(key: &str, name: &str) -> AnchorDecl {
+        AnchorDecl {
+            key: key.to_owned(),
+            probe: "ast-map".to_owned(),
+            params: crate::coord::whole_repository(),
+            position: Some(serde_json::json!({ "file": "src/a.ts", "name": name })),
+            shape: Some("contract".to_owned()),
+            rules: Vec::new(),
+            terminal: Vec::new(),
+            settings: crate::settings::Declared::default(),
+        }
+    }
+
+    #[test]
+    fn a_written_declaration_is_the_one_that_reads_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let decl = stated("src/a.ts#one", "one");
+
+        declare(dir.path(), DEFAULT_FILE, &decl).unwrap();
+        let held = read_declared(dir.path(), DEFAULT_FILE).unwrap();
+
+        let read = &held.anchor[0];
+        assert_eq!(read.key, decl.key);
+        assert_eq!(read.probe, decl.probe);
+        assert_eq!(read.shape, decl.shape);
+        assert_eq!(
+            read.position, decl.position,
+            "position is what the probe is pointed at. A writer and a reader that \
+             disagree about it declare an anchor watching somewhere else, and nothing \
+             downstream can tell — the anchor simply reports about the wrong code"
+        );
+        assert_eq!(read.params, decl.params);
+    }
+
+    #[test]
+    fn a_second_declaration_does_not_land_inside_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        declare(dir.path(), DEFAULT_FILE, &stated("src/a.ts#one", "one")).unwrap();
+        declare(dir.path(), DEFAULT_FILE, &stated("src/a.ts#two", "two")).unwrap();
+
+        let held = read_declared(dir.path(), DEFAULT_FILE).unwrap();
+
+        assert_eq!(held.anchor.len(), 2, "both declarations must survive");
+        assert_eq!(
+            held.anchor[0].position,
+            Some(serde_json::json!({ "file": "src/a.ts", "name": "one" })),
+            "TOML puts a table under whichever array entry precedes it, so appending a \
+             second entry whose tables outrank the first would silently repoint the \
+             first anchor at the second's coordinate"
+        );
+        assert_eq!(
+            held.anchor[1].position,
+            Some(serde_json::json!({ "file": "src/a.ts", "name": "two" }))
+        );
+    }
 
     struct Versions(ProviderId);
 

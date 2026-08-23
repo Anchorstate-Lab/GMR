@@ -704,6 +704,52 @@ echo "$out" | grep -q '"gone":\["desk:why-30.md"\]' \
     || fail "could not let go of a record held through a declared provider"
 rm "$repo/.anchor/providers.toml"
 
+# ── The front door must be the same width for everyone. Someone who keeps their
+#    memories in their own system does not want GMR writing a second copy into
+#    the repository -- they want the coordinate watched and their record named.
+#    Without this, that user's only road was hand-writing a file the skill doc
+#    tells them not to touch.
+step "declaring a coordinate does not put a memory anywhere"
+key2='src/session.ts#rotate'
+decl=$work/declaring
+rm -rf "$decl"; mkdir -p "$decl/src" "$decl/own-memories"
+(cd "$decl" && git init -q . \
+    && printf 'export function rotate(id) { return id }\n' > src/session.ts \
+    && git add -A && git -c user.email=a@b -c user.name=t commit -qm init)
+"$gmr" --repo "$decl" init >/dev/null 2>&1
+export GMR_CLAUDE_MEMORY_DIR="$decl/own-memories"
+printf 'rotation must complete before the write\n' > "$decl/own-memories/rotate.md"
+
+out=$("$gmr" --repo "$decl" anchor "$key2")
+[ -n "$(ls -A "$decl/memories" 2>/dev/null)" ] \
+    && fail "declaring a coordinate wrote a memory into the repository; whoever keeps memories elsewhere now has two copies of one judgement and nothing watching the difference" "$out"
+[ -f "$decl/.anchor/anchors.toml" ] \
+    || fail "the declaration landed nowhere a repository carries; the anchor cannot survive a fresh clone" "$out"
+
+set +e
+out=$("$gmr" --repo "$decl" doctor --json); code=$?
+set -e
+[ "$code" -eq 0 ] \
+    || fail "an anchor declared without a memory turned doctor red; waiting for a memory is the state this tool exists to show, not a fault" "$out"
+echo "$out" | grep -q '"barren":\["'"$key2"'"\]' \
+    || fail "an anchor nobody has bound a memory to was not reported as barren" "$out"
+
+# The same one command, for someone whose memory already exists elsewhere.
+out=$("$gmr" --repo "$decl" anchor "$key2" --record 'claude-code:rotate.md')
+echo "$out" | grep -q 'claude-code:rotate.md' \
+    || fail "naming a record that already exists did not bind it" "$out"
+[ -n "$(ls -A "$decl/memories" 2>/dev/null)" ] \
+    && fail "naming an existing record still wrote a copy into the repository" "$out"
+
+printf 'export function rotate(id, at) { return [id, at] }\n' > "$decl/src/session.ts"
+set +e
+out=$("$gmr" --repo "$decl" check); code=$?
+set -e
+[ "$code" -eq 1 ] || fail "the coordinate moved and check stayed quiet" "$out"
+echo "$out" | grep -q 'claude-code:rotate.md' \
+    || fail "the coordinate moved and the record kept somewhere else was not handed back — that is the whole guarantee" "$out"
+export GMR_CLAUDE_MEMORY_DIR="$mem"
+
 # ── The main road, agent side: it writes a memory into its own store and says
 #    what that memory is about in the same breath. A store has not indexed the
 #    record yet at that moment, which is exactly when the link is most accurate

@@ -136,18 +136,34 @@ and (the first time only) writes a Claude Code skill doc to
 `~/.claude/skills/gmr/SKILL.md` instead. It does not create anchors or notes
 for you. Safe to rerun; it never overwrites a file that already exists.
 
-### 2. Anchor a coordinate and write the memory
+### 2. Anchor a coordinate, then name the memory
 
 ```sh
+gmr --repo /path/to/project anchor src/auth.ts#createSession
+```
+
+`anchor` routes the coordinate to a probe, a shape and a position, declares it
+in `.anchor/anchors.toml`, and opens it. It puts no memory anywhere: the anchor
+says *there ought to be a memory about this*, and `doctor` reports it as
+`barren` until one is bound.
+
+Then say which memory, whichever way you keep them:
+
+```sh
+# it already exists, in your own memory system — nothing is copied here
+gmr --repo /path/to/project anchor src/auth.ts#createSession \
+  --record claude-code:session-expiry.md
+
+# you keep no memories of your own, so GMR writes one here as a note
 gmr --repo /path/to/project anchor src/auth.ts#createSession \
   -m "sessions expire after 30 minutes because ..."
 ```
 
-`anchor` routes the coordinate to a probe, a shape and a position, writes a
-note under `memories/` with that memory, opens the anchor, and binds the note
-to it — all in one step. Omit `-m` and the note is left for you to write,
-reported as `unwritten` until you do. Equivalently, you can hand-write the
-note yourself with the same frontmatter and run `gmr sync` to open it:
+Those are two ways to say *which memory*, not two kinds of anchor — everything
+downstream is identical. A note is the one case where the memory and the
+declaration are the same file, which is why `-m` writes no `anchors.toml`
+entry. You can also hand-write that note yourself and run `gmr sync` to open
+it:
 
 ```md
 ---

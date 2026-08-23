@@ -165,9 +165,11 @@ async fn served(
         Command::Sync { file, dry_run } => {
             verbs::sync::run(&rt, &root, names, file, dry_run, json).await
         }
-        Command::Anchor { coordinate, memory } => {
-            verbs::anchor::run(&rt, &root, names, coordinate, memory, json).await
-        }
+        Command::Anchor {
+            coordinate,
+            memory,
+            record,
+        } => verbs::anchor::run(&rt, &root, &stores, coordinate, memory, record, json).await,
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,

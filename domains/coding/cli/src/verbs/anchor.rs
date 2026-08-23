@@ -80,19 +80,41 @@ fn write_note(path: &Path, coord: &str, memory: Option<&str>) -> Result<bool, Cl
     Ok(true)
 }
 
+fn already_declared(root: &Path, catalog: &Catalog, coord: &str) -> Result<bool, CliError> {
+    let declared = crate::verbs::sync::read_declared(root, crate::verbs::sync::DEFAULT_FILE)?;
+    let scanned = crate::memories::scan(root, catalog)?;
+    Ok(crate::verbs::sync::merged(&declared, &scanned.notes)
+        .iter()
+        .any(|d| d.key == coord))
+}
+
+fn declaration(coord: &str, routed: &crate::coord::Routed) -> crate::verbs::sync::AnchorDecl {
+    crate::verbs::sync::AnchorDecl {
+        key: coord.to_owned(),
+        probe: routed.probe.clone(),
+        params: routed.params.clone(),
+        position: Some(routed.position.clone()),
+        shape: Some(routed.shape.clone()),
+        rules: Vec::new(),
+        terminal: Vec::new(),
+        settings: crate::settings::Declared::default(),
+    }
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
-    names: &crate::memories::Names,
+    stores: &crate::stores::Stores,
     coord: Option<String>,
     memory: Option<String>,
+    record: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
     let Some(coord) = coord else {
         return crate::verbs::sync::run(
             rt,
             root,
-            names,
+            &stores.names,
             crate::verbs::sync::DEFAULT_FILE.to_owned(),
             false,
             json,
@@ -102,21 +124,40 @@ pub async fn run(
 
     let catalog = Catalog::load(root)?;
     let routed = crate::coord::route(&coord, None, &catalog)?;
-    let path = note_path(root, &coord)?;
-    let wrote = write_note(&path, &coord, memory.as_deref())?;
-    let rel = path
-        .strip_prefix(root)
-        .unwrap_or(&path)
-        .to_string_lossy()
-        .into_owned();
+
+    let mut note = None;
+    let mut fresh = false;
+    match &memory {
+        Some(_) => {
+            let path = note_path(root, &coord)?;
+            fresh = write_note(&path, &coord, memory.as_deref())?;
+            note = Some(
+                path.strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+        None => {
+            if !already_declared(root, &catalog, &coord)? {
+                crate::verbs::sync::declare(
+                    root,
+                    crate::verbs::sync::DEFAULT_FILE,
+                    &declaration(&coord, &routed),
+                )?;
+                fresh = true;
+            }
+        }
+    }
 
     if json {
         println!(
             "{}",
             serde_json::json!({
                 "coordinate": coord, "probe": routed.probe, "shape": routed.shape,
-                "position": routed.position, "note": rel, "wrote": wrote,
-                "unwritten": wrote && memory.is_none(),
+                "position": routed.position, "declared_in": declared_in(note.as_deref()),
+                "note": note, "wrote": fresh, "record": record,
+                "unwritten": fresh && memory.is_none() && record.is_none(),
             })
         );
     } else {
@@ -127,22 +168,64 @@ pub async fn run(
             true => println!("watching  {coord}   {}", routed.shape),
             false => println!("watching  {coord}   {}", axes.join(" · ")),
         }
-        match (wrote, memory.is_some()) {
-            (true, true) => println!("wrote     {rel}"),
-            (true, false) => println!("wrote     {rel}   {UNWRITTEN}"),
-            (false, _) => println!("note      {rel}   already yours; left alone"),
+        match (&note, fresh) {
+            (Some(rel), true) => println!("wrote     {rel}"),
+            (Some(rel), false) => println!("note      {rel}   already yours; left alone"),
+            (None, true) => println!("declared  {}", crate::verbs::sync::DEFAULT_FILE),
+            (None, false) => println!("declared  already declared elsewhere; left alone"),
+        }
+        if fresh && note.is_none() && record.is_none() {
+            println!("memory    {UNWRITTEN}   nothing is bound here yet");
         }
     }
 
-    crate::verbs::sync::run(
+    let code = crate::verbs::sync::run(
         rt,
         root,
-        names,
+        &stores.names,
         crate::verbs::sync::DEFAULT_FILE.to_owned(),
         false,
         json,
     )
-    .await
+    .await?;
+
+    let Some(address) = record else {
+        return Ok(code);
+    };
+    let reference = stores.locate(&address, None)?;
+    let (version, landed) = crate::verbs::bind::assert_on(
+        rt,
+        reference.clone(),
+        vec![gmr::AnchorKey::new(coord)],
+        gmr::Source::Adjudicated,
+    )
+    .await?;
+    if !json {
+        println!(
+            "bound     {} → {}",
+            crate::memories::addressed(&reference),
+            landed
+                .anchors
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        if version.is_none() {
+            println!(
+                "          no version yet: the store could not answer for this record, so \
+                 nothing about it has been verified"
+            );
+        }
+    }
+    Ok(code)
+}
+
+fn declared_in(note: Option<&str>) -> &str {
+    match note {
+        Some(_) => "note",
+        None => crate::verbs::sync::DEFAULT_FILE,
+    }
 }
 
 #[cfg(test)]

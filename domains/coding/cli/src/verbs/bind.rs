@@ -32,6 +32,17 @@ pub async fn attest(
     asserted(rt, names, reference, anchors, Source::SelfAttested, json).await
 }
 
+pub async fn assert_on(
+    rt: &Runtime,
+    reference: Ref,
+    anchors: Vec<AnchorKey>,
+    source: Source,
+) -> Result<(Option<gmr::Version>, gmr::Landed), CliError> {
+    let version = rt.current_version(&reference).await.unwrap_or(None);
+    let landed = rt.bind(reference, anchors, version.clone(), source).await?;
+    Ok((version, landed))
+}
+
 async fn asserted(
     rt: &Runtime,
     names: &crate::memories::Names,
@@ -43,12 +54,8 @@ async fn asserted(
     let path = names.of(&reference);
     let address = crate::memories::addressed(&reference);
 
-    let version = rt.current_version(&reference).await.unwrap_or(None);
     let anchors: Vec<AnchorKey> = anchors.into_iter().map(AnchorKey::new).collect();
-
-    let landed = rt
-        .bind(reference, anchors.clone(), version.clone(), source)
-        .await?;
+    let (version, landed) = assert_on(rt, reference, anchors, source).await?;
     let anchors = landed.anchors.clone();
 
     if json {

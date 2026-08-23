@@ -3,6 +3,7 @@ about:
   - domains/coding/cli/src/verbs/bind.rs#run
   - domains/coding/cli/src/verbs/bind.rs#attest
   - domains/coding/cli/src/verbs/bind.rs#asserted
+  - domains/coding/cli/src/verbs/bind.rs#assert_on
 watch: [logic]
 ---
 
@@ -41,6 +42,12 @@ reached another way. The two are told apart by kind of act, not by who ran
 the command — see [[store-binding-record]].
 
 ## `attest` is a verb, not a flag on `bind`
+
+`assert_on` is the whole act with none of the telling: take the version the
+store can answer for, land the assertion, hand back what happened. `asserted`
+prints this verb's version of that; [[cli-anchor-declares]]'s `--record`
+prints its own. Two reporters, one place that decides what making a binding
+costs — and one place a fourth caller would have to go through.
 
 `attest` is where `Source::SelfAttested` is born: an agent wrote a record
 into some store and is saying, itself, what that record is about. Both verbs
