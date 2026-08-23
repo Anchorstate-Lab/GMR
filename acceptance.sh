@@ -734,6 +734,22 @@ set -e
 echo "$out" | grep -q '"barren":\["'"$key2"'"\]' \
     || fail "an anchor nobody has bound a memory to was not reported as barren" "$out"
 
+# The new default invites this next: a reader sees "nothing is bound here yet"
+# and reaches for -m. The note must then bind without declaring, or one anchor
+# ends up with two declarations and later edits to the note quietly do nothing.
+out=$("$gmr" --repo "$decl" anchor "$key2" -m 'changed my mind, keep it here')
+note=$(ls "$decl/memories"/*.md | head -1)
+grep -q 'about:' "$note" \
+    && fail "a note written under a coordinate anchors.toml already declares declared it a second time; merged prefers the file, so every later edit to this note's frontmatter would silently do nothing" "$(cat "$note")"
+grep -q 'anchors:' "$note" || fail "the note bound to nothing" "$(cat "$note")"
+
+set +e
+out=$("$gmr" --repo "$decl" doctor --json); code=$?
+set -e
+[ "$code" -eq 0 ] \
+    || fail "a note that binds to a coordinate declared in anchors.toml was reported as a fault" "$out"
+rm "$note"
+
 # The same one command, for someone whose memory already exists elsewhere.
 out=$("$gmr" --repo "$decl" anchor "$key2" --record 'claude-code:rotate.md')
 echo "$out" | grep -q 'claude-code:rotate.md' \

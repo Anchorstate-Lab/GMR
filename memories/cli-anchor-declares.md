@@ -3,6 +3,8 @@ about:
   - domains/coding/cli/src/verbs/anchor.rs#run
   - domains/coding/cli/src/verbs/anchor.rs#declaration
   - domains/coding/cli/src/verbs/anchor.rs#already_declared
+  - domains/coding/cli/src/verbs/anchor.rs#write_note
+  - domains/coding/cli/src/verbs/anchor.rs#names
 watch: [sig, logic]
 ---
 
@@ -45,6 +47,25 @@ give one anchor two declarations, and [[cli-sync-run]]'s `merged` would then
 have to pick — a reader asking "who declared this anchor" would get two
 answers. So the two paths are exclusive by construction, not by care.
 
+## A note written under an existing declaration binds and does not declare
+
+The new default invites the crossing: a reader sees "nothing is bound here
+yet" and reaches for `-m`. So `write_note` takes whether the coordinate is
+already declared, and writes `anchors: ["<coord>"]` instead of `about:` when
+it is — the bare-key form [[cli-memories-entry]] describes, which binds
+without declaring and which `merged` leaves alone.
+
+The alternative is one anchor with two declarations. Nothing breaks at once:
+`merged` prefers the file, so the note's frontmatter simply stops meaning
+anything, and a later `shape:` or `watch:` added to it does nothing at all,
+silently. `bare-key` does not fire either, because the key *is* declared —
+by the file.
+
+`names` therefore reads both spellings when deciding whether an existing
+note already owns a slug. Reading only `about:` would make a bind-only note
+look like it belongs to some other coordinate, and the next run would write
+a second file for the same one.
+
 ## An existing declaration is left alone, in either channel
 
 `already_declared` asks `merged` — anchors.toml *and* notes — not just the
@@ -56,6 +77,16 @@ coordinate is a criteria change, and criteria changes are sealed judgements
 (`revise`, `accept --criteria`) — never a side effect of running the front
 door twice. This is `write_note`'s "already yours; left alone" applied to
 the other channel.
+
+## The reminder asks the bindings, it does not infer from this run
+
+Whether the anchor still owes a memory is read back from
+`Runtime::bindings_on` after everything this invocation does. Inferring it
+from "did I just write something" makes the reminder disappear on the second
+run — exactly when the obligation is still outstanding and the reader has
+come back. There is no such field in `--json`: `doctor` already answers
+"what is barren" for the whole repository, and a second answer beside it is
+a second thing to keep true.
 
 ## `--record` records `Adjudicated`, and there is no flag to make it otherwise
 
