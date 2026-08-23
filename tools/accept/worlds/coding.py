@@ -26,6 +26,7 @@ def _commit(repo, message):
 class World(base.World):
     name = "coding"
     derives_from_source = True
+    matched_by_coordinate = True
     expresses = base.UNIVERSAL + base.SHAPED
 
     @property
@@ -121,3 +122,23 @@ export const verify = (token: string) => token.length > 0;
             keys.append(f"src/bulk{i}.ts#build{i}")
         _commit(repo, "bulk")
         return keys
+
+    CLASSIFIED_KEY = "classified::createSession"
+
+    def declare_classified(self, gmr, repo):
+        (repo / ".anchor" / "anchors.toml").write_text(
+            """[[anchor]]
+key = "%s"
+probe = "ast-map"
+position = { file = "src/auth.ts", kind = "function", name = "createSession" }
+rules = [
+  'true => { position: state.position, found: obs.found, exact: obs.exact, name: obs.at.name, status: "seen" }',
+]
+"""
+            % self.CLASSIFIED_KEY
+        )
+        gmr.declare()
+        return self.CLASSIFIED_KEY
+
+    def neighbour(self):
+        return "src/auth.ts#verify"

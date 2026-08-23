@@ -314,6 +314,65 @@ def a_swapped_instrument_is_not_mistaken_for_a_moved_signal(c):
     p.silent(c.gmr, c.gmr.check(), "the reading was recaptured with the instrument at hand")
 
 
+@scenario(
+    "G7",
+    "the signal is gone: can the reading say so, or does a shared category keep it alive?",
+    varies=("world",),
+    needs=("matched_by_coordinate",),
+)
+def a_signal_that_is_gone_can_say_it_is_gone(c):
+    key = c.world.declare_classified(c.gmr, c.repo)
+    c.gmr.check(key)
+
+    c.happen("ceased")
+    c.gmr.check(key)
+    facts = c.gmr.facts_of(key)
+
+    if facts.get("found") is not False:
+        raise p.Broken(
+            "G7",
+            "the signal is gone and the reading still says found — it matched only "
+            f"{facts.get('matched')} and answered with `{(facts.get('at') or {}).get('name')}`. "
+            "A category a signal belongs to is not evidence that the signal is there, "
+            "and while one classifier can keep a dead coordinate alive, `not there any "
+            "more` is an answer the world can never give",
+        )
+
+
+@scenario(
+    "G7",
+    "the signal is gone: does the anchor quietly start standing on a neighbour instead?",
+    varies=("world",),
+    needs=("has_neighbour",),
+)
+def an_anchor_never_silently_takes_up_a_different_object(c):
+    neighbour = c.world.neighbour()
+    c.gmr.declare(neighbour)
+    c.settle()
+    mine = c.gmr.facts_of(c.world.signal).get("facts")
+    theirs = c.gmr.facts_of(neighbour).get("facts")
+    if mine == theirs:
+        raise RuntimeError("the fixture's two signals already read alike; it proves nothing")
+
+    c.happen("ceased")
+    c.gmr.check()
+    now = c.gmr.facts_of(c.world.signal).get("facts")
+    # The neighbour has to be read again, not remembered: it may have shifted for
+    # its own reasons, and a stale snapshot would let the two look different while
+    # they are in fact the very same reading.
+    theirs = c.gmr.facts_of(neighbour).get("facts")
+
+    if now == theirs:
+        raise p.Broken(
+            "G7",
+            f"`{c.world.signal}` is gone, and the reading it now stands on is "
+            f"`{neighbour}`'s — reported as this same object having an attribute "
+            "change. Two anchors now rest on one object, every later reading is "
+            "compared against the wrong one, and the memory bound here is judged "
+            "against code it was never about",
+        )
+
+
 # ── G5 变化可辨 ─────────────────────────────────────────────────────────────
 
 

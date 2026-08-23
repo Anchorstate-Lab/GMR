@@ -121,21 +121,52 @@ def run_mutations(binary, jobs):
     reporting on itself.
     """
     faults = []
+
+    # The baseline is taken once, on a tree with no mutation in it. Taking it
+    # inside the loop read the *previous* mutation's binary, because a revert
+    # restores the source and not the artefact -- which is the same class of
+    # mistake this layer exists to catch, made by this layer.
+    ok, err = rebuild()
+    if not ok:
+        return [f"the tree does not build before any mutation was applied\n{err}"]
+
+    targets = {}
+    for m in mutations.live():
+        targets[m["id"]] = [
+            c
+            for c in matrix.expand(spec.SCENARIOS)
+            if c.scenario["id"] in m["breaks"] and not c.declined
+        ]
+    union = {c.id: c for cells in targets.values() for c in cells}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        standing = list(pool.map(lambda c: run_cell(binary, c), union.values()))
+    already = {o.spec.id for o in standing if o.red}
+
     for m in mutations.live():
         print(f"\n── mutation: {m['id']}")
+        cells = targets[m["id"]]
+        # A promise that is already broken cannot testify. Land a mutation on top
+        # of one and it stays red for the reason it was red before, which reads
+        # exactly like the sentinel having caught something.
+        blind = [c for c in cells if c.id in already]
+        if blind and len(blind) == len(cells):
+            faults.append(
+                f"{m['id']}: every promise it aims at is already broken "
+                f"({', '.join(m['breaks'])}), so landing it would prove nothing. "
+                "This sentinel is not guarding anything until those go green"
+            )
+            print("   inconclusive — the promises it aims at are already broken")
+            continue
+
         original = mutations.apply(ROOT, m)
         try:
             ok, err = rebuild()
             if not ok:
                 faults.append(f"{m['id']}: the mutated tree does not build\n{err}")
                 continue
-            cells = [
-                c
-                for c in matrix.expand(spec.SCENARIOS)
-                if c.scenario["id"] in m["breaks"] and not c.declined
-            ]
+            live_cells = [c for c in cells if c.id not in already]
             with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-                outcomes = list(pool.map(lambda c: run_cell(binary, c), cells))
+                outcomes = list(pool.map(lambda c: run_cell(binary, c), live_cells))
             caught = [o for o in outcomes if o.red]
             print(f"   {len(caught)}/{len(outcomes)} cells noticed")
             if not caught:

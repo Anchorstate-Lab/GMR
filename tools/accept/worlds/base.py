@@ -56,6 +56,12 @@ class World(abc.ABC):
     # identity moves when the binary does.
     swappable_instrument = False
 
+    # Whether a reading here is found by matching a coordinate against candidates,
+    # rather than handed back whole by whatever was asked. Only the first kind can
+    # answer with the wrong object, so only the first kind is asked to promise it
+    # will not.
+    matched_by_coordinate = False
+
     @abc.abstractmethod
     def build(self, repo):
         """Lay the fixture down. Called before `gmr init`."""
@@ -127,3 +133,27 @@ class World(abc.ABC):
             for k in keys:
                 gmr.declare(k)
         return keys
+
+    def declare_classified(self, gmr, repo):
+        """Watch this signal through a position that also names a category it is in.
+
+        A coordinate usually carries both: something that says *which* object this
+        is, and something that says what *kind* of thing it is. The two are not
+        interchangeable evidence, and a promise below turns on whether the runtime
+        treats them as if they were.
+        """
+        raise NotImplementedError
+
+    def neighbour(self):
+        """A signal sitting close enough to this one to be mistaken for it.
+
+        "Close" is the world's own idea — the same file, the same page, the same
+        table. What matters is that a reading meant for one could plausibly be
+        answered with the other, which is the condition a promise below tests.
+        A world where no such confusion is possible returns None and declines.
+        """
+        return None
+
+    @property
+    def has_neighbour(self):
+        return self.neighbour() is not None

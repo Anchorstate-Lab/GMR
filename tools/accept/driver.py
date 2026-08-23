@@ -334,3 +334,12 @@ class Gmr:
         body = self.read().body or []
         views = body if isinstance(body, list) else [body]
         return {v["key"] for v in views if (v.get("sightings") or 0) > 0}
+
+    def facts_of(self, key):
+        """The reading itself, as the probe reported it."""
+        body = self.read(key).body or []
+        views = body if isinstance(body, list) else [body]
+        for v in views:
+            if v.get("key") == key:
+                return v.get("facts") or {}
+        return {}
