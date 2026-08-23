@@ -41,9 +41,17 @@ pub async fn run(
 
     let budget = rt.content_budget();
     let mut rows = Vec::new();
+    let mut silent_now = Vec::new();
     for store in wanted {
         let source = store.source().expect("filtered to stores that list");
-        for record in source.list(&budget).await? {
+        let held = match source.list(&budget).await {
+            Ok(held) => held,
+            Err(e) => {
+                silent_now.push((store.provider().to_string(), e.to_string()));
+                continue;
+            }
+        };
+        for record in held {
             let bound = rt.memory().binding_of(&record.reference).await?;
             let anchors = (!bound.is_empty()).then(|| {
                 bound
@@ -71,6 +79,9 @@ pub async fn run(
                     "reference": reference, "anchors": bound, "excerpt": excerpt,
                 })).collect::<Vec<_>>(),
                 "cannot_list": silent,
+                "would_not_answer": silent_now.iter().map(|(provider, why)| serde_json::json!({
+                    "provider": provider, "why": why,
+                })).collect::<Vec<_>>(),
             })
         );
         return Ok(0);
@@ -86,6 +97,9 @@ pub async fn run(
     for provider in &silent {
         println!("  ?         {provider} is registered here and cannot list what it holds");
     }
+    for (provider, why) in &silent_now {
+        println!("  !         {provider} would not answer this run: {why}");
+    }
     println!(
         "\n{} record(s), {free} bound to nothing.\n\
          A listing is what a store will show, not a roster of what exists — a record missing \
@@ -96,6 +110,12 @@ pub async fn run(
         println!(
             "A store that cannot list is not empty and not broken: nothing here can enumerate \
              it, so a record in it has to be named by an address you already hold."
+        );
+    }
+    if !silent_now.is_empty() {
+        println!(
+            "A store that would not answer has told you nothing, including nothing about \
+             whether it holds anything. What every other store here shows is unaffected."
         );
     }
     Ok(0)

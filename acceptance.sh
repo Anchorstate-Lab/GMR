@@ -561,6 +561,21 @@ set +e
 out=$("$gmr" --repo "$repo" memories --provider nothing-registered-here 2>&1); code=$?
 set -e
 [ "$code" -ne 0 ] || fail "a store name this binary never registered was answered instead of refused" "$out"
+
+# A store that will not answer is the ordinary state of a fresh project -- the
+# claude-code directory does not exist until a session has written there. One
+# store's silence must not take every other store's listing with it.
+export GMR_CLAUDE_MEMORY_DIR="$work/no-such-store"
+set +e
+out=$("$gmr" --repo "$repo" memories); code=$?
+set -e
+[ "$code" -eq 0 ] \
+    || fail "a store that would not answer turned a listing into a failure; nobody here can act on that, and every other store went dark with it" "$out"
+echo "$out" | grep -q 'git:memories/auth.md' \
+    || fail "one store's silence hid what another store was ready to show" "$out"
+echo "$out" | grep -q 'would not answer this run' \
+    || fail "a store that could not be reached was left out silently, which is indistinguishable from it holding nothing" "$out"
+export GMR_CLAUDE_MEMORY_DIR="$mem"
 rm "$repo/.anchor/providers.toml"
 
 # ── SKILL.md tells an agent to hand an address straight back to the verbs. That

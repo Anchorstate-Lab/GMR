@@ -18,6 +18,22 @@ holds nothing" from "nothing here can enumerate this store", and the repair
 for those is not the same. The trait refuses to answer "I have none"; the
 CLI must not reintroduce that answer by omission.
 
+## Three states, not two, and only one of them is the reader's to act on
+
+```
+lists            rows
+cannot list      no MemorySource at all — not empty, not broken
+would not answer this run's call failed — nothing was learned, including
+                 whether it holds anything
+```
+
+A store that will not answer is the ordinary state of a fresh project, not
+an exception: `claude-code`'s directory does not exist until a session has
+written there. So its failure is reported per store and the walk continues —
+one store's silence must not take every other store's listing with it, and
+must not turn the command into a failure nobody here can act on. That is
+[[runtime-grounding]]'s `Unreachable` line drawn at the listing.
+
 ## The wording does not change with `--provider`
 
 `gmr memories --provider <a store that cannot list>` prints the same line
