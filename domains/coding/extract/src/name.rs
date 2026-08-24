@@ -125,6 +125,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     version: VERSION,
     items: &ITEMS,
     narrows_on: &["name"],
+    identity: &["name"],
     eligible: every,
     collect,
     merge: coord::Merge::Fold(rolled),

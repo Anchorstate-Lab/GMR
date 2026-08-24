@@ -7,6 +7,7 @@ mod memories;
 mod notes;
 mod probes;
 mod prose;
+mod providers;
 mod render;
 mod rules;
 mod settings;
@@ -145,7 +146,7 @@ async fn served(
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.bindings()))
         .links(Arc::new(store.links()));
-    let stores = stores::assembled(&root);
+    let stores = stores::assembled(&root)?;
     for store in &stores.built {
         builder = builder.provider(store.content());
     }
@@ -164,9 +165,11 @@ async fn served(
         Command::Sync { file, dry_run } => {
             verbs::sync::run(&rt, &root, names, file, dry_run, json).await
         }
-        Command::Anchor { coordinate, memory } => {
-            verbs::anchor::run(&rt, &root, names, coordinate, memory, json).await
-        }
+        Command::Anchor {
+            coordinate,
+            memory,
+            record,
+        } => verbs::anchor::run(&rt, &root, &stores, coordinate, memory, record, json).await,
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,
@@ -192,7 +195,9 @@ async fn served(
         }
         Command::Read { key } => verbs::read::run(&rt, names, key, json).await,
         Command::Revise(args) => verbs::revise::run(&rt, &root, args, json).await,
-        Command::Rebase { keys, all, why } => verbs::rebase::run(&rt, keys, all, why, json).await,
+        Command::Rebase { keys, all, why } => {
+            verbs::rebase::run(&rt, &root, names, keys, all, why, json).await
+        }
         Command::Bind {
             path,
             anchors,
@@ -201,6 +206,14 @@ async fn served(
         } => {
             let reference = stores.locate(&path, provider.as_deref())?;
             verbs::bind::run(&rt, names, reference, anchors, detach, json).await
+        }
+        Command::Attest {
+            path,
+            anchors,
+            provider,
+        } => {
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::bind::attest(&rt, names, reference, anchors, json).await
         }
         Command::Reaffirm { path, provider } => {
             let reference = stores.locate(&path, provider.as_deref())?;

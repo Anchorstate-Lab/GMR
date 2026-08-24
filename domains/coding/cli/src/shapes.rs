@@ -82,19 +82,23 @@ const fn compare(
     }
 }
 
-const GONE: Dim = now(MISSING, "missing", "obs.exact == false");
+const GONE: Dim = now(MISSING, "missing", "obs.found == false");
 
 const CONTRACT: Shape = Shape {
     name: "contract",
     dims: &[
         GONE,
+        since("name", "renamed", "name", "obs.at.name"),
+        since("file", "relocated", "file", "obs.at.file"),
         since("kind", "kind-changed", "form", "obs.at.form"),
         since("sig", "signature-changed", "sig", "obs.at.shape"),
         since("surface", "surface-changed", "surface", "obs.at.surface"),
         since("logic", "logic-changed", "body", "obs.facts.body"),
         since("place", "moved", "after", "obs.at.after"),
     ],
-    watch: &["missing", "kind", "sig", "surface", "logic", "place"],
+    watch: &[
+        "missing", "name", "file", "kind", "sig", "surface", "logic", "place",
+    ],
 };
 
 const ROSTER: Shape = Shape {
@@ -234,7 +238,7 @@ fn expand(dims: &[Dim]) -> Vec<String> {
     let mut out = Vec::with_capacity(dims.len() + 3);
 
     out.push(format!(
-        "not exists(state.baseline) and obs.exact => {}",
+        "not exists(state.baseline) and obs.found => {}",
         object(&[
             ("position".into(), "state.position".into()),
             ("baseline".into(), reading(dims)),
@@ -305,6 +309,7 @@ mod tests {
         crate::probes::Obs {
             schema: schema.to_owned(),
             at: at.iter().map(|s| s.to_string()).collect(),
+            identity: Vec::new(),
             facts: facts.iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -317,7 +322,7 @@ mod tests {
     fn roster_reads_only_report_level_fields() {
         assert_eq!(
             reads_of_shape(&ROSTER),
-            BTreeSet::from(["exact", "candidates", "roll"].map(String::from))
+            BTreeSet::from(["found", "candidates", "roll"].map(String::from))
         );
     }
 
@@ -350,6 +355,7 @@ mod tests {
     fn settled_state(shape: &Shape) -> Value {
         let mut obs = serde_json::Map::new();
         obs.insert("exact".into(), Value::Bool(true));
+        obs.insert("found".into(), Value::Bool(true));
         let mut at = serde_json::Map::new();
         let mut facts = serde_json::Map::new();
         for r in reads_of_shape(shape) {
@@ -486,6 +492,7 @@ mod tests {
         pos: &'static str,
         before: &'static str,
         after: &'static str,
+        elsewhere: Option<(&'static str, &'static str)>,
     }
 
     const AST: &str = "ast-map";
@@ -501,6 +508,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub fn f(x: u64, y: u64) -> u64 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -511,6 +519,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub fn f(x: u64) -> u32 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -521,6 +530,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub async fn f(x: u64) -> u64 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -531,6 +541,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub unsafe fn f(x: u64) -> u64 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -541,6 +552,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f<T>(x: T) -> T { x }",
             after: "pub fn f<T: Clone>(x: T) -> T { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -551,6 +563,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "fn f(x: u64) -> u64 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -561,6 +574,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { helper(x) }",
             after: "pub fn f(x: u64) -> u64 { other(x) }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -571,6 +585,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn a() {}\npub fn f(x: u64) -> u64 { x }",
             after: "pub fn a() {}\npub fn b() {}\npub fn f(x: u64) -> u64 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -581,6 +596,29 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "#[deprecated]\npub fn f(x: u64) -> u64 { x }",
+            elsewhere: None,
+        },
+        Shot {
+            shape: "contract",
+            axis: "name",
+            moves: &["name"],
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f", "shape": "parameters parameter x u64 u64"}"#,
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub fn g(x: u64) -> u64 { x }",
+            elsewhere: None,
+        },
+        Shot {
+            shape: "contract",
+            axis: "file",
+            moves: &["file"],
+            probe: AST,
+            file: "a.rs",
+            pos: r#"{"file": "a.rs", "name": "f", "shape": "parameters parameter x u64 u64"}"#,
+            before: "pub fn f(x: u64) -> u64 { x }",
+            after: "pub fn keep() {}",
+            elsewhere: Some(("b.rs", "pub fn f(x: u64) -> u64 { x }")),
         },
         Shot {
             shape: "contract",
@@ -591,6 +629,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "f"}"#,
             before: "pub fn f(x: u64) -> u64 { x }",
             after: "pub fn gone(x: u64) -> u64 { x }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -601,6 +640,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub struct X { pub a: u64 }",
             after: "pub struct X { pub a: u64, pub b: u8 }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -611,6 +651,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub struct X { pub a: u64 }",
             after: "pub struct X { pub a: u32 }",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -621,6 +662,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub trait X { fn go(&self) -> u8 { 1 } }",
             after: "pub trait X { fn go(&self) -> u8 { 2 } }",
+            elsewhere: None,
         },
         Shot {
             shape: "roster",
@@ -631,6 +673,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "kind": "function"}"#,
             before: "pub fn a() {}",
             after: "pub struct A;",
+            elsewhere: None,
         },
         Shot {
             shape: "roster",
@@ -641,6 +684,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "kind": "function"}"#,
             before: "pub fn a() {}",
             after: "pub fn a() {}\npub fn b() {}",
+            elsewhere: None,
         },
         Shot {
             shape: "roster",
@@ -651,6 +695,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "kind": "function"}"#,
             before: "pub fn a() {}\npub fn b() {}",
             after: "pub fn a() {}",
+            elsewhere: None,
         },
         Shot {
             shape: "roster",
@@ -661,6 +706,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "kind": "function"}"#,
             before: "pub fn a() {}",
             after: "pub fn b() {}",
+            elsewhere: None,
         },
         Shot {
             shape: "fingerprint",
@@ -671,6 +717,7 @@ mod tests {
             pos: r#"{"file": "a.md", "heading": "H"}"#,
             before: "# H\n\nbody\n",
             after: "# Other\n\nbody\n",
+            elsewhere: None,
         },
         Shot {
             shape: "fingerprint",
@@ -681,6 +728,7 @@ mod tests {
             pos: r#"{"file": "a.md", "heading": "H"}"#,
             before: "# H\n\nbody\n",
             after: "# H\n\nrewritten\n",
+            elsewhere: None,
         },
         Shot {
             shape: "contract",
@@ -691,6 +739,7 @@ mod tests {
             pos: r#"{"file": "a.rs", "name": "X"}"#,
             before: "pub struct X { pub a: u64 }",
             after: "pub enum X { A }",
+            elsewhere: None,
         },
     ];
 
@@ -705,8 +754,11 @@ mod tests {
             .unwrap_or_else(|| panic!("`{}` is not linked in", shot.probe))
             .extract;
         let pos: Value = serde_json::from_str(shot.pos).unwrap();
-        let look = |src: &str| {
+        let look = |src: &str, extra: Option<(&str, &str)>| {
             std::fs::write(&file, src).unwrap();
+            if let Some((name, body)) = extra {
+                std::fs::write(dir.join(name), body).unwrap();
+            }
             probe(&gmr_transport::inproc::Reach {
                 cwd: dir.clone(),
                 position: pos.clone(),
@@ -720,12 +772,12 @@ mod tests {
         };
 
         let rules = rules_of(get(shot.shape).unwrap());
-        let opened = step(&rules, &look(shot.before), &Value::Null);
+        let opened = step(&rules, &look(shot.before, None), &Value::Null);
         assert!(
             set(&opened).is_empty(),
             "shot {at} did not open clean: {opened}"
         );
-        set(&step(&rules, &look(shot.after), &opened))
+        set(&step(&rules, &look(shot.after, shot.elsewhere), &opened))
     }
 
     #[test]
@@ -834,6 +886,8 @@ mod tests {
             "surface-changed",
             "logic-changed",
             "moved",
+            "renamed",
+            "relocated",
             "settled",
         ];
         assert_eq!(rules.len(), statuses.len() + 1);
@@ -864,6 +918,7 @@ mod tests {
             unmet(&reads, &name_map),
             [
                 "at.after",
+                "at.file",
                 "at.form",
                 "at.shape",
                 "at.surface",
@@ -936,7 +991,9 @@ mod tests {
         let axes: Vec<String> = bits(&s).into_iter().map(|(k, _)| k).collect();
         assert_eq!(
             axes,
-            ["missing", "kind", "sig", "surface", "logic", "place"]
+            [
+                "missing", "name", "file", "kind", "sig", "surface", "logic", "place"
+            ]
         );
     }
 
@@ -1009,6 +1066,7 @@ mod tests {
 
         let mut renamed = sighted("(z) -> Q", "otherbody", "a.rs", 40);
         renamed["exact"] = Value::Bool(false);
+        renamed["found"] = Value::Bool(false);
         renamed["matched"] = serde_json::json!(["file"]);
         renamed["missed"] = serde_json::json!(["name"]);
         renamed["at"]["name"] = Value::String("g".into());
@@ -1050,7 +1108,7 @@ mod tests {
 
     fn section(heading: &str, print: &str, line: i64, exact: bool) -> Value {
         serde_json::json!({
-            "schema": COORD_SCHEMA, "extractor": "prose-map", "found": true,
+            "schema": COORD_SCHEMA, "extractor": "prose-map", "found": exact,
             "matched": if exact { vec!["file", "heading"] } else { vec!["file"] },
             "missed": if exact { vec![] } else { vec!["heading"] },
             "at": { "file": "CLAUDE.md", "heading": heading, "fingerprint": print },

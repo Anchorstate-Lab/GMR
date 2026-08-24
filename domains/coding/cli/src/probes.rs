@@ -17,6 +17,8 @@ pub struct Obs {
     #[serde(default)]
     pub at: Vec<String>,
     #[serde(default)]
+    pub identity: Vec<String>,
+    #[serde(default)]
     pub facts: Vec<String>,
 }
 
@@ -321,6 +323,9 @@ impl Catalog {
             return Ok(Obs {
                 schema: v.schema.to_owned(),
                 at: v.at.iter().map(|s| (*s).to_owned()).collect(),
+                identity: coding_extract::recipe(name)
+                    .map(|r| r.identity.iter().map(|s| (*s).to_owned()).collect())
+                    .unwrap_or_default(),
                 facts: v.facts.iter().map(|s| (*s).to_owned()).collect(),
             });
         }

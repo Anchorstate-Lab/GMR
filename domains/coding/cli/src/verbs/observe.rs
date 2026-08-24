@@ -80,6 +80,8 @@ pub async fn run(
     Ok(if moved > 0 { 1 } else { 0 })
 }
 
+pub(crate) type Snag = (AnchorKey, gmr::Ref, String);
+
 pub(crate) async fn delivered(
     rt: &Runtime,
     subs: &Subscriptions,
@@ -89,6 +91,23 @@ pub(crate) async fn delivered(
     moved: bool,
     unclaimed: &mut Vec<AnchorKey>,
 ) -> Result<Vec<gmr::Ref>, CliError> {
+    let mut snags = Vec::new();
+    let out = settled(rt, subs, key, shape, to, moved, unclaimed, &mut snags).await?;
+    report_snags(&snags);
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn settled(
+    rt: &Runtime,
+    subs: &Subscriptions,
+    key: &AnchorKey,
+    shape: Option<&crate::shapes::Shape>,
+    to: &State,
+    moved: bool,
+    unclaimed: &mut Vec<AnchorKey>,
+    snags: &mut Vec<Snag>,
+) -> Result<Vec<gmr::Ref>, CliError> {
     let bound = super::memories_on(rt, key).await?;
     if bound.is_empty() {
         if moved {
@@ -96,10 +115,28 @@ pub(crate) async fn delivered(
         }
         return Ok(Vec::new());
     }
-    Ok(bound
-        .into_iter()
-        .filter(|m| subs.delivers(shape, m, to, moved))
-        .collect())
+    let mut out = Vec::new();
+    for m in bound {
+        match subs.delivers(key.as_str(), shape, &m, to) {
+            Ok(true) => out.push(m),
+            Ok(false) => {}
+            Err(why) => snags.push((key.clone(), m, why)),
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) fn report_snags(snags: &[Snag]) {
+    if snags.is_empty() {
+        return;
+    }
+    println!(
+        "\n{} memories could not be answered for — whether to hand them over has no answer:",
+        snags.len()
+    );
+    for (key, reference, why) in snags {
+        println!("  ? {key}  {}  {why}", reference.external_id);
+    }
 }
 
 pub(crate) fn report_unclaimed(unclaimed: &[AnchorKey]) {

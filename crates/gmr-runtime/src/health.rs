@@ -159,28 +159,30 @@ async fn corpus_health(
     memory: &MemoryLens,
     grounded: &[Grounded],
 ) -> Result<CorpusHealth, RuntimeError> {
-    let bindings = memory.all().await?;
+    let bindings = crate::memory::by_reference(memory.all().await?);
     let views = || grounded.iter().map(|g| &g.view);
     let open: BTreeSet<&AnchorKey> = views().filter(|v| !v.closed).map(|v| &v.key).collect();
 
     let mut per_anchor: BTreeMap<String, usize> = BTreeMap::new();
     let mut barren = Vec::new();
-    for view in views() {
-        let n = bindings
-            .iter()
-            .filter(|r| r.binding.anchors.contains(&view.key))
-            .count();
-        per_anchor.insert(view.key.to_string(), n);
-        if !view.closed && n == 0 {
-            barren.push(view.key.clone());
+    for held in grounded {
+        let n = held.memories.len();
+        per_anchor.insert(held.view.key.to_string(), n);
+        if !held.view.closed && n == 0 {
+            barren.push(held.view.key.clone());
         }
     }
 
-    let unsupervised = bindings
+    let delivered: BTreeSet<&Ref> = grounded
         .iter()
-        .filter(|r| !r.binding.anchors.is_empty())
-        .filter(|r| !r.binding.anchors.iter().any(|k| open.contains(k)))
-        .map(|r| r.binding.reference.clone())
+        .filter(|g| !g.view.closed)
+        .flat_map(|g| g.memories.iter().map(|m| &m.reference))
+        .collect();
+    let unsupervised: Vec<Ref> = bindings
+        .iter()
+        .filter(|b| !b.anchors().is_empty())
+        .filter_map(|b| b.standing().map(|r| r.binding.reference.clone()))
+        .filter(|reference| !delivered.contains(reference))
         .collect();
 
     let mut footings: BTreeMap<Footing, Vec<Ref>> = BTreeMap::new();

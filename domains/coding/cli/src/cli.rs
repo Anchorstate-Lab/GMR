@@ -65,9 +65,17 @@ pub enum Command {
     Anchor {
         /// `path` or `path#name`. The probe, shape and position follow from it.
         coordinate: Option<String>,
-        /// The memory itself. Without it the note is left unwritten and said so.
-        #[arg(short = 'm', long = "memory")]
+        /// The memory itself, written into this repository as a note. Reach for it
+        /// when you keep no memories of your own: in git a note is the memory and
+        /// the declaration in one file. If you already have a memory system, write
+        /// the memory there and name it with --record instead.
+        #[arg(short = 'm', long = "memory", conflicts_with = "record")]
         memory: Option<String>,
+        /// A memory that already exists, by the address `gmr memories` prints
+        /// (`<provider>:<id>`). The anchor is declared and this record is bound to
+        /// it; nothing is written into any store.
+        #[arg(long)]
+        record: Option<String>,
     },
 
     /// What each memory store here will show you, and which of it is bound. Reads only.
@@ -185,6 +193,22 @@ pub enum Command {
         /// Which registered ContentProvider `path` is resolved through. Unset, a
         /// `<provider>:<id>` address picks its own and a bare path means `git`.
         /// What's actually available depends on how this binary was built.
+        #[arg(long)]
+        provider: Option<String>,
+    },
+
+    /// Say that a memory you just wrote is about these anchors. Records the
+    /// assertion as self-attested: you wrote the record and you are vouching
+    /// for it, and no reader should mistake that for a second opinion. Never
+    /// needs the store to answer first — a record too fresh to be readable is
+    /// exactly the moment the link is most accurate.
+    #[command(hide = true)]
+    Attest {
+        /// `<provider>:<id>`, or the id the store just handed back with --provider.
+        path: String,
+        #[arg(long, value_delimiter = ',', required = true)]
+        anchors: Vec<String>,
+        /// Which registered ContentProvider `path` is resolved through.
         #[arg(long)]
         provider: Option<String>,
     },

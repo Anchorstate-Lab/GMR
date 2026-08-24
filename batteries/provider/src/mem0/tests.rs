@@ -1,5 +1,5 @@
-use super::http::testkit::Canned;
 use super::*;
+use crate::http::testkit::Canned;
 use std::time::Duration;
 
 fn plenty() -> Budget {

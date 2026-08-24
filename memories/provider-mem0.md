@@ -9,7 +9,7 @@ about:
   - batteries/provider/src/mem0/mod.rs#absent
   - batteries/provider/src/mem0/mod.rs#fetch_at
   - batteries/provider/src/mem0/mod.rs#list
-  - batteries/provider/src/mem0/http.rs#Http
+  - batteries/provider/src/http.rs#Http
 watch: [sig, logic]
 ---
 
@@ -136,6 +136,13 @@ The `Http` trait this module talks through has `get` and nothing else, so
 there is no method here that could write into somebody else's store. That
 is why the guarantee needs no test: the alternative would not compile.
 
+That seam now lives at `crate::http`, shared by every backend that speaks
+HTTP rather than owned by this one, so the guarantee is no longer this
+module's to keep alone. A `post` added there for some other backend hands
+mem0 a write method it never asked for, and nothing in this file would
+change or fail. Whoever needs to write to their own store should say so in
+their own seam.
+
 ## What a fake can and cannot check
 
 Everything decidable without a network — version derivation, history
@@ -162,7 +169,8 @@ memory looks like.
 
 Does a write method appear on `Http`? That is the one guarantee this
 battery exists to keep, and it is currently kept by there being nothing to
-call.
+call — including a method added for a backend that has nothing to do with
+mem0, since they share the trait.
 
 Does anything start deriving a version from something other than the text —
 a timestamp, an id, an ETag? Each of those reintroduces the failure this

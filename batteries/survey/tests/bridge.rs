@@ -31,6 +31,7 @@ const RECIPE: Recipe = Recipe {
     version: "v1",
     items: &["file", "name"],
     narrows_on: &["file", "name"],
+    identity: &["name"],
     eligible: anything,
     collect,
     merge: Merge::Concat,

@@ -16,6 +16,95 @@ pub fn reads_of(transitions: &gmr::Transitions) -> Result<BTreeSet<String>, CliE
     Ok(out)
 }
 
+#[derive(Debug, Default)]
+pub struct Writes {
+    pub paths: BTreeSet<String>,
+    pub opaque: BTreeSet<String>,
+}
+
+impl Writes {
+    pub fn reaches(&self, path: &str) -> bool {
+        if self.paths.contains(path) {
+            return true;
+        }
+        let mut prefix = String::new();
+        for part in path.split('.') {
+            if !prefix.is_empty() {
+                prefix.push('.');
+            }
+            prefix.push_str(part);
+            if self.opaque.contains(&prefix) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn render(&self) -> String {
+        self.paths.iter().cloned().collect::<Vec<_>>().join(" · ")
+    }
+}
+
+pub fn writes_of(transitions: &gmr::Transitions) -> Result<Writes, CliError> {
+    let mut out = Writes::default();
+    for rule in transitions.iter() {
+        let node = gmr::expr::parse(&rule.to.source)
+            .map_err(|e| CliError(format!("`{}`: {e}", rule.to.source)))?;
+        constructed(&node, "", &mut out);
+    }
+    Ok(out)
+}
+
+fn constructed(node: &gmr::expr::Node, prefix: &str, out: &mut Writes) {
+    let gmr::expr::Node::Object(fields) = node else {
+        if !prefix.is_empty() {
+            out.opaque.insert(prefix.to_owned());
+        }
+        return;
+    };
+    for (key, value) in fields {
+        let path = match prefix.is_empty() {
+            true => key.clone(),
+            false => format!("{prefix}.{key}"),
+        };
+        out.paths.insert(path.clone());
+        constructed(value, &path, out);
+    }
+}
+
+pub fn state_paths(node: &gmr::expr::Node) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    walk_state(node, &mut out);
+    out
+}
+
+fn walk_state(node: &gmr::expr::Node, out: &mut BTreeSet<String>) {
+    use gmr::expr::{Node, Root, Step};
+    match node {
+        Node::Path(p) if p.root == Root::State => {
+            let fields: Vec<&str> = p
+                .steps
+                .iter()
+                .map_while(|s| match s {
+                    Step::Field(name) => Some(name.as_str()),
+                    Step::Index(_) => None,
+                })
+                .collect();
+            if !fields.is_empty() {
+                out.insert(fields.join("."));
+            }
+        }
+        Node::Path(_) | Node::Lit(_) | Node::Changed(_) => {}
+        Node::Exists(x) | Node::Not(x) | Node::Neg(x) => walk_state(x, out),
+        Node::Binary { lhs, rhs, .. } => {
+            walk_state(lhs, out);
+            walk_state(rhs, out);
+        }
+        Node::Object(fields) => fields.iter().for_each(|(_, v)| walk_state(v, out)),
+        Node::Array(items) => items.iter().for_each(|v| walk_state(v, out)),
+    }
+}
+
 fn known(obs: &crate::probes::Obs) -> BTreeSet<String> {
     if obs.schema == COORD_SCHEMA {
         let mut out: BTreeSet<String> = REPORT.iter().map(|s| (*s).to_owned()).collect();
@@ -44,6 +133,7 @@ mod tests {
         crate::probes::Obs {
             schema: schema.to_owned(),
             at: at.iter().map(|s| s.to_string()).collect(),
+            identity: Vec::new(),
             facts: facts.iter().map(|s| s.to_string()).collect(),
         }
     }

@@ -34,19 +34,35 @@ fn addressed_to(provider: &str, external_id: &str) -> Result<Ref, CliError> {
     })
 }
 
+fn registered(named: &str, external_id: &str, known: &[&str]) -> Result<Ref, CliError> {
+    if !known.contains(&named) {
+        return Err(CliError(format!(
+            "no store named `{named}` is registered in this binary. Registered here: {}. \
+             This run cannot say what `{named}:{external_id}` refers to, and recording it \
+             against some other store would make a record nobody ever wrote read as one \
+             that store deleted",
+            match known.is_empty() {
+                true => "none".to_owned(),
+                false => known.join(", "),
+            }
+        )));
+    }
+    addressed_to(named, external_id)
+}
+
 pub fn located(text: &str, provider: Option<&str>, known: &[&str]) -> Result<Ref, CliError> {
     let carried = text
         .split_once(':')
-        .filter(|(named, rest)| known.contains(named) && !rest.is_empty());
+        .filter(|(named, rest)| !rest.is_empty() && gmr::ProviderId::try_new(*named).is_ok());
     match (carried, provider) {
-        (Some((named, rest)), None) => addressed_to(named, rest),
-        (Some((named, rest)), Some(want)) if want == named => addressed_to(named, rest),
+        (Some((named, rest)), None) => registered(named, rest, known),
+        (Some((named, rest)), Some(want)) if want == named => registered(named, rest, known),
         (Some((named, _)), Some(want)) => Err(CliError(format!(
             "`{text}` is addressed to `{named}` and --provider says `{want}`. One of them is \
              not what you meant, and guessing which would bind this to a store you did not name"
         ))),
-        (None, Some(want)) => addressed_to(want, text),
-        (None, None) => addressed_to(RESOLVED_THROUGH, text),
+        (None, Some(want)) => registered(want, text, known),
+        (None, None) => registered(RESOLVED_THROUGH, text, known),
     }
 }
 
@@ -130,7 +146,26 @@ struct Frontmatter {
     #[serde(default)]
     shape: Option<String>,
     #[serde(default)]
-    watch: Option<Vec<String>>,
+    watch: Option<Watch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum Watch {
+    Axes(Vec<String>),
+    When(String),
+}
+
+const FRONTMATTER_WORDS: [&str; 4] = ["about", "anchors", "shape", "watch"];
+
+fn foreign_words(said: &Value) -> Vec<String> {
+    let Some(map) = said.as_object() else {
+        return Vec::new();
+    };
+    map.keys()
+        .filter(|k| !FRONTMATTER_WORDS.contains(&k.as_str()))
+        .map(|k| format!("`{k}`"))
+        .collect()
 }
 
 #[derive(Debug)]
@@ -152,7 +187,7 @@ impl Want {
 pub struct Note {
     pub reference: Ref,
     pub wants: Vec<Want>,
-    pub watch: Option<Vec<String>>,
+    pub watch: Option<Watch>,
 }
 
 fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<AnchorDecl, CliError> {
@@ -165,6 +200,7 @@ fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<Anc
         shape: Some(routed.shape),
         rules: Vec::new(),
         terminal: Vec::new(),
+        watch: None,
         settings: crate::settings::Declared::default(),
     })
 }
@@ -178,6 +214,7 @@ fn from_spec(spec: Spec) -> AnchorDecl {
         shape: spec.shape,
         rules: spec.rules,
         terminal: spec.terminal,
+        watch: None,
         settings: spec.settings,
     }
 }
@@ -189,11 +226,13 @@ pub enum Weight {
     Blocks,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Fault {
     pub note: String,
     pub key: Option<String>,
     pub code: &'static str,
     pub detail: String,
+    #[serde(skip)]
     pub weight: Weight,
 }
 
@@ -266,6 +305,21 @@ fn claims_of(
         }
         Claim::Says(value) => value,
     };
+    let foreign = foreign_words(said);
+    if !foreign.is_empty() {
+        faults.push(at(
+            "unrecognised",
+            format!(
+                "names {}, which this note format has no words for. A header that is read \
+                 but not understood declares nothing, so nothing observes whether what this \
+                 note says still holds — and unlike a note with no frontmatter at all, this \
+                 one looks from the outside like it declared something. The words are {}",
+                foreign.join(" "),
+                FRONTMATTER_WORDS.map(|w| format!("`{w}`")).join(" · ")
+            ),
+            Weight::Breaks,
+        ));
+    }
     let fm: Frontmatter = match serde_json::from_value(said.clone()) {
         Ok(fm) => fm,
         Err(e) => {
@@ -471,13 +525,38 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     }
 
     #[test]
-    fn a_prefix_no_store_here_answers_to_is_part_of_the_id() {
-        assert_eq!(
-            located("mem0:9f8e", None, &["git"]).unwrap(),
-            Ref::new("git", "mem0:9f8e"),
-            "an id is allowed to contain a colon, so only a prefix this binary actually \
-             registered may be taken as one. Splitting on any colon would quietly rewrite \
-             every id that has one"
+    fn a_prefix_that_is_not_a_provider_name_is_part_of_the_id() {
+        for text in ["memories/a:b.md", "notes.d:x", "Mem0:9f8e"] {
+            assert_eq!(
+                located(text, None, &STORES).unwrap(),
+                Ref::new("git", text),
+                "an id is allowed to contain a colon. What may be taken as a prefix is \
+                 settled by `ProviderId`'s grammar, so the same text is the same record in \
+                 every build — a rule that consulted the registry instead would make \
+                 `{text}` one record here and a different one wherever that store is \
+                 configured"
+            );
+        }
+    }
+
+    #[test]
+    fn a_store_this_run_never_registered_is_refused_rather_than_rewritten() {
+        let e = located("mem0:9f8e", None, &["git"]).unwrap_err();
+
+        assert!(e.0.contains("mem0"), "{}", e.0);
+        assert!(
+            e.0.contains("git"),
+            "the refusal has to name what is registered, or the reader cannot tell a \
+             typo from a feature this build lacks: {}",
+            e.0
+        );
+        assert!(
+            !e.0.is_empty(),
+            "recording this against `git` instead is the failure this refusal exists for: \
+             we could not resolve the store, which is our failure, and git would then \
+             answer that no such path exists — the world's answer. The binding table only \
+             ever grows, so that laundering is permanent and reads forever as a record \
+             somebody deleted"
         );
     }
 
@@ -573,10 +652,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "---\nabout: src/auth.ts#createSession\nshape: contract\nwatch: [logic]\n---\n",
         )]);
         let notes = scan(d.path(), &r).unwrap().notes;
-        assert_eq!(
-            notes[0].watch.as_deref(),
-            Some(["logic".to_owned()].as_ref())
-        );
+        assert_eq!(notes[0].watch, Some(Watch::Axes(vec!["logic".to_owned()])));
 
         let Want::Declared(decl) = &notes[0].wants[0] else {
             panic!("expected a declared anchor");
@@ -787,6 +863,60 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
              like it would if it were"
         );
         assert!(lint(d.path(), &r).unwrap()[0].breaks());
+    }
+
+    #[test]
+    fn a_header_in_another_products_format_is_louder_than_no_header_at_all() {
+        let (d, r) = world(&[(
+            "memories/claude.md",
+            "---\nname: commit-messages-in-english\ndescription: \"be terse\"\nmetadata:\n               type: feedback\n---\n\n# note\n",
+        )]);
+
+        assert!(
+            scan(d.path(), &r).unwrap().notes.is_empty(),
+            "it names no coordinate this format knows, so it declares no anchor"
+        );
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("claude".to_owned(), "unrecognised")],
+            "a note whose header is another tool's format used to be the quietest failure \
+             here: serde dropped every word it did not know, the note declared nothing, and \
+             nothing complained. That is worse than no frontmatter at all, which at least \
+             reports `unclaimed` — this one looks from the outside like it declared \
+             something, and the author has no reason to look again"
+        );
+        assert!(lint(d.path(), &r).unwrap()[0].breaks());
+    }
+
+    #[test]
+    fn a_misspelt_word_is_foreign_like_any_other() {
+        let (d, r) = world(&[("memories/typo.md", "---\nabuot: src/a.ts\n---\n\n# note\n")]);
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("typo".to_owned(), "unrecognised")],
+            "one transposed pair of letters and the note silently stopped declaring \
+             anything; the same check that catches another tool's format catches this"
+        );
+    }
+
+    #[test]
+    fn a_note_that_declares_and_also_says_something_foreign_still_declares() {
+        let (d, r) = world(&[(
+            "memories/both.md",
+            "---\nabout: src/a.ts\nauthor: someone\n---\n\n# note\n",
+        )]);
+
+        let scanned = scan(d.path(), &r).unwrap();
+        assert_eq!(
+            scanned.notes[0].wants.len(),
+            1,
+            "the words this format knows are still read; a foreign one beside them does not \
+             cost the note its anchor"
+        );
+        assert_eq!(
+            codes(d.path(), &r),
+            vec![("both".to_owned(), "unrecognised")]
+        );
     }
 
     #[test]

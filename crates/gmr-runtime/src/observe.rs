@@ -41,6 +41,15 @@ impl Runtime {
         self.observer.resolve(probe)
     }
 
+    pub async fn sample(
+        &self,
+        probe: &gmr_core::ProbeRef,
+        position: &serde_json::Value,
+    ) -> Result<gmr_core::Outcome, gmr_probe::ProbeError> {
+        let budget = self.scheduler.policy().budget();
+        self.observer.sample(probe, position, &budget).await
+    }
+
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
         let budget = self.scheduler.policy().budget();
         observe(&self.log, &self.observer, &self.scheduler, key, &budget).await

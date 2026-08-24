@@ -27,6 +27,19 @@ one is not a judgement call it can get wrong.
 every journal, so there is one projection of the log rather than two that can
 disagree.
 
+**Every record-level list names a reference once**, however many assertions
+stand behind it. `all()` answers per assertion, so `corpus_health` groups it
+through `by_reference` before counting anything — one [[runtime-bound]] per
+reference, which makes the property structural rather than a dedup each list
+has to remember.
+
+**The counts read that same delivered set.** `per_anchor`, `barren` and
+`unsupervised` all come from `grounded`, never from scanning `all()` for
+`binding.anchors.contains(key)`. That scan reads the anchors as *asserted*:
+it misses revocations, and it misses a memory carried forward from a
+superseded generation, so an heir holding a full corpus reports barren. See
+[[store-orset-projection]].
+
 ## `Footing` is the one classifier
 
 `Grounding::footing()` maps the retrieval outcome onto the seven names `doctor`

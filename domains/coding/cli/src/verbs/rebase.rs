@@ -1,16 +1,23 @@
-use gmr::Runtime;
+use std::path::Path;
 
+use gmr::{AnchorKey, Runtime};
+
+use crate::delivery::Subscriptions;
 use crate::error::CliError;
+use crate::memories::Names;
+use crate::probes::Catalog;
 use crate::verbs::sealed;
 
 pub async fn run(
     rt: &Runtime,
+    root: &Path,
+    names: &Names,
     keys: Vec<String>,
     all: bool,
     why: String,
     json: bool,
 ) -> Result<i32, CliError> {
-    let keys = match all {
+    let keys: Vec<AnchorKey> = match all {
         true => {
             let mut views = Vec::new();
             for key in rt.anchors().await? {
@@ -34,8 +41,18 @@ pub async fn run(
         return Ok(0);
     }
 
+    let (subs, _) = Subscriptions::load(root, &Catalog::load(root)?, names)?;
+    let mut refused = Vec::new();
+    let mut recapturing = Vec::new();
+    for key in keys {
+        match super::owed(rt, &subs, &key).await? {
+            owed if owed.is_empty() => recapturing.push(key),
+            owed => refused.push((key, owed)),
+        }
+    }
+
     let mut done = Vec::new();
-    for key in &keys {
+    for key in &recapturing {
         done.push((
             key.clone(),
             crate::verbs::recapture(rt, key, why.as_bytes()).await?,
@@ -47,11 +64,14 @@ pub async fn run(
             "{}",
             serde_json::json!({
                 "rebased": done.iter().map(|(k, _)| k).collect::<Vec<_>>(),
+                "refused": refused.iter().map(|(k, owed)| serde_json::json!({
+                    "anchor": k, "owed": super::observe::addressed_all(owed)
+                })).collect::<Vec<_>>(),
                 "context": done.first().map(|(_, r)| &r.context),
                 "rationale": done.first().map(|(_, r)| &r.rationale),
             })
         );
-        return Ok(0);
+        return Ok(i32::from(!refused.is_empty()));
     }
 
     for (key, _) in &done {
@@ -60,5 +80,27 @@ pub async fn run(
     if let Some((_, revised)) = done.first() {
         sealed(&revised.context, &revised.rationale);
     }
-    Ok(0)
+
+    if !refused.is_empty() {
+        println!(
+            "\n{} anchors were not recaptured: a judgement is outstanding on them, and \
+             recapturing pins the world as it is now, which would answer that judgement \
+             without anybody having looked.",
+            refused.len()
+        );
+        for (key, owed) in &refused {
+            println!(
+                "  ! {key}   {}",
+                owed.iter()
+                    .map(|m| names.of(m))
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            );
+        }
+        println!(
+            "\nRead each one and say what you decided — `gmr accept <key> --why \"...\"` \
+             seals it, `gmr close <key> --why \"...\"` retires it — then rebase again."
+        );
+    }
+    Ok(i32::from(!refused.is_empty()))
 }

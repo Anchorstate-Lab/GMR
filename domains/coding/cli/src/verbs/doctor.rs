@@ -74,6 +74,7 @@ pub async fn run(
     cache_fault: Option<&str>,
     json: bool,
 ) -> Result<i32, CliError> {
+    let declared_providers = crate::providers::declared(root)?;
     let corpus = rt.corpus().await?;
     let live = corpus.live();
     let ground = corpus.health();
@@ -141,10 +142,14 @@ pub async fn run(
                 "never_asked": addresses(ground.on(Footing::NeverAsked)),
                 "bound": ground.grounded_records(),
                 "no_before": addresses(ground.on(Footing::NoBefore)),
+                "unverified": addresses(ground.on(Footing::Unverified)),
                 "unsupervised": addresses(&ground.unsupervised),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
+                "declared_providers": declared_providers.iter().map(|(name, decl)| serde_json::json!({
+                    "provider": name, "can": decl.can(), "caveat": decl.caveat(),
+                })).collect::<Vec<_>>(),
                 "notes": faults.iter().map(|f| serde_json::json!({
                     "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
                     "breaks": f.breaks(), "blocks": f.blocks(),
@@ -155,6 +160,12 @@ pub async fn run(
     }
 
     println!("anchors   {} (live {})", corpus.len(), live.len());
+    for (name, decl) in &declared_providers {
+        println!("provider  {name}   {}", decl.can().join(" · "));
+        if let Some(caveat) = decl.caveat() {
+            println!("          <- {caveat}");
+        }
+    }
     if !states.is_empty() {
         let mut counts: std::collections::BTreeMap<&str, usize> = Default::default();
         for s in &states {
@@ -231,6 +242,12 @@ pub async fn run(
             "unasked   {} of {} bound record(s) were never asked about — the total content budget ran out first\n          <- what is printed above is that partial view, not the whole repository. Raise --content-total-ms to see the rest",
             ground.on(Footing::NeverAsked).len(),
             ground.grounded_records()
+        );
+    }
+    if !ground.on(Footing::Unverified).is_empty() {
+        println!(
+            "unverified {} record(s) have never been compared against what the store holds\n          <- they were asserted when the store could not answer, so there is no baseline to move away from. A `gmr bind` or `gmr reaffirm` that reaches the store establishes one",
+            ground.on(Footing::Unverified).len()
         );
     }
     if !ground.on(Footing::NoBefore).is_empty() {

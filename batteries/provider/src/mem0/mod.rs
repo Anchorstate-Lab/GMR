@@ -1,5 +1,3 @@
-mod http;
-
 #[cfg(feature = "testkit")]
 pub mod testkit;
 
@@ -11,7 +9,7 @@ use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
 use gmr_probe::Budget;
 use serde::Deserialize;
 
-use http::{Answer, Credential, Http};
+use crate::http::{Answer, Credential, Http};
 
 pub const DEFAULT_BASE: &str = "https://api.mem0.ai";
 
@@ -180,7 +178,8 @@ impl Mem0 {
             id: ProviderId::new("mem0"),
             base,
             deployment,
-            http: Box::new(http::Reqwest::new(
+            http: Box::new(crate::http::Reqwest::new(
+                "mem0",
                 api_key.map(|key| deployment.credential(key)),
             )?),
             scope,

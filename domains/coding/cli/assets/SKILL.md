@@ -15,7 +15,7 @@ An anchor watching a named symbol keeps a **vector**, one bit per axis: `missing
 
 ## Detection
 
-If `.anchor/` exists at the repo root, this repository is managed by `gmr`. Don't look for `.anchor/anchors.toml` specifically — most repos have none; a repo whose anchors all come from notes with full frontmatter never creates one, and that's normal, not broken. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
+If `.anchor/` exists at the repo root, this repository is managed by `gmr`. Don't look for `.anchor/anchors.toml` specifically — a repo whose anchors all come from notes with full frontmatter never creates one, and that's normal, not broken; it is the declaration channel for anchors whose memories live outside the repository. Before trusting any note, comment, or memory that claims something about the code is still true, check whether it's grounded and whether it drifted:
 
 ```
 gmr status --json
@@ -29,11 +29,16 @@ Every `--json` field that names a record — `check`/`observe`/`pass` under `"me
 This is a loop you run yourself as part of normal work — not a human-only ritual you wait to be asked for:
 
 1. `gmr init` — creates `.anchor/`, installs bundled probes, and (if not already present) writes this skill doc to `.claude/skills/gmr/SKILL.md` in the project, or `~/.claude/skills/gmr/SKILL.md` with `--global`. Idempotent, safe to rerun — but it never overwrites a file that's already there, including this one, so re-running `init` after a `gmr` upgrade won't refresh a stale copy of this doc; delete it first if you want the bundled version back.
-2. `gmr anchor src/auth.ts#createSession -m "sessions expire after 30 minutes because ..."` — routes the coordinate to a probe, a shape and a position, writes the note, opens the anchor and binds the memory. Say nothing but the coordinate and it all follows; the note is left for you to write and reported as `unwritten` until you do.
+2. `gmr anchor src/auth.ts#createSession` — routes the coordinate to a probe, a shape and a position, declares it in `.anchor/anchors.toml`, and opens it. **It puts no memory anywhere.** The anchor now says "there ought to be a memory about this", and `doctor` reports it as `barren` until one is bound. Then name the memory, whichever way you keep them:
+   - `--record <provider>:<id>` — you already wrote it, in your own memory system. One command declares and binds; nothing is copied into the repository.
+   - `-m "sessions expire after 30 minutes because ..."` — you keep no memories of your own, so GMR writes one into this repository as a note. In git a note is the memory and the declaration in one file, which is why this path writes no `anchors.toml` entry.
+   - neither — write the memory wherever you keep it, then `gmr attest <provider>:<id> --anchors <key>` (see below). This is the agent's road: you wrote the record, so you are the one vouching for the link.
+
+   These are three ways to say which memory, not three kinds of anchor. Whatever the store, what happens afterwards is identical.
 3. `gmr check` — did anything move on an axis a memory asked about? Exits 1 if so, and hands you the memories to re-read. It also flags two other conditions that make what it reports untrustworthy: anchors whose declaration no longer matches their live criteria (`gmr accept --all --criteria --why "..."` to take the new criteria), and anchors standing on a reading a different probe instrument took (`gmr rebase --all --why "..."` to recapture). Resolve those before trusting a quiet `check`.
 4. `gmr accept <key> --why "..."` — you looked, and what it shows is the new baseline. Clears the vector, seals the reason. If both a baseline drift and a criteria drift are pending at once, plain `--why` refuses and asks you to say which with `--baseline` or `--criteria` — they're different judgments and don't share one reason.
 5. `gmr status` — everything being watched, its axes, its memories. Reads only.
-5b. `gmr memories [--provider <name>]` — what each store here will show you, and which of it is already bound. Reads only. This is how you find a reference to bind when the store is not a directory of files: a mem0 uuid is not something you can guess. A listing is what a store *will show*, not a roster of what exists — a record missing from one is not a dead reference.
+5b. `gmr memories [--provider <name>]` — what each store here will show you, and which of it is already bound. Reads only. This is how you find a reference to bind when the store is not a directory of files: a mem0 uuid is not something you can guess. A listing is what a store *will show*, not a roster of what exists — a record missing from one is not a dead reference. A store nothing here can enumerate gets a line saying so rather than being left out: it is not empty and not broken, and a record in it has to be named by an address you already hold. `--json` carries those under `cannot_list`.
 6. `gmr atlas` — writes the whole anchor–memory graph to `.anchor/output/atlas.html`, one self-contained file. Reads only. Reach for it when the question is about *shape* rather than about one anchor: which coordinates several notes are all watching, which notes span many coordinates, what a subsystem's notes actually cover. Hand a person the path — the page is for reading, and `status --json` is the cheaper answer for anything you can resolve yourself.
 
 `gmr anchor` with no coordinate opens whatever the declarations and notes already ask for — that is what a fresh clone needs, since the journal does not travel with the repository.
@@ -64,7 +69,7 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 
 ## The verbs behind the front door
 
-`gmr --help` shows seven. The rest still work and are reachable through `gmr help <name>`: `sync`, `open`, `observe`, `pass`, `read`, `doctor`, `health`, `edges`, `requeue`, `bind`, `reaffirm`, `cobound`, `link`, `probes`, `publish`, `export`, `import`, and the five revise verbs. Reach for them to drive one part by hand, not for ordinary work.
+`gmr --help` shows seven. The rest still work and are reachable through `gmr help <name>`: `sync`, `open`, `observe`, `pass`, `read`, `doctor`, `health`, `edges`, `requeue`, `bind`, `attest`, `reaffirm`, `cobound`, `link`, `probes`, `publish`, `export`, `import`, and the five revise verbs. Reach for them to drive one part by hand, not for ordinary work.
 
 ## Reading `gmr doctor --json`
 
@@ -92,11 +97,42 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 - `provider_warnings` — a content provider this binary tried to register at startup but couldn't (for example `claude-code` when `$HOME` isn't set). Bindings through it fail with "no provider named `<name>` is registered in this binary" until the underlying cause is fixed. That message means the store is unreachable from here, **not** that the record is gone — a provider that is registered and simply has no such record says "`<provider>` has no record `<path>`" instead. Check this before assuming a failed `gmr bind --provider ...` means the provider name was wrong.
 - `notes` — lint findings over every file under `memories/`, independent of the anchors above. `breaks: true` means the note names no live anchor at all; `breaks: false` is advisory. Codes: `unclaimed` (no frontmatter, so nothing observes whether this note still holds), `bare-key` (an `anchors:` entry binds to a key without declaring it, and nothing else in the repo declares that key either), `long-hand` (an explicit `anchors:` entry states exactly what `about: <coord>` would already route to — safe to simplify), `retired` (the note names a shape/axis word this build no longer has — stale, or a deliberate record of something buried; only you can tell which).
 
+## Binding a memory you just wrote
+
+When the memory is one *you* wrote — into your own memory store, a mem0 scope, anywhere that is not this repository's `memories/` — say what it is about in the same breath:
+
+```
+gmr attest <provider>:<id> --anchors src/auth.ts#createSession
+```
+
+Run it the moment the store hands the id back. It never asks the store to answer first, because a record too fresh to be readable is exactly when the link is most accurate and only you know it. The assertion lands as **self-attested** and every reader is shown that: you wrote the record and you are the only thing saying what it is about. That is worth recording — it is not a second opinion, and nothing here will pretend it is.
+
+Run the same command again once the store can answer, and it stamps the baseline it could not take the first time. Use `attest`, not `reaffirm`: `reaffirm` records a person's judgement, and running it about your own memory would launder your say-so into somebody else's.
+
+`attest` only ever adds. Ending a link is a judgement call, so it goes through `gmr bind <address> --detach`.
+
+A note you write into this repository's `memories/` needs none of this — `gmr anchor` writes the file and its `about:` line, and the binding is *derived* from what the note declares about itself.
+
 ## Binding non-git content
 
-`gmr bind <path> --anchors <key> --provider <name>` binds arbitrary content to an anchor, not only files inside this repo's own git tree. `--provider` defaults to `git`. Whether other providers (for example a `claude-code` provider reading this agent's own memory files) are available depends on how this particular binary was built — `gmr bind --help` reflects what's actually compiled in.
+`gmr bind <path> --anchors <key> --provider <name>` binds arbitrary content to an anchor, not only files inside this repo's own git tree. `--provider` defaults to `git`. Whether other providers (for example a `claude-code` provider reading this agent's own memory files) are available depends on how this particular binary was built — `gmr bind --help` reflects what's actually compiled in. `gmr memories --provider claude-code` lists that directory's `.md` files, ids being paths relative to it; GMR only ever reads there.
 
 `reaffirm` and `cobound` take the same `--provider`. `link` takes `--from-provider` and `--to-provider` separately, because the two ends may sit in different stores — a memory in one store can contradict a memory in another, and saying so should not require moving either of them.
+
+### A store nobody compiled in
+
+`.anchor/providers.toml` teaches this binary a store without changing it:
+
+```toml
+[provider.desk]
+fetch = "scripts/desk-fetch.sh"
+list  = "scripts/desk-list.sh"   # omit it, and this store simply cannot be listed
+ids   = "readable"               # or "opaque" — required; nobody but you knows which
+```
+
+`gmr doctor` says what each declared store can and cannot do at assembly, rather than leaving you to find out by watching it fail — and a store with `ids = "opaque"` and no `list` is told plainly that only memories written after it was wired up can ever be anchored, because nothing can enumerate it and its ids are not ones you could write down. `--json` carries this under `declared_providers`.
+
+`fetch` is run with `GMR_POSITION` set to `{"id": "<external id>"}` and answers on stdout with `{"text": "..."}`, or `null` for a record that is not there — `null` means *gone*, and anything else the script can do about a failure is to exit non-zero, which reads as the store being unreachable. `list` answers `{"records": [{"id": "...", "text": "..."}, ...]}`. A memory is one JSON string: a store holding anything but text needs a provider compiled in, and so does one whose own version you need — a declared store's version is a hash of the text GMR computes itself.
 
 ### mem0
 
@@ -112,5 +148,5 @@ Two things worth knowing when reading a report about mem0 records: mem0's own co
 
 ## Don't
 
-- Don't hand-edit `.anchor/anchors.toml`, `.anchor/probes.toml`, or anything under `.anchor/state/` — go through the verbs so the journal stays the one source of truth.
+- Don't hand-edit `.anchor/anchors.toml`, `.anchor/probes.toml`, or anything under `.anchor/state/` — go through the verbs so the journal stays the one source of truth. `gmr anchor <coordinate>` is the verb that writes `anchors.toml`; it appends and never rewrites what is already declared, so a declaration you want changed is a criteria change and goes through `gmr revise` / `gmr accept --criteria`.
 - Don't retry a failed transition condition expecting it to eventually succeed — an eval failure means the rule is wrong, not that the world is slow. Fix the rule.

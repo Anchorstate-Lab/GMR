@@ -33,14 +33,16 @@ pub fn build(root: &Path, json: bool) -> Result<i32, CliError> {
 struct ObsRow {
     schema: String,
     at: Vec<String>,
+    identity: Vec<String>,
     facts: Vec<String>,
 }
 
 impl ObsRow {
-    fn of(schema: &str, at: &[String], facts: &[String]) -> Self {
+    fn of(schema: &str, at: &[String], identity: &[String], facts: &[String]) -> Self {
         Self {
             schema: schema.to_owned(),
             at: at.to_vec(),
+            identity: identity.to_vec(),
             facts: facts.to_vec(),
         }
     }
@@ -73,7 +75,14 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             address: None,
             run: None,
             handles: reads_json(v.reads),
-            obs: ObsRow::of(v.schema, &owned(v.at), &owned(v.facts)),
+            obs: ObsRow::of(
+                v.schema,
+                &owned(v.at),
+                &coding_extract::recipe(v.name)
+                    .map(|r| owned(r.identity))
+                    .unwrap_or_default(),
+                &owned(v.facts),
+            ),
         });
     }
     let catalog = Catalog::load(root)?;
@@ -87,7 +96,12 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             address: None,
             run: Some(decl.run.clone()),
             handles: serde_json::json!(decl.handles),
-            obs: ObsRow::of(&decl.obs.schema, &decl.obs.at, &decl.obs.facts),
+            obs: ObsRow::of(
+                &decl.obs.schema,
+                &decl.obs.at,
+                &decl.obs.identity,
+                &decl.obs.facts,
+            ),
         });
     }
     let shell = gmr_transport::shell::Shell::new(root, store_dir(root));
@@ -100,7 +114,12 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             address: artifacts.installed(&probe).map_err(|e| CliError(e.0))?,
             run: None,
             handles: serde_json::json!(recipe.handles),
-            obs: ObsRow::of(&recipe.obs.schema, &recipe.obs.at, &recipe.obs.facts),
+            obs: ObsRow::of(
+                &recipe.obs.schema,
+                &recipe.obs.at,
+                &recipe.obs.identity,
+                &recipe.obs.facts,
+            ),
         });
     }
 
@@ -118,6 +137,9 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
         if verbose {
             println!("    obs {}", row.obs.schema);
             println!("    at    {}", row.obs.at.join(" · "));
+            if !row.obs.identity.is_empty() {
+                println!("    is    {}", row.obs.identity.join(" · "));
+            }
             println!("    facts {}", row.obs.facts.join(" · "));
         }
     }

@@ -251,7 +251,8 @@ impl World {
             .bind(
                 Ref::new("git", format!("memories/{name}")),
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
-                Version::new(version),
+                Some(Version::new(version)),
+                gmr_core::Source::Adjudicated,
             )
             .await
             .unwrap();
@@ -265,7 +266,8 @@ impl World {
             .bind(
                 reference,
                 anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
-                Version::new(version),
+                Some(Version::new(version)),
+                gmr_core::Source::Adjudicated,
             )
             .await
             .unwrap();
@@ -338,7 +340,7 @@ async fn reaffirming_clears_rewritten_without_touching_anchors() {
     let bytes = std::fs::read(w.dir.path().join("memories/a.md")).unwrap();
     let current = gmr_core::content_hash_of_bytes(&bytes).into_inner();
     w.runtime
-        .reaffirm(&reference, Version::new(current))
+        .reaffirm(&reference, Some(Version::new(current)))
         .await
         .unwrap();
 
@@ -361,7 +363,7 @@ async fn reaffirming_an_unbound_reference_is_refused() {
         .runtime
         .reaffirm(
             &Ref::new("git", "memories/never-bound.md"),
-            Version::new("v"),
+            Some(Version::new("v")),
         )
         .await
         .unwrap_err();
@@ -439,7 +441,10 @@ async fn cobound_is_derived_from_binds_not_stored() {
     );
 
     w.runtime
-        .bind(Ref::new("git", "memories/b.md"), vec![], Version::new("v"))
+        .revoke(
+            &Ref::new("git", "memories/b.md"),
+            gmr_core::Source::Adjudicated,
+        )
         .await
         .unwrap();
     assert!(
@@ -447,7 +452,9 @@ async fn cobound_is_derived_from_binds_not_stored() {
             .cobound(&Ref::new("git", "memories/a.md"))
             .await
             .unwrap()
-            .is_empty()
+            .is_empty(),
+        "cobound reads the same delivered set `read` does, so revoking one of the two \
+         records takes it out of the other's neighbours too"
     );
 }
 
@@ -467,7 +474,8 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .bind(
             Ref::new("git", "memories/bound.md"),
             vec![AnchorKey::new("a")],
-            Version::new("v1"),
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -475,7 +483,8 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .bind(
             Ref::new("git", "memories/loose.md"),
             vec![],
-            Version::new("v1"),
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -508,37 +517,115 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
 }
 
 #[tokio::test]
-async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
+async fn an_assertion_made_when_the_store_could_not_answer_is_unverified_not_refused() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+
+    let reference = Ref::new("git", "memories/a.md");
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("a")],
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let held = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        held.memories[0].footing(),
+        gmr_runtime::Footing::Unverified,
+        "an agent binds the moment it writes a memory, which is when the link is most \
+         accurate and when the store is least likely to answer yet. Refusing there throws \
+         that link away; reporting the assertion as though a baseline stood behind it \
+         would claim a comparison nobody made"
+    );
+    assert!(
+        held.memories[0].bound_version.is_none(),
+        "there is no baseline to name, and a placeholder would be indistinguishable from \
+         one the store really issued"
+    );
+
+    w.runtime
+        .reaffirm(
+            &reference,
+            w.runtime.current_version(&reference).await.unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        w.runtime
+            .grounded(&AnchorKey::new("a"))
+            .await
+            .unwrap()
+            .memories[0]
+            .footing(),
+        gmr_runtime::Footing::Current,
+        "a later act that does reach the store establishes the baseline. Nothing on the \
+         read path writes one — a read says what it found, it does not settle anything"
+    );
+}
+
+#[tokio::test]
+async fn a_later_assertion_that_verified_nothing_does_not_unverify_what_was_verified() {
     let w = World::new(true);
     w.memory("a.md", "One.");
     w.open("a").await;
     w.bind("a.md", &["a"]).await;
 
     let reference = Ref::new("git", "memories/a.md");
-    let bound = w
-        .runtime
-        .memory()
-        .binding_of(&reference)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(!bound.binding.anchors.is_empty());
+    let pinned = w.runtime.current_version(&reference).await.unwrap();
 
     w.runtime
-        .bind(reference.clone(), vec![], Version::new("v"))
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("a")],
+            None,
+            gmr_core::Source::SelfAttested,
+        )
         .await
         .unwrap();
 
-    let detached = w
+    let held = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        held.memories[0].bound_version, pinned,
+        "an agent re-attesting before the store can answer says the record is still \
+             about this anchor. It compared nothing, so it has nothing to overwrite \
+             the standing baseline with, and taking its silence as the new baseline \
+             would throw away a reading somebody really took"
+    );
+    assert_eq!(held.memories[0].footing(), gmr_runtime::Footing::Current);
+}
+
+#[tokio::test]
+async fn a_revoked_record_is_no_longer_listed_under_the_anchor() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+
+    let reference = Ref::new("git", "memories/a.md");
+    let bound = w.runtime.memory().binding_of(&reference).await.unwrap();
+    assert!(!bound.anchors().is_empty());
+
+    let cleared = w
         .runtime
-        .memory()
-        .binding_of(&reference)
+        .revoke(&reference, gmr_core::Source::Adjudicated)
         .await
-        .unwrap()
         .unwrap();
+    assert_eq!(cleared, vec![AnchorKey::new("a")]);
+
     assert!(
-        detached.binding.anchors.is_empty(),
-        "detached, while history remains in the table"
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .anchors()
+            .is_empty(),
+        "revoked, while every assertion and the revocation itself remain in the table"
     );
     assert!(
         w.runtime
@@ -547,7 +634,40 @@ async fn a_detached_record_is_no_longer_listed_under_the_anchor() {
             .unwrap()
             .memories
             .is_empty(),
-        "no longer attached to this anchor"
+        "no longer delivered under this anchor"
+    );
+}
+
+#[tokio::test]
+async fn asserting_an_empty_anchor_set_takes_nothing_away() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![],
+            Some(Version::new("v")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .anchors(),
+        vec![AnchorKey::new("a")],
+        "an assertion naming no anchor adds no tag, so it can take none away either. \
+         Writing one used to be how a record was detached — under latest-wins it replaced \
+         the whole set. A caller that means to remove something now has to say which tags \
+         it observed, which is the only form a reader can audit"
     );
 }
 
@@ -760,5 +880,160 @@ async fn one_record_running_out_of_budget_does_not_take_the_others_with_it() {
          make this record's answer depend on how many others happened to be walked first: \
          {:?}",
         by_id("memories/quick.md").grounding
+    );
+}
+
+#[tokio::test]
+async fn an_assertion_that_says_what_already_stands_writes_nothing() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    w.bind("a.md", &["a"]).await;
+    w.bind("a.md", &["a"]).await;
+
+    assert_eq!(
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .assertions()
+            .len(),
+        1,
+        "the table is append-only, so a repeated assertion is a row nobody can take back \
+         that no reader can act on: the anchor union, the baseline, the source set and the \
+         first-asserted time all come out identical. Whether a write says anything new is a \
+         question about the projection, and it has to be asked before the write — a writer \
+         deciding it for itself is how every re-run of every writer grows the table forever"
+    );
+}
+
+#[tokio::test]
+async fn a_second_kind_of_assertion_on_the_same_link_is_not_a_repeat() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    let version = w
+        .runtime
+        .memory()
+        .binding_of(&reference)
+        .await
+        .unwrap()
+        .bound_version()
+        .cloned();
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("a")],
+            version,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let bound = w.runtime.memory().binding_of(&reference).await.unwrap();
+    assert_eq!(
+        bound.assertions().len(),
+        2,
+        "who says a link holds is part of what an assertion says, so a second party \
+         asserting it is new information even at the same version. This is also what lets a \
+         binding recorded before its origin was known be re-derived exactly once: the \
+         re-derivation says something the projection did not, and the run after it does not"
+    );
+    assert_eq!(
+        bound.sources(),
+        std::collections::BTreeSet::from([
+            gmr_core::Source::Adjudicated,
+            gmr_core::Source::SelfAttested
+        ]),
+    );
+}
+
+#[tokio::test]
+async fn reaffirm_records_a_reading_and_a_reading_is_never_a_repeat() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    let version = w
+        .runtime
+        .memory()
+        .binding_of(&reference)
+        .await
+        .unwrap()
+        .bound_version()
+        .cloned();
+    w.runtime.reaffirm(&reference, version).await.unwrap();
+
+    assert_eq!(
+        w.runtime
+            .memory()
+            .binding_of(&reference)
+            .await
+            .unwrap()
+            .assertions()
+            .len(),
+        2,
+        "`reaffirm` takes no anchors because it states no aboutness — it stamps a reading \
+         taken at a moment. Two readings of the same bytes at different moments are two \
+         readings, so the guard that suppresses a repeated assertion must not reach this \
+         path, or the one way to say `I have looked at this again` disappears"
+    );
+}
+
+#[tokio::test]
+async fn an_anchor_names_each_memory_once_however_many_assertions_stand_on_it() {
+    let w = World::new(true);
+    w.memory("a.md", "One.");
+    w.open("a").await;
+    let reference = Ref::new("git", "memories/a.md");
+
+    w.bind("a.md", &["a"]).await;
+    let version = w
+        .runtime
+        .memory()
+        .binding_of(&reference)
+        .await
+        .unwrap()
+        .bound_version()
+        .cloned();
+    for source in [gmr_core::Source::SelfAttested, gmr_core::Source::Configured] {
+        w.runtime
+            .bind(
+                reference.clone(),
+                vec![AnchorKey::new("a")],
+                version.clone(),
+                source,
+            )
+            .await
+            .unwrap();
+    }
+
+    let on = w.runtime.bindings_on(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        on.len(),
+        1,
+        "three parties asserting one link is three assertions and one memory. Both \
+         directions of the projection answer per reference, so a roster cannot repeat a \
+         name by forgetting to collapse one: `check` printed a memory once per assertion \
+         while `doctor` printed it once, and neither verb's type said they disagreed"
+    );
+    assert_eq!(on[0].assertions().len(), 3);
+    assert_eq!(
+        w.runtime
+            .grounded(&AnchorKey::new("a"))
+            .await
+            .unwrap()
+            .memories
+            .len(),
+        1,
     );
 }

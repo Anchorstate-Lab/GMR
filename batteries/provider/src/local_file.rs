@@ -21,6 +21,49 @@ pub(crate) fn read(root: &Path, id: &ExternalId) -> Result<Option<Vec<u8>>, Cont
         .map_err(|e| ContentError::new(format!("cannot read `{}`: {e}", id.as_str())))
 }
 
+pub(crate) fn walk(root: &Path, ext: &str) -> Result<Vec<(String, Vec<u8>)>, ContentError> {
+    if !root.is_dir() {
+        return Err(ContentError::new(format!(
+            "`{}` is not a directory, so there is nothing under it to list. This is a store \
+             that is not there, not a store that holds nothing",
+            root.display()
+        )));
+    }
+    let mut found = Vec::new();
+    collect(root, root, ext, &mut found)?;
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(found)
+}
+
+fn collect(
+    root: &Path,
+    at: &Path,
+    ext: &str,
+    found: &mut Vec<(String, Vec<u8>)>,
+) -> Result<(), ContentError> {
+    let entries = std::fs::read_dir(at)
+        .map_err(|e| ContentError::new(format!("cannot read `{}`: {e}", at.display())))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect(root, &path, ext, found)?;
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some(ext) {
+            continue;
+        }
+        let id = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let bytes = std::fs::read(&path)
+            .map_err(|e| ContentError::new(format!("cannot read `{id}`: {e}")))?;
+        found.push((id, bytes));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

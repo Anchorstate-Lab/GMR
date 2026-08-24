@@ -291,6 +291,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     version: VERSION,
     items: &ITEMS,
     narrows_on: &ITEMS,
+    identity: &["name", "callee", "member", "shape"],
     eligible: parseable,
     collect,
     merge: coord::Merge::Concat,
@@ -545,15 +546,19 @@ mod tests {
     }
 
     #[test]
-    fn a_deletion_is_told_apart_from_a_rename_by_how_many_candidates_tied() {
+    fn a_deletion_is_not_answered_with_whatever_else_shares_the_file() {
         let d = fixture("deleted", &[("a.rs", ONE)]);
         let v = at(
             &d,
             json!({"file": "a.rs", "kind": "function", "name": "gone",
                    "shape": "(q: NoSuchType) Nothing"}),
         );
-        assert_eq!(v["missed"], json!(["name", "shape"]));
-        assert_eq!(v["candidates"], 2);
+        assert_eq!(
+            v["found"], false,
+            "the file it lived in and the kind of thing it was are not evidence that it is there"
+        );
+        assert_eq!(v["at"], json!(null));
+        assert_eq!(v["candidates"], 0);
     }
 
     #[test]

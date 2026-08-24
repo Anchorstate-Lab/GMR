@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -17,23 +17,49 @@ CREATE INDEX IF NOT EXISTS journal_by_anchor ON journal(anchor, seq);
 -- ── Bindings: append-only. Rebinding appends; current = latest row ──
 
 CREATE TABLE IF NOT EXISTS bindings (
-    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
-    reference      TEXT NOT NULL,     -- canonical Ref
-    body           TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
-    bound_version  TEXT NOT NULL,     -- view metadata: content version current at bind time
-    bound_at_seq   INTEGER            -- the single anchor's journal head at bind time;
+    seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference       TEXT NOT NULL,     -- canonical Ref
+    body            TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
+    bound_version   TEXT,              -- content version this assertion cited; NULL until a
+                                       -- fetch has answered for the record even once
+    bound_at_seq    INTEGER,           -- the single anchor's journal head at bind time;
                                        -- NULL when the binding names zero or several anchors,
                                        -- where "which anchor's head" has no single answer
+    source          TEXT NOT NULL,     -- how this assertion came to be; the domain's word
+    asserted_at     TEXT,              -- RFC3339; NULL predates this column
+    baseline_at_seq INTEGER            -- the bindings row whose fetch established bound_version;
+                                       -- NULL while it has never been verified
 );
 CREATE INDEX IF NOT EXISTS bindings_by_reference ON bindings(reference, seq);
 
--- Reverse index: which records hang on this anchor. Lives and dies with bindings.
+-- Reverse index, and the OR-Set tag space: one tag is one (seq, anchor).
 CREATE TABLE IF NOT EXISTS binding_anchors (
     seq        INTEGER NOT NULL REFERENCES bindings(seq),
     anchor     TEXT    NOT NULL,
     PRIMARY KEY (seq, anchor)
 );
 CREATE INDEX IF NOT EXISTS binding_anchors_by_anchor ON binding_anchors(anchor);
+
+-- Revocations: a claim about specific prior assertions, never a flag on them.
+-- `anchor` is the generation the revocation was made at; a read of that
+-- generation or a later one sees it, a read of an ancestor does not.
+CREATE TABLE IF NOT EXISTS binding_revocations (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference   TEXT NOT NULL,
+    anchor      TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    revoked_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS binding_revocations_by_anchor ON binding_revocations(anchor);
+
+-- The tags a revocation observed and killed. Naming them is what keeps a
+-- later add of the same anchor alive: it is a tag this revocation never saw.
+CREATE TABLE IF NOT EXISTS binding_revoked_tags (
+    revocation  INTEGER NOT NULL REFERENCES binding_revocations(seq),
+    binding     INTEGER NOT NULL,
+    anchor      TEXT    NOT NULL,
+    PRIMARY KEY (revocation, binding, anchor)
+);
 
 -- ── Links: Ref -> Ref, a different arity than bindings. Append-only ──
 
@@ -98,6 +124,14 @@ CREATE TRIGGER IF NOT EXISTS binding_anchors_no_update BEFORE UPDATE ON binding_
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS binding_anchors_no_delete BEFORE DELETE ON binding_anchors
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS binding_revocations_no_update BEFORE UPDATE ON binding_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS binding_revocations_no_delete BEFORE DELETE ON binding_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS binding_revoked_tags_no_update BEFORE UPDATE ON binding_revoked_tags
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS binding_revoked_tags_no_delete BEFORE DELETE ON binding_revoked_tags
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS links_no_update BEFORE UPDATE ON links
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS links_no_delete BEFORE DELETE ON links
@@ -130,4 +164,82 @@ FROM journal j
 WHERE json_extract(j.body, '$.entry') IN ('open', 'transition', 'still')
 GROUP BY j.anchor
 ON CONFLICT(anchor) DO NOTHING;
+"#;
+
+pub const V8_TO_V9: &str = r#"
+DROP TRIGGER IF EXISTS bindings_no_update;
+DROP TRIGGER IF EXISTS bindings_no_delete;
+DROP TRIGGER IF EXISTS binding_anchors_no_update;
+DROP TRIGGER IF EXISTS binding_anchors_no_delete;
+
+CREATE TABLE bindings_v9 (
+    seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference       TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    bound_version   TEXT,
+    bound_at_seq    INTEGER,
+    source          TEXT NOT NULL,
+    asserted_at     TEXT,
+    baseline_at_seq INTEGER
+);
+
+-- Every row that predates this column was asserted either by a note declaring
+-- a coordinate or by a person typing `gmr bind`, and nothing recorded which.
+-- `unknown` says that. Calling them self-attested would be a fact this store
+-- does not have, and self-attested is the one word the provenance question
+-- reads as "no independent evidence".
+INSERT INTO bindings_v9 (seq, reference, body, bound_version, bound_at_seq, source, asserted_at, baseline_at_seq)
+SELECT seq, reference, body, bound_version, bound_at_seq, 'unknown', NULL, seq FROM bindings;
+
+CREATE TABLE binding_anchors_v9 (
+    seq        INTEGER NOT NULL REFERENCES bindings_v9(seq),
+    anchor     TEXT    NOT NULL,
+    PRIMARY KEY (seq, anchor)
+);
+INSERT INTO binding_anchors_v9 (seq, anchor) SELECT seq, anchor FROM binding_anchors;
+
+-- The child goes first: with foreign keys on, dropping the parent while a
+-- child still references it is a constraint violation, and the pragma that
+-- would silence it cannot be moved inside this transaction.
+DROP TABLE binding_anchors;
+DROP TABLE bindings;
+ALTER TABLE bindings_v9 RENAME TO bindings;
+ALTER TABLE binding_anchors_v9 RENAME TO binding_anchors;
+
+CREATE INDEX IF NOT EXISTS bindings_by_reference ON bindings(reference, seq);
+CREATE INDEX IF NOT EXISTS binding_anchors_by_anchor ON binding_anchors(anchor);
+
+CREATE TRIGGER bindings_no_update BEFORE UPDATE ON bindings
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER bindings_no_delete BEFORE DELETE ON bindings
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER binding_anchors_no_update BEFORE UPDATE ON binding_anchors
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER binding_anchors_no_delete BEFORE DELETE ON binding_anchors
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+
+CREATE TABLE IF NOT EXISTS binding_revocations (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference   TEXT NOT NULL,
+    anchor      TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    revoked_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS binding_revocations_by_anchor ON binding_revocations(anchor);
+
+CREATE TABLE IF NOT EXISTS binding_revoked_tags (
+    revocation  INTEGER NOT NULL REFERENCES binding_revocations(seq),
+    binding     INTEGER NOT NULL,
+    anchor      TEXT    NOT NULL,
+    PRIMARY KEY (revocation, binding, anchor)
+);
+
+CREATE TRIGGER binding_revocations_no_update BEFORE UPDATE ON binding_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER binding_revocations_no_delete BEFORE DELETE ON binding_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER binding_revoked_tags_no_update BEFORE UPDATE ON binding_revoked_tags
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER binding_revoked_tags_no_delete BEFORE DELETE ON binding_revoked_tags
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 "#;

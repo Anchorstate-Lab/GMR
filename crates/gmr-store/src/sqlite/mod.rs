@@ -80,7 +80,11 @@ async fn connect(options: SqliteConnectOptions) -> Result<SqliteStore, StoreErro
     Ok(SqliteStore { pool })
 }
 
-pub(crate) const LADDER: &[(i64, &str)] = &[(6, schema::V6_TO_V7), (7, schema::V7_TO_V8)];
+pub(crate) const LADDER: &[(i64, &str)] = &[
+    (6, schema::V6_TO_V7),
+    (7, schema::V7_TO_V8),
+    (8, schema::V8_TO_V9),
+];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
     let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")

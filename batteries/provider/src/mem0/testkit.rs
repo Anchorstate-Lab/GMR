@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use gmr_content::ContentError;
 use gmr_probe::Budget;
 
-use super::http::{Answer, Http};
 use super::{Deployment, Mem0, Scope};
+use crate::http::{Answer, Http};
 
 type Held = Arc<Mutex<BTreeMap<String, String>>>;
 

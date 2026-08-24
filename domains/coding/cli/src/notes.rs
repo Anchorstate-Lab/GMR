@@ -285,28 +285,65 @@ mod tests {
         assert_eq!(names, vec!["memories/a.md", "memories/deeper/c.md"]);
     }
 
+    struct NoteStore {
+        dir: tempfile::TempDir,
+        provider: gmr_provider::git::Git,
+        notes: Notes,
+        written: std::sync::atomic::AtomicUsize,
+    }
+
+    impl NoteStore {
+        fn new() -> Self {
+            let dir = world(&[]);
+            std::fs::create_dir_all(dir.path().join("memories")).unwrap();
+            Self {
+                provider: gmr_provider::git::Git::new(dir.path()),
+                notes: Notes::at(dir.path(), "memories"),
+                written: std::sync::atomic::AtomicUsize::new(0),
+                dir,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl gmr::content::testkit::Corpus for NoteStore {
+        fn provider(&self) -> &dyn gmr::ContentProvider {
+            &self.provider
+        }
+
+        async fn holding(&self, bytes: &[u8]) -> gmr::ExternalId {
+            let rel = format!(
+                "memories/{}.md",
+                self.written
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            );
+            std::fs::write(self.dir.path().join(&rel), bytes).unwrap();
+            gmr::ExternalId::new(rel)
+        }
+
+        async fn never_held(&self) -> gmr::ExternalId {
+            gmr::ExternalId::new("memories/nobody-wrote-this.md")
+        }
+
+        async fn out_of_reach(&self) -> Box<dyn gmr::ContentProvider> {
+            Box::new(gmr_provider::git::Git::new(
+                self.dir.path().join("never-created"),
+            ))
+        }
+    }
+
+    #[async_trait]
+    impl gmr::content::testkit::Listing for NoteStore {
+        fn source(&self) -> &dyn MemorySource {
+            &self.notes
+        }
+    }
+
     #[tokio::test]
-    async fn a_notes_version_is_the_one_its_provider_will_hand_back() {
-        use gmr::ContentProvider;
-
-        let dir = world(&[("memories/a.md", "---\nabout: x\n---")]);
-        let declared = Notes::at(dir.path(), "memories").declared().unwrap();
-        let read = gmr_provider::git::Git::new(dir.path())
-            .fetch(
-                &gmr::ExternalId::new("memories/a.md"),
-                &Budget::within(std::time::Duration::from_secs(30), usize::MAX),
-            )
+    async fn the_note_directory_conforms_as_a_listing() {
+        gmr::content::testkit::lists(&NoteStore::new())
             .await
-            .unwrap()
             .unwrap();
-
-        assert_eq!(
-            declared[0].record.version, read.version,
-            "sync stamps a binding with the version this source computed and `read` compares \
-             it against the version the provider computes. Two ways of arriving at a version \
-             means one repository state where they disagree, and there every note reports as \
-             rewritten with a bound version nothing can retrieve"
-        );
     }
 
     #[test]

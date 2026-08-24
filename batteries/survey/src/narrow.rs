@@ -89,8 +89,8 @@ mod tests {
             let w = want(&mut rng);
             let nth = rng.below(3);
             assert_eq!(
-                report("x", &w, nth, &all),
-                report("x", &w, nth, &narrow(&all, &w)),
+                report("x", &w, &["name"], nth, &all),
+                report("x", &w, &["name"], nth, &narrow(&all, &w)),
                 "round {round}: want {w:?}, {} candidates",
                 all.len()
             );
@@ -112,7 +112,7 @@ mod tests {
             if skips_a_key(&w) {
                 gapped += 1;
             }
-            match report("x", &w, rng.below(3), &all) {
+            match report("x", &w, &["name"], rng.below(3), &all) {
                 Err(_) => refused += 1,
                 Ok(v) if v["found"] == true => found += 1,
                 Ok(_) => absent += 1,
@@ -156,8 +156,8 @@ mod tests {
     fn an_empty_corpus_agrees() {
         let want = w(&[("a", "1")]);
         assert_eq!(
-            report("x", &want, 0, &[]),
-            report("x", &want, 0, &narrow(&[], &want))
+            report("x", &want, &["name"], 0, &[]),
+            report("x", &want, &["name"], 0, &narrow(&[], &want))
         );
     }
 
@@ -170,8 +170,8 @@ mod tests {
             kept.is_empty(),
             "nothing can win, so nothing is materialised"
         );
-        let full = report("x", &want, 0, &all).unwrap();
-        let thin = report("x", &want, 0, &kept).unwrap();
+        let full = report("x", &want, &["name"], 0, &all).unwrap();
+        let thin = report("x", &want, &["name"], 0, &kept).unwrap();
         assert_eq!(full["found"], false);
         assert_eq!(full, thin);
     }
@@ -185,7 +185,10 @@ mod tests {
         ];
         let kept = narrow(&all, &want);
         assert_eq!(kept.len(), all.len());
-        assert_eq!(report("x", &want, 0, &all), report("x", &want, 0, &kept));
+        assert_eq!(
+            report("x", &want, &["name"], 0, &all),
+            report("x", &want, &["name"], 0, &kept)
+        );
     }
 
     #[test]
@@ -195,8 +198,8 @@ mod tests {
             cand(&[("kind", "function"), ("name", "a")]),
             cand(&[("kind", "type"), ("name", "b")]),
         ];
-        let full = report("x", &want, 9, &all);
-        let thin = report("x", &want, 9, &narrow(&all, &want));
+        let full = report("x", &want, &["name"], 9, &all);
+        let thin = report("x", &want, &["name"], 9, &narrow(&all, &want));
         assert!(full.is_err());
         assert_eq!(full, thin);
     }
@@ -218,8 +221,8 @@ mod tests {
                 )
             })
             .collect();
-        let full = report("x", &want, 0, &all);
-        let thin = report("x", &want, 0, &narrow(&all, &want));
+        let full = report("x", &want, &["name"], 0, &all);
+        let thin = report("x", &want, &["name"], 0, &narrow(&all, &want));
         assert!(full.is_err());
         assert_eq!(full, thin);
         assert!(full.unwrap_err().contains(&MAX_BYTES.to_string()));
@@ -237,8 +240,8 @@ mod tests {
         assert_eq!(kept.len(), 2);
         for nth in 0..2 {
             assert_eq!(
-                report("x", &want, nth, &all).unwrap()["at"]["name"],
-                report("x", &want, nth, &kept).unwrap()["at"]["name"],
+                report("x", &want, &["name"], nth, &all).unwrap()["at"]["name"],
+                report("x", &want, &["name"], nth, &kept).unwrap()["at"]["name"],
                 "nth={nth} has to name the same object on both sides"
             );
         }
@@ -264,15 +267,15 @@ mod tests {
     fn a_candidate_that_hits_nothing_can_never_be_the_one_reported() {
         let want = w(&[("file", "a.rs"), ("name", "wanted")]);
         let all = [
-            cand(&[("file", "a.rs"), ("name", "other")]),
+            cand(&[("file", "a.rs"), ("name", "wanted")]),
             cand(&[("file", "z.rs"), ("name", "unrelated")]),
         ];
         assert!(!touches(&all[1].coord, &want));
-        let reported = report("x", &want, 0, &all).unwrap();
+        let reported = report("x", &want, &["name"], 0, &all).unwrap();
         assert_eq!(reported["at"]["file"], "a.rs");
         assert_eq!(
             reported,
-            report("x", &want, 0, &narrow(&all, &want)).unwrap()
+            report("x", &want, &["name"], 0, &narrow(&all, &want)).unwrap()
         );
     }
 }

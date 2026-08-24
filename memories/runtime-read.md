@@ -14,7 +14,9 @@ the outside, the same signal `observe` uses internally to catch it.
 
 `MemoryView.bound_at_seq` is the same field `BindingRecord` carries (see
 [[store-binding-record]]) — `None` unless the binding names exactly one
-anchor. `MemoryView.stale` is derived from it inside `read`, relative to
+anchor — taken from the assertion that established the standing baseline
+rather than from the newest one, for the reason in
+[[runtime-standing-baseline]]. `MemoryView.stale` is derived from it inside `read`, relative to
 *this* anchor's current head (`seq < s.head`): a bound-at seq behind the
 head means the anchor has moved since the binding was made. `stale` stays
 `None` when there is nothing to compare against, which includes every
@@ -27,6 +29,20 @@ field, `MemoryView.grounding`, and is written up in [[runtime-grounding]].
 `stale` and `grounding` answer different questions and neither implies the
 other: `stale` is about this anchor moving, `grounding` is about the record
 moving.
+
+## A `MemoryView` carries how its assertions arose
+
+`sources` is the set of `Source`s behind the reference's live assertions and
+`asserted_at` the earliest of their times, so a reader can see whether
+anything beyond the agent's own say-so stands behind the link — the question
+[[store-binding-record]]'s `independent()` answers.
+
+Both are per reference, because a view is. [[store-orset-projection]] can
+leave several live assertions on one record, and a view per assertion would
+show the same memory three times.
+
+`asserted_at` is `Option` and skipped from JSON when absent: an assertion
+with no recorded time has none to give.
 
 ## When this changes, ask
 

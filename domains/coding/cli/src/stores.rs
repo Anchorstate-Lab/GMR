@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::error::CliError;
 use gmr::{ContentError, MemoryStore};
@@ -8,6 +9,27 @@ pub struct Warning {
     pub provider: String,
     pub message: String,
 }
+
+pub struct Where<'a> {
+    pub root: &'a Path,
+    pub notes: &'a Arc<crate::notes::Notes>,
+}
+
+type Made = Option<Result<MemoryStore, ContentError>>;
+
+type Registration = (&'static str, fn(&Where) -> Made);
+
+const REGISTERED: &[Registration] = &[
+    ("git", |at| {
+        Some(Ok(
+            gmr_provider::git::store(at.root).listing(at.notes.clone())
+        ))
+    }),
+    ("claude-code", |at| {
+        Some(gmr_provider::claude_code::store(at.root))
+    }),
+    ("mem0", |_| Some(configured()?.map(Mem0::store))),
+];
 
 #[derive(Default)]
 pub struct Stores {
@@ -23,17 +45,35 @@ impl Stores {
     }
 
     pub fn listing(&self, provider: Option<&str>) -> Vec<&MemoryStore> {
-        self.built
-            .iter()
+        self.named(provider)
             .filter(|s| s.source().is_some())
-            .filter(|s| provider.is_none_or(|want| s.provider().as_str() == want))
             .collect()
     }
 
-    fn take(&mut self, provider: &str, made: Result<MemoryStore, ContentError>) {
+    pub fn silent(&self, provider: Option<&str>) -> Vec<&MemoryStore> {
+        self.named(provider)
+            .filter(|s| s.source().is_none())
+            .collect()
+    }
+
+    fn named(&self, provider: Option<&str>) -> impl Iterator<Item = &MemoryStore> {
+        self.built
+            .iter()
+            .filter(move |s| provider.is_none_or(|want| s.provider().as_str() == want))
+    }
+
+    pub fn registered(&self) -> Vec<String> {
+        self.built
+            .iter()
+            .map(|s| s.provider().to_string())
+            .collect()
+    }
+
+    fn take(&mut self, provider: &str, made: Made) {
         match made {
-            Ok(store) => self.built.push(store),
-            Err(e) => self.warnings.push(Warning {
+            None => {}
+            Some(Ok(store)) => self.built.push(store),
+            Some(Err(e)) => self.warnings.push(Warning {
                 provider: provider.to_owned(),
                 message: e.to_string(),
             }),
@@ -41,23 +81,29 @@ impl Stores {
     }
 }
 
-pub fn assembled(root: &Path) -> Stores {
+pub fn assembled(root: &Path) -> Result<Stores, CliError> {
     let mut stores = Stores::default();
 
-    let notes = std::sync::Arc::new(crate::memories::declaring(root));
+    let notes = Arc::new(crate::memories::declaring(root));
     stores.names = crate::memories::Names::over(vec![notes.clone()]);
-    stores
-        .built
-        .push(gmr_provider::git::store(root).listing(notes));
+    let at = Where {
+        root,
+        notes: &notes,
+    };
 
-    stores.take("claude-code", gmr_provider::claude_code::store(root));
-    if let Some(made) = from_env() {
-        stores.take("mem0", made.map(Mem0::store));
+    for (name, build) in REGISTERED {
+        let made = build(&at);
+        stores.take(name, made);
     }
-    stores
+    for (name, decl) in crate::providers::declared(root)? {
+        let made = crate::providers::assembled(root, &name, &decl)
+            .map_err(|CliError(message)| ContentError::new(message));
+        stores.take(&name, Some(made));
+    }
+    Ok(stores)
 }
 
-fn from_env() -> Option<Result<Mem0, ContentError>> {
+fn configured() -> Option<Result<Mem0, ContentError>> {
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let scope = Scope {
         user_id: env("MEM0_USER_ID"),

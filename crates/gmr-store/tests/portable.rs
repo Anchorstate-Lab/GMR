@@ -3,7 +3,7 @@ use gmr_core::{
     Observation, Outcome, ProbeName, ProbeRef, ProbeVersion, Ref, Rule, State, Transitions,
     Version, Versions, fold,
 };
-use gmr_store::{BindingStore, ErrorKind, Fence, Journal, LinkStore, Sealer};
+use gmr_store::{Asserted, BindingStore, ErrorKind, Fence, Journal, LinkStore, Sealer};
 
 fn versions() -> Versions {
     Versions {
@@ -97,14 +97,16 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
 
     store
         .bindings()
-        .bind(
-            &Binding {
+        .bind(&Asserted {
+            binding: Binding {
                 reference: Ref::new("git", "memories/one.md"),
                 anchors: vec![key.clone()],
             },
-            &Version::new("v1"),
-            Some(open_seq),
-        )
+            bound_version: Some(Version::new("v1")),
+            bound_at_seq: Some(open_seq),
+            source: gmr_core::Source::Adjudicated,
+            at: chrono::Utc::now(),
+        })
         .await
         .unwrap();
 

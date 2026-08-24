@@ -1,5 +1,9 @@
 ---
-about: domains/coding/cli/src/verbs/sync.rs#run
+about:
+  - domains/coding/cli/src/verbs/sync.rs#run
+  - domains/coding/cli/src/verbs/sync.rs#synced
+  - domains/coding/cli/src/verbs/sync.rs#tell
+  - domains/coding/cli/src/memories.rs#Fault
 watch: [logic]
 ---
 
@@ -72,6 +76,37 @@ the front door documents — a hand-written script probe declared in
 `anchors.toml`, a note binding to it by bare key — exited 1 from `sync` with
 the anchor opened and the note bound, on a lint whose own sentence was
 false. `doctor` resolves it the same way for the same reason.
+
+## The act and the telling are two functions, because one verb composes this one
+
+`synced` does the work and hands back a `Synced`; `tell` renders it; `run` is
+the two together, which is all `main` ever needs. `anchor` needs the first
+without the second — it is the only verb in this CLI that invokes another,
+and it folds this report into its own single answer rather than letting a
+second one land on the same stream ([[cli-anchor-declares]]).
+
+That `anchor` reaches for it at all is worth naming: declaring **one**
+coordinate runs the **whole repository's** reconciliation, because opening a
+declaration is what `sync` does and it does it for every declaration at once.
+So the exit code `anchor` returns is this report's, about the repository, and
+not about the record it just bound. Both answers are in its output for that
+reason.
+
+`Synced.broken` owns its faults rather than borrowing them from the scan: a
+report is a snapshot of what happened, and one that borrows cannot outlive
+the run it describes.
+
+**`broken` in `--json` is `Fault`'s own field set, minus `weight`.** That is
+why `Fault` is anchored here from another module: a field added to a lint
+value now appears in a contract agents read, and the only thing standing
+between the two is a `#[serde(skip)]` somebody has to remember. Nothing else
+in this repository observes that, so this note is what observes it — a change
+to `Fault` should send the reader here to ask whether the new field belongs
+in the report.
+
+`weight` is the one that must stay out: it is how this repository decides
+red, and `blocks()` / `breaks()` is a judgement callers are meant to read off
+the exit code, not re-derive from a number in the body.
 
 ## When this changes, ask
 

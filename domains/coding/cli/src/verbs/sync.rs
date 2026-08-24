@@ -36,6 +36,8 @@ pub struct AnchorDecl {
     pub rules: Vec<String>,
     #[serde(default)]
     pub terminal: Vec<String>,
+    #[serde(default)]
+    pub watch: Option<crate::memories::Watch>,
     #[serde(flatten)]
     pub settings: crate::settings::Declared,
 }
@@ -93,6 +95,53 @@ pub fn read_declared(root: &Path, file: &str) -> Result<Declared, CliError> {
     }
 }
 
+#[derive(serde::Serialize)]
+struct Written<'a> {
+    key: &'a str,
+    probe: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shape: Option<&'a String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<&'a serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<&'a serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+struct Block<'a> {
+    anchor: Vec<Written<'a>>,
+}
+
+pub fn declare(root: &Path, file: &str, decl: &AnchorDecl) -> Result<(), CliError> {
+    let block = Block {
+        anchor: vec![Written {
+            key: &decl.key,
+            probe: &decl.probe,
+            shape: decl.shape.as_ref(),
+            params: (!decl.params.is_null()).then_some(&decl.params),
+            position: decl.position.as_ref(),
+        }],
+    };
+    let written = toml::to_string(&block).map_err(|e| {
+        CliError(format!(
+            "cannot write a declaration for `{}`: {e}",
+            decl.key
+        ))
+    })?;
+
+    let path = root.join(file);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CliError(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    let mut held = std::fs::read_to_string(&path).unwrap_or_default();
+    if !held.is_empty() && !held.ends_with('\n') {
+        held.push('\n');
+    }
+    std::fs::write(&path, format!("{held}{written}"))
+        .map_err(|e| CliError(format!("cannot write {}: {e}", path.display())))
+}
+
 pub fn merged<'a>(
     declared: &'a Declared,
     notes: &'a [crate::memories::Note],
@@ -118,6 +167,26 @@ pub fn merged<'a>(
     out
 }
 
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Synced {
+    pub opened: Vec<String>,
+    pub criteria_drifted: Vec<String>,
+    pub instrument_swapped: Vec<String>,
+    pub resettled: Vec<String>,
+    pub bound: Vec<String>,
+    pub renamed: Vec<String>,
+    pub warnings: Vec<String>,
+    pub dry_run: bool,
+    pub scheduled: usize,
+    pub broken: Vec<crate::memories::Fault>,
+}
+
+impl Synced {
+    pub fn code(&self) -> i32 {
+        i32::from(!self.broken.is_empty())
+    }
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
@@ -126,6 +195,18 @@ pub async fn run(
     dry_run: bool,
     json: bool,
 ) -> Result<i32, CliError> {
+    let synced = synced(rt, root, names, file, dry_run).await?;
+    tell(&synced, json);
+    Ok(synced.code())
+}
+
+pub async fn synced(
+    rt: &Runtime,
+    root: &Path,
+    names: &crate::memories::Names,
+    file: String,
+    dry_run: bool,
+) -> Result<Synced, CliError> {
     let declared = read_declared(root, &file)?;
     let ctx = Context {
         catalog: Catalog::load(root)?,
@@ -141,8 +222,12 @@ pub async fn run(
             .chain(existing.iter().map(AnchorKey::as_str)),
     );
     let notes = &scanned.notes;
-    let breaking: Vec<&crate::memories::Fault> =
-        scanned.faults.iter().filter(|f| f.breaks()).collect();
+    let breaking: Vec<crate::memories::Fault> = scanned
+        .faults
+        .iter()
+        .filter(|f| f.breaks())
+        .cloned()
+        .collect();
 
     let mut steps = Vec::new();
     let mut opened = Vec::new();
@@ -189,7 +274,9 @@ pub async fn run(
     steps.extend(
         binds
             .into_iter()
-            .map(|(reference, anchors, version)| Step::Bind(reference, anchors, version)),
+            .map(|(reference, anchors, version, dropped)| {
+                Step::Bind(reference, anchors, version, dropped)
+            }),
     );
 
     let mut warnings = Vec::new();
@@ -205,59 +292,72 @@ pub async fn run(
                         warnings.push(format!("{key}: {w}"));
                     }
                 }
-                Step::Bind(reference, anchors, version) => {
-                    rt.bind(reference, anchors, version).await?;
+                Step::Bind(reference, anchors, version, dropped) => {
+                    if !dropped.is_empty() {
+                        rt.revoke_on(&reference, &dropped, gmr::Source::Derived)
+                            .await?;
+                    }
+                    rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
+                        .await?;
                 }
             }
         }
     }
 
+    Ok(Synced {
+        opened,
+        criteria_drifted: drifted_criteria,
+        instrument_swapped: swapped,
+        resettled,
+        bound,
+        renamed,
+        warnings,
+        dry_run,
+        scheduled,
+        broken: breaking,
+    })
+}
+
+pub fn tell(s: &Synced, json: bool) {
     if json {
         println!(
             "{}",
-            serde_json::json!({
-                "opened": opened,
-                "criteria_drifted": drifted_criteria,
-                "instrument_swapped": swapped,
-                "resettled": resettled,
-                "bound": bound, "renamed": renamed,
-                "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
-                "broken": breaking.iter().map(|f| serde_json::json!({
-                    "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
-                })).collect::<Vec<_>>(),
-            })
+            serde_json::to_string(s).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
         );
-        return Ok(i32::from(!breaking.is_empty()));
+        return;
     }
+    told(s);
+}
 
+fn told(s: &Synced) {
     println!(
         "{} anchors{}",
-        opened.len(),
-        if dry_run {
+        s.opened.len(),
+        if s.dry_run {
             " would be opened (--dry-run)"
         } else {
             " opened"
         }
     );
-    for w in &warnings {
+    for w in &s.warnings {
         println!("  ! {w}");
     }
-    if !breaking.is_empty() {
+    if !s.broken.is_empty() {
         println!(
             "\n{} notes did not become the anchor they meant to — everything else in \
              this repo synced anyway:",
-            breaking.len()
+            s.broken.len()
         );
-        for f in &breaking {
+        for f in &s.broken {
             println!("  ! {}", f.line());
         }
     }
-    if !drifted_criteria.is_empty() {
+    if !s.criteria_drifted.is_empty() {
         println!(
             "\n{} anchors have declarations that differ from their current criteria:",
-            drifted_criteria.len()
+            s.criteria_drifted.len()
         );
-        for k in &drifted_criteria {
+        for k in &s.criteria_drifted {
             println!("  != {k}");
         }
         println!(
@@ -265,12 +365,12 @@ pub async fn run(
              Decide whether to accept it, then use revise so it leaves a sealed record."
         );
     }
-    if !swapped.is_empty() {
+    if !s.instrument_swapped.is_empty() {
         println!(
             "\n{} anchors last read with an instrument this build no longer has:",
-            swapped.len()
+            s.instrument_swapped.len()
         );
-        for k in &swapped {
+        for k in &s.instrument_swapped {
             println!("  ~= {k}");
         }
         println!(
@@ -282,42 +382,41 @@ pub async fn run(
              the two things moved."
         );
     }
-    if !bound.is_empty() {
+    if !s.bound.is_empty() {
         println!(
             "\n{} notes {} their anchors:",
-            bound.len(),
-            if dry_run {
+            s.bound.len(),
+            if s.dry_run {
                 "would be bound to"
             } else {
                 "bound to"
             }
         );
-        for b in &bound {
+        for b in &s.bound {
             println!("  + {b}");
         }
     }
-    if !renamed.is_empty() {
+    if !s.renamed.is_empty() {
         println!(
             "\n{} notes dropped a key and gained an unseen one. That is either a\n\
              rename or a mistake, and sync will not guess which:",
-            renamed.len()
+            s.renamed.len()
         );
-        for r in &renamed {
+        for r in &s.renamed {
             println!("  ? {r}");
         }
         println!("\nClose the old anchor with a reason, or put the old key back.");
     }
-    if !resettled.is_empty() {
+    if !s.resettled.is_empty() {
         println!(
             "\n{} anchors {} a new retain/cadence from the declaration:",
-            resettled.len(),
-            if dry_run { "would take" } else { "took" }
+            s.resettled.len(),
+            if s.dry_run { "would take" } else { "took" }
         );
-        for k in &resettled {
+        for k in &s.resettled {
             println!("  ~= {k}");
         }
     }
-    Ok(i32::from(!breaking.is_empty()))
 }
 
 struct Rename {
@@ -344,13 +443,13 @@ fn ambiguous(had: &[AnchorKey], want: &[AnchorKey], closed: &[AnchorKey]) -> Opt
     (!dropped.is_empty() && !gained.is_empty()).then_some(Rename { dropped, gained })
 }
 
-type Binding = (Ref, Vec<AnchorKey>, Version);
+type Binding = (Ref, Vec<AnchorKey>, Version, Vec<AnchorKey>);
 
 enum Step {
     Schedule(AnchorKey),
     Resettle(AnchorKey, RunSettings),
     Open(Box<OpenRequest>),
-    Bind(Ref, Vec<AnchorKey>, Version),
+    Bind(Ref, Vec<AnchorKey>, Version, Vec<AnchorKey>),
 }
 
 async fn align_bindings(
@@ -374,24 +473,20 @@ async fn align_bindings(
         want.dedup();
 
         let current = rt.memory().binding_of(&reference).await?;
-        if let Some(record) = &current {
-            let mut had = record.binding.anchors.clone();
-            had.sort();
-            let mut closed = Vec::new();
-            for key in had.iter().filter(|k| !want.contains(k)) {
-                if matches!(rt.read(key).await, Ok(view) if view.closed) {
-                    closed.push(key.clone());
-                }
-            }
-            if let Some(rename) = ambiguous(&had, &want, &closed) {
-                renamed.push(format!(
-                    "{named}: dropped {}, gained {}",
-                    rename.joined(&rename.dropped),
-                    rename.joined(&rename.gained)
-                ));
-                continue;
+        let had = current.anchors().to_vec();
+        let mut closed = Vec::new();
+        for key in had.iter().filter(|k| !want.contains(k)) {
+            if matches!(rt.read(key).await, Ok(view) if view.closed) {
+                closed.push(key.clone());
             }
         }
+        let looks_renamed = ambiguous(&had, &want, &closed).inspect(|rename| {
+            renamed.push(format!(
+                "{named}: dropped {}, gained {}",
+                rename.joined(&rename.dropped),
+                rename.joined(&rename.gained)
+            ));
+        });
 
         let version = rt.current_version(&reference).await?.ok_or_else(|| {
             CliError(format!(
@@ -400,16 +495,17 @@ async fn align_bindings(
                 reference.provider
             ))
         })?;
-        let settled = current.is_some_and(|r| {
-            let mut had = r.binding.anchors.clone();
-            had.sort();
-            had == want && r.bound_version == version
-        });
+        let settled = had == want && current.says(&want, Some(&version), gmr::Source::Derived);
         if settled {
             continue;
         }
+
+        let dropped: Vec<AnchorKey> = match looks_renamed.is_some() {
+            true => Vec::new(),
+            false => had.iter().filter(|k| !want.contains(k)).cloned().collect(),
+        };
         bound.push(named);
-        planned.push((reference, want, version));
+        planned.push((reference, want, version, dropped));
     }
     Ok((planned, bound, renamed))
 }
@@ -523,6 +619,63 @@ mod tests {
     use super::*;
     use gmr::{ContentProvider, ExternalId, Fetched, ProviderId};
 
+    fn stated(key: &str, name: &str) -> AnchorDecl {
+        AnchorDecl {
+            key: key.to_owned(),
+            probe: "ast-map".to_owned(),
+            params: crate::coord::whole_repository(),
+            position: Some(serde_json::json!({ "file": "src/a.ts", "name": name })),
+            shape: Some("contract".to_owned()),
+            rules: Vec::new(),
+            terminal: Vec::new(),
+            watch: None,
+            settings: crate::settings::Declared::default(),
+        }
+    }
+
+    #[test]
+    fn a_written_declaration_is_the_one_that_reads_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let decl = stated("src/a.ts#one", "one");
+
+        declare(dir.path(), DEFAULT_FILE, &decl).unwrap();
+        let held = read_declared(dir.path(), DEFAULT_FILE).unwrap();
+
+        let read = &held.anchor[0];
+        assert_eq!(read.key, decl.key);
+        assert_eq!(read.probe, decl.probe);
+        assert_eq!(read.shape, decl.shape);
+        assert_eq!(
+            read.position, decl.position,
+            "position is what the probe is pointed at. A writer and a reader that \
+             disagree about it declare an anchor watching somewhere else, and nothing \
+             downstream can tell — the anchor simply reports about the wrong code"
+        );
+        assert_eq!(read.params, decl.params);
+    }
+
+    #[test]
+    fn a_second_declaration_does_not_land_inside_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        declare(dir.path(), DEFAULT_FILE, &stated("src/a.ts#one", "one")).unwrap();
+        declare(dir.path(), DEFAULT_FILE, &stated("src/a.ts#two", "two")).unwrap();
+
+        let held = read_declared(dir.path(), DEFAULT_FILE).unwrap();
+
+        assert_eq!(held.anchor.len(), 2, "both declarations must survive");
+        assert_eq!(
+            held.anchor[0].position,
+            Some(serde_json::json!({ "file": "src/a.ts", "name": "one" })),
+            "TOML puts a table under whichever array entry precedes it, so appending a \
+             second entry whose tables outrank the first would silently repoint the \
+             first anchor at the second's coordinate"
+        );
+        assert_eq!(
+            held.anchor[1].position,
+            Some(serde_json::json!({ "file": "src/a.ts", "name": "two" }))
+        );
+    }
+
     struct Versions(ProviderId);
 
     #[async_trait::async_trait]
@@ -583,20 +736,70 @@ mod tests {
              reader learns to distrust both"
         );
         assert!(
-            rt.memory().binding_of(&reference).await.unwrap().is_none(),
+            rt.memory().binding_of(&reference).await.unwrap().is_empty(),
             "resolution has to finish before the first write, because the journal is \
              append-only and there is no rollback. Writing as it went is how a sync that \
              failed on the last note left 346 anchors open with nothing bound to them — a \
              state `check` and `doctor` both read as perfectly fine"
         );
 
-        for (reference, anchors, version) in plan {
-            rt.bind(reference, anchors, version).await.unwrap();
+        for (reference, anchors, version, _) in plan {
+            rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
+                .await
+                .unwrap();
         }
         assert!(
-            rt.memory().binding_of(&reference).await.unwrap().is_some(),
+            !rt.memory().binding_of(&reference).await.unwrap().is_empty(),
             "and the plan really does bind when applied — without this the assertion above \
              would pass just as well against a fixture that could never bind at all"
+        );
+        store.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_binding_recorded_before_its_origin_was_known_is_re_derived_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (rt, store) = runtime(dir.path()).await;
+        let reference = Ref::new("git", "memories/a.md");
+        let notes = vec![crate::memories::Note {
+            reference: reference.clone(),
+            wants: vec![crate::memories::Want::Existing("some::key".to_owned())],
+            watch: None,
+        }];
+        let names = crate::memories::Names::over(vec![std::sync::Arc::new(
+            crate::memories::declaring(dir.path()),
+        )]);
+
+        rt.bind(
+            reference.clone(),
+            keys(&["some::key"]),
+            Some(Version::new("v1")),
+            gmr::Source::Unknown,
+        )
+        .await
+        .unwrap();
+
+        let (plan, _, _) = align_bindings(&rt, &notes, &names).await.unwrap();
+        assert_eq!(
+            plan.len(),
+            1,
+            "a row saying nothing about where it came from is not a derivation, so sync \
+             owes the record one"
+        );
+        for (reference, anchors, version, _) in plan {
+            rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
+                .await
+                .unwrap();
+        }
+
+        let (plan, _, _) = align_bindings(&rt, &notes, &names).await.unwrap();
+        assert!(
+            plan.is_empty(),
+            "and exactly one. The row it was owed is now on the record; the older one stays \
+             `unknown` because the table is append-only and its origin really is unknown. \
+             Asking instead whether every assertion ever made was derived is a question about \
+             an immutable past, so it can never come back true, and every sync over an \
+             unchanged repository re-asserts the whole corpus forever"
         );
         store.close().await;
     }

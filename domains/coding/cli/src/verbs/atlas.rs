@@ -75,6 +75,7 @@ fn memory_tone(m: &MemoryView) -> (Tone, Option<&'static str>) {
             Before::Retrieved { .. } => (Tone::Notice, Some("rewritten since binding")),
             _ => (Tone::Alarm, Some("bound version lost")),
         },
+        Grounding::Unverified { .. } => (Tone::Notice, Some("never verified")),
         Grounding::Current { .. } => (Tone::Calm, None),
     }
 }
@@ -163,9 +164,10 @@ pub async fn run(
             .iter()
             .map(|m| m.reference.clone())
             .collect();
-        let delivering = bound
-            .iter()
-            .any(|note| subs.delivers(shape, note, &view.state, false));
+        let delivering = bound.iter().any(|note| {
+            subs.delivers(view.key.as_str(), shape, note, &view.state)
+                .unwrap_or(true)
+        });
         let moved = crate::delivery::axes_set(&view.state).is_some_and(|set| !set.is_empty());
         let unclaimed = bound.is_empty() && moved;
         if bound.is_empty() {
@@ -312,7 +314,10 @@ mod tests {
     fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
-            bound_version: gmr::Version::new("v1"),
+            bound_version: Some(gmr::Version::new("v1")),
+            sources: std::collections::BTreeSet::from([gmr::Source::Adjudicated]),
+            baseline_at: None,
+            asserted_at: None,
             grounding: if rewritten {
                 Grounding::Rewritten {
                     version: gmr::Version::new("v2"),

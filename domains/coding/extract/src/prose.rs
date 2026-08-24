@@ -87,6 +87,7 @@ pub(crate) const RECIPE: coord::Recipe = coord::Recipe {
     version: VERSION,
     items: &ITEMS,
     narrows_on: &ITEMS,
+    identity: &["fingerprint", "heading"],
     eligible: markdown,
     collect,
     merge: coord::Merge::Concat,

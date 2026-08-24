@@ -31,6 +31,7 @@ fn settled(observed: &Observed, before: &State) -> Option<(bool, State)> {
 
 #[derive(Default)]
 struct Wrong {
+    snagged: bool,
     handed: bool,
     unclaimed: bool,
     unseen: bool,
@@ -43,7 +44,8 @@ struct Wrong {
 
 impl Wrong {
     fn any(&self) -> bool {
-        self.handed
+        self.snagged
+            || self.handed
             || self.unclaimed
             || self.unseen
             || self.drifted
@@ -83,6 +85,7 @@ pub async fn run(
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<gmr::Ref>)> = Vec::new();
     let mut unclaimed = Vec::new();
     let mut unseen = Vec::new();
+    let mut snags: Vec<super::observe::Snag> = Vec::new();
     let mut quiet = 0;
 
     for before in &views {
@@ -97,8 +100,17 @@ pub async fn run(
         };
 
         let shape = crate::shapes::of(&before.anchor.transitions);
-        let memories =
-            super::observe::delivered(rt, &subs, key, shape, &state, moved, &mut unclaimed).await?;
+        let memories = super::observe::settled(
+            rt,
+            &subs,
+            key,
+            shape,
+            &state,
+            moved,
+            &mut unclaimed,
+            &mut snags,
+        )
+        .await?;
         if memories.is_empty() {
             quiet += usize::from(moved);
             continue;
@@ -120,6 +132,7 @@ pub async fn run(
         handed: !handed.is_empty(),
         unclaimed: !unclaimed.is_empty(),
         unseen: !unseen.is_empty(),
+        snagged: !snags.is_empty(),
         drifted: !drifted.is_empty(),
         unreadable: !unreadable.is_empty(),
         undeclared: !undeclared.is_empty(),
@@ -146,6 +159,9 @@ pub async fn run(
                 })).collect::<Vec<_>>(),
                 "criteria_unreadable": unreadable.iter().map(|(k, r)| serde_json::json!({
                     "anchor": k, "reason": r
+                })).collect::<Vec<_>>(),
+                "watch_unevaluable": snags.iter().map(|(k, m, why)| serde_json::json!({
+                    "anchor": k, "memory": crate::memories::addressed(m), "detail": why
                 })).collect::<Vec<_>>(),
                 "criteria_undeclared": undeclared,
                 "watch_invalid": unwatchable.iter().map(|f| serde_json::json!({
@@ -175,6 +191,7 @@ pub async fn run(
         }
     }
     super::observe::report_unclaimed(&unclaimed);
+    super::observe::report_snags(&snags);
 
     match (handed.len(), quiet) {
         (0, 0) if !wrong.any() => println!("{} anchors, nothing moved.", keys.len()),
@@ -281,7 +298,7 @@ mod tests {
     fn nothing_a_provider_answers_can_move_this_exit_code() {
         assert_eq!(
             std::mem::size_of::<Wrong>(),
-            8,
+            9,
             "every field here is something this repository's owner can act on: a memory handed \
              back, a note claiming nothing, an anchor nobody could look at, criteria that \
              drifted. Whether a store answered is deliberately not among them — D6 puts that \

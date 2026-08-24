@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use gmr_content::{ContentError, ContentProvider, Fetched, MemoryStore};
-use gmr_core::{ExternalId, ProviderId, Version, content_hash_of_bytes};
+use gmr_content::{ContentError, ContentProvider, Fetched, MemorySource, MemoryStore, Record};
+use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
 use gmr_probe::Budget;
 
 pub struct ClaudeMemory {
@@ -26,10 +26,11 @@ impl ClaudeMemory {
     }
 }
 
+pub const HELD_AS: &str = "md";
+
 pub fn store(project_root: impl AsRef<Path>) -> Result<MemoryStore, ContentError> {
-    Ok(MemoryStore::new(std::sync::Arc::new(ClaudeMemory::new(
-        project_root,
-    )?)))
+    let held = std::sync::Arc::new(ClaudeMemory::new(project_root)?);
+    Ok(MemoryStore::new(held.clone()).listing(held))
 }
 
 fn memory_dir(project_root: &Path) -> Result<PathBuf, ContentError> {
@@ -69,6 +70,25 @@ impl ContentProvider for ClaudeMemory {
             version: Version::new(version.into_inner()),
             bytes,
         }))
+    }
+}
+
+#[async_trait]
+impl MemorySource for ClaudeMemory {
+    fn provider(&self) -> &ProviderId {
+        &self.id
+    }
+
+    async fn list(&self, budget: &Budget) -> Result<Vec<Record>, ContentError> {
+        crate::spend(budget)?;
+        Ok(crate::local_file::walk(&self.root, HELD_AS)?
+            .into_iter()
+            .map(|(id, bytes)| Record {
+                reference: Ref::new(self.id.as_str(), id),
+                version: Version::new(content_hash_of_bytes(&bytes).into_inner()),
+                bytes,
+            })
+            .collect())
     }
 }
 
