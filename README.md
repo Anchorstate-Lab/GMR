@@ -4,6 +4,12 @@
   </a>
 </p>
 
+[![CI](https://github.com/Anchorstate-Lab/GMR/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/Anchorstate-Lab/GMR/actions/workflows/rust.yml)
+[![npm](https://img.shields.io/npm/v/%40anchorstate-lab%2Fgmr?logo=npm&color=cb3837)](https://www.npmjs.com/package/@anchorstate-lab/gmr)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Anchorstate-Lab/GMR)
+
 > Keep agent memory grounded in the facts it depends on.
 
 GMR is a grounding layer between agent memory and changing reality. It keeps memories attached to the facts they depend on, detects when those facts drift, and surfaces affected memories before they become stale assumptions.
