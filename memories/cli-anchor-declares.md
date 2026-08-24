@@ -96,6 +96,30 @@ A person named both the coordinate and the record, which is the same act
 forgetting a flag ([[cli-bind-run]]). Both go through `bind::assert_on`, so
 there is one place that decides what a binding costs to make.
 
+## One act, one answer, and the exit code is about the repository
+
+`--json` prints exactly one object. It carries what this run declared, the
+binding it made under `bound`, whether the anchor still owes a memory, and
+sync's whole report nested under `sync` — reached through
+[[cli-sync-run]]'s `synced` so no second answer lands on the same stream.
+
+`bound` and `sync.bound` are different questions and both are true: the
+first is the assertion this run made by hand (`Adjudicated`), the second is
+what `align_bindings` derived from notes. Reporting only the second is what
+told a reader "nothing was bound" in the same breath as binding something —
+and a reader who believes that goes back to trusting a memory nothing
+vouches for, which is this tool inverted.
+
+The exit code stays sync's: a note elsewhere that names no live anchor makes
+the run loud, and it does not stop the record named here from being bound.
+They answer different questions — *is this repository sound* and *did this
+act happen* — and both answers are in the output, so neither has to be read
+off the other.
+
+The address is resolved before anything is written. Resolution is a pure
+question ([[cli-address-resolution]]) and answering it first means a typo
+costs nothing, rather than leaving a declared anchor behind a refusal.
+
 ## When this changes, ask
 
 Does a new flag write into a memory store? Then GMR has taken on storing

@@ -107,6 +107,36 @@ def a_memory_bound_before_the_store_can_answer_still_arrives(c):
     p.content_reaches(c.gmr, c.world.signal, address, text)
 
 
+@scenario("G1", "the front door bound a record: does its own report say it did?")
+def an_act_of_grounding_is_reported_as_having_happened(c):
+    address, _ = c.put("why.md")
+
+    res = c.gmr.raw("anchor", c.world.signal, "--record", address, json_out=True)
+
+    if res.body is None:
+        raise p.Broken(
+            "G1",
+            "the front door's report could not be read as one answer. An agent that "
+            "cannot parse it cannot tell a grounding that happened from one that did "
+            "not, and the safe reading — believing the memory anyway — is the one thing "
+            "this tool exists to prevent",
+        )
+    said = res.body.get("bound")
+    if not said or said.get("record") != address:
+        raise p.Broken(
+            "G1",
+            f"a record was bound and the report said {said!r}. A report that denies an "
+            "act it just performed sends the reader back to trusting a memory nothing "
+            "vouches for",
+        )
+    if res.body.get("barren") is not False:
+        raise p.Broken(
+            "G1",
+            "the anchor was reported as owing a memory in the same answer that says one "
+            "was just bound to it",
+        )
+
+
 # ── G2 迁移等价 ─────────────────────────────────────────────────────────────
 
 
@@ -186,6 +216,35 @@ def a_silent_store_is_not_a_missing_record(c):
             "somebody else's store being unreachable turned the gate red; "
             "nobody holding this repository can act on that",
         )
+
+
+@scenario(
+    "G3",
+    "an address naming a store this run cannot resolve: refused, or written down against another?",
+    varies=("world",),
+)
+def a_store_this_run_cannot_name_is_never_another_stores_record(c):
+    stranger = "nowhere:why.md"
+
+    res = c.gmr.raw("anchor", c.world.signal, "--record", stranger, check=False)
+
+    if res.code == 0:
+        raise p.Broken(
+            "G3",
+            "an address naming a store nothing here registered was accepted. Failing to "
+            "resolve a store is our failure; recording it against whichever store happens "
+            "to be the default turns it into that store's answer, and `gone` is a state "
+            "no reader can tell from a record somebody really deleted",
+        )
+
+    after = c.gmr.doctor()
+    p.not_reported(
+        after,
+        "gone",
+        "nowhere",
+        "a store we could not name became a record another store reports as deleted, "
+        "and the binding table only ever grows",
+    )
 
 
 @scenario("G3", "the store says the record is gone: is the reader told?")

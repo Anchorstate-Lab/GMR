@@ -82,6 +82,13 @@ pub fn declared(root: &Path) -> Result<BTreeMap<String, Decl>, CliError> {
         .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))?
         .provider;
     for (name, decl) in &declared {
+        gmr::ProviderId::try_new(name.as_str()).map_err(|e| {
+            CliError(format!(
+                "provider `{name}` cannot be named that: its name {e}. A store's name is \
+                 the half of every address that says which store to ask, so a name the \
+                 address form cannot carry is a store nothing could ever be bound to"
+            ))
+        })?;
         if decl.version == Versioning::Native {
             return Err(CliError(format!(
                 "provider `{name}` declares `version = \"native\"`, and a store declared in \

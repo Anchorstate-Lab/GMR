@@ -13,8 +13,22 @@ fn check_nonempty_128(s: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn check_provider_id(s: &str) -> Result<(), String> {
+    check_nonempty_128(s)?;
+    let shaped = s
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !s.starts_with('-');
+    match shaped {
+        true => Ok(()),
+        false => {
+            Err("expected lowercase ASCII letters, digits or `-`, not starting with `-`".to_owned())
+        }
+    }
+}
+
 string_newtype! {
-    admitted ProviderId, check_nonempty_128
+    admitted ProviderId, check_provider_id
 }
 
 string_newtype! {
@@ -102,6 +116,23 @@ impl std::fmt::Display for Source {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_provider_name_has_a_shape_so_an_address_can_be_told_from_a_path() {
+        for good in ["git", "mem0", "claude-code", "desk2"] {
+            assert!(ProviderId::try_new(good).is_ok(), "{good}");
+        }
+        for bad in ["memories/a", "My Store", "Mem0", "notes.md", "-leading", ""] {
+            assert!(
+                ProviderId::try_new(bad).is_err(),
+                "`{bad}` must not pass: whether `{bad}:rest` is an address or an id that \
+                 happens to contain a colon has to be decidable from the text alone. \
+                 Deciding it from which providers this run registered makes one string \
+                 mean two different records in two builds, and the wrong one is written \
+                 into an append-only table"
+            );
+        }
+    }
 
     #[test]
     fn only_a_record_that_declared_itself_or_was_judged_stands_on_its_own() {

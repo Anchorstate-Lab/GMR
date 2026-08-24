@@ -34,19 +34,35 @@ fn addressed_to(provider: &str, external_id: &str) -> Result<Ref, CliError> {
     })
 }
 
+fn registered(named: &str, external_id: &str, known: &[&str]) -> Result<Ref, CliError> {
+    if !known.contains(&named) {
+        return Err(CliError(format!(
+            "no store named `{named}` is registered in this binary. Registered here: {}. \
+             This run cannot say what `{named}:{external_id}` refers to, and recording it \
+             against some other store would make a record nobody ever wrote read as one \
+             that store deleted",
+            match known.is_empty() {
+                true => "none".to_owned(),
+                false => known.join(", "),
+            }
+        )));
+    }
+    addressed_to(named, external_id)
+}
+
 pub fn located(text: &str, provider: Option<&str>, known: &[&str]) -> Result<Ref, CliError> {
     let carried = text
         .split_once(':')
-        .filter(|(named, rest)| known.contains(named) && !rest.is_empty());
+        .filter(|(named, rest)| !rest.is_empty() && gmr::ProviderId::try_new(*named).is_ok());
     match (carried, provider) {
-        (Some((named, rest)), None) => addressed_to(named, rest),
-        (Some((named, rest)), Some(want)) if want == named => addressed_to(named, rest),
+        (Some((named, rest)), None) => registered(named, rest, known),
+        (Some((named, rest)), Some(want)) if want == named => registered(named, rest, known),
         (Some((named, _)), Some(want)) => Err(CliError(format!(
             "`{text}` is addressed to `{named}` and --provider says `{want}`. One of them is \
              not what you meant, and guessing which would bind this to a store you did not name"
         ))),
-        (None, Some(want)) => addressed_to(want, text),
-        (None, None) => addressed_to(RESOLVED_THROUGH, text),
+        (None, Some(want)) => registered(want, text, known),
+        (None, None) => registered(RESOLVED_THROUGH, text, known),
     }
 }
 
@@ -210,11 +226,13 @@ pub enum Weight {
     Blocks,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Fault {
     pub note: String,
     pub key: Option<String>,
     pub code: &'static str,
     pub detail: String,
+    #[serde(skip)]
     pub weight: Weight,
 }
 
@@ -507,13 +525,38 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
     }
 
     #[test]
-    fn a_prefix_no_store_here_answers_to_is_part_of_the_id() {
-        assert_eq!(
-            located("mem0:9f8e", None, &["git"]).unwrap(),
-            Ref::new("git", "mem0:9f8e"),
-            "an id is allowed to contain a colon, so only a prefix this binary actually \
-             registered may be taken as one. Splitting on any colon would quietly rewrite \
-             every id that has one"
+    fn a_prefix_that_is_not_a_provider_name_is_part_of_the_id() {
+        for text in ["memories/a:b.md", "notes.d:x", "Mem0:9f8e"] {
+            assert_eq!(
+                located(text, None, &STORES).unwrap(),
+                Ref::new("git", text),
+                "an id is allowed to contain a colon. What may be taken as a prefix is \
+                 settled by `ProviderId`'s grammar, so the same text is the same record in \
+                 every build — a rule that consulted the registry instead would make \
+                 `{text}` one record here and a different one wherever that store is \
+                 configured"
+            );
+        }
+    }
+
+    #[test]
+    fn a_store_this_run_never_registered_is_refused_rather_than_rewritten() {
+        let e = located("mem0:9f8e", None, &["git"]).unwrap_err();
+
+        assert!(e.0.contains("mem0"), "{}", e.0);
+        assert!(
+            e.0.contains("git"),
+            "the refusal has to name what is registered, or the reader cannot tell a \
+             typo from a feature this build lacks: {}",
+            e.0
+        );
+        assert!(
+            !e.0.is_empty(),
+            "recording this against `git` instead is the failure this refusal exists for: \
+             we could not resolve the store, which is our failure, and git would then \
+             answer that no such path exists — the world's answer. The binding table only \
+             ever grows, so that laundering is permanent and reads forever as a record \
+             somebody deleted"
         );
     }
 
@@ -609,10 +652,7 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
             "---\nabout: src/auth.ts#createSession\nshape: contract\nwatch: [logic]\n---\n",
         )]);
         let notes = scan(d.path(), &r).unwrap().notes;
-        assert_eq!(
-            notes[0].watch,
-            Some(Watch::Axes(vec!["logic".to_owned()]))
-        );
+        assert_eq!(notes[0].watch, Some(Watch::Axes(vec!["logic".to_owned()])));
 
         let Want::Declared(decl) = &notes[0].wants[0] else {
             panic!("expected a declared anchor");

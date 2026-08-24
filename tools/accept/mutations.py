@@ -20,6 +20,25 @@ way a paragraph describing the same thing would.
 
 MUTATIONS = [
     {
+        "id": "a-store-we-cannot-name-becomes-a-record-somewhere-else",
+        "file": "domains/coding/cli/src/memories.rs",
+        "find": "    if !known.contains(&named) {\n        return Err(CliError(format!(",
+        "replace": "    if !known.contains(&named) {\n        return addressed_to(RESOLVED_THROUGH, &format!(\"{named}:{external_id}\"));\n    }\n    if false {\n        return Err(CliError(format!(",
+        "breaks": ["a-store-this-run-cannot-name-is-never-another-stores-record"],
+        "why": "failing to resolve a store is our failure; writing it down against the "
+        "default store makes the default store answer for it, and `gone` is then "
+        "indistinguishable from a record somebody really deleted",
+    },
+    {
+        "id": "the-front-door-answers-twice",
+        "file": "domains/coding/cli/src/verbs/anchor.rs",
+        "find": "    if !json {\n        crate::verbs::sync::tell(&synced, false);\n    }",
+        "replace": "    crate::verbs::sync::tell(&synced, json);",
+        "breaks": ["an-act-of-grounding-is-reported-as-having-happened"],
+        "why": "two answers on one stream is no answer; an agent that cannot read the "
+        "report falls back to trusting the memory anyway",
+    },
+    {
         "id": "the-memories-vanish-from-the-report",
         "file": "domains/coding/cli/src/verbs/observe.rs",
         "find": "    refs.iter().map(crate::memories::addressed).collect()",
@@ -82,8 +101,8 @@ MUTATIONS = [
     {
         "id": "what-is-owed-is-only-what-is-owed-right-now",
         "file": "domains/coding/cli/src/verbs/mod.rs",
-        "find": "        let raised = entries.iter().filter(|(seq, _)| *seq >= sealed).any(|(_, e)| {",
-        "replace": "        let raised = entries.iter().filter(|(seq, _)| *seq >= sealed).last().iter().any(|(_, e)| {",
+        "find": "        let raised = entries\n            .iter()\n            .filter(|(seq, _)| *seq >= sealed)\n            .any(|(_, e)| {",
+        "replace": "        let raised = entries\n            .iter()\n            .filter(|(seq, _)| *seq >= sealed)\n            .last()\n            .iter()\n            .any(|(_, e)| {",
         "breaks": ["an-obligation-the-rules-put-away-is-still-not-discarded"],
         "why": "reading only the present would let a domain's own rules erase the record "
         "that a judgement was ever owed",

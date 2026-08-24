@@ -142,6 +142,10 @@ pub async fn run(
     let catalog = Catalog::load(root)?;
     let mut routed = crate::coord::route(&coord, None, &catalog)?;
     routed.position = crate::coord::resolve(rt, &routed, &catalog).await?;
+    let named = record
+        .as_deref()
+        .map(|address| stores.locate(address, None))
+        .transpose()?;
 
     let declared = already_declared(root, &catalog, &coord)?;
     let mut note = None;
@@ -169,16 +173,7 @@ pub async fn run(
         }
     }
 
-    if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "coordinate": coord, "probe": routed.probe, "shape": routed.shape,
-                "position": routed.position, "declared_in": declared_in(note.as_deref()),
-                "note": note, "wrote": fresh, "record": record,
-            })
-        );
-    } else {
+    if !json {
         let axes = crate::shapes::get(&routed.shape)
             .map(crate::shapes::axes_of)
             .unwrap_or_default();
@@ -198,46 +193,60 @@ pub async fn run(
         }
     }
 
-    let code = crate::verbs::sync::run(
+    let synced = crate::verbs::sync::synced(
         rt,
         root,
         &stores.names,
         crate::verbs::sync::DEFAULT_FILE.to_owned(),
         false,
-        json,
     )
     .await?;
+    if !json {
+        crate::verbs::sync::tell(&synced, false);
+    }
 
     let key = gmr::AnchorKey::new(coord.clone());
-    let Some(address) = record else {
-        if !json && rt.bindings_on(&key).await?.is_empty() {
-            println!("memory    {UNWRITTEN}   nothing is bound here yet");
+    let mut attached = None;
+    if let Some(reference) = named {
+        let (version, landed) = crate::verbs::bind::assert_on(
+            rt,
+            reference.clone(),
+            vec![key.clone()],
+            gmr::Source::Adjudicated,
+        )
+        .await?;
+        let address = crate::memories::addressed(&reference);
+        let anchors: Vec<String> = landed.anchors.iter().map(ToString::to_string).collect();
+        if !json {
+            println!("bound     {address} → {}", anchors.join(", "));
+            if version.is_none() {
+                println!(
+                    "          no version yet: the store could not answer for this record, \
+                     so nothing about it has been verified"
+                );
+            }
         }
-        return Ok(code);
-    };
-    let reference = stores.locate(&address, None)?;
-    let (version, landed) =
-        crate::verbs::bind::assert_on(rt, reference.clone(), vec![key], gmr::Source::Adjudicated)
-            .await?;
-    if !json {
-        println!(
-            "bound     {} → {}",
-            crate::memories::addressed(&reference),
-            landed
-                .anchors
-                .iter()
-                .map(|a| a.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        if version.is_none() {
-            println!(
-                "          no version yet: the store could not answer for this record, so \
-                 nothing about it has been verified"
-            );
-        }
+        attached = Some(serde_json::json!({
+            "record": address, "anchors": anchors,
+            "version": version.map(gmr::Version::into_inner),
+        }));
     }
-    Ok(code)
+
+    let barren = rt.bindings_on(&key).await?.is_empty();
+    match json {
+        true => println!(
+            "{}",
+            serde_json::json!({
+                "coordinate": coord, "probe": routed.probe, "shape": routed.shape,
+                "position": routed.position, "declared_in": declared_in(note.as_deref()),
+                "note": note, "wrote": fresh, "bound": attached, "barren": barren,
+                "sync": synced,
+            })
+        ),
+        false if barren => println!("memory    {UNWRITTEN}   nothing is bound here yet"),
+        false => {}
+    }
+    Ok(synced.code())
 }
 
 fn declared_in(note: Option<&str>) -> &str {

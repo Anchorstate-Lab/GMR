@@ -1,5 +1,7 @@
 ---
-about: domains/coding/cli/src/verbs/sync.rs#AnchorDecl
+about:
+  - domains/coding/cli/src/verbs/sync.rs#AnchorDecl
+  - domains/coding/cli/src/verbs/sync.rs#declare
 watch: [sig]
 ---
 
@@ -30,6 +32,27 @@ about how a declaration is *read* rather than about what this struct holds.
 the same coordinate reaching here through `about:` and through `gmr open`
 produces one `ProbeRef` instead of two that differ only in a default nobody
 chose.
+
+## `declare` writes this struct, and writes only the part a coordinate settles
+
+`declare` is the other half of `read_declared`, and it lives beside it so one
+place knows the file's shape. It writes `key` / `probe` / `shape` / `params` /
+`position` and nothing else: `rules`, `terminal` and `settings` are what
+somebody states by hand, and `gmr anchor` has none of them to state. A partial
+statement is what this struct is for, so writing a partial one needs no second
+type.
+
+It **appends** and never rewrites an entry already there. Re-routing a
+coordinate that is already declared is a criteria revision — it belongs to
+`revise` / `accept --criteria`, where the reason gets sealed — and must never
+be a side effect of running the front door twice ([[cli-anchor-declares]]).
+Appending also leaves whatever a person wrote around it byte-for-byte intact,
+which a full re-serialisation would not.
+
+Field order in the written block is load-bearing, not style: TOML puts a table
+under whichever array entry precedes it, so the scalars are emitted before
+`params` and `position`. Emit one scalar after them and it lands inside the
+previous table — silently repointing an anchor at another coordinate.
 
 ## When this changes, ask
 

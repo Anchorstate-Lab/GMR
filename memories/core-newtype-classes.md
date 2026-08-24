@@ -5,6 +5,7 @@ about:
   - crates/gmr-core/src/addr.rs#an_admitted_name_is_not_refused_on_the_way_back_out_of_the_store
   - domains/coding/cli/src/rules.rs#key
   - domains/coding/cli/src/memories.rs#addressed_to
+  - crates/gmr-core/src/memory.rs#check_provider_id
 watch: [sig, logic]
 ---
 
@@ -69,6 +70,22 @@ So the limit is enforced where a value first becomes typed:
 
 `Notes` naming its own provider (`ProviderId::new(RESOLVED_THROUGH)`) is not a
 door — a literal in this repository's own source is not admitted from anywhere.
+
+## `ProviderId` carries a grammar, and that is what makes an address readable
+
+`check_provider_id` is narrower than the other names here: lowercase, digits
+and `-`, never leading with one. It is not tidiness. `<prefix>:<rest>` has to
+be decidable as *an address* or *an id that happens to contain a colon* from
+the text alone, and the only alternative is asking which stores this run
+registered — which makes one string name two different records in two runs
+(see [[cli-address-resolution]]).
+
+Being `admitted` is what makes tightening it safe: `Deserialize` is
+transparent and `new` does not check, so every `Ref` already in a journal
+reads back exactly as it was written. Only `try_new` sees the new rule, and
+`try_new` is only reached at the doors — the CLI's address parser, and the
+`providers.toml` loader, which now refuses a recipe whose name no address
+could carry.
 
 ## The two tests are the classification
 

@@ -167,6 +167,26 @@ pub fn merged<'a>(
     out
 }
 
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Synced {
+    pub opened: Vec<String>,
+    pub criteria_drifted: Vec<String>,
+    pub instrument_swapped: Vec<String>,
+    pub resettled: Vec<String>,
+    pub bound: Vec<String>,
+    pub renamed: Vec<String>,
+    pub warnings: Vec<String>,
+    pub dry_run: bool,
+    pub scheduled: usize,
+    pub broken: Vec<crate::memories::Fault>,
+}
+
+impl Synced {
+    pub fn code(&self) -> i32 {
+        i32::from(!self.broken.is_empty())
+    }
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
@@ -175,6 +195,18 @@ pub async fn run(
     dry_run: bool,
     json: bool,
 ) -> Result<i32, CliError> {
+    let synced = synced(rt, root, names, file, dry_run).await?;
+    tell(&synced, json);
+    Ok(synced.code())
+}
+
+pub async fn synced(
+    rt: &Runtime,
+    root: &Path,
+    names: &crate::memories::Names,
+    file: String,
+    dry_run: bool,
+) -> Result<Synced, CliError> {
     let declared = read_declared(root, &file)?;
     let ctx = Context {
         catalog: Catalog::load(root)?,
@@ -190,8 +222,12 @@ pub async fn run(
             .chain(existing.iter().map(AnchorKey::as_str)),
     );
     let notes = &scanned.notes;
-    let breaking: Vec<&crate::memories::Fault> =
-        scanned.faults.iter().filter(|f| f.breaks()).collect();
+    let breaking: Vec<crate::memories::Fault> = scanned
+        .faults
+        .iter()
+        .filter(|f| f.breaks())
+        .cloned()
+        .collect();
 
     let mut steps = Vec::new();
     let mut opened = Vec::new();
@@ -268,52 +304,60 @@ pub async fn run(
         }
     }
 
+    Ok(Synced {
+        opened,
+        criteria_drifted: drifted_criteria,
+        instrument_swapped: swapped,
+        resettled,
+        bound,
+        renamed,
+        warnings,
+        dry_run,
+        scheduled,
+        broken: breaking,
+    })
+}
+
+pub fn tell(s: &Synced, json: bool) {
     if json {
         println!(
             "{}",
-            serde_json::json!({
-                "opened": opened,
-                "criteria_drifted": drifted_criteria,
-                "instrument_swapped": swapped,
-                "resettled": resettled,
-                "bound": bound, "renamed": renamed,
-                "warnings": warnings, "dry_run": dry_run, "scheduled": scheduled,
-                "broken": breaking.iter().map(|f| serde_json::json!({
-                    "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
-                })).collect::<Vec<_>>(),
-            })
+            serde_json::to_string(s).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
         );
-        return Ok(i32::from(!breaking.is_empty()));
+        return;
     }
+    told(s);
+}
 
+fn told(s: &Synced) {
     println!(
         "{} anchors{}",
-        opened.len(),
-        if dry_run {
+        s.opened.len(),
+        if s.dry_run {
             " would be opened (--dry-run)"
         } else {
             " opened"
         }
     );
-    for w in &warnings {
+    for w in &s.warnings {
         println!("  ! {w}");
     }
-    if !breaking.is_empty() {
+    if !s.broken.is_empty() {
         println!(
             "\n{} notes did not become the anchor they meant to — everything else in \
              this repo synced anyway:",
-            breaking.len()
+            s.broken.len()
         );
-        for f in &breaking {
+        for f in &s.broken {
             println!("  ! {}", f.line());
         }
     }
-    if !drifted_criteria.is_empty() {
+    if !s.criteria_drifted.is_empty() {
         println!(
             "\n{} anchors have declarations that differ from their current criteria:",
-            drifted_criteria.len()
+            s.criteria_drifted.len()
         );
-        for k in &drifted_criteria {
+        for k in &s.criteria_drifted {
             println!("  != {k}");
         }
         println!(
@@ -321,12 +365,12 @@ pub async fn run(
              Decide whether to accept it, then use revise so it leaves a sealed record."
         );
     }
-    if !swapped.is_empty() {
+    if !s.instrument_swapped.is_empty() {
         println!(
             "\n{} anchors last read with an instrument this build no longer has:",
-            swapped.len()
+            s.instrument_swapped.len()
         );
-        for k in &swapped {
+        for k in &s.instrument_swapped {
             println!("  ~= {k}");
         }
         println!(
@@ -338,42 +382,41 @@ pub async fn run(
              the two things moved."
         );
     }
-    if !bound.is_empty() {
+    if !s.bound.is_empty() {
         println!(
             "\n{} notes {} their anchors:",
-            bound.len(),
-            if dry_run {
+            s.bound.len(),
+            if s.dry_run {
                 "would be bound to"
             } else {
                 "bound to"
             }
         );
-        for b in &bound {
+        for b in &s.bound {
             println!("  + {b}");
         }
     }
-    if !renamed.is_empty() {
+    if !s.renamed.is_empty() {
         println!(
             "\n{} notes dropped a key and gained an unseen one. That is either a\n\
              rename or a mistake, and sync will not guess which:",
-            renamed.len()
+            s.renamed.len()
         );
-        for r in &renamed {
+        for r in &s.renamed {
             println!("  ? {r}");
         }
         println!("\nClose the old anchor with a reason, or put the old key back.");
     }
-    if !resettled.is_empty() {
+    if !s.resettled.is_empty() {
         println!(
             "\n{} anchors {} a new retain/cadence from the declaration:",
-            resettled.len(),
-            if dry_run { "would take" } else { "took" }
+            s.resettled.len(),
+            if s.dry_run { "would take" } else { "took" }
         );
-        for k in &resettled {
+        for k in &s.resettled {
             println!("  ~= {k}");
         }
     }
-    Ok(i32::from(!breaking.is_empty()))
 }
 
 struct Rename {
