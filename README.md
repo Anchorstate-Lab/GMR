@@ -4,11 +4,13 @@
   </a>
 </p>
 
-[![CI](https://github.com/Anchorstate-Lab/GMR/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/Anchorstate-Lab/GMR/actions/workflows/rust.yml)
-[![npm](https://img.shields.io/npm/v/%40anchorstate-lab%2Fgmr?logo=npm&color=cb3837)](https://www.npmjs.com/package/@anchorstate-lab/gmr)
-[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Anchorstate-Lab/GMR)
+<p align="center">
+  <a href="https://github.com/Anchorstate-Lab/GMR/actions/workflows/rust.yml"><img src="https://github.com/Anchorstate-Lab/GMR/actions/workflows/rust.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/@anchorstate-lab/gmr"><img src="https://img.shields.io/npm/v/%40anchorstate-lab%2Fgmr?logo=npm&color=cb3837" alt="npm"></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust&logoColor=white" alt="Rust 1.88+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://deepwiki.com/Anchorstate-Lab/GMR"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+</p>
 
 > Keep agent memory grounded in the facts it depends on.
 
