@@ -185,7 +185,10 @@ mod tests {
         ];
         let kept = narrow(&all, &want);
         assert_eq!(kept.len(), all.len());
-        assert_eq!(report("x", &want, &["name"], 0, &all), report("x", &want, &["name"], 0, &kept));
+        assert_eq!(
+            report("x", &want, &["name"], 0, &all),
+            report("x", &want, &["name"], 0, &kept)
+        );
     }
 
     #[test]

@@ -79,22 +79,22 @@ impl Subscriptions {
         let mut undecidable = std::collections::BTreeSet::new();
         let mut writes_by_anchor: BTreeMap<&str, crate::contract::Writes> = BTreeMap::new();
         for decl in merged(&declared, &notes) {
-            if let Some(name) = &decl.shape {
-                if let Err(e) = crate::shapes::get(name) {
-                    faults.push(Fault {
-                        note: declaring(&notes, names, &decl.key),
-                        key: Some(decl.key.clone()),
-                        code: "unknown-shape",
-                        detail: format!("`{}`: {e}", decl.key),
-                        weight: Weight::Breaks,
-                    });
-                    continue;
-                }
+            if let Some(name) = &decl.shape
+                && let Err(e) = crate::shapes::get(name)
+            {
+                faults.push(Fault {
+                    note: declaring(&notes, names, &decl.key),
+                    key: Some(decl.key.clone()),
+                    code: "unknown-shape",
+                    detail: format!("`{}`: {e}", decl.key),
+                    weight: Weight::Breaks,
+                });
+                continue;
             }
-            if let Ok(transitions) = decl.to_transitions() {
-                if let Ok(writes) = crate::contract::writes_of(&transitions) {
-                    writes_by_anchor.insert(&decl.key, writes);
-                }
+            if let Ok(transitions) = decl.to_transitions()
+                && let Ok(writes) = crate::contract::writes_of(&transitions)
+            {
+                writes_by_anchor.insert(&decl.key, writes);
             }
             if let Some(watch) = &decl.watch {
                 match compile(watch) {

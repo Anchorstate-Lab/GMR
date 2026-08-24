@@ -91,7 +91,10 @@ pub async fn run(
         for (key, owed) in &refused {
             println!(
                 "  ! {key}   {}",
-                owed.iter().map(|m| names.of(m)).collect::<Vec<_>>().join(" · ")
+                owed.iter()
+                    .map(|m| names.of(m))
+                    .collect::<Vec<_>>()
+                    .join(" · ")
             );
         }
         println!(

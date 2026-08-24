@@ -96,7 +96,9 @@ const CONTRACT: Shape = Shape {
         since("logic", "logic-changed", "body", "obs.facts.body"),
         since("place", "moved", "after", "obs.at.after"),
     ],
-    watch: &["missing", "name", "file", "kind", "sig", "surface", "logic", "place"],
+    watch: &[
+        "missing", "name", "file", "kind", "sig", "surface", "logic", "place",
+    ],
 };
 
 const ROSTER: Shape = Shape {
@@ -989,7 +991,9 @@ mod tests {
         let axes: Vec<String> = bits(&s).into_iter().map(|(k, _)| k).collect();
         assert_eq!(
             axes,
-            ["missing", "name", "file", "kind", "sig", "surface", "logic", "place"]
+            [
+                "missing", "name", "file", "kind", "sig", "surface", "logic", "place"
+            ]
         );
     }
 

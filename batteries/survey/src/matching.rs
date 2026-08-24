@@ -247,7 +247,10 @@ mod tests {
             cand(&[("file", "a"), ("name", "x")]),
             cand(&[("file", "a"), ("name", "y")]),
         ];
-        assert_eq!(report("x", &w, &["file"], 0, &tied).unwrap()["candidates"], 2);
+        assert_eq!(
+            report("x", &w, &["file"], 0, &tied).unwrap()["candidates"],
+            2
+        );
     }
 
     #[test]

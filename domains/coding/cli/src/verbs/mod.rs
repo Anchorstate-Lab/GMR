@@ -122,13 +122,17 @@ pub(crate) async fn owed(
 
     let mut out = Vec::new();
     for m in bound {
-        let raised = entries.iter().filter(|(seq, _)| *seq >= sealed).any(|(_, e)| {
-            let state = match e {
-                gmr::Entry::Open { state, .. } | gmr::Entry::Transition { state, .. } => state,
-                _ => return false,
-            };
-            subs.delivers(key.as_str(), shape, &m, state).unwrap_or(false)
-        });
+        let raised = entries
+            .iter()
+            .filter(|(seq, _)| *seq >= sealed)
+            .any(|(_, e)| {
+                let state = match e {
+                    gmr::Entry::Open { state, .. } | gmr::Entry::Transition { state, .. } => state,
+                    _ => return false,
+                };
+                subs.delivers(key.as_str(), shape, &m, state)
+                    .unwrap_or(false)
+            });
         if raised {
             out.push(m);
         }

@@ -164,9 +164,10 @@ pub async fn run(
             .iter()
             .map(|m| m.reference.clone())
             .collect();
-        let delivering = bound
-            .iter()
-            .any(|note| subs.delivers(view.key.as_str(), shape, note, &view.state).unwrap_or(true));
+        let delivering = bound.iter().any(|note| {
+            subs.delivers(view.key.as_str(), shape, note, &view.state)
+                .unwrap_or(true)
+        });
         let moved = crate::delivery::axes_set(&view.state).is_some_and(|set| !set.is_empty());
         let unclaimed = bound.is_empty() && moved;
         if bound.is_empty() {
