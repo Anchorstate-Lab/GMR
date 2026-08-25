@@ -80,11 +80,17 @@ async fn connect(options: SqliteConnectOptions) -> Result<SqliteStore, StoreErro
     Ok(SqliteStore { pool })
 }
 
-pub(crate) const LADDER: &[(i64, &str)] = &[
-    (6, schema::V6_TO_V7),
-    (7, schema::V7_TO_V8),
-    (8, schema::V8_TO_V9),
-    (9, schema::V9_TO_V10),
+pub(crate) enum Rung {
+    Sql(&'static str),
+    Chain,
+}
+
+pub(crate) const LADDER: &[(i64, Rung)] = &[
+    (6, Rung::Sql(schema::V6_TO_V7)),
+    (7, Rung::Sql(schema::V7_TO_V8)),
+    (8, Rung::Sql(schema::V8_TO_V9)),
+    (9, Rung::Sql(schema::V9_TO_V10)),
+    (10, Rung::Chain),
 ];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
@@ -120,12 +126,12 @@ enum Climbed {
     Again,
 }
 
-async fn climb(pool: &SqlitePool, to: i64, ladder: &[(i64, &str)]) -> Result<(), StoreError> {
+async fn climb(pool: &SqlitePool, to: i64, ladder: &[(i64, Rung)]) -> Result<(), StoreError> {
     while let Climbed::Again = rung(pool, to, ladder).await? {}
     Ok(())
 }
 
-async fn rung(pool: &SqlitePool, to: i64, ladder: &[(i64, &str)]) -> Result<Climbed, StoreError> {
+async fn rung(pool: &SqlitePool, to: i64, ladder: &[(i64, Rung)]) -> Result<Climbed, StoreError> {
     let mut held = pool.acquire().await.map_err(db_err)?;
     sqlx::query("BEGIN IMMEDIATE")
         .execute(&mut *held)
@@ -148,7 +154,7 @@ async fn rung(pool: &SqlitePool, to: i64, ladder: &[(i64, &str)]) -> Result<Clim
 async fn under_the_write_lock(
     held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
     to: i64,
-    ladder: &[(i64, &str)],
+    ladder: &[(i64, Rung)],
 ) -> Result<Climbed, StoreError> {
     let at: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(&mut **held)
@@ -162,14 +168,14 @@ async fn under_the_write_lock(
         return Err(from_the_future(at));
     }
 
-    let (next, sql) = match at {
-        0 => (to, schema::SCHEMA),
+    let (next, step) = match at {
+        0 => (to, &Rung::Sql(schema::SCHEMA)),
         _ => (
             at + 1,
             ladder
                 .iter()
                 .find(|(rung, _)| *rung == at)
-                .map(|(_, sql)| *sql)
+                .map(|(_, step)| step)
                 .ok_or_else(|| {
                     StoreError::with_code(
                         ErrorKind::Constraint,
@@ -184,10 +190,15 @@ async fn under_the_write_lock(
         ),
     };
 
-    sqlx::raw_sql(sql)
-        .execute(&mut **held)
-        .await
-        .map_err(db_err)?;
+    match step {
+        Rung::Sql(sql) => {
+            sqlx::raw_sql(sql)
+                .execute(&mut **held)
+                .await
+                .map_err(db_err)?;
+        }
+        Rung::Chain => chain_the_journal(held).await?,
+    }
     sqlx::query(&format!("PRAGMA user_version = {next}"))
         .execute(&mut **held)
         .await
@@ -197,6 +208,48 @@ async fn under_the_write_lock(
         true => Climbed::Landed,
         false => Climbed::Again,
     })
+}
+
+async fn chain_the_journal(
+    held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
+) -> Result<(), StoreError> {
+    use sqlx::Row;
+
+    sqlx::raw_sql(schema::V10_TO_V11_OPEN)
+        .execute(&mut **held)
+        .await
+        .map_err(db_err)?;
+
+    let rows = sqlx::query("SELECT seq, anchor, fence, body FROM journal ORDER BY seq")
+        .fetch_all(&mut **held)
+        .await
+        .map_err(db_err)?;
+
+    let mut prev: Option<String> = None;
+    for r in rows {
+        let anchor = gmr_core::AnchorKey::new(r.get::<String, _>("anchor"));
+        let fence = match r.get::<i64, _>("fence") {
+            0 => crate::Fence::Unleased,
+            n => crate::Fence::Held(n as u64),
+        };
+        let entry: gmr_core::Entry =
+            serde_json::from_str(&r.get::<String, _>("body")).map_err(decode_err)?;
+        let hash = crate::journal::link(prev.as_deref(), &anchor, fence, &entry)?;
+        sqlx::query("UPDATE journal SET prev = ?1, hash = ?2 WHERE seq = ?3")
+            .bind(prev.as_deref())
+            .bind(hash.as_str())
+            .bind(r.get::<i64, _>("seq"))
+            .execute(&mut **held)
+            .await
+            .map_err(db_err)?;
+        prev = Some(hash.into_inner());
+    }
+
+    sqlx::raw_sql(schema::V10_TO_V11_CLOSE)
+        .execute(&mut **held)
+        .await
+        .map_err(db_err)?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -297,7 +350,7 @@ mod tests {
         let climbed = raw().await;
         sqlx::raw_sql(OLD).execute(&climbed).await.unwrap();
         stamp(&climbed, 1).await;
-        climb(&climbed, 2, &[(1, RUNG)]).await.unwrap();
+        climb(&climbed, 2, &[(1, Rung::Sql(RUNG))]).await.unwrap();
 
         assert_eq!(
             shape(&fresh).await,
@@ -316,7 +369,7 @@ mod tests {
         let climbed = raw().await;
         sqlx::raw_sql(OLD).execute(&climbed).await.unwrap();
         stamp(&climbed, 1).await;
-        climb(&climbed, 2, &[(1, "CREATE TABLE b (y TEXT);")])
+        climb(&climbed, 2, &[(1, Rung::Sql("CREATE TABLE b (y TEXT);"))])
             .await
             .unwrap();
 
@@ -330,10 +383,10 @@ mod tests {
     #[tokio::test]
     async fn every_rung_is_climbed_in_order_and_stamped_as_it_goes() {
         let pool = raw().await;
-        let ladder: &[(i64, &str)] = &[
-            (1, "CREATE TABLE one (x INTEGER);"),
-            (2, "CREATE TABLE two (x INTEGER);"),
-            (3, "CREATE TABLE three (x INTEGER);"),
+        let ladder: &[(i64, Rung)] = &[
+            (1, Rung::Sql("CREATE TABLE one (x INTEGER);")),
+            (2, Rung::Sql("CREATE TABLE two (x INTEGER);")),
+            (3, Rung::Sql("CREATE TABLE three (x INTEGER);")),
         ];
         stamp(&pool, 1).await;
         climb(&pool, 4, ladder).await.unwrap();
@@ -350,9 +403,9 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let ladder: &[(i64, &str)] = &[
-            (1, "CREATE TABLE one (x INTEGER);"),
-            (2, "CREATE TABLE two (x INTEGER);"),
+        let ladder: &[(i64, Rung)] = &[
+            (1, Rung::Sql("CREATE TABLE one (x INTEGER);")),
+            (2, Rung::Sql("CREATE TABLE two (x INTEGER);")),
         ];
         stamp(&pool, 2).await;
         climb(&pool, 3, ladder).await.unwrap();
@@ -369,9 +422,13 @@ mod tests {
     async fn a_missing_rung_is_refused_and_says_which_one() {
         let pool = raw().await;
         stamp(&pool, 4).await;
-        let e = climb(&pool, 6, &[(5, "CREATE TABLE five (x INTEGER);")])
-            .await
-            .unwrap_err();
+        let e = climb(
+            &pool,
+            6,
+            &[(5, Rung::Sql("CREATE TABLE five (x INTEGER);"))],
+        )
+        .await
+        .unwrap_err();
         assert_eq!(e.code, ErrorCode::SchemaVersionMismatch);
         assert!(e.to_string().contains("v4"), "{e}");
         assert_eq!(stamp_of(&pool).await, 4, "a refused climb moves nothing");
@@ -384,8 +441,10 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let ladder: &[(i64, &str)] =
-            &[(1, "CREATE TABLE ok (x INTEGER);"), (2, "THIS IS NOT SQL;")];
+        let ladder: &[(i64, Rung)] = &[
+            (1, Rung::Sql("CREATE TABLE ok (x INTEGER);")),
+            (2, Rung::Sql("THIS IS NOT SQL;")),
+        ];
         assert!(climb(&pool, 3, ladder).await.is_err());
         assert_eq!(
             stamp_of(&pool).await,
@@ -556,7 +615,7 @@ CREATE TRIGGER IF NOT EXISTS sealed_no_delete BEFORE DELETE ON sealed
             .unwrap()
     }
 
-    const RACED_RUNG: &[(i64, &str)] = &[(1, "ALTER TABLE a ADD COLUMN y INTEGER;")];
+    const RACED_RUNG: &[(i64, Rung)] = &[(1, Rung::Sql("ALTER TABLE a ADD COLUMN y INTEGER;"))];
 
     #[test]
     fn two_openers_racing_the_same_upgrade_do_not_both_apply_it() {

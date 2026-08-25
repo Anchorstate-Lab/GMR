@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 11;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -10,7 +10,11 @@ CREATE TABLE IF NOT EXISTS journal (
     seq     INTEGER PRIMARY KEY AUTOINCREMENT,
     anchor  TEXT    NOT NULL,
     fence   INTEGER NOT NULL,     -- monotonic epoch; 0 when no lease is configured
-    body    TEXT    NOT NULL      -- the entry itself, verbatim
+    body    TEXT    NOT NULL,     -- the entry itself, verbatim
+    prev    TEXT,                 -- the hash this row was linked onto; NULL for the first,
+                                  -- and for rows a build without the chain wrote
+    hash    TEXT                  -- over the canonical form, not over `body`'s bytes: the
+                                  -- same entries exported and imported must chain the same
 );
 CREATE INDEX IF NOT EXISTS journal_by_anchor ON journal(anchor, seq);
 
@@ -248,4 +252,18 @@ CREATE TRIGGER binding_revoked_tags_no_delete BEFORE DELETE ON binding_revoked_t
 
 pub const V9_TO_V10: &str = r#"
 ALTER TABLE settings ADD COLUMN facts TEXT NOT NULL DEFAULT 'plain';
+"#;
+
+pub const V10_TO_V11_OPEN: &str = r#"
+DROP TRIGGER IF EXISTS journal_no_update;
+DROP TRIGGER IF EXISTS journal_no_delete;
+ALTER TABLE journal ADD COLUMN prev TEXT;
+ALTER TABLE journal ADD COLUMN hash TEXT;
+"#;
+
+pub const V10_TO_V11_CLOSE: &str = r#"
+CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 "#;

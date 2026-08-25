@@ -52,6 +52,17 @@ an anchor nobody ever opened: a note still claiming something about the code wit
 nothing observing it — the exact state this tool exists to make visible — and the
 owner can act on it three ways. [[runtime-corpus]] has the mechanism.
 
+`chain_broken` passes the same test and is the sharpest case of it. The journal
+is this repository's own file, append-only by trigger, so a link that no longer
+covers its row means something got past that trigger or edited the file
+underneath ([[store-journal-chain]]). Nobody else can go and look. It prints
+above the anchor counts rather than among them because it is not a fact *about*
+the corpus — it is the reason to distrust every fact printed after it.
+
+Running it here and not in `check` is deliberate: it costs about a second on
+this repository's 58k entries against `doctor`'s five, and `check` is the verb
+that runs constantly. Behind a flag it would be a tamper check nobody runs.
+
 A store that would not answer does not, and that is why `unreachable` is
 **not a field on `Verdict` at all**. Nor is `never_asked`, which is the
 same answer with a different cause: the total content budget ran out before

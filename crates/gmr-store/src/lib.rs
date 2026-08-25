@@ -15,7 +15,7 @@ pub mod testkit;
 
 pub use bindings::{Asserted, BindingRecord, BindingStore, Revocation, Tag};
 pub use error::{ErrorCode, ErrorKind, StoreError};
-pub use journal::{Fence, Journal};
+pub use journal::{Chained, Fence, Journal, link};
 pub use links::LinkStore;
 pub use queue::{Disposition, Queue, Ticket};
 pub use sealer::Sealer;

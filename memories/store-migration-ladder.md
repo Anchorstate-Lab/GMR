@@ -115,6 +115,24 @@ overwhelmingly common answer is "already at this version", and that answer needs
 no lock to be safe. Every answer that implies *writing* is taken again under the
 lock, where it is authoritative.
 
+## A rung is usually SQL, and sometimes cannot be
+
+`Rung::Sql` is the ordinary case and stayed the whole vocabulary for five
+versions. v10 → v11 could not be one: it lays the hash chain
+([[store-journal-chain]]) over every existing row, and SQLite has no `sha256`
+to compute one link from the one before it in a recursive `SELECT`.
+
+So `Rung::Chain` names that one step, and the executor matches on it. The
+alternative was a general escape hatch — a function pointer in the ladder — and
+naming the step instead keeps the table a table: what a rung does is readable
+from the constant, and a coded rung that nobody named cannot appear.
+
+It still runs inside the same `BEGIN IMMEDIATE` and is still stamped by the same
+transaction, so everything below applies to it unchanged. It drops the journal's
+append-only triggers, adds the columns, links every row with `UPDATE`, and puts
+the triggers back — all before the commit, because the triggers exist precisely
+to make that `UPDATE` impossible from anywhere else.
+
 ## Why the stamp is inside the rung's transaction
 
 Each rung applies its SQL and moves `PRAGMA user_version` in one transaction, and
@@ -143,6 +161,10 @@ database at the version below permanently unopenable, and nothing else would
 notice until a user hit it.
 
 ## When this changes, ask
+
+Does a coded rung reach for something outside the connection it is handed — a
+clock, the filesystem, the network? A migration has to be a pure function of the
+database, or replaying it on a copy stops producing the same database.
 
 Does raising `SCHEMA_VERSION` come with a rung from the version below it, and
 does that rung produce the same `sqlite_master` as building the new schema from

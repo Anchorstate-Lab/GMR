@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Entry, Seq};
+use gmr_core::{AnchorKey, ContentHash, Entry, Seq, content_hash_of};
 
 use crate::error::{ErrorCode, ErrorKind, StoreError};
 
@@ -33,6 +33,28 @@ pub trait Journal: Send + Sync {
     async fn anchors(&self) -> Result<Vec<AnchorKey>, StoreError>;
 
     async fn head(&self) -> Result<Seq, StoreError>;
+}
+
+#[async_trait]
+pub trait Chained: Send + Sync {
+    async fn chain_break(&self) -> Result<Option<Seq>, StoreError>;
+}
+
+pub fn link(
+    prev: Option<&str>,
+    anchor: &AnchorKey,
+    fence: Fence,
+    entry: &Entry,
+) -> Result<ContentHash, StoreError> {
+    let entry = serde_json::to_value(entry)
+        .map_err(|e| StoreError::other(format!("could not shape the entry to link it: {e}")))?;
+    content_hash_of(&serde_json::json!({
+        "prev": prev,
+        "anchor": anchor.as_str(),
+        "fence": fence.epoch().unwrap_or(0),
+        "entry": entry,
+    }))
+    .map_err(|e| StoreError::other(format!("could not link the entry: {e}")))
 }
 
 pub fn guard(fence: Fence, seen: i64, entry: &Entry) -> Result<(), StoreError> {

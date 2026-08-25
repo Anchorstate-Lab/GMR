@@ -28,6 +28,7 @@ struct Verdict {
     no_provider: bool,
     skill_stale: bool,
     unsupervised: bool,
+    chain_broken: bool,
 }
 
 impl Verdict {
@@ -40,6 +41,7 @@ impl Verdict {
             || self.no_provider
             || self.skill_stale
             || self.unsupervised
+            || self.chain_broken
     }
 }
 
@@ -72,6 +74,7 @@ pub async fn run(
     root: &Path,
     names: &crate::memories::Names,
     cache_fault: Option<&str>,
+    chain_break: Option<gmr::Seq>,
     json: bool,
 ) -> Result<i32, CliError> {
     let declared_providers = crate::providers::declared(root)?;
@@ -121,6 +124,7 @@ pub async fn run(
             no_provider: !ground.on(Footing::NoProvider).is_empty(),
             skill_stale: !skill_stale.is_empty(),
             unsupervised: !ground.unsupervised.is_empty(),
+            chain_broken: chain_break.is_some(),
         }
         .theirs_to_fix(),
     );
@@ -146,6 +150,7 @@ pub async fn run(
                 "unsupervised": addresses(&ground.unsupervised),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
+                "chain_break": chain_break,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
                 "declared_providers": declared_providers.iter().map(|(name, decl)| serde_json::json!({
                     "provider": name, "can": decl.can(), "caveat": decl.caveat(),
@@ -159,6 +164,13 @@ pub async fn run(
         return Ok(exit_code);
     }
 
+    if let Some(seq) = chain_break {
+        println!(
+            "journal   BROKEN at seq {seq} — this entry's link does not cover it. \
+             The log is append-only by trigger; something got past that, or the file \
+             was edited underneath. Do not trust readings at or after this point"
+        );
+    }
     println!("anchors   {} (live {})", corpus.len(), live.len());
     for (name, decl) in &declared_providers {
         println!("provider  {name}   {}", decl.can().join(" · "));
@@ -295,7 +307,7 @@ mod tests {
 
     #[test]
     fn every_condition_this_repositorys_owner_can_act_on_turns_it_red() {
-        let each: [fn(&mut Verdict); 8] = [
+        let each: [fn(&mut Verdict); 9] = [
             |v| v.stranded = true,
             |v| v.provider_unavailable = true,
             |v| v.breaking_notes = true,
@@ -304,6 +316,7 @@ mod tests {
             |v| v.no_provider = true,
             |v| v.skill_stale = true,
             |v| v.unsupervised = true,
+            |v| v.chain_broken = true,
         ];
         for set in each {
             let mut v = Verdict::default();
@@ -316,11 +329,15 @@ mod tests {
     fn a_store_that_would_not_answer_is_not_among_them() {
         assert_eq!(
             std::mem::size_of::<Verdict>(),
-            8,
+            9,
             "Verdict is one bool per condition that makes this run red, and a store being \
              unreachable is deliberately not one of them: nobody holding this repository can \
              fix somebody else's service, and a build that fails on it fails for a reason its \
-             owner cannot act on. Adding a field here means claiming otherwise"
+             owner cannot act on. Adding a field here means claiming otherwise. \
+             `chain_broken` is a claim of exactly that kind and it holds: the journal is \
+             this repository's own file, append-only by trigger, and a link that no longer \
+             covers its row means something got past that or edited it underneath -- \
+             whoever holds the repository is the only one who can go and look"
         );
     }
 }

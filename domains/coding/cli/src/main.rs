@@ -245,7 +245,16 @@ async fn served(
         Command::Requeue { key } => verbs::requeue::run(&rt, key, json).await,
         Command::Pass => verbs::pass::run(&rt, &root, names, json).await,
         Command::Doctor => {
-            verbs::doctor::run(&rt, &root, names, linked.cache_fault.as_deref(), json).await
+            let broken = gmr::Chained::chain_break(&store.journal()).await?;
+            verbs::doctor::run(
+                &rt,
+                &root,
+                names,
+                linked.cache_fault.as_deref(),
+                broken,
+                json,
+            )
+            .await
         }
         Command::Export { .. } => unreachable!("export was handled above"),
         Command::Import { .. } => unreachable!("import was handled above"),
