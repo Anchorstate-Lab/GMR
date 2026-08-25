@@ -29,8 +29,11 @@ opposite — a second `put` for the same anchor must succeed and simply
 replace the first, with no trigger standing in the way.
 
 `Runtime::set_settings` (in `gmr-runtime`) is the public wrapper over this
-same guarantee: no sealed rationale is required to call it, because
-`retain`/`cadence_secs` are not criteria.
+same guarantee: no sealed rationale is required to call it, because none of
+`retain` / `facts` / `cadence_secs` is a criterion. `facts`
+([[anchor-recorded]]) is the one that can stop an anchor advancing, and it
+still passes the entry test below: it decides what may be written down, never
+how any reading was judged.
 
 ## When this changes, ask
 

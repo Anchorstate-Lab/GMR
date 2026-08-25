@@ -100,7 +100,7 @@ impl ProbeRef {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Facts(pub Value);
+pub struct Facts(Value);
 
 impl Facts {
     pub fn new(value: Value) -> Self {
@@ -109,6 +109,19 @@ impl Facts {
 
     pub fn as_value(&self) -> &Value {
         &self.0
+    }
+
+    pub fn digested(&self) -> bool {
+        digested(&self.0)
+    }
+}
+
+fn digested(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.values().all(digested),
+        Value::Array(items) => items.iter().all(digested),
+        Value::String(s) => crate::addr::check_sha256_hex(s).is_ok(),
+        _ => false,
     }
 }
 
@@ -120,6 +133,13 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    pub fn digested(&self) -> bool {
+        match self {
+            Self::Found { facts } => facts.digested(),
+            Self::NotFound => true,
+        }
+    }
+
     pub fn address(&self, derivation: &ProbeVersion) -> Result<FactAddress, CanonicalizeError> {
         let facts = match self {
             Self::Found { facts } => facts.as_value(),

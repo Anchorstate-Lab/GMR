@@ -236,6 +236,7 @@ impl World {
                 terminal: Default::default(),
                 initial: None,
                 settings: RunSettings {
+                    facts: gmr_core::Recorded::Plain,
                     budget_ms: None,
                     retain: Retain::Tick,
                     cadence_secs: None,

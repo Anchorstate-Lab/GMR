@@ -84,6 +84,7 @@ pub(crate) const LADDER: &[(i64, &str)] = &[
     (6, schema::V6_TO_V7),
     (7, schema::V7_TO_V8),
     (8, schema::V8_TO_V9),
+    (9, schema::V9_TO_V10),
 ];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {

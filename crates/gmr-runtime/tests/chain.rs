@@ -87,6 +87,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            facts: gmr_core::Recorded::Plain,
             budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,

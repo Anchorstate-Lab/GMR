@@ -9,8 +9,8 @@ pub use addr::{
     content_hash_of_bytes,
 };
 pub use anchor::{
-    Anchor, AnchorKey, Expr, POSITION, Retain, Rule, RunSettings, STATUS, State, StatusId,
-    Superseded, Transitions,
+    Anchor, AnchorKey, Expr, POSITION, Recorded, Retain, Rule, RunSettings, STATUS, State,
+    StatusId, Superseded, Transitions,
 };
 pub use journal::{
     AnchorState, Change, ChangeKind, Entry, FailureCode, Faltering, Observation, ReasonClass, Seq,

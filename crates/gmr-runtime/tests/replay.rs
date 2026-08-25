@@ -72,6 +72,7 @@ async fn the_same_probe_on_the_same_target_yields_the_same_facts() {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Full,
                 cadence_secs: None,
@@ -113,6 +114,7 @@ async fn the_two_hops_version_independently() {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Full,
                 cadence_secs: None,
@@ -176,6 +178,7 @@ async fn the_fact_address_moves_when_the_rule_moves() {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Full,
                 cadence_secs: None,
@@ -224,6 +227,7 @@ async fn folding_the_same_log_twice_yields_the_same_state() {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,

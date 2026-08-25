@@ -93,6 +93,7 @@ fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            facts: gmr_core::Recorded::Plain,
             budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,
@@ -774,6 +775,7 @@ async fn open_slow(w: &World, name: &str, secs: &str) -> AnchorKey {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
@@ -992,6 +994,7 @@ async fn open_named(w: &World, name: &str) -> AnchorKey {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
@@ -1247,5 +1250,80 @@ async fn re_asserting_an_undated_binding_dates_it_instead_of_writing_nothing() {
     assert!(
         !again.recorded,
         "and once dated it settles: the healing is one row per binding, not a row per run"
+    );
+}
+
+#[tokio::test]
+async fn an_anchor_that_records_digests_only_never_lets_a_plaintext_secret_into_the_log() {
+    const SECRET: &str = "hunter2-the-actual-password";
+
+    let w = World::new();
+    w.write(&format!(r#"{{"x":"{SECRET}"}}"#));
+    let mut opening = request(w.dir.path(), watching("x"));
+    opening.settings.facts = gmr_core::Recorded::Digests;
+    w.runtime.open(opening).await.unwrap_err();
+
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+    assert!(
+        entries.is_empty(),
+        "an anchor that records digests only refuses the observation outright, so nothing \
+         derived from the plaintext -- not the facts, not the state the rules built from \
+         them -- is written. Replacing the facts with their hash on the way in would have \
+         left the state, which the rules computed from the plaintext"
+    );
+
+    w.write(&format!(
+        r#"{{"x":"{}"}}"#,
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    ));
+    let mut opening = request(w.dir.path(), watching("x"));
+    opening.settings.facts = gmr_core::Recorded::Digests;
+    w.runtime.open(opening).await.unwrap();
+
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+    assert_eq!(entries.len(), 1, "a digest answers, so the anchor opens");
+
+    let written = serde_json::to_string(&entries).unwrap();
+    assert!(
+        !written.contains(SECRET),
+        "and the acceptance is mechanical rather than a promise: the secret is not \
+         findable anywhere in what was written"
+    );
+}
+
+#[tokio::test]
+async fn refusing_an_undigested_reading_is_the_probes_to_fix_and_says_so() {
+    let w = World::new();
+    w.write(r#"{"x":"plaintext"}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .set_settings(
+            &key(),
+            &RunSettings {
+                retain: Retain::Tick,
+                facts: gmr_core::Recorded::Digests,
+                cadence_secs: None,
+                budget_ms: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let observed = w.runtime.observe(&key()).await.unwrap();
+    let Observed::Attempt { reason, code, .. } = observed else {
+        panic!("an undigested reading on a digests-only anchor is refused: {observed:?}")
+    };
+    assert_eq!(
+        (reason, code),
+        (
+            gmr_core::ReasonClass::Unusable,
+            gmr_core::FailureCode::Unusable,
+        ),
+        "the probe answered, and its answer cannot be used here. `Unreachable` would blame \
+         the world for our own declaration, and `Unevaluable` would blame the rules, which \
+         never ran"
     );
 }

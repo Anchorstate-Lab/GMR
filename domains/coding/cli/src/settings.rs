@@ -1,10 +1,12 @@
-use gmr::{Retain, RunSettings};
+use gmr::{Recorded, Retain, RunSettings};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 pub struct Declared {
     #[serde(default)]
     pub retain_full: Option<bool>,
+    #[serde(default)]
+    pub digests: Option<bool>,
     #[serde(default)]
     pub cadence_secs: Option<u64>,
     #[serde(default)]
@@ -15,6 +17,7 @@ impl Declared {
     pub fn stated(retain_full: bool, cadence_secs: Option<u64>, budget_ms: Option<u64>) -> Self {
         Self {
             retain_full: retain_full.then_some(true),
+            digests: None,
             cadence_secs,
             budget_ms,
         }
@@ -25,6 +28,10 @@ impl Declared {
             retain: match self.retain_full {
                 Some(true) => Retain::Full,
                 _ => Retain::Tick,
+            },
+            facts: match self.digests {
+                Some(true) => Recorded::Digests,
+                _ => Recorded::Plain,
             },
             cadence_secs: self.cadence_secs,
             budget_ms: self.budget_ms,
@@ -37,6 +44,11 @@ impl Declared {
                 Some(true) => Retain::Full,
                 Some(false) => Retain::Tick,
                 None => running.retain,
+            },
+            facts: match self.digests {
+                Some(true) => Recorded::Digests,
+                Some(false) => Recorded::Plain,
+                None => running.facts,
             },
             cadence_secs: self.cadence_secs.or(running.cadence_secs),
             budget_ms: self.budget_ms.or(running.budget_ms),
@@ -52,6 +64,7 @@ mod tests {
     fn running(retain: Retain, cadence: Option<u64>, budget: Option<u64>) -> RunSettings {
         RunSettings {
             retain,
+            facts: Recorded::Plain,
             cadence_secs: cadence,
             budget_ms: budget,
         }
@@ -88,6 +101,7 @@ mod tests {
         let tuned = running(Retain::Full, Some(900), Some(7000));
         let back = Declared {
             retain_full: Some(false),
+            digests: None,
             cadence_secs: Some(300),
             budget_ms: Some(30_000),
         };
@@ -111,6 +125,29 @@ mod tests {
         assert_eq!(
             Declared::stated(true, Some(60), Some(1000)).at_open(),
             running(Retain::Full, Some(60), Some(1000))
+        );
+    }
+
+    #[test]
+    fn how_much_is_kept_and_whether_it_may_be_plaintext_are_two_knobs() {
+        let tuned = running(Retain::Full, Some(900), Some(7000));
+        let said = Declared {
+            digests: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            said.overlaid(&tuned),
+            Some(RunSettings {
+                retain: Retain::Full,
+                facts: Recorded::Digests,
+                cadence_secs: Some(900),
+                budget_ms: Some(7000),
+            }),
+            "the plan asked for this as a third `Retain` variant, and that would have made \
+             two independent questions exclusive: `Tick`/`Full` decides whether an \
+             unchanged observation writes an entry at all, and this decides whether the \
+             facts in one may be plaintext. `Digest` would have answered the second and \
+             left the first with no answer -- which is the tell"
         );
     }
 

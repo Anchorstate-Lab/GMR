@@ -114,9 +114,19 @@ pub enum Retain {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Recorded {
+    #[default]
+    Plain,
+    Digests,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunSettings {
     #[serde(default)]
     pub retain: Retain,
+    #[serde(default)]
+    pub facts: Recorded,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cadence_secs: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,6 +136,10 @@ pub struct RunSettings {
 impl RunSettings {
     pub fn retains_full(&self) -> bool {
         matches!(self.retain, Retain::Full)
+    }
+
+    pub fn records_digests_only(&self) -> bool {
+        matches!(self.facts, Recorded::Digests)
     }
 }
 

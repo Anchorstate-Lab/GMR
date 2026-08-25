@@ -80,6 +80,7 @@ async fn run_settings_are_meant_to_be_overwritten() {
     assert_eq!(q.get(&key).await.unwrap(), None, "nothing was ever set");
 
     let full = RunSettings {
+        facts: gmr_core::Recorded::Plain,
         budget_ms: None,
         retain: Retain::Full,
         cadence_secs: Some(900),
@@ -88,6 +89,7 @@ async fn run_settings_are_meant_to_be_overwritten() {
     assert_eq!(q.get(&key).await.unwrap(), Some(full));
 
     let tick = RunSettings {
+        facts: gmr_core::Recorded::Plain,
         budget_ms: None,
         retain: Retain::Tick,
         cadence_secs: None,

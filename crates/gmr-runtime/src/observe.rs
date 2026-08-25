@@ -1,7 +1,7 @@
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, FailureCode, Observation, ReasonClass, State, Versions, fold,
-    should_still,
+    Anchor, AnchorKey, Entry, FailureCode, Observation, ReasonClass, Recorded, State, Versions,
+    fold, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
 use gmr_probe::Budget;
@@ -123,7 +123,21 @@ pub(crate) async fn observe_with(
         }
     };
 
-    let observation = observe_into(&s.anchor, outcome, derivation)?;
+    let observation = match observe_into(&s.anchor, outcome, derivation, run.facts) {
+        Ok(o) => o,
+        Err(e @ RuntimeError::Undigested { .. }) => {
+            return record_attempt(
+                log,
+                key,
+                FailureCode::Unusable,
+                e.to_string(),
+                fence,
+                s.attempts() + 1,
+            )
+            .await;
+        }
+        Err(e) => return Err(e),
+    };
     let entered_at = s.entered_at.unwrap_or(at);
 
     let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
@@ -221,7 +235,13 @@ pub(crate) fn observe_into(
     anchor: &Anchor,
     outcome: gmr_core::Outcome,
     derivation: gmr_core::Derivation,
+    recorded: Recorded,
 ) -> Result<Observation, RuntimeError> {
+    if matches!(recorded, Recorded::Digests) && !outcome.digested() {
+        return Err(RuntimeError::Undigested {
+            key: anchor.key.clone(),
+        });
+    }
     let fact_address = outcome.address(&derivation.version)?;
     Ok(Observation {
         outcome,
