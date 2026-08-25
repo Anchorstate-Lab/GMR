@@ -7,6 +7,7 @@ use gmr_core::{
 use gmr_runtime::{
     Bearing, Blind, Edge, Holding, Knowledge, Observed, OpenRequest, Policy, Runtime,
 };
+use gmr_store::BindingStore;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
@@ -17,6 +18,7 @@ fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
+    bindings: Arc<MemoryBindings>,
 }
 
 impl World {
@@ -36,7 +38,7 @@ impl World {
             .journal(Arc::new(MemoryJournal::default()))
             .bindings(bindings.clone())
             .sealer(bindings.clone())
-            .links(bindings)
+            .links(bindings.clone())
             .settings(Arc::new(MemoryQueue::default()))
             .sightings(Arc::new(MemoryQueue::default()))
             .policy(policy);
@@ -46,6 +48,7 @@ impl World {
         Self {
             dir,
             runtime: b.build(),
+            bindings,
         }
     }
 
@@ -1045,4 +1048,138 @@ async fn a_memory_about_several_anchors_is_dated_against_each_of_them() {
          apart. A stamp that reported both would hand back every memory in the corpus \
          whenever any one anchor moved"
     );
+}
+
+#[tokio::test]
+async fn recapturing_a_world_that_did_not_move_leaves_the_memories_on_it_alone() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let warrant = async || {
+        w.runtime.grounded(&key()).await.unwrap().memories[0]
+            .warrant
+            .clone()
+            .expect("a bound memory always has a warrant")
+    };
+
+    let before = w.runtime.read(&key()).await.unwrap().state;
+    let blank = State::new(serde_json::json!({ "position": before.position() }));
+    w.runtime
+        .revise(
+            &key(),
+            Change::Restate { state: blank },
+            b"the instrument moved",
+        )
+        .await
+        .unwrap();
+    w.runtime.observe(&key()).await.unwrap();
+
+    assert_eq!(
+        warrant().await.holding,
+        Holding::Holds,
+        "a recapture is the author re-pinning the anchor, not the world moving under it. \
+         It restates and re-observes, so it advances `moved_at` while the state it lands \
+         on is the state it left. Deciding by the seq alone reported `Moved` with an empty \
+         axis list -- a claim contradicted by the very diff attached to it -- and one \
+         `gmr rebase --all` after an extractor upgrade would have said that about every \
+         dated note in the corpus at once"
+    );
+}
+
+#[tokio::test]
+async fn a_binding_that_carries_no_date_says_so_rather_than_claiming_no_ground() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    w.bindings
+        .bind(&gmr_store::Asserted {
+            binding: gmr_core::Binding {
+                reference: Ref::new("git", "m.md"),
+                anchors: vec![key()],
+            },
+            bound_version: Some(Version::new("v1")),
+            bound_at_seq: None,
+            source: gmr_core::Source::Adjudicated,
+            at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    let warrant = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant");
+
+    assert_eq!(
+        warrant.holding,
+        Holding::Undated,
+        "a row written before bindings carried a seq cannot be compared against the log \
+         at all. Answering `NeverEstablished` said no ground was ever established, which \
+         is false about a note that is bound and whose anchor is settled -- and it was the \
+         answer for more than half of this repository's own notes"
+    );
+    assert_eq!(warrant.bearing(), Bearing::Undated);
+}
+
+#[tokio::test]
+async fn a_reading_a_different_instrument_took_is_not_diffed_against_this_one() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "cat",
+        "cat ./world.json",
+    );
+    w.runtime.observe(&key()).await.unwrap();
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+
+    let Holding::Incomparable { took, reads } = holding else {
+        panic!(
+            "the state this memory was bound against was read by one extractor and the \
+             state now by another. Diffing them answers `did the world move` with `the \
+             instrument changed shape`: this repository's own corpus had 74 memories \
+             reporting `Moved` on axes that were new keys in the state, with every body \
+             hash identical. GMR.md's blast-radius clause asks the consumer to identify \
+             that batch, not to absorb it: {holding:?}"
+        )
+    };
+    assert_ne!(took, reads);
 }

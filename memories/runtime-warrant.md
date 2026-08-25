@@ -27,7 +27,8 @@ has started failing**: the transition is in the log and the observing has
 stopped.
 
 ```
-holding    Holds · Moved{axes, at} · Absent · NeverEstablished
+holding    Holds · Moved{axes, at} · Incomparable{took, reads} ·
+           Absent · NeverEstablished · Undated
 knowledge  Seen{at, verifiability} · Blind{since, why}
 ```
 
@@ -87,6 +88,56 @@ saying *when* it vanished. That is a deliberate trade and not a free one; if the
 vanishing moment turns out to be what people ask for, the answer is a field on
 `Absent`, not a reshuffle of the precedence.
 
+## The diff decides, the seq only gates it
+
+`holding` is **not** `bound_at_seq < moved_at`. That comparison was the first
+shape and it was wrong in a way the code could see and did not look at: a
+recapture restates the anchor and re-observes it, so it advances `moved_at`
+while landing on the state it left. Every dated memory then reported
+`Moved` with an **empty** axis list — a claim about the ground contradicted by
+the very diff attached to it. One `gmr rebase --all` after an extractor upgrade
+says that about the whole corpus at once, which is [[runtime-moved-at]]'s alert
+firehose arriving through the other door.
+
+So the state diff decides and `moved_at` only gates it: `bound >= moved_at`
+means no state change has happened since the bind, so the fold can be skipped.
+Past that gate the answer comes from comparing the two states, and an empty diff
+is `Holds` — including when the world moved out and came back, which is the same
+early cutoff [[runtime-moved-at]] argues for one level down.
+
+## An instrument that changed is not a world that moved
+
+Before the diff runs, the two states have to be comparable. Each is read by
+whatever extractor was current when it was written, and `Versions::derivation`
+records which — so the check is reading the ledger, not interpreting it.
+Different versions means the shapes are not commensurable and the diff would
+answer "did the world move" with "the instrument changed shape".
+
+This is not a hypothetical. This repository's own corpus had 74 memories
+reporting `Moved` on axes like `baseline.name` and `v.file` — keys the newer
+extractor started emitting — with every `body` hash identical on both sides.
+Nothing had moved. `docs/GMR.md`'s blast-radius clause asks exactly this of a
+consumer: the three identities are on every entry so that a batch of flips
+coming from a rules upgrade can be *identified*, and it says in as many words
+that recording the versions without that plan is fixing the record and not the
+explosion. `Incomparable` is that plan. It is also the memory-level twin of what
+the CLI already says one layer up when a probe version moves — that the stored
+baseline and what this build measures cannot be told apart — so it is the same
+idea at the layer that needed it, not a new one.
+
+Re-reading it takes a fresh binding, not a recapture: recapture re-pins the
+anchor, and the memory is still dated against a reading nobody re-took.
+
+## `Undated` is not `NeverEstablished`
+
+`bound_at_seq` is `NULL` on every binding written before the column existed, and
+those rows cannot be compared against the log at all. Answering
+`NeverEstablished` said *no ground was ever established* — false about a note
+that is bound and whose anchor is settled, and it was the answer for more than
+half of this repository's own notes. `NeverEstablished` keeps the case it was
+named for: a binding whose seq predates the anchor's first entry, where there
+genuinely was no ground yet.
+
 ## `axes` is a diff, not a vocabulary
 
 `Moved { axes }` names the **state paths that differ** between the state as of
@@ -104,6 +155,10 @@ table already wrote from the rest.
 Does a variant arrive that could be true at the same time as another? Then it is
 a third axis, and the answer is a field, not a variant. That question is the
 whole reason this is a struct.
+
+Does something start deciding `holding` from a seq comparison again? `moved_at`
+is a cursor: it says the state changed, never that it changed *away from what
+this memory was bound to*. Only the diff says that.
 
 Does `bearing()` grow a precedence that lets blindness erase an established
 move? Then the flat view contradicts the structured one, and the flat one is the

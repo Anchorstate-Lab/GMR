@@ -7,8 +7,14 @@ watch: [sig, logic]
 
 # The head is every entry; the move is only the ones that changed the state
 
-`MemoryView.stale` answers "did the ground move under this memory since it was
-bound". It is `bound_at_seq < moved_at`, and it used to be `bound_at_seq < head`.
+`moved_at` is the seq of the latest entry that changed the state, and it used to
+be compared against `bound_at_seq` to answer "did the ground move under this
+memory". It no longer answers that — see [[runtime-warrant]]: a recapture
+changes the state too, so the seq alone reported a move where the diff showed
+none. What `moved_at` does now is **gate** that question cheaply: at or before
+it, no state change has happened since the bind, so nothing needs folding.
+
+It used to be compared against `head`.
 
 `head` advances on **every** entry. `Attempt` is an entry — it records that we
 could not observe at all. So one failed look marked every memory on that anchor
@@ -51,7 +57,10 @@ existence of a per-entry one.
 ## When this changes, ask
 
 Does something start comparing a binding against `head` again? That is the same
-bug with a new name: `head` is the log's cursor, not the world's.
+bug with a new name: `head` is the log's cursor, not the world's. And `moved_at`
+is the *state's* cursor: it says the state changed, never that it changed away
+from what any particular memory was bound to. Deciding from it alone is the same
+bug one notch finer.
 
 Does a new `Entry` variant change the state? Then it sets `moved_at` beside
 `entered_at`, and the paired test is what fails if it does not.

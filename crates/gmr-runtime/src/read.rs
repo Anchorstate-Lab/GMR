@@ -3,8 +3,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Entry, Facts, FailureCode, Faltering, Link, Outcome, ProviderId,
-    ReasonClass, Ref, Seq, Source, State, StatusId, Verifiability, Version, scan,
+    Anchor, AnchorKey, AnchorState, Derivation, Entry, Facts, FailureCode, Faltering, Link,
+    Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State, StatusId,
+    Verifiability, Version, scan,
 };
 use gmr_probe::Budget;
 use gmr_store::Seen;
@@ -142,9 +143,17 @@ pub struct Warrant {
 #[serde(tag = "holding", rename_all = "snake_case")]
 pub enum Holding {
     Holds,
-    Moved { axes: Vec<String>, at: Seq },
+    Moved {
+        axes: Vec<String>,
+        at: Seq,
+    },
+    Incomparable {
+        took: ProbeVersion,
+        reads: ProbeVersion,
+    },
     Absent,
     NeverEstablished,
+    Undated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -174,8 +183,10 @@ pub enum Blind {
 pub enum Bearing {
     Holds,
     Moved,
+    Incomparable,
     Absent,
     NeverEstablished,
+    Undated,
     Blind,
     NeverAsked,
 }
@@ -195,8 +206,10 @@ impl Warrant {
     pub fn bearing(&self) -> Bearing {
         match (&self.holding, &self.knowledge) {
             (Holding::Moved { .. }, _) => Bearing::Moved,
+            (Holding::Incomparable { .. }, _) => Bearing::Incomparable,
             (Holding::Absent, _) => Bearing::Absent,
             (Holding::NeverEstablished, _) => Bearing::NeverEstablished,
+            (Holding::Undated, _) => Bearing::Undated,
             (Holding::Holds, Knowledge::Seen { .. }) => Bearing::Holds,
             (
                 Holding::Holds,
@@ -325,9 +338,9 @@ impl Runtime {
     }
 }
 
-fn state_at(entries: &[(Seq, Entry)], at: Seq) -> Option<State> {
+fn folded_at(entries: &[(Seq, Entry)], at: Seq) -> Option<AnchorState> {
     let upto = entries.partition_point(|(seq, _)| *seq <= at);
-    gmr_core::fold(&entries[..upto]).map(|s| s.state)
+    gmr_core::fold(&entries[..upto])
 }
 
 fn differing(
@@ -391,19 +404,44 @@ fn warranted(
         },
     };
 
-    let holding = match (held.bound_at_seq, moved_at) {
-        _ if view.sighting == Sighting::Absent => Holding::Absent,
-        (Some(bound), Some(moved)) if bound < moved => Holding::Moved {
-            axes: state_at(entries, bound)
-                .map(|before| axes_between(&before, &view.state))
-                .unwrap_or_default(),
-            at: moved,
-        },
-        (Some(_), Some(_)) => Holding::Holds,
-        _ => Holding::NeverEstablished,
-    };
+    Warrant {
+        holding: holding(held.bound_at_seq, view, entries, moved_at),
+        knowledge,
+    }
+}
 
-    Warrant { holding, knowledge }
+fn holding(
+    bound_at_seq: Option<Seq>,
+    view: &AnchorView,
+    entries: &[(Seq, Entry)],
+    moved_at: Option<Seq>,
+) -> Holding {
+    if view.sighting == Sighting::Absent {
+        return Holding::Absent;
+    }
+    let (Some(bound), Some(moved)) = (bound_at_seq, moved_at) else {
+        return Holding::Undated;
+    };
+    if bound >= moved {
+        return Holding::Holds;
+    }
+    let Some(before) = folded_at(entries, bound) else {
+        return Holding::NeverEstablished;
+    };
+    let took = before
+        .latest
+        .as_ref()
+        .map(|o| o.versions.derivation.version.clone());
+    let reads = view.derivation.as_ref().map(|d| d.version.clone());
+    if let (Some(took), Some(reads)) = (took, reads)
+        && took != reads
+    {
+        return Holding::Incomparable { took, reads };
+    }
+    match axes_between(&before.state, &view.state) {
+        axes if axes.is_empty() => Holding::Holds,
+        axes => Holding::Moved { axes, at: moved },
+    }
 }
 
 fn project(
