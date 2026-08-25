@@ -13,12 +13,14 @@ live resolution (see [[runtime-instrument]]) to notice a swapped probe from
 the outside, the same signal `observe` uses internally to catch it.
 
 `MemoryView.bound_at_seq` is the same field `BindingRecord` carries (see
-[[store-binding-record]]) — `None` unless the binding names exactly one
-anchor — taken from the assertion that established the standing baseline
-rather than from the newest one, for the reason in
-[[runtime-standing-baseline]]. `MemoryView.stale` is derived from it inside `read`, relative to
-*this* anchor's current head (`seq < s.head`): a bound-at seq behind the
-head means the anchor has moved since the binding was made. `stale` stays
+[[store-binding-record]]) — the journal's position at bind time — taken
+from the assertion that established the standing baseline rather than from
+the newest one, for the reason in [[runtime-standing-baseline]].
+`MemoryView.stale` is derived from it inside `read`, against *this*
+anchor's `moved_at` rather than its head (see [[runtime-moved-at]]): a
+bound-at seq behind the last entry that changed the state means the anchor
+has moved since the binding was made, while an entry that merely failed or
+restated the same value has not moved anything. `stale` stays
 `None` when there is nothing to compare against, which includes every
 record carried in via `MemoryLens::carry_linked` (see
 [[runtime-carry-linked]]) — a linked-in record was never bound to this

@@ -906,3 +906,65 @@ async fn a_failed_observation_does_not_move_the_ground_under_a_memory() {
          forever"
     );
 }
+
+async fn open_named(w: &World, name: &str) -> AnchorKey {
+    let key = AnchorKey::new(name);
+    w.runtime
+        .open(OpenRequest {
+            key: key.clone(),
+            probe: cat_probe(w.dir.path()),
+            transitions: watching("x"),
+            terminal: Default::default(),
+            initial: None,
+            settings: RunSettings {
+                budget_ms: None,
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+    key
+}
+
+#[tokio::test]
+async fn a_memory_about_several_anchors_is_dated_against_each_of_them() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    let a = open_named(&w, "a").await;
+    let b = open_named(&w, "b").await;
+
+    let note = Ref::new("git", "many.md");
+    w.runtime
+        .bind(
+            note.clone(),
+            vec![a.clone(), b.clone()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let stale_on = async |k: &AnchorKey| w.runtime.grounded(k).await.unwrap().memories[0].stale;
+
+    assert_eq!(
+        (stale_on(&a).await, stale_on(&b).await),
+        (Some(false), Some(false)),
+        "a binding that names two anchors used to be stamped with no seq at all, on the \
+         grounds that `which anchor's head would this be` has no answer. The journal's seq \
+         is one global counter, so the question was the wrong one: a binding is dated \
+         against the log, and one number does that for any number of anchors"
+    );
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&b).await.unwrap();
+
+    assert_eq!(
+        (stale_on(&a).await, stale_on(&b).await),
+        (Some(false), Some(true)),
+        "one anchor moved and the other did not, and the same stamp has to tell them \
+         apart. A stamp that reported both would hand back every memory in the corpus \
+         whenever any one anchor moved"
+    );
+}

@@ -40,10 +40,16 @@ it. `Configured` is self-report with a longer life. `Unknown` is not
 counted — claiming it would invent the fact being relied on. Under-crediting
 is the safe error here; over-crediting is not.
 
-## `bound_at_seq` is only meaningful with one anchor to have a head
+## `bound_at_seq` dates the binding against the log
 
-`Option<Seq>`: "the bound anchor's head at bind time" has one unambiguous
-answer only when the binding names exactly one anchor.
+`Option<Seq>`: the journal's position when the assertion was made. `seq` is
+global across anchors, so one number serves a binding that names any number
+of them — which is the shape provenance actually has, one memory resting on
+several facts.
+
+`Option` survives for one reason only: rows written before the column
+existed have no seq and never will, because this table is append-only.
+Inventing one would date a binding to a moment nobody recorded.
 
 ## The clock is the caller's
 
@@ -53,9 +59,9 @@ back the moment the assertion was made.
 
 ## When this changes, ask
 
-Does a caller assume `bound_at_seq` is `Some` for some anchor count other
-than one? Inventing a `Seq` for a multi-anchor binding picks one anchor's
-history as more important than the others.
+Does a caller read `None` as "this binding is new"? It means the row
+predates the column, which is the opposite — it is the oldest kind of row
+in the table.
 
 Does a sixth `Source` arrive? Ask what it answers `independent()` with
 first. Splitting by kind of act rather than by who acted is what keeps any

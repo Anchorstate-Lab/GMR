@@ -34,4 +34,8 @@ impl AnchorLog {
     pub async fn anchors(&self) -> Result<Vec<AnchorKey>, RuntimeError> {
         Ok(self.journal.anchors().await?)
     }
+
+    pub async fn head(&self) -> Result<Seq, RuntimeError> {
+        Ok(self.journal.head().await?)
+    }
 }

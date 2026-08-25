@@ -3,16 +3,26 @@ about: crates/gmr-runtime/src/memory.rs#bind
 watch: [sig, logic]
 ---
 
-# `bind` computes `bound_at_seq` here, because only the runtime can fold the log
+# `bind` dates a binding against the log, not against an anchor
 
 `MemoryLens::bind` is where `bound_at_seq` (see [[store-binding-record]])
-actually gets its value: when `binding.anchors` names exactly one anchor,
-it folds that anchor's own log to get its current head (`s.head`) and
-stamps that as the seq the binding was made at, so a later read can tell
-whether the anchor has moved since. `gmr-store` itself cannot compute this
-— it has no access to `fold` or the log, only to whatever `bound_at_seq` it
-is handed. For any other anchor count the value stays `None`, for the same
-reason `BindingRecord` documents: there is no single head to name.
+gets its value: `log.head()`, the journal's position at the moment of
+binding. `gmr-store` cannot compute it — it has no access to the log, only
+to whatever `bound_at_seq` it is handed.
+
+It used to fold the named anchor's own entries for `s.head`, and stamped
+`None` whenever the binding named anything other than exactly one anchor,
+on the grounds that "which anchor's head would this be" has no answer.
+**The question was the wrong one.** `journal.seq` is one global
+`AUTOINCREMENT` counter with `anchor` as a column, so one number dates a
+binding against any number of anchors: nothing that happened after this
+point had happened when we bound.
+
+The two agree wherever the old one was defined — an anchor's `moved_at` is
+never above its own head, which is never above the log's head at the same
+moment, and every later move takes a higher seq. What changed is that the
+value now exists for the case provenance is made of: one memory resting on
+several facts.
 
 ## The source and the clock arrive from outside
 
@@ -25,7 +35,11 @@ assertion was made, not the moment it was read back.
 
 ## When this changes, ask
 
-Does the new binding path still fold the named anchor's own entries to get
-`bound_at_seq`, or does it compute a seq some other way (a global counter,
-the store's own clock)? The value only means "this anchor's head at bind
-time" if it comes from folding that anchor's log specifically.
+Does `journal.seq` stop being one global counter — per-anchor sequences, a
+sharded log, a store that renumbers on import? Then one stamp no longer
+dates a binding against every anchor it names, and the seq belongs on
+`binding_anchors` instead, one per pair.
+
+Does anything start comparing `bound_at_seq` against an anchor's `head`
+rather than its `moved_at` (see [[runtime-moved-at]])? The head advances on
+entries that are not the world moving.

@@ -236,7 +236,7 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     );
 }
 
-async fn a_binding_naming_several_anchors_has_no_single_bound_at_seq<B: BindingStore>(b: &B) {
+async fn a_binding_stamped_with_no_seq_reads_back_as_none<B: BindingStore>(b: &B) {
     let binding = Binding {
         reference: Ref::new("git", "memories/many.md"),
         anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
@@ -246,7 +246,10 @@ async fn a_binding_naming_several_anchors_has_no_single_bound_at_seq<B: BindingS
     assert_eq!(
         b.binding_of(&binding.reference).await.unwrap()[0].bound_at_seq,
         None,
-        "which anchor's head would this be? there is no single answer, so it is not stored"
+        "every row written before this column existed has no seq and never will -- the \
+         table is append-only. A store that invented one would date a binding to a moment \
+         nobody recorded, and `Holding` would report a move that may have happened before \
+         it was ever bound"
     );
 }
 
@@ -510,7 +513,7 @@ journal_conformance!(
 
 bindings_conformance!(
     bindings_record_the_version_they_bound,
-    a_binding_naming_several_anchors_has_no_single_bound_at_seq,
+    a_binding_stamped_with_no_seq_reads_back_as_none,
     asserting_a_second_anchor_does_not_take_the_first_away,
     asserting_the_same_anchor_twice_still_delivers_it_once,
     a_revocation_kills_only_the_tags_it_named,

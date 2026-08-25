@@ -75,6 +75,14 @@ impl Journal for SqliteJournal {
             .collect()
     }
 
+    async fn head(&self) -> Result<Seq, StoreError> {
+        let row = sqlx::query("SELECT COALESCE(MAX(seq), 0) AS head FROM journal")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(row.get::<i64, _>("head") as Seq)
+    }
+
     async fn anchors(&self) -> Result<Vec<AnchorKey>, StoreError> {
         let rows = sqlx::query("SELECT DISTINCT anchor FROM journal ORDER BY anchor")
             .fetch_all(&self.pool)

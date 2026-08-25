@@ -31,6 +31,8 @@ pub trait Journal: Send + Sync {
     -> Result<Vec<(Seq, Entry)>, StoreError>;
 
     async fn anchors(&self) -> Result<Vec<AnchorKey>, StoreError>;
+
+    async fn head(&self) -> Result<Seq, StoreError>;
 }
 
 pub fn guard(fence: Fence, seen: i64, entry: &Entry) -> Result<(), StoreError> {

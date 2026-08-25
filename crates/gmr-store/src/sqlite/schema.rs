@@ -22,9 +22,9 @@ CREATE TABLE IF NOT EXISTS bindings (
     body            TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
     bound_version   TEXT,              -- content version this assertion cited; NULL until a
                                        -- fetch has answered for the record even once
-    bound_at_seq    INTEGER,           -- the single anchor's journal head at bind time;
-                                       -- NULL when the binding names zero or several anchors,
-                                       -- where "which anchor's head" has no single answer
+    bound_at_seq    INTEGER,           -- the journal's position at bind time; seq is global
+                                       -- across anchors, so one number dates a binding to
+                                       -- any number of them. NULL only predates this column
     source          TEXT NOT NULL,     -- how this assertion came to be; the domain's word
     asserted_at     TEXT,              -- RFC3339; NULL predates this column
     baseline_at_seq INTEGER            -- the bindings row whose fetch established bound_version;

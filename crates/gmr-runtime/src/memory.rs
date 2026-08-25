@@ -53,13 +53,7 @@ impl MemoryLens {
         source: Source,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
-        let bound_at_seq = match binding.anchors.as_slice() {
-            [only] => {
-                let entries = log.entries(only, 0).await?;
-                fold(&entries).map(|s| s.head)
-            }
-            _ => None,
-        };
+        let bound_at_seq = Some(log.head().await?);
         Ok(self
             .bindings
             .bind(&Asserted {
