@@ -56,7 +56,7 @@ fn trail_of(key: &str) -> Vec<String> {
 fn anchor_tone(view: &AnchorView, delivering: bool, unclaimed: bool) -> Tone {
     if view.closed {
         Tone::Muted
-    } else if view.attempts > 0 || matches!(view.sighting, Sighting::Absent) {
+    } else if view.faltering.is_some() || matches!(view.sighting, Sighting::Absent) {
         Tone::Alarm
     } else if delivering || unclaimed {
         Tone::Notice
@@ -92,8 +92,8 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
             node = node.badge(status.to_string());
         }
     }
-    if view.attempts > 0 {
-        node = node.fact("failed attempts", view.attempts.to_string());
+    if let Some(f) = &view.faltering {
+        node = node.fact("failed attempts", f.attempts.to_string());
     }
     if let Some(at) = view.last_sighting {
         node = node.fact("last seen", at.format("%Y-%m-%d %H:%M").to_string());
@@ -357,7 +357,7 @@ mod tests {
             status: Some(gmr::StatusId::new(status)),
             sighting: Sighting::Found,
             closed,
-            attempts: 0,
+            faltering: None,
             entered_at: None,
             last_sighting: None,
             sightings: 1,

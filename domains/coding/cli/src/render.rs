@@ -47,8 +47,8 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
 
     out.push_str(&format!("  state  {}\n", v.state.as_value()));
 
-    if v.attempts > 0 {
-        out.push_str(&format!("  ! {} consecutive failed attempts\n", v.attempts));
+    if let Some(f) = &v.faltering {
+        out.push_str(&format!("  ! {} consecutive failed attempts\n", f.attempts));
     }
     if matches!(v.sighting, gmr::Sighting::Absent) {
         out.push_str("  * last observation looked there and found nothing\n");

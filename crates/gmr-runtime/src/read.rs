@@ -3,8 +3,8 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, Source, State,
-    StatusId, Version, scan,
+    Anchor, AnchorKey, Derivation, Facts, Faltering, Link, Outcome, ProviderId, Ref, Seq, Source,
+    State, StatusId, Version, scan,
 };
 use gmr_probe::Budget;
 use gmr_store::Seen;
@@ -30,7 +30,8 @@ pub struct AnchorView {
     pub status: Option<StatusId>,
     pub sighting: Sighting,
     pub closed: bool,
-    pub attempts: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faltering: Option<Faltering>,
     pub entered_at: Option<DateTime<Utc>>,
     pub last_sighting: Option<DateTime<Utc>>,
     pub sightings: u64,
@@ -266,7 +267,7 @@ async fn projected(
             anchor: s.anchor,
             sighting,
             closed: s.closed,
-            attempts: s.attempts,
+            faltering: s.faltering.clone(),
             entered_at: s.entered_at,
             last_sighting,
             sightings,

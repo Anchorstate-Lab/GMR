@@ -224,11 +224,11 @@ fn walk(
 
         if fresh
             && let Entry::Attempt { reason, .. } = entry
-            && (*reason == ReasonClass::Unevaluable || now.attempts == policy.stalled_attempts)
+            && (*reason == ReasonClass::Unevaluable || now.attempts() == policy.stalled_attempts)
         {
             out.push(Edge::Stalled {
                 anchor: key.clone(),
-                count: now.attempts,
+                count: now.attempts(),
                 last: *reason,
                 seq,
                 at: entry.at(),

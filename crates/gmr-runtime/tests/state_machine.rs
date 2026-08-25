@@ -357,7 +357,7 @@ async fn the_world_being_empty_is_a_real_answer_and_it_lands_as_an_entry() {
     assert_eq!(view.sighting, Sighting::Absent);
     assert_eq!(view.status.map(|s| s.to_string()).as_deref(), Some("empty"));
     assert_eq!(
-        view.attempts, 0,
+        view.faltering, None,
         "this is a fact about the world, not our failure"
     );
 }
@@ -379,7 +379,7 @@ async fn nothing_moving_writes_nothing_at_all() {
         "a look that found the same instrument reporting the same facts about the same \
          state settles nothing, and an append-only log is for what settled"
     );
-    assert_eq!(fold(&entries).unwrap().attempts, 0);
+    assert_eq!(fold(&entries).unwrap().attempts(), 0);
 
     let view = w.rt.read(&key()).await.unwrap();
     assert_eq!(
@@ -548,7 +548,13 @@ async fn the_look_that_ends_a_failure_streak_is_written_down() {
 
     w.remove();
     assert!(matches!(w.observe().await, Observed::Attempt { .. }));
-    assert_eq!(w.rt.read(&key()).await.unwrap().attempts, 1);
+    let faltering =
+        w.rt.read(&key())
+            .await
+            .unwrap()
+            .faltering
+            .expect("a failed observation leaves a run of failures behind");
+    assert_eq!(faltering.attempts, 1);
 
     w.write(r#"{"shape":"(a)->c"}"#);
     assert_eq!(w.observe().await, Observed::Still);
@@ -570,7 +576,7 @@ async fn the_look_that_ends_a_failure_streak_is_written_down() {
          anchor that recovered would go on looking stalled. It points back at the full \
          record it was compared against, never at a chain of stills"
     );
-    assert_eq!(w.rt.read(&key()).await.unwrap().attempts, 0);
+    assert_eq!(w.rt.read(&key()).await.unwrap().faltering, None);
 }
 
 #[tokio::test]

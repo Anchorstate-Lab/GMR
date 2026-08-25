@@ -131,9 +131,9 @@ async fn every_failure_path_emits_an_edge() {
     w.write(r#"{"shape":"recovered"}"#);
     w.runtime.observe(&key()).await.unwrap();
     assert_eq!(
-        w.runtime.read(&key()).await.unwrap().attempts,
-        0,
-        "one successful observation should reset attempts"
+        w.runtime.read(&key()).await.unwrap().faltering,
+        None,
+        "one successful observation should clear the run of failures"
     );
 
     let mid = w
@@ -798,7 +798,7 @@ async fn a_batch_that_runs_out_of_budget_does_not_blame_the_anchors_it_never_rea
 
     let mut blamed = Vec::new();
     for key in &keys {
-        if w.runtime.read(key).await.unwrap().attempts > 0 {
+        if w.runtime.read(key).await.unwrap().faltering.is_some() {
             blamed.push(key.to_string());
         }
     }

@@ -81,7 +81,7 @@ pub async fn run(
 
     let unseen: Vec<&str> = live
         .iter()
-        .filter(|v| v.attempts > 0)
+        .filter(|v| v.faltering.is_some())
         .map(|v| v.key.as_str())
         .collect();
     let absent: Vec<&str> = live

@@ -104,7 +104,8 @@ pub(crate) async fn observe_with(
     let derivation = match observer.resolve(&s.anchor.probe) {
         Ok(d) => d,
         Err(e) => {
-            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts() + 1)
+                .await;
         }
     };
 
@@ -117,7 +118,8 @@ pub(crate) async fn observe_with(
     let outcome = match observer.invoke(&s.anchor, s.position(), &mine).await {
         Ok(o) => o,
         Err(e) => {
-            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts() + 1)
+                .await;
         }
     };
 
@@ -128,7 +130,7 @@ pub(crate) async fn observe_with(
         Transitioned::To(next) => next,
         Transitioned::Unchanged => s.state.clone(),
         Transitioned::Unevaluable(code, message) => {
-            return record_attempt(log, key, code, message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, code, message, fence, s.attempts() + 1).await;
         }
     };
 
@@ -149,7 +151,7 @@ pub(crate) async fn observe_with(
     };
 
     match still_ref {
-        Some(ref_entry) if s.attempts > 0 => {
+        Some(ref_entry) if s.attempts() > 0 => {
             log.append(
                 key,
                 &Entry::Still {

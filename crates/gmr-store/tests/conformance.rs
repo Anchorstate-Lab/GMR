@@ -196,7 +196,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
 
     let state = fold(&j.entries(&key, 0).await.unwrap()).unwrap();
     assert_eq!(state.state.as_value()["shape"], serde_json::json!("new"));
-    assert_eq!(state.attempts, 0);
+    assert_eq!(state.attempts(), 0);
 }
 
 fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq>) -> Asserted {
