@@ -29,6 +29,9 @@ pub use observe::Observed;
 pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;
-pub use read::{AnchorView, Before, Footing, Grounded, Grounding, MemoryView, Sighting};
+pub use read::{
+    AnchorView, Bearing, Before, Blind, Footing, Grounded, Grounding, Holding, Knowledge,
+    MemoryView, Sighting, Warrant,
+};
 pub use revise::Revised;
 pub use scheduler::Scheduler;

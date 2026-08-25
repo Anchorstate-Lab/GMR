@@ -257,7 +257,7 @@ mod tests {
             sources: std::collections::BTreeSet::from([gmr_core::Source::Adjudicated]),
             baseline_at: None,
             asserted_at: None,
-            stale: None,
+            warrant: None,
             grounding,
         }
     }

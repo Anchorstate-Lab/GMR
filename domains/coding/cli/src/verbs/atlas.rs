@@ -116,8 +116,19 @@ fn memory_node(m: &MemoryView, names: &crate::memories::Names, detail: Option<St
     if let Some(html) = detail {
         node = node.detail(html);
     }
-    if m.stale == Some(true) {
-        node = node.fact("bound at", "before this anchor last moved");
+    if let Some(w) = &m.warrant {
+        if let gmr::Holding::Moved { axes, .. } = &w.holding {
+            node = node.fact(
+                "bound at",
+                match axes.is_empty() {
+                    true => "before this anchor last moved".to_owned(),
+                    false => format!("before this anchor moved on {}", axes.join(" · ")),
+                },
+            );
+        }
+        if let gmr::Knowledge::Blind { .. } = &w.knowledge {
+            node = node.fact("unconfirmed", "the last look at this anchor failed");
+        }
     }
     match &m.grounding {
         Grounding::Gone => node = node.fact("gone", "the provider says this record is gone"),
@@ -311,7 +322,7 @@ mod tests {
         );
     }
 
-    fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
+    fn view_memory(grounded: bool, rewritten: bool, warrant: Option<gmr::Warrant>) -> MemoryView {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
             bound_version: Some(gmr::Version::new("v1")),
@@ -335,7 +346,7 @@ mod tests {
             grounded,
             links: Vec::new(),
             bound_at_seq: None,
-            stale,
+            warrant,
         }
     }
 
@@ -393,7 +404,21 @@ mod tests {
     #[test]
     fn a_memory_bound_before_the_latest_entry_is_not_an_alert_by_itself() {
         assert_eq!(
-            memory_tone(&view_memory(true, false, Some(true))).0,
+            memory_tone(&view_memory(
+                true,
+                false,
+                Some(gmr::Warrant {
+                    holding: gmr::Holding::Moved {
+                        axes: vec!["sig".to_owned()],
+                        at: 7,
+                    },
+                    knowledge: gmr::Knowledge::Seen {
+                        at: chrono::Utc::now(),
+                        verifiability: gmr::Verifiability::Closed,
+                    },
+                })
+            ))
+            .0,
             Tone::Calm
         );
         assert_eq!(memory_tone(&view_memory(true, false, None)).0, Tone::Calm);

@@ -153,7 +153,7 @@ impl MemoryLens {
             baseline_at,
             sources,
             asserted_at,
-            stale: None,
+            warrant: None,
         })
     }
 
