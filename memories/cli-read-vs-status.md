@@ -13,7 +13,7 @@ folding `read` into `status` as a strict subset. It isn't one. Two things keep t
 apart:
 
 **`read` does not filter by `closed`; `status` does, except by name.** `read.rs#run`
-prints whatever `rt.read`/`rt.read_all` returns, unfiltered — a closed anchor's last
+prints whatever `rt.grounded`/`rt.grounded_all` returns, unfiltered — a closed anchor's last
 state is exactly as visible as a live one's. `status` exists to answer "what am I
 watching now" (its own doc comment in `cli.rs`), so its whole-repository listing
 excludes `closed` — a closed anchor isn't being watched. Naming a specific key is a
@@ -34,7 +34,25 @@ starts getting fields it didn't ask for.
 So `read` stays: it is the raw substrate dump — the one place the CLI shows exactly
 what `gmr-runtime` recorded, closed anchors included, with no curation layered on top.
 
+## `--fresher-than-secs` is the one thing it does besides dump
+
+`read` is also where the freshness instruction ([[runtime-instructions]]) reaches
+the CLI, and that makes it the one verb here that can go and look before it
+prints. It stays a dump: the flag decides *which* reading is dumped — the one on
+record, or one taken just now — and never edits what is printed about it. Unset,
+nothing goes out, which is why the rest of this note still describes the whole
+behaviour.
+
+It belongs on `read` rather than on `status` for the same reason the two are
+separate at all. `status` answers "what am I watching", a question about the
+corpus; `read` answers "what does the substrate hold about this", and "hold it as
+of when" is the second half of that question.
+
 ## When this changes, ask
+
+Does `status` grow a freshness flag of its own? Then two verbs can write to the
+journal and the "status only reads" expectation is gone; the argument above says
+where the flag belongs, not that it may be in two places.
 
 Does `status --json` grow to carry `attempts`/`sighting`/`derivation`, or any other
 `AnchorView` field it currently omits? If it ends up a superset of what `read` prints

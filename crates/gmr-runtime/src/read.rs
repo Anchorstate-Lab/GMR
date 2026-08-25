@@ -16,6 +16,41 @@ use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Instructions {
+    pub max_staleness: Option<Duration>,
+    pub budget: Option<Duration>,
+}
+
+impl Instructions {
+    pub fn fresher_than(span: Duration) -> Self {
+        Self {
+            max_staleness: Some(span),
+            ..Self::default()
+        }
+    }
+
+    pub fn within(self, span: Duration) -> Self {
+        Self {
+            budget: Some(span),
+            ..self
+        }
+    }
+
+    fn stale(&self, last_sighting: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
+        let Some(max) = self.max_staleness else {
+            return false;
+        };
+        match last_sighting {
+            None => true,
+            Some(at) => now
+                .signed_duration_since(at)
+                .to_std()
+                .is_ok_and(|since| since > max),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Sighting {
@@ -282,7 +317,16 @@ impl Runtime {
     }
 
     pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
+        self.grounded_within(key, &Instructions::default()).await
+    }
+
+    pub async fn grounded_within(
+        &self,
+        key: &AnchorKey,
+        how: &Instructions,
+    ) -> Result<Grounded, RuntimeError> {
         let policy = self.scheduler.policy();
+        self.refresh(key, how).await?;
         let entries = self.log.entries(key, 0).await?;
         let (view, moved_at) = project(&entries, key, &self.scheduler.seen(key).await?)?;
         ground(
@@ -291,10 +335,26 @@ impl Runtime {
             view,
             &entries,
             moved_at,
-            &policy.content_budget(),
+            &reaching(policy, how),
             policy.content_call(),
         )
         .await
+    }
+
+    async fn refresh(&self, key: &AnchorKey, how: &Instructions) -> Result<(), RuntimeError> {
+        if how.max_staleness.is_none() {
+            return Ok(());
+        }
+        let looks = self.scheduler.seen(key).await?;
+        let entries = self.log.entries(key, 0).await?;
+        let (view, _) = project(&entries, key, &looks)?;
+        if view.closed || !how.stale(view.last_sighting, Utc::now()) {
+            return Ok(());
+        }
+        match self.observe_within(key, how).await {
+            Ok(_) | Err(RuntimeError::Leased { .. }) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
@@ -312,9 +372,19 @@ impl Runtime {
     }
 
     pub async fn grounded_all(&self) -> Result<Vec<Grounded>, RuntimeError> {
+        self.grounded_all_within(&Instructions::default()).await
+    }
+
+    pub async fn grounded_all_within(
+        &self,
+        how: &Instructions,
+    ) -> Result<Vec<Grounded>, RuntimeError> {
         let policy = self.scheduler.policy();
-        let total = policy.content_budget();
+        let total = reaching(policy, how);
         let call = policy.content_call();
+        for key in self.log.anchors().await? {
+            self.refresh(&key, how).await?;
+        }
         let seen = self.scheduler.all_seen().await?;
         let mut out = Vec::new();
         for key in self.log.anchors().await? {
@@ -335,6 +405,13 @@ impl Runtime {
             );
         }
         Ok(out)
+    }
+}
+
+fn reaching(policy: &crate::Policy, how: &Instructions) -> Budget {
+    match how.budget {
+        Some(span) => policy.content_budget().narrowed(span),
+        None => policy.content_budget(),
     }
 }
 

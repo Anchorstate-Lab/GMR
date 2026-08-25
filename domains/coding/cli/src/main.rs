@@ -193,7 +193,10 @@ async fn served(
             };
             verbs::accept::run(&rt, &root, key, why, asked, all, json).await
         }
-        Command::Read { key } => verbs::read::run(&rt, names, key, json).await,
+        Command::Read {
+            key,
+            fresher_than_secs,
+        } => verbs::read::run(&rt, names, key, fresher_than_secs, json).await,
         Command::Revise(args) => verbs::revise::run(&rt, &root, args, json).await,
         Command::Rebase { keys, all, why } => {
             verbs::rebase::run(&rt, &root, names, keys, all, why, json).await

@@ -126,7 +126,13 @@ pub enum Command {
 
     /// Each anchor's current state.
     #[command(hide = true)]
-    Read { key: Option<String> },
+    Read {
+        key: Option<String>,
+        /// Look again first if the last sighting is older than this many seconds.
+        /// Unset, the stored reading is served whatever its age.
+        #[arg(long)]
+        fresher_than_secs: Option<u64>,
+    },
 
     /// Accept what an anchor now shows: re-pin its baseline, or take the
     /// criteria its declaration changed. Needs --why, and the reason is sealed.

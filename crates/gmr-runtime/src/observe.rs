@@ -51,7 +51,20 @@ impl Runtime {
     }
 
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
-        let budget = self.scheduler.policy().budget();
+        self.observe_within(key, &crate::read::Instructions::default())
+            .await
+    }
+
+    pub async fn observe_within(
+        &self,
+        key: &AnchorKey,
+        how: &crate::read::Instructions,
+    ) -> Result<Observed, RuntimeError> {
+        let policy = self.scheduler.policy();
+        let budget = match how.budget {
+            Some(span) => policy.budget().narrowed(span),
+            None => policy.budget(),
+        };
         observe(&self.log, &self.observer, &self.scheduler, key, &budget).await
     }
 }

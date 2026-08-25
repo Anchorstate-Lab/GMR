@@ -1327,3 +1327,110 @@ async fn refusing_an_undigested_reading_is_the_probes_to_fix_and_says_so() {
          never ran"
     );
 }
+
+#[tokio::test]
+async fn a_freshness_bound_decides_whether_to_look_again_not_what_to_report() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2}"#);
+
+    let served = w.runtime.grounded(&key()).await.unwrap();
+    assert_eq!(
+        served.view.state.as_value()["x"],
+        1,
+        "with no freshness bound, grounding serves the reading it has and never goes out. \
+         An instruction-free call is a default, not an absence of one"
+    );
+
+    let looked = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::ZERO),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        looked.view.state.as_value()["x"],
+        2,
+        "a bound of zero means anything already on record is too old, so this one goes and \
+         looks. That is what makes staleness an observation instruction rather than a \
+         verdict: it changes what GMR does, the way a budget does, instead of grading an \
+         answer GMR had already settled on"
+    );
+
+    let again = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::from_secs(3600)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        again.view.last_sighting, looked.view.last_sighting,
+        "and an hour's slack over a reading taken a moment ago goes nowhere near the world"
+    );
+}
+
+#[tokio::test]
+async fn a_reading_that_could_not_be_refreshed_is_served_with_its_own_date_on_it() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.remove();
+    let held = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::ZERO),
+        )
+        .await
+        .unwrap();
+
+    let warrant = held.memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant");
+    assert!(
+        matches!(
+            warrant.knowledge,
+            Knowledge::Blind {
+                why: Blind::Unreachable { .. },
+                ..
+            }
+        ),
+        "the refresh was asked for and failed, and the answer says so on the knowledge axis \
+         rather than refusing the whole call. A freshness bound instructs; it does not \
+         promise that the world will answer: {:?}",
+        warrant.knowledge
+    );
+    assert_eq!(warrant.holding, Holding::Holds);
+}
