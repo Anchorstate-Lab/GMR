@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "coding_anchor"
+path = "src/lib.rs"
+
 [[bin]]
 name = "gmr"
 path = "src/main.rs"

@@ -1,12 +1,19 @@
 ---
 about:
-  - domains/coding/cli/src/main.rs#run
-  - domains/coding/cli/src/main.rs#served
+  - domains/coding/cli/src/lib.rs#run
+  - domains/coding/cli/src/lib.rs#served
   - domains/coding/cli/src/main.rs#main
 watch: [logic]
 ---
 
 # Some verbs are handled before a `Runtime` exists, because they must not touch it
+
+`run` and `served` live in the **library**; `main.rs` holds only `main`. The
+line between them is what a second front end would want: everything from parsing
+onward is callable, and what stays behind is the part that is only true of a
+terminal — building a tokio runtime by hand, and turning an outcome into an
+`ExitCode`. See [[cli-embeddable]] for what that unblocked and the test that
+keeps it unblocked.
 
 `run` dispatches `Publish`, `Probes`, and `Init` before the journal is even
 opened: publishing an artifact happens before any log exists, and building
@@ -25,7 +32,8 @@ that forget — and the pool is closed explicitly because `main` no longer
 waits for it, see below.
 
 `main` builds the runtime by hand rather than through `#[tokio::main]`, and
-ends with `shutdown_background()`. Dropping a runtime blocks until every
+ends with `shutdown_background()`. That is the one piece a library must not do
+for its caller: an embedder has its own runtime and its own idea of when to stop. Dropping a runtime blocks until every
 blocking task that has already started finishes, and a `spawn_blocking`
 closure cannot be cancelled from outside — so an extractor that overran its
 budget kept a core pegged for minutes *after* the CLI had already printed
