@@ -17,10 +17,22 @@ picks the primitive per call.
 pub fn run_blocking<F: Future>(fut: F) -> F::Output {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => handle.block_on(fut),
-        Err(_) => FALLBACK.with(|rt| rt.block_on(fut)),
+        Err(_) => fallback().block_on(fut),
     }
 }
 ```
+
+The fallback is one `OnceLock` runtime for the process. It was a
+`thread_local!`, which made every synchronous caller with no ambient runtime
+build a **complete multi-thread tokio runtime of its own**, alive as long as its
+thread. A CLI run has one such thread and never noticed. A long-lived process
+handing extraction to a worker pool accumulates one runtime per worker and never
+gives one back — the fallback for not having a runtime becoming the largest
+thing in the process.
+
+Sharing it buys that back and introduces the one risk worth naming: several
+threads calling `block_on` on the same runtime at once, which a test covers
+because it is the half that could regress without anything failing to compile.
 
 A dedicated thread here would be a second bridge stacked on one that already
 exists: the production entry point into `Corpus` is `InProcess::invoke`, which
@@ -42,6 +54,19 @@ call in `run_blocking` instead.
 The rule is one sentence: **the blocking bridge belongs to whichever caller is
 itself synchronous, never to `Bridge::open`**, because `open` cannot know in
 advance which kind of caller it has.
+
+## `over_a_still_tree` is a promise the caller makes, not a cache it turns on
+
+The memo is opt-in for a reason that outlives the CLI: it asserts *the tree does
+not change while this `Bridge` lives*. A `gmr` run is over in seconds and the
+promise holds. A daemon holding one `Bridge` open across edits would keep
+answering from a walk of the tree as it used to be, and nothing would say so —
+the memo has no way to notice it was lied to.
+
+So a long-lived process must not call it, and the fix for that is not a timer or
+an invalidation hook. It is that `Bridge::open` does not install a memo and
+`over_a_still_tree` is the caller saying it knows. `registry()` says it because
+the CLI is entitled to; a daemon assembling its own registry would not.
 
 ## `refresh` memoises the walk, failures included
 

@@ -4,6 +4,7 @@ about:
   - crates/gmr-runtime/src/read.rs#Holding
   - crates/gmr-runtime/src/read.rs#Knowledge
   - crates/gmr-runtime/src/read.rs#warranted
+  - crates/gmr-runtime/src/read.rs#holding
 watch: [sig, logic]
 ---
 
@@ -107,11 +108,19 @@ early cutoff [[runtime-moved-at]] argues for one level down.
 
 ## An instrument that changed is not a world that moved
 
-Before the diff runs, the two states have to be comparable. Each is read by
+The diff runs **first**, and an empty one is `Holds` even across two different
+extractors. That is not a shortcut: two instruments producing byte-identical
+state is positive evidence that they agree about this symbol, and answering
+`Incomparable` there would throw it away — this repository would carry hundreds
+of unanswerable memories after every extractor upgrade that changed nothing it
+extracts.
+
+The question only arises once something differs. Each is read by
 whatever extractor was current when it was written, and `Versions::derivation`
 records which — so the check is reading the ledger, not interpreting it.
-Different versions means the shapes are not commensurable and the diff would
-answer "did the world move" with "the instrument changed shape".
+Different versions means a non-empty diff is not commensurable: it would answer
+"did the world move" with "the instrument changed shape", and those cannot be
+told apart from here.
 
 This is not a hypothetical. This repository's own corpus had 74 memories
 reporting `Moved` on axes like `baseline.name` and `v.file` — keys the newer

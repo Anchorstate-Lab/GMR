@@ -314,3 +314,27 @@ fn a_corpus_the_recipe_refuses_is_remembered() {
          is asked, so the answer is remembered and the tree is walked once"
     );
 }
+
+#[test]
+fn many_synchronous_callers_at_once_can_share_the_one_fallback_runtime() {
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            std::thread::spawn(|| {
+                let d = tempfile::tempdir().unwrap();
+                run_blocking(Bridge::open(d.path(), gmr_survey::sqlite::open_in_memory)).unwrap();
+                std::thread::current().id()
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().expect(
+            "the fallback used to be a `thread_local!`, so concurrency here was free and the \
+             cost was one whole multi-thread runtime per thread, alive as long as the thread. \
+             Sharing one `OnceLock` runtime is what bounds that at one, and this is the risk \
+             that trade introduces: several threads calling `block_on` on the same runtime at \
+             the same time. What the count is cannot be asserted from out here -- the \
+             `OnceLock` in the source is what says one -- but a deadlock or a panic can be, \
+             and that is the half that could regress silently",
+        );
+    }
+}

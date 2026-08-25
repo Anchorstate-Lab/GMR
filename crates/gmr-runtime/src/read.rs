@@ -505,19 +505,18 @@ fn holding(
     let Some(before) = folded_at(entries, bound) else {
         return Holding::NeverEstablished;
     };
+    let axes = axes_between(&before.state, &view.state);
+    if axes.is_empty() {
+        return Holding::Holds;
+    }
     let took = before
         .latest
         .as_ref()
         .map(|o| o.versions.derivation.version.clone());
     let reads = view.derivation.as_ref().map(|d| d.version.clone());
-    if let (Some(took), Some(reads)) = (took, reads)
-        && took != reads
-    {
-        return Holding::Incomparable { took, reads };
-    }
-    match axes_between(&before.state, &view.state) {
-        axes if axes.is_empty() => Holding::Holds,
-        axes => Holding::Moved { axes, at: moved },
+    match (took, reads) {
+        (Some(took), Some(reads)) if took != reads => Holding::Incomparable { took, reads },
+        _ => Holding::Moved { axes, at: moved },
     }
 }
 
