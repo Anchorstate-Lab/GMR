@@ -3,13 +3,10 @@ about:
   - domains/coding/extract/src/lib.rs#declares
   - domains/coding/extract/src/lib.rs#catchall
   - domains/coding/cli/src/probes.rs#for_extension
-  - domains/coding/extract/src/lib.rs#root_of
 watch: [sig, logic]
 ---
 
-# Extension routing and "which part to look at" — neither may come from the process
-
-## Routing is asked in two halves so a specific answer can outrank a general one
+# Routing asks two halves, so a specific answer can outrank a general one
 
 `coord::route` takes the coordinate's extension and asks the catalog; the probes
 declare for themselves what they answer to. So nowhere in the CLI does the word
@@ -43,13 +40,5 @@ prose-map wants a `heading`, so a `file#part` coordinate lands there only when t
 part is a heading; `wanted` drops a `name` it has no slot for and the anchor ends
 up watching the whole file, which `report` says out loud as `missed`.
 
-## The part to look at comes from params, not from the process
-
-`root_of` takes `root` out of params rather than deriving it from the current
-working directory. params enter the declaration hash, so **an anchor can state what
-it originally meant**; a process's cwd differs with whoever runs it, the same
-anchor would observe two different trees on two machines, the logs would not line
-up, and nothing anywhere would record the difference.
-
-Those six `layer::*` anchors narrow their scope to a single package exactly this
-way, with `params: {root: crates/X}` (see [[layers]]).
+Which subtree an anchor then reports on is a separate axis that also may not
+come from the process — see [[lib-narrow_of]].

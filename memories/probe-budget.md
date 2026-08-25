@@ -5,8 +5,8 @@ about:
   - crates/gmr-probe/src/lib.rs#ProbeCall
   - crates/gmr-runtime/src/policy.rs#budget
   - crates/gmr-probe/src/lib.rs#narrowing_can_only_tighten_a_budget_never_widen_it
-  - batteries/survey/src/cache.rs#scan
-  - batteries/survey/src/cache.rs#Halt
+  - batteries/survey/src/corpus.rs#rescan
+  - batteries/survey/src/corpus.rs#Halt
   - domains/coding/extract/src/lib.rs#every_probe_stops_when_nobody_is_waiting_for_it_any_more
 watch: [sig, logic]
 ---
@@ -89,28 +89,29 @@ cooperates*, and nothing in production did. A green test over an unreachable
 mechanism is worse than no test, because it answers the question nobody then
 asks again.
 
-The checkpoint now lives in `scan`'s walk, once per file — the one loop every
-extractor goes through, so no probe has to remember. Reaching it cost the budget
-a parameter on all four `probe()` functions and therefore **one version bump per
-probe**: unavoidable, because the closure hashes those files' bytes, and the
-alternative (an ambient deadline in a thread-local or a slot on the shared
-`Cache`) is the implicit clock and shared mutable state the discipline forbids.
-The answers were checked byte-for-byte across all four probes on a frozen
-snapshot first, so the bump is a translation.
+The checkpoint lives in `rescan`'s walk, once per file — the one loop every
+extractor goes through, so no probe has to remember it. That is why the budget
+is a parameter on every `probe()` function: an ambient deadline in a
+thread-local, or a slot on a shared corpus, is the implicit clock and shared
+mutable state the discipline forbids, and it would hide which reading the
+deadline belonged to.
 
 `every_probe_stops_when_nobody_is_waiting_for_it_any_more` is the guard, and it
 loops over the fixture table rather than naming probes, so a fifth extractor is
 covered the day it gets a fixture. It was checked red with the checkpoint
 removed.
 
-## A spent scan is not remembered, a refused one is
+## A spent budget and a refused corpus are different answers
 
-`Halt` splits the two, and `worth_remembering` acts on the split: a
-`Refused` scan is deterministic — the same corpus refuses the same way — so the
-flight memoises it and the rest of the pass is spared a repeat. A `Spent` scan
-says nothing about the corpus at all; memoising it would poison the scope for
-the life of the process because one anchor ran late. This distinction is only
-expressible because the error stopped being a `String`.
+`Halt` is `Spent` or `Refused`, and the split is the point of it being a type
+rather than a `String`. `Refused` is about the world: this corpus makes no
+sense to this recipe, and it says so the same way however often it is asked.
+`Spent` is about us: the reading ran past a deadline that belonged to one
+caller, and says nothing at all about the corpus.
+
+Only the first is a property of the tree, so only the first is safe for anything
+to remember on another caller's behalf — see [[bridge-Bridge]] for the walk memo
+where that distinction has to hold.
 
 ## `ProbeCall` is a struct because the next thing will ride along
 
