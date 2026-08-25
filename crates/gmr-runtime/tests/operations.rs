@@ -1183,3 +1183,69 @@ async fn a_reading_a_different_instrument_took_is_not_diffed_against_this_one() 
     };
     assert_ne!(took, reads);
 }
+
+#[tokio::test]
+async fn re_asserting_an_undated_binding_dates_it_instead_of_writing_nothing() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let note = Ref::new("git", "m.md");
+    w.bindings
+        .bind(&gmr_store::Asserted {
+            binding: gmr_core::Binding {
+                reference: note.clone(),
+                anchors: vec![key()],
+            },
+            bound_version: Some(Version::new("v1")),
+            bound_at_seq: None,
+            source: gmr_core::Source::Derived,
+            at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    let landed = w
+        .runtime
+        .bind(
+            note.clone(),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    assert!(
+        landed.recorded,
+        "`says` compared anchors, version and source, and a binding row also carries the \
+         seq it was asserted at. Re-stating the claim over an undated row does add \
+         something -- the date -- so answering `this already stands` left every row \
+         written before the column permanently unanswerable, and nothing in the corpus \
+         could ever heal itself"
+    );
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+    assert_eq!(holding, Holding::Holds);
+
+    let again = w
+        .runtime
+        .bind(
+            note,
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    assert!(
+        !again.recorded,
+        "and once dated it settles: the healing is one row per binding, not a row per run"
+    );
+}

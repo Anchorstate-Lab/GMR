@@ -133,7 +133,9 @@ impl MemoryLens {
         let standing = bound
             .standing()
             .expect("a view is only assembled from at least one assertion");
-        let baseline = bound.baseline().unwrap_or(standing);
+        let baseline = bound
+            .dating()
+            .expect("a view is only assembled from at least one assertion");
         let reference = standing.binding.reference.clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
@@ -328,6 +330,10 @@ impl Bound {
             .max_by_key(|r| r.seq)
     }
 
+    pub fn dating(&self) -> Option<&BindingRecord> {
+        self.baseline().or_else(|| self.standing())
+    }
+
     pub fn bound_version(&self) -> Option<&Version> {
         self.baseline().and_then(|r| r.bound_version.as_ref())
     }
@@ -356,5 +362,6 @@ impl Bound {
             && anchors.iter().all(|a| self.anchors.contains(a))
             && self.sources().contains(&source)
             && self.bound_version() == version
+            && self.dating().is_some_and(|r| r.bound_at_seq.is_some())
     }
 }
