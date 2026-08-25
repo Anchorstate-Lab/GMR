@@ -50,15 +50,23 @@ whole `Result`. One `pass` observes many anchors, and every one naming the same
 probe asks for the same walk; without the memo each starts another full-tree
 scan on another blocking thread.
 
-The memo holds the whole `Result`. For an `Ok` and for a `Halt::Refused` that is
-what makes it a memo: the second caller is asking the same question of the same
-tree, and a corpus that refuses is deterministic — it refuses the same way
-however many times it is asked, so surfacing that once with its real reason
-beats surfacing it once per anchor.
+**The memo holds only what a re-ask would answer the same way**:
+`walked.as_ref().err().is_none_or(Halt::deterministic)`. That is `Ok` and
+`Halt::Refused` — a corpus that makes no sense to this recipe refuses the same
+way however often it is asked, so surfacing that once with its real reason beats
+surfacing it once per anchor.
 
-`Halt::Spent` is not that kind of answer. It says this caller's budget ran out,
-and the next anchor arrives with a budget of its own ([[probe-budget]]), so a
-memoised `Spent` reports a deadline that was never that anchor's.
+The other two are not answers, and caching them turns one bad moment into a
+permanent one:
+
+- `Spent` is one caller's deadline. The next anchor arrives with a budget of its
+  own ([[probe-budget]]), and would be handed a deadline that was never its.
+- `Faulted` is the index declining to answer. A lock held for a moment would
+  become a refusal for the life of the process.
+
+Both are re-walked, and neither can run away: under a batch deadline every
+narrowed budget is already expired once the batch is out of time, so a retry
+costs a checkpoint rather than a scan.
 
 The memo is opt-in because it is only sound over a tree nobody is editing.
 `registry()` installs it; a registry built per call does not, so callers that
@@ -88,7 +96,6 @@ unit test here reaches.
 Does `Bridge::open` start blocking internally? Its async caller is on a worker
 thread, which is precisely where that is fatal.
 
-Does the walk memo keep telling later callers about a deadline that was not
-theirs? A `Refused` is a fact about the corpus and belongs in the memo; a
-`Spent` is a fact about one budget, and the anchors behind it each have their
-own.
+Does a new `Halt` variant get added without deciding whether it is
+`deterministic`? The memo's whole correctness is that predicate, and the
+default answer for anything that is not a fact about `(tree, recipe)` is no.

@@ -131,7 +131,7 @@ fn narrow_of(params: &Value) -> String {
 fn as_halt(halt: Halt) -> ExtractError {
     match halt {
         Halt::Spent(spent) => ExtractError::Spent(spent),
-        Halt::Refused(why) => ExtractError::Refused(why),
+        Halt::Faulted(why) | Halt::Refused(why) => ExtractError::Refused(why),
     }
 }
 
@@ -162,7 +162,7 @@ pub async fn registry(root: &Path, state_dir: &Path) -> Linked {
         Err(e) => {
             let bridge = Bridge::open(root, sqlite::open_in_memory)
                 .await
-                .expect("an in-memory SQLite pool cannot fail to open the way a file can");
+                .expect("an in-memory SQLite database cannot fail to open the way a file can");
             Linked {
                 cache_fault: Some(format!(
                     "the survey index would not open, held nothing on disk this run: {e}"
@@ -188,7 +188,9 @@ pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {
                             &reach.cwd,
                             sqlite::open_in_memory,
                         ))
-                        .expect("an in-memory SQLite pool cannot fail to open the way a file can");
+                        .expect(
+                            "an in-memory SQLite database cannot fail to open the way a file can",
+                        );
                         probe(
                             &narrow_of(&reach.params),
                             &reach.position,

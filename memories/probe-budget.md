@@ -7,6 +7,7 @@ about:
   - crates/gmr-probe/src/lib.rs#narrowing_can_only_tighten_a_budget_never_widen_it
   - batteries/survey/src/corpus.rs#rescan
   - batteries/survey/src/corpus.rs#Halt
+  - batteries/survey/src/corpus.rs#deterministic
   - domains/coding/extract/src/lib.rs#every_probe_stops_when_nobody_is_waiting_for_it_any_more
 watch: [sig, logic]
 ---
@@ -101,17 +102,24 @@ loops over the fixture table rather than naming probes, so a fifth extractor is
 covered the day it gets a fixture. It was checked red with the checkpoint
 removed.
 
-## A spent budget and a refused corpus are different answers
+## Three ways a reading stops, and only one is a fact about the corpus
 
-`Halt` is `Spent` or `Refused`, and the split is the point of it being a type
-rather than a `String`. `Refused` is about the world: this corpus makes no
-sense to this recipe, and it says so the same way however often it is asked.
-`Spent` is about us: the reading ran past a deadline that belonged to one
-caller, and says nothing at all about the corpus.
+`Halt` splits them, which is the point of it being a type rather than a
+`String`:
 
-Only the first is a property of the tree, so only the first is safe for anything
-to remember on another caller's behalf — see [[bridge-Bridge]] for the walk memo
-where that distinction has to hold.
+```
+Spent      the deadline that ran out was one caller's        not-knowing
+Faulted    the index would not answer                        our failure
+Refused    this corpus makes no sense to this recipe         the answer
+```
+
+Only `Refused` is a property of `(tree, recipe)`, and `Halt::deterministic`
+is that predicate. It is what decides whether an answer may be remembered on a
+later caller's behalf — see [[bridge-Bridge]].
+
+Collapsing `Faulted` into `Refused` is the specific mistake to avoid: a lock
+held for a moment is not a corpus that makes no sense, and anything that caches
+refusals would make that moment permanent.
 
 ## `ProbeCall` is a struct because the next thing will ride along
 

@@ -11,7 +11,7 @@ use crate::matching::{Fragment, Want};
 use crate::recipe::Recipe;
 
 fn index_halt(e: IndexError) -> Halt {
-    Halt::Refused(format!("{:?}: {e}", e.fault))
+    Halt::Faulted(format!("{:?}: {e}", e.fault))
 }
 
 fn located_to_fragments(snapshot: Option<Snapshot>) -> Vec<Fragment> {
@@ -127,7 +127,9 @@ impl<I: Index> Corpus for Bridge<I> {
             return walked.clone();
         }
         let walked = self.walk(recipe, &of, budget);
-        memo.lock().expect(WALK_POISONED).insert(of, walked.clone());
+        if walked.as_ref().err().is_none_or(Halt::deterministic) {
+            memo.lock().expect(WALK_POISONED).insert(of, walked.clone());
+        }
         walked
     }
 
