@@ -4,7 +4,7 @@ use gmr_core::{
     AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, RunSettings, State, StatusId,
     Transitions, Version,
 };
-use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
+use gmr_runtime::{Edge, Observed, OpenRequest, Policy, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
@@ -851,5 +851,58 @@ async fn an_anchor_the_budget_never_reached_comes_back_at_the_front_of_the_next_
          away would hide a starving tail behind a cadence of {}s, which is how a batch that \
          is permanently too small for its queue looks healthy forever",
         3600
+    );
+}
+
+#[tokio::test]
+async fn a_failed_observation_does_not_move_the_ground_under_a_memory() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let stale_now = async || w.runtime.grounded(&key()).await.unwrap().memories[0].stale;
+
+    assert_eq!(
+        stale_now().await,
+        Some(false),
+        "nothing has happened since this was bound"
+    );
+
+    w.remove();
+    let observed = w.runtime.observe(&key()).await.unwrap();
+    assert!(
+        matches!(observed, Observed::Attempt { .. }),
+        "the probe cannot read a file that is not there, so this is our failure: {observed:?}"
+    );
+    assert_eq!(
+        stale_now().await,
+        Some(false),
+        "one failed look does not move the world. This compared the binding's seq against \
+         the journal head, and the head advances on every entry -- including `Attempt`, \
+         which records that we could not observe at all. Reported as moved, a memory reads \
+         as standing on ground that shifted, when what actually happened is that nobody \
+         could go and look"
+    );
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    assert_eq!(
+        stale_now().await,
+        Some(true),
+        "the world did move this time, and a comparison that never says so is worth less \
+         than no comparison at all -- it reports every memory as standing on firm ground \
+         forever"
     );
 }

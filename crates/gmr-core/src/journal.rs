@@ -202,6 +202,7 @@ pub struct AnchorState {
     pub faltering: Option<Faltering>,
     pub last_sighting: Option<DateTime<Utc>>,
     pub entered_at: Option<DateTime<Utc>>,
+    pub moved_at: Option<Seq>,
     pub head: Seq,
     pub revisions: BTreeMap<ChangeKind, u32>,
 }
@@ -243,6 +244,7 @@ pub fn scan(
                     faltering: None,
                     last_sighting: Some(*at),
                     entered_at: Some(*at),
+                    moved_at: Some(*seq),
                     head: *seq,
                     revisions: BTreeMap::new(),
                 });
@@ -255,6 +257,7 @@ pub fn scan(
                 let Some(s) = acc.as_mut() else { continue };
                 if s.state != *state {
                     s.entered_at = Some(*at);
+                    s.moved_at = Some(*seq);
                 }
                 s.state = state.clone();
                 s.latest = Some(observation.clone());
@@ -287,7 +290,7 @@ pub fn scan(
             }
             Entry::Revise { change, at, .. } => {
                 let Some(s) = acc.as_mut() else { continue };
-                apply(s, change, *at);
+                apply(s, change, *at, *seq);
                 s.head = *seq;
             }
             Entry::Close { .. } => {
@@ -306,7 +309,7 @@ pub fn scan(
     acc
 }
 
-fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
+fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>, seq: Seq) {
     *s.revisions.entry(change.kind()).or_insert(0) += 1;
 
     match change {
@@ -316,6 +319,7 @@ fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
         Change::Restate { state } => {
             if s.state != *state {
                 s.entered_at = Some(at);
+                s.moved_at = Some(seq);
             }
             s.state = state.clone();
         }
@@ -469,6 +473,55 @@ mod tests {
              reason behind for the next reader to act on"
         );
         assert_eq!(s.last_sighting, Some(at(20)));
+    }
+
+    #[test]
+    fn the_clock_and_the_cursor_mark_the_same_move() {
+        let log = vec![
+            opened(&[], json!({ STATUS: "ok" })),
+            (
+                2,
+                Entry::Attempt {
+                    reason: ReasonClass::Unreachable,
+                    code: None,
+                    message: "boom".into(),
+                    at: at(10),
+                },
+            ),
+            (
+                3,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ STATUS: "ok" })),
+                    at: at(20),
+                },
+            ),
+            (
+                4,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ STATUS: "drifted" })),
+                    at: at(30),
+                },
+            ),
+        ];
+
+        let s = fold(&log).unwrap();
+
+        assert_eq!(
+            (s.entered_at, s.moved_at),
+            (Some(at(30)), Some(4)),
+            "`entered_at` and `moved_at` are one event in two units -- when the state \
+             changed, and where in the log it changed. Set one without the other and a \
+             reader comparing seqs disagrees with a reader comparing clocks about whether \
+             the ground moved"
+        );
+        assert_eq!(
+            s.head, 4,
+            "the head is every entry; the move is only the entries that changed the state. \
+             A failed attempt and a transition that restated the same value both advance \
+             the head and neither is the ground moving"
+        );
     }
 
     #[test]

@@ -117,7 +117,7 @@ fn memory_node(m: &MemoryView, names: &crate::memories::Names, detail: Option<St
         node = node.detail(html);
     }
     if m.stale == Some(true) {
-        node = node.fact("bound at", "before this anchor's latest entry");
+        node = node.fact("bound at", "before this anchor last moved");
     }
     match &m.grounding {
         Grounding::Gone => node = node.fact("gone", "the provider says this record is gone"),

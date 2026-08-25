@@ -192,12 +192,12 @@ impl Runtime {
 
     pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
         let policy = self.scheduler.policy();
-        let (view, head) = projected(&self.log, key, &self.scheduler.seen(key).await?).await?;
+        let (view, moved_at) = projected(&self.log, key, &self.scheduler.seen(key).await?).await?;
         ground(
             &self.log,
             &self.memory,
             view,
-            head,
+            moved_at,
             &policy.content_budget(),
             policy.content_call(),
         )
@@ -226,8 +226,8 @@ impl Runtime {
         let mut out = Vec::new();
         for key in self.log.anchors().await? {
             let looks = seen.get(&key).copied().unwrap_or_default();
-            let (view, head) = projected(&self.log, &key, &looks).await?;
-            out.push(ground(&self.log, &self.memory, view, head, &total, call).await?);
+            let (view, moved_at) = projected(&self.log, &key, &looks).await?;
+            out.push(ground(&self.log, &self.memory, view, moved_at, &total, call).await?);
         }
         Ok(out)
     }
@@ -237,7 +237,7 @@ async fn projected(
     log: &AnchorLog,
     key: &AnchorKey,
     looks: &Seen,
-) -> Result<(AnchorView, Seq), RuntimeError> {
+) -> Result<(AnchorView, Option<Seq>), RuntimeError> {
     let entries = log.entries(key, 0).await?;
     let mut logged: u64 = 0;
     let s = scan(&entries, |_, entry, _| {
@@ -274,7 +274,7 @@ async fn projected(
             derivation,
             facts,
         },
-        s.head,
+        s.moved_at,
     ))
 }
 
@@ -282,14 +282,17 @@ async fn ground(
     log: &AnchorLog,
     memory: &MemoryLens,
     view: AnchorView,
-    head: Seq,
+    moved_at: Option<Seq>,
     total: &Budget,
     call: Duration,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
         let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
-        held.stale = held.bound_at_seq.map(|seq| seq < head);
+        held.stale = held
+            .bound_at_seq
+            .zip(moved_at)
+            .map(|(bound, moved)| bound < moved);
         memories.push(held);
     }
     memory.carry_linked(&mut memories, total, call).await?;
