@@ -5,9 +5,9 @@ about:
   - batteries/survey/src/index.rs#Indexed
   - batteries/survey/src/index.rs#Index
   - batteries/survey/src/index.rs#Snapshot
-  - batteries/survey/src/index.rs#sort_key
-  - batteries/survey/src/index.rs#the_sort_key_reproduces_the_order_the_walk_hands_files_over_in
-  - batteries/survey/src/index.rs#sorting_the_same_paths_by_their_bytes_would_not_have_agreed
+  - batteries/survey/src/walk.rs#sort_key
+  - batteries/survey/src/walk.rs#the_sort_key_reproduces_the_order_the_walk_hands_files_over_in
+  - batteries/survey/src/walk.rs#sorting_the_same_paths_by_their_bytes_would_not_have_agreed
   - batteries/survey/src/testkit.rs#Remembered
 watch: [sig, logic]
 ---

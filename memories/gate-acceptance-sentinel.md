@@ -47,8 +47,12 @@ which runs in a different job, asserts the *mechanism* rather than the outcome:
 - `step()` really increments `$steps`, so the number is not a constant
 - the workflow greps for the sentinel at all
 - the number it greps for equals the count of `step ` calls in the script
+- the portal still names `tools/acceptance.py`
 
-All four were checked red before being kept.
+All four of the first were checked red before being kept. The fifth guards the
+half the portal no longer performs itself: the promises live in Python now, and
+a shell file that still prints a full step count while no longer handing the
+binary over would satisfy every check above it and run none of them.
 
 ## `acceptance.sh#step` is not in `about:`, and should not go back
 

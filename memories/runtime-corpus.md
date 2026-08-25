@@ -42,10 +42,13 @@ superseded generation, so an heir holding a full corpus reports barren. See
 
 ## `Footing` is the one classifier
 
-`Grounding::footing()` maps the retrieval outcome onto the seven names `doctor`
+`Grounding::footing()` maps the retrieval outcome onto the eight names `doctor`
 prints a line for, including the two splits that only `doctor` cared about:
 `NeverAsked` (the total content budget ran out first — see [[content-budget]])
 and `NoBefore` ([[runtime-grounding]]'s degraded but honest answer).
+`Unverified` is the eighth: a reference no assertion ever cited a version for, so
+the bytes came back with nothing to compare them against — see
+[[runtime-standing-baseline]].
 
 `edges` needs the payloads, so `Standing::of` matches the same enum a second
 time. Two matches on one shape is a drift waiting to happen, and prose asking for

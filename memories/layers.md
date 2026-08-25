@@ -76,7 +76,7 @@ their own, and deleting either one leaves a gap the other cannot fill.
 | `gmr-expr` | pure expression evaluation | is there IO · a clock · a dependency on gmr-core |
 | `gmr-probe` | the probe invocation contract | has a concrete transport implementation crept in |
 | `gmr-content` | the retrieval and discovery contracts | is it a concrete provider (that belongs to a battery), or has a required method appeared that only some stores can honour — that one belongs in its own trait, not in `ContentProvider` |
-| `gmr-store` | storage traits and feature-gated backends | is the new trait split by **mutability** (Journal / Binding / Sealer / Link / Queue) |
+| `gmr-store` | storage traits and feature-gated backends | is the new trait split by **mutability** (Journal / Binding / Sealer / Link / Queue / Settings / Sightings) |
 | `gmr-runtime` | the one orchestration layer | is it starting to make the domain's judgments for it |
 | `gmr` | re-exports only | any definition of its own is out of bounds |
 
