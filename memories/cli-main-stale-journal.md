@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/main.rs#probes_dir
-  - domains/coding/cli/src/main.rs#stale_journal_guard
+  - domains/coding/cli/src/lib.rs#probes_dir
+  - domains/coding/cli/src/lib.rs#stale_journal_guard
 watch: [sig, logic]
 ---
 
@@ -10,6 +10,11 @@ watch: [sig, logic]
 `probes_dir` colocates the content-addressed artifact store with the
 journal under the same root — one place to find both, not two separately
 configured paths.
+
+Both live in the library rather than the binary, and that is where a guard about
+opening a store belongs: an embedder opens the same journal through the same
+`run`, so a guard only the terminal ran would protect only the terminal. See
+[[cli-embeddable]].
 
 `stale_journal_guard` exists because the journal's location moved (from
 `.anchor/memory.db` to `state/memory.db`) at some point in this project's
