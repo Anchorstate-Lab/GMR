@@ -126,36 +126,88 @@ impl RuntimeBuilder {
     }
 
     pub fn build(self) -> Runtime {
+        match self.try_build() {
+            Ok(runtime) => runtime,
+            Err(wrong) => panic!("{wrong}"),
+        }
+    }
+
+    pub fn try_build(self) -> Result<Runtime, AssemblyError> {
         let mut named: Vec<&gmr_core::ProviderId> = Vec::new();
         for provider in &self.providers {
             let id = provider.provider();
-            assert!(
-                !named.contains(&id),
-                "two providers are registered as `{id}`, and lookup takes the first match — \
-                 so every reference through `{id}` would silently resolve against one of them \
-                 and never the other. Give each instance its own name at assembly time"
-            );
+            if named.contains(&id) {
+                return Err(AssemblyError::TwoUnderOneName { id: id.clone() });
+            }
             named.push(id);
         }
-        Runtime {
-            log: AnchorLog::new(self.journal.expect("a Journal is not optional")),
+        Ok(Runtime {
+            log: AnchorLog::new(self.journal.ok_or(AssemblyError::Missing {
+                part: Part::Journal,
+            })?),
             observer: Observer::new(self.transports),
             memory: MemoryLens::new(
-                self.bindings.expect("a BindingStore is not optional"),
-                self.sealer.expect("a Sealer is not optional"),
-                self.links.expect("a LinkStore is not optional"),
+                self.bindings.ok_or(AssemblyError::Missing {
+                    part: Part::Bindings,
+                })?,
+                self.sealer
+                    .ok_or(AssemblyError::Missing { part: Part::Sealer })?,
+                self.links
+                    .ok_or(AssemblyError::Missing { part: Part::Links })?,
                 self.providers,
                 self.provider_warnings,
             ),
             scheduler: Scheduler::new(
                 self.queue,
-                self.settings.expect("a Settings store is not optional"),
-                self.sightings
-                    .expect("a Sightings store is not optional: a look that found nothing new is recorded there instead of in the log"),
+                self.settings.ok_or(AssemblyError::Missing {
+                    part: Part::Settings,
+                })?,
+                self.sightings.ok_or(AssemblyError::Missing {
+                    part: Part::Sightings,
+                })?,
                 self.policy.unwrap_or_default(),
             ),
-        }
+        })
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    Journal,
+    Bindings,
+    Sealer,
+    Links,
+    Settings,
+    Sightings,
+}
+
+impl std::fmt::Display for Part {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Journal => "a Journal",
+            Self::Bindings => "a BindingStore",
+            Self::Sealer => "a Sealer",
+            Self::Links => "a LinkStore",
+            Self::Settings => "a Settings store",
+            Self::Sightings => {
+                "a Sightings store: a look that found nothing new is recorded there \
+                 instead of in the log"
+            }
+        })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AssemblyError {
+    #[error("{part} is not optional")]
+    Missing { part: Part },
+
+    #[error(
+        "two providers are registered as `{id}`, and lookup takes the first match — \
+         so every reference through `{id}` would silently resolve against one of them \
+         and never the other. Give each instance its own name at assembly time"
+    )]
+    TwoUnderOneName { id: gmr_core::ProviderId },
 }
 
 #[cfg(test)]
@@ -200,6 +252,40 @@ mod tests {
     #[should_panic(expected = "two providers are registered as `mem0`")]
     fn two_providers_under_one_name_is_refused_at_assembly() {
         assembled(["mem0", "mem0"]);
+    }
+
+    #[test]
+    fn a_runtime_built_from_a_configuration_is_told_which_part_is_missing() {
+        let missing = Runtime::builder()
+            .journal(Arc::new(MemoryJournal::default()))
+            .try_build();
+
+        let Err(AssemblyError::Missing { part }) = missing else {
+            panic!("a builder handed only a journal cannot produce a Runtime")
+        };
+        assert_eq!(
+            part,
+            Part::Bindings,
+            "a service assembling itself from a file somebody wrote has to say which line \
+             was wrong. `build` still panics, which stays right for a binary that wrote its \
+             own assembly -- and it calls this, so there is one definition of complete"
+        );
+    }
+
+    #[test]
+    fn the_duplicate_name_check_reports_rather_than_aborts_on_that_path() {
+        let bindings = Arc::new(MemoryBindings::default());
+        let built = Runtime::builder()
+            .journal(Arc::new(MemoryJournal::default()))
+            .bindings(bindings.clone())
+            .sealer(bindings.clone())
+            .links(bindings)
+            .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
+            .provider(Arc::new(Named(ProviderId::new("mem0"))))
+            .provider(Arc::new(Named(ProviderId::new("mem0"))))
+            .try_build();
+        assert!(matches!(built, Err(AssemblyError::TwoUnderOneName { .. })));
     }
 
     #[test]

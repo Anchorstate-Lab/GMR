@@ -2,6 +2,8 @@
 about:
   - crates/gmr-runtime/src/assembly.rs#Runtime
   - crates/gmr-runtime/src/assembly.rs#build
+  - crates/gmr-runtime/src/assembly.rs#try_build
+  - crates/gmr-runtime/src/assembly.rs#AssemblyError
   - crates/gmr-runtime/src/assembly.rs#provider_warning
   - crates/gmr-runtime/src/log.rs#AnchorLog
   - crates/gmr-runtime/src/memory.rs#MemoryLens
@@ -51,11 +53,23 @@ every reference through that name resolves against one of them and never
 the other — silently, forever, with no signal anywhere. So `build` asserts
 the names are distinct.
 
-It panics rather than returning an error, in the same register as
-`expect("a Journal is not optional")` right beside it: both are mistakes in
+`build` panics on it, and on a missing store beside it: both are mistakes in
 how a binary was assembled, decided before anything runs and unfixable at
-runtime by the caller. Returning a `Result` here would push a branch onto
-every assembly site for a condition none of them can recover from.
+runtime by the caller. Making *every* assembly site branch on a condition none
+of them can recover from is the cost that argument refuses, and it still holds
+for a binary that wrote its own assembly in Rust.
+
+It stops holding the moment the assembly comes from a file somebody wrote. A
+service reading a configuration has a caller who can act — fix the line — and a
+panic there is a stack trace where a sentence naming the bad line belongs. So
+`try_build` returns `AssemblyError`, and `build` is `try_build` with the error
+raised as a panic carrying the same sentence. One definition of what a complete
+`Runtime` is, two ways of being told.
+
+`Part` is an enum rather than a `&'static str` for the ordinary reason: a caller
+that wants to say "you forgot the queue" in its own words needs to match on
+which part, and a string forces it to match on prose that was written to be read
+by a person.
 
 Distinct names are worth having because a `ProviderId` is an **instance**
 alias, not a type name — one binary can reach two mem0 accounts, or a
@@ -70,3 +84,7 @@ one-way door. See [[provider-mem0]].
 Does a new verb receive a full `&Runtime` instead of the specific services
 it touches? That reopens exactly the capability-by-default problem the
 four-way split exists to avoid.
+
+Does a new required part get added to the builder without a `Part` variant? Then
+`build` still panics correctly and `try_build` starts lying by omission — the
+error can only name what the enum can say.

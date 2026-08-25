@@ -18,7 +18,7 @@ mod scheduler;
 mod seal_context;
 mod translate;
 
-pub use assembly::{Runtime, RuntimeBuilder};
+pub use assembly::{AssemblyError, Part, Runtime, RuntimeBuilder};
 pub use bind::Landed;
 pub use edges::{Edge, Edges, Standing};
 pub use error::RuntimeError;

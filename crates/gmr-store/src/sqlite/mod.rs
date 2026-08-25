@@ -50,10 +50,17 @@ pub(crate) fn decode_err(e: serde_json::Error) -> StoreError {
 }
 
 pub async fn open(path: impl AsRef<Path>) -> Result<SqliteStore, StoreError> {
+    open_with(path, Pooling::default()).await
+}
+
+pub async fn open_with(
+    path: impl AsRef<Path>,
+    pooling: Pooling,
+) -> Result<SqliteStore, StoreError> {
     let options = SqliteConnectOptions::new()
         .filename(path.as_ref())
         .create_if_missing(true);
-    connect(options).await
+    connect(options, pooling).await
 }
 
 pub async fn open_in_memory() -> Result<SqliteStore, StoreError> {
@@ -69,10 +76,28 @@ pub async fn open_in_memory() -> Result<SqliteStore, StoreError> {
     Ok(SqliteStore { pool })
 }
 
-async fn connect(options: SqliteConnectOptions) -> Result<SqliteStore, StoreError> {
-    let options = options.busy_timeout(std::time::Duration::from_secs(5));
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pooling {
+    pub max_connections: u32,
+    pub busy_timeout: std::time::Duration,
+}
+
+impl Default for Pooling {
+    fn default() -> Self {
+        Self {
+            max_connections: 4,
+            busy_timeout: std::time::Duration::from_secs(5),
+        }
+    }
+}
+
+async fn connect(
+    options: SqliteConnectOptions,
+    pooling: Pooling,
+) -> Result<SqliteStore, StoreError> {
+    let options = options.busy_timeout(pooling.busy_timeout);
     let pool = SqlitePoolOptions::new()
-        .max_connections(4)
+        .max_connections(pooling.max_connections)
         .connect_with(options)
         .await
         .map_err(db_err)?;
