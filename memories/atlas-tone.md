@@ -16,8 +16,8 @@ checks. Add a `Dim` and the new status falls silently into the default colour.
 So no status string is read here. `Tone` comes from two places that cannot go
 stale that way:
 
-- facts the substrate owns for every domain — `closed` (rule 8), `attempts`
-  (our failure), `sighting` (the world's answer);
+- facts the substrate owns for every domain — `closed` (rule 8), `faltering`
+  (our failure, see [[journal-faltering]]), `sighting` (the world's answer);
 - `Subscriptions::delivers`, the question the domain *already* answers about
   whether an anchor is handing a memory back to a person (see
   [[delivery-standing]]).
@@ -44,11 +44,21 @@ Some(false)` — three fields that could disagree, and did (see
 [[runtime-grounding]]), so the page could paint a memory alarming for a
 reason that was not actually true of it.
 
-`stale` deliberately carries no tone. Nothing else in the tree treats it as
-something to act on, and it holds for every memory bound before the last
-observation — which, after any `observe`, is nearly all of them (see
-[[runtime-read]]). Giving it a tone flagged half the corpus and made the channel
-useless.
+`Warrant::Holding` deliberately carries no tone, and the reason has changed
+under it. It was: this holds for every memory bound before the last observation,
+which after any `observe` is nearly all of them, so a tone flagged half the
+corpus and made the channel useless.
+
+That was a symptom, not a reason. The comparison was against the journal head,
+and the head advances on entries that are not the world moving — a single failed
+observation marked every memory on the anchor. [[runtime-moved-at]] fixed the
+cause: `Moved` now fires when the state actually changed and not otherwise.
+
+**So the suppression is now a choice rather than a necessity, and it is left
+standing rather than quietly reversed.** Whether a memory whose ground genuinely
+moved deserves a colour is a question about what this page asks a person to do,
+which is the domain's to answer — not something to change as a side effect of
+fixing the count.
 
 ## When this changes, ask
 

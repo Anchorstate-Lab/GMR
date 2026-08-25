@@ -326,13 +326,8 @@ impl Runtime {
 }
 
 fn state_at(entries: &[(Seq, Entry)], at: Seq) -> Option<State> {
-    let mut out = None;
-    scan(entries, |seq, _, now| {
-        if seq <= at {
-            out = Some(now.state.clone());
-        }
-    });
-    out
+    let upto = entries.partition_point(|(seq, _)| *seq <= at);
+    gmr_core::fold(&entries[..upto]).map(|s| s.state)
 }
 
 fn differing(
@@ -377,21 +372,21 @@ fn warranted(
     entries: &[(Seq, Entry)],
     moved_at: Option<Seq>,
 ) -> Warrant {
-    let knowledge = match (&view.faltering, view.last_sighting) {
-        (Some(f), since) => Knowledge::Blind {
+    let knowledge = match (
+        &view.faltering,
+        view.last_sighting,
+        view.derivation.as_ref(),
+    ) {
+        (Some(f), since, _) => Knowledge::Blind {
             since,
             why: Blind::of(f),
         },
-        (None, Some(at)) => Knowledge::Seen {
+        (None, Some(at), Some(d)) => Knowledge::Seen {
             at,
-            verifiability: view
-                .derivation
-                .as_ref()
-                .map(|d| d.verifiability)
-                .unwrap_or(Verifiability::Open),
+            verifiability: d.verifiability,
         },
-        (None, None) => Knowledge::Blind {
-            since: None,
+        (None, since, _) => Knowledge::Blind {
+            since,
             why: Blind::NeverAsked,
         },
     };

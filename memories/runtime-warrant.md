@@ -78,6 +78,15 @@ cannot be evaluated are three different people's problem.
 on the other side: a fact nobody had time to reach is our budget's doing, not
 somebody else's outage, and `Footing` already makes the same split for content.
 
+## `Absent` outranks `Moved`, and that costs something
+
+A fact that moved *to* gone is both. `Absent` wins, because "the thing this
+memory is about is not there" is the more specific answer and the one a reader
+acts on — but the seq and the axes go with `Moved`, so taking `Absent` gives up
+saying *when* it vanished. That is a deliberate trade and not a free one; if the
+vanishing moment turns out to be what people ask for, the answer is a field on
+`Absent`, not a reshuffle of the precedence.
+
 ## `axes` is a diff, not a vocabulary
 
 `Moved { axes }` names the **state paths that differ** between the state as of

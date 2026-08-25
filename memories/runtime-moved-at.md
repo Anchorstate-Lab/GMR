@@ -37,11 +37,16 @@ corpus to re-read, and the product would be an alert firehose nobody keeps on.
 ## Why not derive it in the read path
 
 `edges` already tracks the previous state through `scan` to find transitions, and
-the read path could do the same. That would be two copies of "did the state
-change", one crate apart, with nothing between them to notice when they drift —
-the objection [[journal-reason]] raises about storing what can be derived, in the
-mirror: derive it twice and the copies disagree. The fold already knows, so it
-says so once.
+the read path could have done the same. That would have been a third copy of
+"did the state change" — the objection [[journal-reason]] raises about storing
+what can be derived, in the mirror: derive it twice and the copies disagree.
+
+**`edges` still has its own.** It is not redundant with this one and cannot be
+replaced by it: `edges` emits an `Edge::Transitioned` *per crossing* while
+walking, so it needs the comparison at every entry; `moved_at` is the seq of the
+latest crossing and nothing else. Two questions, two answers. What was avoided
+was a third computation answering the same question as `moved_at` — not the
+existence of a per-entry one.
 
 ## When this changes, ask
 
