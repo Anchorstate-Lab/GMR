@@ -1,4 +1,4 @@
-use gmr::{Before, Grounded, Grounding, Source};
+use gmr::{Before, Blind, Grounded, Grounding, Holding, Knowledge, Source, Verifiability, Warrant};
 use serde_json::Value;
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
@@ -48,7 +48,12 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
     out.push_str(&format!("  state  {}\n", v.state.as_value()));
 
     if let Some(f) = &v.faltering {
-        out.push_str(&format!("  ! {} consecutive failed attempts\n", f.attempts));
+        out.push_str(&format!(
+            "  ! {} consecutive failed attempts, latest {}: {}\n",
+            f.attempts,
+            blame(&f.reason),
+            f.message
+        ));
     }
     if matches!(v.sighting, gmr::Sighting::Absent) {
         out.push_str("  * last observation looked there and found nothing\n");
@@ -58,6 +63,7 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
         let mark = if m.grounded { "*" } else { "?" };
         out.push_str(&format!("  {mark} {}", names.of(&m.reference)));
         out.push_str(&grounding(&m.grounding));
+        out.push_str(&warranting(m.warrant.as_ref()));
         if let Some(said) = vouching(&m.sources) {
             out.push_str(said);
         }
@@ -107,5 +113,73 @@ fn was(before: &Before) -> &'static str {
         Before::NotRetained => " the bound version was not kept",
         Before::NoHistory => " this provider keeps no history, so there is nothing to diff against",
         Before::Unreachable { .. } => " and the bound version could not be reached",
+    }
+}
+
+fn blame(reason: &gmr::ReasonClass) -> &'static str {
+    match reason {
+        gmr::ReasonClass::Unreachable => "could not reach the world",
+        gmr::ReasonClass::Unusable => "came back unusable",
+        gmr::ReasonClass::Unevaluable => "could not be judged against the rules",
+    }
+}
+
+fn warranting(w: Option<&Warrant>) -> String {
+    let Some(w) = w else {
+        return String::new();
+    };
+    [holding(&w.holding), knowledge(&w.knowledge)]
+        .into_iter()
+        .flatten()
+        .map(|said| format!("  {said}"))
+        .collect()
+}
+
+pub fn holding(h: &Holding) -> Option<String> {
+    match h {
+        Holding::Holds => None,
+        Holding::Moved { axes, .. } => Some(format!(
+            "the ground moved since this was bound: {}",
+            axes.join(" · ")
+        )),
+        Holding::Incomparable { .. } => Some(
+            "bound against a reading a different instrument took; whether the ground moved \
+             cannot be told from here"
+                .to_owned(),
+        ),
+        Holding::Absent => Some("the last look found nothing where this anchor points".to_owned()),
+        Holding::NeverEstablished => {
+            Some("bound before this anchor had read anything at all".to_owned())
+        }
+        Holding::Undated => {
+            Some("this binding carries no date, so nothing can be compared against it".to_owned())
+        }
+    }
+}
+
+pub fn knowledge(k: &Knowledge) -> Option<String> {
+    match k {
+        Knowledge::Seen {
+            verifiability: Verifiability::Closed,
+            ..
+        } => None,
+        Knowledge::Seen {
+            verifiability: Verifiability::Open,
+            ..
+        } => Some(
+            "read by a probe whose closure is open: something outside its version can change \
+             the answer"
+                .to_owned(),
+        ),
+        Knowledge::Blind { why, .. } => Some(format!("unconfirmed: {}", unseen(why))),
+    }
+}
+
+fn unseen(why: &Blind) -> &'static str {
+    match why {
+        Blind::NeverAsked => "nothing has looked yet, or the budget ran out before it could",
+        Blind::Unreachable { .. } => "the last look could not reach the world — theirs to fix",
+        Blind::Unusable { .. } => "the last look came back unusable — the probe's to fix",
+        Blind::Unevaluable { .. } => "the last look could not be judged — the rules' to fix",
     }
 }

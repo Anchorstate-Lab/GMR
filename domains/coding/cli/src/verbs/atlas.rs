@@ -117,17 +117,11 @@ fn memory_node(m: &MemoryView, names: &crate::memories::Names, detail: Option<St
         node = node.detail(html);
     }
     if let Some(w) = &m.warrant {
-        if let gmr::Holding::Moved { axes, .. } = &w.holding {
-            node = node.fact(
-                "bound at",
-                match axes.is_empty() {
-                    true => "before this anchor last moved".to_owned(),
-                    false => format!("before this anchor moved on {}", axes.join(" · ")),
-                },
-            );
+        if let Some(said) = crate::render::holding(&w.holding) {
+            node = node.fact("ground", said);
         }
-        if let gmr::Knowledge::Blind { .. } = &w.knowledge {
-            node = node.fact("unconfirmed", "the last look at this anchor failed");
+        if let Some(said) = crate::render::knowledge(&w.knowledge) {
+            node = node.fact("reading", said);
         }
     }
     match &m.grounding {
