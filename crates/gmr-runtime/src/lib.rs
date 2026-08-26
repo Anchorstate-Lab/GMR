@@ -1,6 +1,7 @@
 pub mod assembly;
 pub mod bind;
 pub mod close;
+pub mod contract;
 pub mod edges;
 pub mod error;
 pub mod health;

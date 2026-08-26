@@ -4,6 +4,7 @@ pub use gmr_core as core;
 pub use gmr_expr as expr;
 pub use gmr_probe as probe;
 pub use gmr_runtime as runtime;
+pub use gmr_runtime::contract;
 pub use gmr_store as store;
 
 #[cfg(feature = "sqlite")]
