@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use gmr_budget::Budget;
 use gmr_core::{Kind, Outcome, ProbeName, ProbeRef};
 use gmr_probe::{ProbeCall, ProbeError, Transport};
-use gmr_transport::http::{Ask, Fetch, Header, Http, Reply, pointer};
+use gmr_transport::http::{Ask, Fetch, Header, Http, Reply};
+use gmr_transport::select::pointer;
 
 struct Answers {
     status: u16,

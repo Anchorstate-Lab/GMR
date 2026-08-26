@@ -15,6 +15,9 @@ watch: [sig, logic]
 
 D-9. `gmr anchor 'https://crates.io/api/v1/crates/serde#$.crate.max_stable_version'`
 works in one command, with no `probes.toml` to edit first and no `probes build`.
+`file://deploy.yaml#$.service.replicas` takes the same path into
+[[transport-file]] — `Reached::Over` a network, `Reached::In` the tree, and one
+generator, because the two differ only in where the bytes come from.
 What it writes is two declarations a person can read:
 
 ```toml
@@ -37,8 +40,12 @@ smaller half of the reason: a key is what a person types at a terminal and write
 in a note's frontmatter, so it should be a name. The URL has no length limit where
 it actually lives, in the declaration.
 
-The name comes from `--as`, or is derived from the URL's last path segment and the
-selector's last field. Derivation is a convenience and is allowed to be wrong; it is
+The name comes from `--as`, or is derived from the last path segment and the
+selector's last field. A **known format suffix** is dropped from that segment, so
+`deploy.yaml` names `deploy-replicas` rather than `deploy-yaml-replicas`. It has
+to be a known suffix on the last segment and not "everything after the last dot":
+that shortcut renamed every crates.io anchor to `crates-...` the moment `file://`
+arrived, because `crates.io` has a dot in it. A test holds both. Derivation is a convenience and is allowed to be wrong; it is
 not allowed to be *silently* wrong, so a name already pointing at a different URL is
 an error naming both, not a second declaration and not an overwrite. Re-routing an
 existing name is a criteria change and goes through `revise` / `accept --criteria`,
@@ -92,3 +99,8 @@ watching the wrong endpoint.
 
 Does anything start putting the URL in the key? Then `check_key` is the next thing
 that breaks, and after it every note's frontmatter and every command line.
+
+Does a bare path start being treated as a fetched fact? `deploy.yaml#replicas`
+belongs to the extractors, however much it looks like something the file probe
+could read. The scheme is how a person opts in, and guessing instead would
+silently re-route coordinates that already work.

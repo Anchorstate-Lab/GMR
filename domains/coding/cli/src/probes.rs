@@ -76,6 +76,37 @@ impl HttpDecl {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FileDecl {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shaped: Option<String>,
+}
+
+impl FileDecl {
+    pub fn ask(&self) -> gmr_transport::file::Ask {
+        gmr_transport::file::Ask {
+            path: self.path.clone(),
+            select: self.select.clone(),
+            shaped: self
+                .shaped
+                .as_deref()
+                .and_then(gmr_transport::file::Shaped::of_extension),
+        }
+    }
+}
+
+pub fn file_obs() -> Obs {
+    Obs {
+        schema: gmr_transport::file::SCHEMA.to_owned(),
+        at: Vec::new(),
+        identity: Vec::new(),
+        facts: vec![gmr_transport::file::VALUE.to_owned()],
+    }
+}
+
 pub fn http_obs() -> Obs {
     Obs {
         schema: gmr_transport::http::SCHEMA.to_owned(),
@@ -101,6 +132,8 @@ struct File {
     script: BTreeMap<String, ScriptDecl>,
     #[serde(default)]
     http: BTreeMap<String, HttpDecl>,
+    #[serde(default)]
+    file: BTreeMap<String, FileDecl>,
 }
 
 #[derive(Debug, Default)]
@@ -334,6 +367,7 @@ pub struct Catalog {
     recipes: Recipes,
     scripts: BTreeMap<String, ScriptDecl>,
     https: BTreeMap<String, HttpDecl>,
+    files: BTreeMap<String, FileDecl>,
 }
 
 impl Catalog {
@@ -343,6 +377,7 @@ impl Catalog {
             recipes: Recipes::load(root)?,
             scripts: file.script,
             https: file.http,
+            files: file.file,
         })
     }
 
@@ -364,6 +399,9 @@ impl Catalog {
         if self.https.contains_key(name) {
             return Kind::new("http");
         }
+        if self.files.contains_key(name) {
+            return Kind::new("file");
+        }
         match self.scripts.contains_key(name) {
             true => Kind::new("script"),
             false => Kind::new("shell"),
@@ -383,6 +421,9 @@ impl Catalog {
         }
         if self.https.contains_key(name) {
             return Ok(http_obs());
+        }
+        if self.files.contains_key(name) {
+            return Ok(file_obs());
         }
         if let Some(d) = self.scripts.get(name) {
             return Ok(d.obs.clone());
@@ -409,6 +450,10 @@ impl Catalog {
 
     pub fn https(&self) -> impl Iterator<Item = (&str, &HttpDecl)> {
         self.https.iter().map(|(n, d)| (n.as_str(), d))
+    }
+
+    pub fn files(&self) -> impl Iterator<Item = (&str, &FileDecl)> {
+        self.files.iter().map(|(n, d)| (n.as_str(), d))
     }
 
     pub fn asks(&self) -> BTreeMap<gmr::ProbeName, gmr_transport::http::Ask> {
@@ -439,11 +484,34 @@ impl gmr_transport::http::Asks for Declared {
     }
 }
 
+impl gmr_transport::file::Asks for Declared {
+    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::file::Ask> {
+        Catalog::load(&self.root)
+            .ok()?
+            .files()
+            .find(|(n, _)| *n == name.as_str())
+            .map(|(_, d)| d.ask())
+    }
+}
+
 pub fn declare_http(root: &Path, name: &str, decl: &HttpDecl) -> Result<(), CliError> {
+    declare_probe(root, "http", name, decl)
+}
+
+pub fn declare_file(root: &Path, name: &str, decl: &FileDecl) -> Result<(), CliError> {
+    declare_probe(root, "file", name, decl)
+}
+
+fn declare_probe<T: Serialize>(
+    root: &Path,
+    table: &str,
+    name: &str,
+    decl: &T,
+) -> Result<(), CliError> {
     let mut block = BTreeMap::new();
-    block.insert(name.to_owned(), decl.clone());
+    block.insert(name.to_owned(), decl);
     let mut outer = BTreeMap::new();
-    outer.insert("http".to_owned(), block);
+    outer.insert(table.to_owned(), block);
     let written = toml::to_string(&outer)
         .map_err(|e| CliError(format!("cannot write a probe for `{name}`: {e}")))?;
 
@@ -460,6 +528,14 @@ pub fn declare_http(root: &Path, name: &str, decl: &HttpDecl) -> Result<(), CliE
     }
     std::fs::write(&path, format!("{held}{written}"))
         .map_err(|e| CliError(format!("cannot write {}: {e}", path.display())))
+}
+
+pub fn stem_of(segment: &str) -> Option<&str> {
+    let (stem, ext) = segment.rsplit_once('.')?;
+    if stem.is_empty() {
+        return None;
+    }
+    gmr_transport::file::Shaped::of_extension(ext).map(|_| stem)
 }
 
 pub fn anchor_dir(root: &Path) -> PathBuf {

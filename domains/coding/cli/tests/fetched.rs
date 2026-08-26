@@ -5,6 +5,11 @@ fn a_repository() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".anchor")).unwrap();
     std::fs::create_dir_all(dir.path().join("memories")).unwrap();
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir.path())
+        .status()
+        .expect("git is on PATH in this test environment");
     dir
 }
 
@@ -93,5 +98,94 @@ fn a_note_on_a_fetched_anchor_points_at_the_declaration_instead_of_re_deriving_i
         "`about:` asks the reader to route the coordinate itself, which is right for a path \
          and impossible for a minted name. The frontmatter for a fetched anchor names the \
          anchor and lets the declaration do the routing"
+    );
+}
+
+#[tokio::test]
+async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
+    let dir = a_repository();
+    let root = dir.path();
+    std::fs::write(
+        root.join("deploy.yaml"),
+        "service:\n  replicas: 3\n  timeout_ms: 5000\n",
+    )
+    .unwrap();
+
+    let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
+    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let mut builder = gmr::Runtime::builder()
+        .journal(std::sync::Arc::new(store.journal()))
+        .bindings(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.bindings()))
+        .links(std::sync::Arc::new(store.links()))
+        .queue(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.queue()))
+        .sightings(std::sync::Arc::new(store.queue()))
+        .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
+            root,
+            coding_anchor::probes::Declared::at(root),
+        )));
+    for built in &stores.built {
+        builder = builder.provider(built.content());
+    }
+    let rt = builder.build();
+
+    coding_anchor::verbs::anchor::run(
+        &rt,
+        root,
+        &stores,
+        coding_anchor::verbs::anchor::Asked {
+            coordinate: Some("file://deploy.yaml#$.service.replicas".to_owned()),
+            named: None,
+            memory: Some("Three, because two cannot survive a rolling restart.".to_owned()),
+            record: None,
+        },
+        true,
+    )
+    .await
+    .unwrap();
+
+    let key = gmr::AnchorKey::new("deploy-replicas");
+    let opened = rt.read(&key).await.expect("the anchor opened");
+    assert_eq!(
+        opened.state.0.pointer("/baseline/value"),
+        Some(&serde_json::json!(3)),
+        "the baseline is the number somebody chose, not a digest of the file it sits in. \
+         Routed to the catchall instead, this same coordinate came back as an opaque \
+         fingerprint and reported `path matched, name did not` -- it was never watching \
+         `replicas` at all: {}",
+        opened.state.0
+    );
+
+    std::fs::write(
+        root.join("deploy.yaml"),
+        "service:\n  replicas: 3\n  timeout_ms: 8000\n",
+    )
+    .unwrap();
+    rt.observe(&key).await.unwrap();
+    assert_eq!(
+        rt.read(&key).await.unwrap().state.0.pointer("/v/value"),
+        Some(&serde_json::json!(false)),
+        "an edit to a neighbouring field is not this fact moving, and waking somebody for \
+         it is how they learn to stop reading what they are handed"
+    );
+
+    std::fs::write(
+        root.join("deploy.yaml"),
+        "service:\n  replicas: 5\n  timeout_ms: 8000\n",
+    )
+    .unwrap();
+    rt.observe(&key).await.unwrap();
+    let moved = rt.read(&key).await.unwrap();
+    assert_eq!(
+        moved.state.0.pointer("/v/value"),
+        Some(&serde_json::json!(true)),
+        "and the field it does watch moving is: {}",
+        moved.state.0
+    );
+    assert_eq!(
+        moved.state.0.pointer("/now/value"),
+        Some(&serde_json::json!(5)),
+        "with the new value legible, so a reader sees 3 -> 5 rather than one hash -> another"
     );
 }

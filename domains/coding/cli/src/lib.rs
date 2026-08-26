@@ -121,6 +121,10 @@ pub async fn served(
             gmr_transport::http::Http::new(crate::probes::Declared::at(&root))
                 .map_err(|e| CliError(format!("cannot build the http transport: {e}")))?,
         ))
+        .transport(Arc::new(gmr_transport::file::Files::new(
+            &root,
+            crate::probes::Declared::at(&root),
+        )))
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.queue()))
         .sightings(Arc::new(store.queue()))
