@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gmr-budget",
     "crates/gmr-core",
     "crates/gmr-expr",
     "crates/gmr-probe",

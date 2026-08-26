@@ -17,7 +17,7 @@ pub mod claude_code;
 pub mod mem0;
 
 #[cfg(any(feature = "git", feature = "claude-code"))]
-pub(crate) fn spend(budget: &gmr_probe::Budget) -> Result<(), gmr_content::ContentError> {
+pub(crate) fn spend(budget: &gmr_budget::Budget) -> Result<(), gmr_content::ContentError> {
     budget
         .checkpoint()
         .map_err(|s| gmr_content::ContentError::spent(s.as_str()))
@@ -26,7 +26,7 @@ pub(crate) fn spend(budget: &gmr_probe::Budget) -> Result<(), gmr_content::Conte
 #[cfg(feature = "git")]
 pub(crate) async fn within(
     command: std::process::Command,
-    budget: &gmr_probe::Budget,
+    budget: &gmr_budget::Budget,
 ) -> Result<std::process::Output, gmr_content::ContentError> {
     spend(budget)?;
     let left = budget

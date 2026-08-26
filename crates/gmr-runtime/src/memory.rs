@@ -7,8 +7,8 @@ use serde::Serialize;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::read::{Before, Grounding, MemoryView};
+use gmr_budget::Budget;
 use gmr_content::{ContentError, ContentProvider};
-use gmr_probe::Budget;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderWarning {

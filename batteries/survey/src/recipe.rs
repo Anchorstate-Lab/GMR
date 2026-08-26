@@ -1,4 +1,4 @@
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 use serde_json::Value;
 
 use crate::corpus::{Corpus, Halt};

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use gmr_budget::Budget;
 use gmr_core::{Anchor, Derivation, Outcome, ProbeRef};
-use gmr_probe::{Budget, ProbeCall, ProbeError, ProbeErrorCode, Transport};
+use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 
 pub struct Observer {
     transports: Vec<Arc<dyn Transport>>,

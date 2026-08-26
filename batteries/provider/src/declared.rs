@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::{ContentError, ContentProvider, Fetched, MemorySource, MemoryStore, Record};
 use gmr_core::{ExternalId, Outcome, ProbeRef, ProviderId, Ref, Version, content_hash_of_bytes};
-use gmr_probe::{Budget, ProbeCall, ProbeError, ProbeErrorCode, Transport};
+use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 use serde_json::Value;
 
 pub const CONTRACT: &str = "gmr.provider-script.v1";

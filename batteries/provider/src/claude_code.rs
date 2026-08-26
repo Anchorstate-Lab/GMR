@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::{ContentError, ContentProvider, Fetched, MemorySource, MemoryStore, Record};
 use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
-use gmr_probe::Budget;
 
 pub struct ClaudeMemory {
     root: PathBuf,

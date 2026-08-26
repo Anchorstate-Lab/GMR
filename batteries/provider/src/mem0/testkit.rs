@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::ContentError;
-use gmr_probe::Budget;
 
 use super::{Deployment, Mem0, Scope};
 use crate::http::{Answer, Http};

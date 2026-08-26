@@ -1,8 +1,8 @@
 #![cfg(feature = "mem0")]
 
+use gmr_budget::Budget;
 use gmr_content::{ContentProvider, MemorySource};
 use gmr_core::ExternalId;
-use gmr_probe::Budget;
 use gmr_provider::mem0::{Mem0, Scope};
 use std::time::Duration;
 

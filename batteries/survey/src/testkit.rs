@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use crate::index::{Built, Generation, Index, IndexError, Indexed, Located, Row, Snapshot, under};
 use crate::matching::Want;
 use crate::narrow::touches;
-use gmr_probe as _;
+use gmr_budget as _;
 
 struct Kept {
     hash: String,
@@ -208,7 +208,7 @@ impl crate::corpus::Corpus for Surveyed {
     fn refresh(
         &self,
         recipe: &crate::recipe::Recipe,
-        budget: &gmr_probe::Budget,
+        budget: &gmr_budget::Budget,
     ) -> Result<(), crate::corpus::Halt> {
         let known: BTreeMap<String, crate::walk::Held> = {
             let held = self.held.lock().unwrap();

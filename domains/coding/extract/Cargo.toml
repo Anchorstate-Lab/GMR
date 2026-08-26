@@ -13,6 +13,7 @@ license.workspace = true
 
 [dependencies]
 gmr-core = { path = "../../../crates/gmr-core" }
+gmr-budget = { path = "../../../crates/gmr-budget" }
 gmr-probe = { path = "../../../crates/gmr-probe" }
 gmr-survey = { path = "../../../batteries/survey", features = ["sqlite", "bridge"] }
 gmr-transport = { path = "../../../batteries/transport", features = ["inproc"] }

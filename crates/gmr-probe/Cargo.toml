@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+gmr-budget = { path = "../gmr-budget" }
 gmr-core = { path = "../gmr-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }

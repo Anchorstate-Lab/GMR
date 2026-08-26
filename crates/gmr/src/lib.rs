@@ -1,3 +1,4 @@
+pub use gmr_budget as budget;
 pub use gmr_content as content;
 pub use gmr_core as core;
 pub use gmr_expr as expr;
@@ -8,6 +9,7 @@ pub use gmr_store as store;
 #[cfg(feature = "sqlite")]
 pub use gmr_store::sqlite;
 
+pub use gmr_budget::{Budget, Spent};
 pub use gmr_content::{
     ContentError, ContentErrorCode, ContentProvider, Fetched, History, MemorySource, MemoryStore,
     Record,

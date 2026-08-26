@@ -14,6 +14,7 @@ testkit = ["gmr-content/testkit", "gmr-store/testkit"]
 [dependencies]
 gmr-core = { path = "../gmr-core" }
 gmr-expr = { path = "../gmr-expr" }
+gmr-budget = { path = "../gmr-budget" }
 gmr-probe = { path = "../gmr-probe" }
 gmr-content = { path = "../gmr-content" }
 gmr-store = { path = "../gmr-store" }

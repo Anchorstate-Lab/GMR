@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use gmr_probe::{Budget, Spent};
+use gmr_budget::{Budget, Spent};
 
 use crate::matching::{Fragment, Want};
 use crate::recipe::Recipe;

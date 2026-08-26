@@ -3,7 +3,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 
 use crate::corpus::{self, Corpus, Halt};
 use crate::index::{Generation, Index, IndexError, Indexed, Row as IndexRow, Snapshot};

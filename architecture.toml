@@ -46,6 +46,12 @@ forbidden = ["domain"]
 # 「够不到这些成员」而不是静默通过。
 
 [[member]]
+name  = "gmr-budget"
+layer = "substrate"
+kind  = "package"
+path  = "crates/gmr-budget"
+
+[[member]]
 name  = "gmr-core"
 layer = "substrate"
 kind  = "package"

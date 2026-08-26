@@ -267,6 +267,7 @@ dependencies = [
 name = "coding-extract"
 version = "0.4.6"
 dependencies = [
+ "gmr-budget",
  "gmr-core",
  "gmr-probe",
  "gmr-survey",
@@ -575,6 +576,7 @@ dependencies = [
 name = "gmr"
 version = "0.4.6"
 dependencies = [
+ "gmr-budget",
  "gmr-content",
  "gmr-core",
  "gmr-expr",
@@ -593,12 +595,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gmr-budget"
+version = "0.4.6"
+
+[[package]]
 name = "gmr-content"
 version = "0.4.6"
 dependencies = [
  "async-trait",
+ "gmr-budget",
  "gmr-core",
- "gmr-probe",
  "serde",
  "serde_json",
  "thiserror",
@@ -631,6 +637,7 @@ name = "gmr-probe"
 version = "0.4.6"
 dependencies = [
  "async-trait",
+ "gmr-budget",
  "gmr-core",
  "serde",
  "serde_json",
@@ -642,6 +649,7 @@ name = "gmr-provider"
 version = "0.4.6"
 dependencies = [
  "async-trait",
+ "gmr-budget",
  "gmr-content",
  "gmr-core",
  "gmr-probe",
@@ -659,6 +667,7 @@ version = "0.4.6"
 dependencies = [
  "async-trait",
  "chrono",
+ "gmr-budget",
  "gmr-content",
  "gmr-core",
  "gmr-expr",
@@ -694,7 +703,7 @@ version = "0.4.6"
 dependencies = [
  "async-trait",
  "chrono",
- "gmr-probe",
+ "gmr-budget",
  "gmr-survey",
  "rusqlite",
  "serde",
@@ -710,6 +719,7 @@ name = "gmr-transport"
 version = "0.4.6"
 dependencies = [
  "async-trait",
+ "gmr-budget",
  "gmr-core",
  "gmr-probe",
  "gmr-transport",

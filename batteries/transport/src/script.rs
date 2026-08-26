@@ -7,9 +7,8 @@ use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{
-    PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Spent, Transport,
-};
+use gmr_budget::Spent;
+use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Transport};
 
 use crate::closure;
 
@@ -126,8 +125,8 @@ impl Transport for Script {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gmr_budget::Budget;
     use gmr_core::{ProbeRef, ReasonClass};
-    use gmr_probe::Budget;
     use serde_json::json;
     use std::time::Duration;
 

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use gmr::probe::Budget;
+use gmr::Budget;
 use gmr::{ContentError, MemorySource, ProviderId, Record, Ref, Version};
 
 use crate::error::CliError;

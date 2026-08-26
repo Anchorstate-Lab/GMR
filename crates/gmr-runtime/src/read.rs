@@ -1,13 +1,13 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use gmr_budget::Budget;
 use gmr_content::ContentErrorCode;
 use gmr_core::{
     Anchor, AnchorKey, AnchorState, Derivation, Entry, Facts, FailureCode, Faltering, Link,
     Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State, StatusId,
     Verifiability, Version, scan,
 };
-use gmr_probe::Budget;
 use gmr_store::Seen;
 use serde::Serialize;
 

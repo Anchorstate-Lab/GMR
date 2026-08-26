@@ -1,5 +1,10 @@
 ---
 anchors:
+  - key: layer::gmr-budget
+    probe: ast-map
+    params: { root: crates/gmr-budget }
+    position: { vis: "pub" }
+    shape: roster
   - key: layer::gmr-core
     probe: ast-map
     params: { root: crates/gmr-core }
@@ -45,7 +50,7 @@ them there are, they cannot answer the other question: **what is this layer now.
 One more `pub` in a crate and no single-point anchor moves — and that is precisely
 the contract between two layers changing.
 
-These seven anchors watch the public-surface roster of seven crates. Four axes, of
+These eight anchors watch the public-surface roster of eight crates. Four axes, of
 which `watch` subscribes to the first three:
 
 ```
@@ -72,6 +77,7 @@ their own, and deleting either one leaves a gap the other cannot fill.
 
 | layer | may only hold | if anything else shows up, ask |
 |---|---|---|
+| `gmr-budget` | `Budget` and `Spent` | has anything else arrived — it is named by crates that want the vocabulary and not the contract, and every addition is something they now have to take |
 | `gmr-core` | vocabulary · content addresses · Entry · fold | is it starting to know how facts are fetched / how rules are computed / how things are stored |
 | `gmr-expr` | pure expression evaluation | is there IO · a clock · a dependency on gmr-core |
 | `gmr-probe` | the probe invocation contract | has a concrete transport implementation crept in |

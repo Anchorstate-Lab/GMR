@@ -38,7 +38,7 @@ impl Runtime {
         self.scheduler.policy()
     }
 
-    pub fn content_budget(&self) -> gmr_probe::Budget {
+    pub fn content_budget(&self) -> gmr_budget::Budget {
         self.scheduler.policy().content_budget()
     }
 
@@ -227,7 +227,7 @@ mod tests {
         async fn fetch(
             &self,
             _id: &ExternalId,
-            _budget: &gmr_probe::Budget,
+            _budget: &gmr_budget::Budget,
         ) -> Result<Option<gmr_content::Fetched>, gmr_content::ContentError> {
             Ok(None)
         }

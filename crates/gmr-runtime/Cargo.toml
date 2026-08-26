@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+gmr-budget = { path = "../gmr-budget" }
 gmr-core = { path = "../gmr-core" }
 gmr-expr = { path = "../gmr-expr" }
 # default-features = false：runtime 只要 Transport trait，不替使用方

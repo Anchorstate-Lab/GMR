@@ -29,7 +29,7 @@ FACADE = ROOT / "crates" / "gmr" / "src" / "lib.rs"
 ACCEPTANCE = ROOT / "acceptance.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
 
-PURE_ROOTS = ["gmr-core", "gmr-expr"]
+PURE_ROOTS = ["gmr-budget", "gmr-core", "gmr-expr"]
 
 NO_CONCRETE_IMPL = {
     "gmr-probe": {"tokio", "reqwest", "hyper"},

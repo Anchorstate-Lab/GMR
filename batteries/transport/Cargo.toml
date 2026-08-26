@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+gmr-budget = { path = "../../crates/gmr-budget" }
 gmr-probe = { path = "../../crates/gmr-probe" }
 gmr-core = { path = "../../crates/gmr-core", optional = true }
 serde_json = { workspace = true, optional = true }

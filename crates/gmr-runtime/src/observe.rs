@@ -1,10 +1,10 @@
 use chrono::Utc;
+use gmr_budget::Budget;
 use gmr_core::{
     Anchor, AnchorKey, Entry, FailureCode, Observation, ReasonClass, Recorded, State, Versions,
     fold, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
-use gmr_probe::Budget;
 use gmr_store::{Disposition, Fence};
 
 use crate::assembly::Runtime;

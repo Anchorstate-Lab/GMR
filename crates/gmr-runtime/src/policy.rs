@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 
 #[derive(Debug, Clone)]
 pub struct Policy {

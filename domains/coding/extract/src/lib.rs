@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use gmr_budget::Budget;
 use gmr_core::{ProbeName, ProbeVersion};
-use gmr_probe::Budget;
 use gmr_survey::bridge::Bridge;
 use gmr_survey::sqlite::{self, SqliteIndex};
 use gmr_survey::{Corpus, Halt};

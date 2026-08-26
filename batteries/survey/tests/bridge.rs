@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 use gmr_survey::bridge::{Bridge, run_blocking};
 use gmr_survey::index::{Built, Fault, Generation, Index, IndexError, Indexed, Snapshot};
 use gmr_survey::matching::{Fragment, Want};
