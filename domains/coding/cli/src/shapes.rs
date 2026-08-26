@@ -121,7 +121,13 @@ const FINGERPRINT: Shape = Shape {
     watch: &["missing", "drift"],
 };
 
-pub const ALL: &[&Shape] = &[&CONTRACT, &ROSTER, &FINGERPRINT];
+const VALUE: Shape = Shape {
+    name: "value",
+    dims: &[since("value", "changed", "value", "obs.value")],
+    watch: &["value"],
+};
+
+pub const ALL: &[&Shape] = &[&CONTRACT, &ROSTER, &FINGERPRINT, &VALUE];
 
 pub fn get(name: &str) -> Result<&'static Shape, CliError> {
     ALL.iter().copied().find(|s| s.name == name).ok_or_else(|| {
@@ -233,12 +239,33 @@ fn seen(dims: &[Dim], status: &str) -> String {
     ])
 }
 
+fn reported(dims: &[Dim]) -> String {
+    if dims.iter().any(|d| d.name == MISSING) {
+        return "obs.found".to_owned();
+    }
+    let mut guards: Vec<String> = Vec::new();
+    for d in dims {
+        let Reads::Since { obs, .. } = d.reads else {
+            continue;
+        };
+        let guard = format!("exists({obs})");
+        if !guards.contains(&guard) {
+            guards.push(guard);
+        }
+    }
+    match guards.is_empty() {
+        true => "true".to_owned(),
+        false => guards.join(" and "),
+    }
+}
+
 fn expand(dims: &[Dim]) -> Vec<String> {
     let standing = || dims.iter().filter(|d| matches!(d.reads, Reads::Now { .. }));
     let mut out = Vec::with_capacity(dims.len() + 3);
 
     out.push(format!(
-        "not exists(state.baseline) and obs.found => {}",
+        "not exists(state.baseline) and {} => {}",
+        reported(dims),
         object(&[
             ("position".into(), "state.position".into()),
             ("baseline".into(), reading(dims)),
@@ -801,6 +828,30 @@ mod tests {
         }
     }
 
+    struct Beam {
+        shape: &'static str,
+        axis: &'static str,
+        moves: &'static [&'static str],
+        before: &'static str,
+        after: &'static str,
+    }
+
+    const BEAMS: &[Beam] = &[Beam {
+        shape: "value",
+        axis: "value",
+        moves: &["value"],
+        before: r#"{"value": "1.2.3"}"#,
+        after: r#"{"value": "1.3.0"}"#,
+    }];
+
+    fn lit(beam: &Beam) -> Vec<String> {
+        let rules = rules_of(get(beam.shape).unwrap());
+        let read = |text: &str| serde_json::from_str::<Value>(text).unwrap();
+        let opened = step(&rules, &read(beam.before), &Value::Null);
+        assert!(set(&opened).is_empty(), "beam did not open clean: {opened}");
+        set(&step(&rules, &read(beam.after), &opened))
+    }
+
     #[test]
     fn every_axis_can_be_moved_and_moves_alone() {
         for (at, shot) in RANGE.iter().enumerate() {
@@ -812,6 +863,17 @@ mod tests {
                 shot.after
             );
         }
+        for beam in BEAMS {
+            assert_eq!(
+                lit(beam),
+                beam.moves,
+                "beam `{}`/`{}`: `{}` -> `{}`",
+                beam.shape,
+                beam.axis,
+                beam.before,
+                beam.after
+            );
+        }
     }
 
     #[test]
@@ -821,7 +883,10 @@ mod tests {
                 assert!(
                     RANGE
                         .iter()
-                        .any(|s| s.shape == shape.name && s.axis == axis),
+                        .any(|s| s.shape == shape.name && s.axis == axis)
+                        || BEAMS
+                            .iter()
+                            .any(|b| b.shape == shape.name && b.axis == axis),
                     "`{}`'s `{axis}` has no shot; an axis nothing is known to move \
                      is how a dead one hides",
                     shape.name
@@ -1153,5 +1218,44 @@ mod tests {
             after["baseline"]["fingerprint"], "aaa",
             "the baseline survives; the fallback must not overwrite it"
         );
+    }
+}
+
+#[cfg(test)]
+mod value_shape {
+    use super::*;
+
+    #[test]
+    fn a_probe_that_says_absence_on_the_warrant_axis_is_not_asked_for_a_found_flag() {
+        let rules = rules_of(get("value").unwrap());
+        assert!(
+            !rules.iter().any(|r| r.contains("obs.found")),
+            "the http probe answers 404 with `Outcome::NotFound`, which the base already \
+             reports as `Holding::Absent`. Asking it for a `found` field as well would be \
+             the same fact recorded twice, on two axes, with nothing comparing them: {rules:?}"
+        );
+        assert!(
+            rules[0].starts_with("not exists(state.baseline) and exists(obs.value) =>"),
+            "so the opening guard is that this shape's own reading arrived, not that some \
+             flag it never emits is true: {}",
+            rules[0]
+        );
+    }
+
+    #[test]
+    fn deriving_the_opening_guard_left_every_shape_that_had_one_alone() {
+        for shape in [
+            get("contract").unwrap(),
+            get("roster").unwrap(),
+            get("fingerprint").unwrap(),
+        ] {
+            assert!(
+                rules_of(shape)[0].starts_with("not exists(state.baseline) and obs.found =>"),
+                "`{}` reports absence inside its facts and must keep doing so -- the guard \
+                 is now derived rather than hardcoded, and deriving it must not have moved \
+                 anything for the shapes that were already right",
+                shape.name
+            );
+        }
     }
 }

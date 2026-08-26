@@ -10,6 +10,10 @@ use gmr_core::{
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 use serde_json::Value;
 
+pub const VALUE: &str = "value";
+
+pub const SCHEMA: &str = "gmr.probe-http.v1";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Header {
     Given(String),
@@ -104,21 +108,31 @@ pub trait Fetch: Send + Sync {
     ) -> Result<Reply, ProbeError>;
 }
 
+pub trait Asks: Send + Sync {
+    fn ask(&self, name: &ProbeName) -> Option<Ask>;
+}
+
+impl Asks for BTreeMap<ProbeName, Ask> {
+    fn ask(&self, name: &ProbeName) -> Option<Ask> {
+        self.get(name).cloned()
+    }
+}
+
 pub struct Http {
     kind: Kind,
-    asks: BTreeMap<ProbeName, Ask>,
+    asks: Arc<dyn Asks>,
     fetch: Arc<dyn Fetch>,
 }
 
 impl Http {
-    pub fn new(asks: BTreeMap<ProbeName, Ask>) -> Result<Self, ProbeError> {
+    pub fn new(asks: impl Asks + 'static) -> Result<Self, ProbeError> {
         Ok(Self::with(asks, Arc::new(Reqwest::new()?)))
     }
 
-    pub fn with(asks: BTreeMap<ProbeName, Ask>, fetch: Arc<dyn Fetch>) -> Self {
+    pub fn with(asks: impl Asks + 'static, fetch: Arc<dyn Fetch>) -> Self {
         Self {
             kind: Kind::new("http"),
-            asks,
+            asks: Arc::new(asks),
             fetch,
         }
     }
@@ -132,14 +146,14 @@ impl Transport for Http {
 
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
-            version: self.asks.get(name)?.version(),
+            version: self.asks.ask(name)?.version(),
             verifiability: Verifiability::open([Openness::Network, Openness::Clock]),
         })
     }
 
     async fn invoke(&self, call: &ProbeCall<'_>) -> Result<Outcome, ProbeError> {
         let name = &call.probe.name;
-        let ask = self.asks.get(name).ok_or_else(|| {
+        let ask = self.asks.ask(name).ok_or_else(|| {
             ProbeError::with_code(
                 ReasonClass::Unusable,
                 ProbeErrorCode::ArtifactInvalid,
@@ -148,6 +162,7 @@ impl Transport for Http {
         })?;
 
         let reply = self.fetch.get(&ask.url, &ask.sent()?, call.budget).await?;
+        let ask = &ask;
 
         match reply.status {
             200..=299 => {}
@@ -157,7 +172,8 @@ impl Transport for Http {
                     ReasonClass::Unusable,
                     ProbeErrorCode::ArtifactInvalid,
                     format!(
-                        "{} refused this request ({}); that is our credentials, not its answer",
+                        "{} refused this request ({}); that is something about our request \
+                         -- a credential, or a header it requires -- and not its answer",
                         ask.url, reply.status
                     ),
                 ));
@@ -209,7 +225,7 @@ fn found(value: Value) -> Outcome {
     match value.is_null() {
         true => Outcome::NotFound,
         false => Outcome::Found {
-            facts: Facts::new(value),
+            facts: Facts::new(serde_json::json!({ VALUE: value })),
         },
     }
 }
@@ -233,6 +249,7 @@ pub struct Reqwest {
 impl Reqwest {
     pub fn new() -> Result<Self, ProbeError> {
         reqwest::Client::builder()
+            .user_agent(concat!("gmr/", env!("CARGO_PKG_VERSION")))
             .build()
             .map(|client| Self { client })
             .map_err(|e| {

@@ -118,11 +118,84 @@ fn declaration(coord: &str, routed: &crate::coord::Routed) -> crate::verbs::sync
     }
 }
 
+pub fn fetched(coord: &str) -> Option<(String, Option<String>)> {
+    if !(coord.starts_with("http://") || coord.starts_with("https://")) {
+        return None;
+    }
+    Some(match coord.split_once('#') {
+        Some((url, select)) => (url.to_owned(), Some(select.to_owned())),
+        None => (coord.to_owned(), None),
+    })
+}
+
+pub fn derive_name(url: &str, select: Option<&str>) -> String {
+    let path = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let last = path
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(path)
+        .rsplit('/')
+        .find(|s| !s.is_empty())
+        .unwrap_or(path);
+    let tail = select.and_then(|s| s.rsplit(['.', '/']).find(|x| !x.is_empty() && *x != "$"));
+    let raw = match tail {
+        Some(t) => format!("{last}-{t}"),
+        None => last.to_owned(),
+    };
+    slug(&raw)
+}
+
+fn slug(raw: &str) -> String {
+    let mut out = String::new();
+    for c in raw.chars() {
+        match c.is_ascii_alphanumeric() {
+            true => out.push(c.to_ascii_lowercase()),
+            false => {
+                if !out.ends_with('-') && !out.is_empty() {
+                    out.push('-');
+                }
+            }
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    match trimmed.len() <= 64 {
+        true => trimmed.to_owned(),
+        false => trimmed[..64].trim_matches('-').to_owned(),
+    }
+}
+
+fn fetch_declared(
+    root: &Path,
+    catalog: &Catalog,
+    name: &str,
+    decl: &crate::probes::HttpDecl,
+) -> Result<bool, CliError> {
+    match catalog.https().find(|(n, _)| *n == name) {
+        Some((_, held)) if held.url == decl.url && held.select == decl.select => Ok(false),
+        Some((_, held)) => Err(CliError(format!(
+            "`{name}` already names a fetched fact, and it points somewhere else \
+             (`{}`{}). Re-routing a name is a criteria change and goes through \
+             `revise`/`accept --criteria`; to declare this one alongside it, give it \
+             its own name with --as",
+            held.url,
+            held.select
+                .as_deref()
+                .map(|s| format!(" selecting `{s}`"))
+                .unwrap_or_default()
+        ))),
+        None => {
+            crate::probes::declare_http(root, name, decl)?;
+            Ok(true)
+        }
+    }
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
     stores: &crate::stores::Stores,
     coord: Option<String>,
+    named: Option<String>,
     memory: Option<String>,
     record: Option<String>,
     json: bool,
@@ -139,9 +212,44 @@ pub async fn run(
         .await;
     };
 
-    let catalog = Catalog::load(root)?;
-    let mut routed = crate::coord::route(&coord, None, &catalog)?;
-    routed.position = crate::coord::resolve(rt, &routed, &catalog).await?;
+    let mut catalog = Catalog::load(root)?;
+    let mut wrote_probe = None;
+    let (coord, routed) = match fetched(&coord) {
+        None => {
+            let mut routed = crate::coord::route(&coord, None, &catalog)?;
+            routed.position = crate::coord::resolve(rt, &routed, &catalog).await?;
+            (coord, routed)
+        }
+        Some((url, select)) => {
+            let name = match named {
+                Some(given) => slug(&given),
+                None => derive_name(&url, select.as_deref()),
+            };
+            if name.is_empty() {
+                return Err(CliError(format!(
+                    "no name could be derived from `{url}`; give one with --as"
+                )));
+            }
+            let decl = crate::probes::HttpDecl {
+                url: url.clone(),
+                select: select.clone(),
+                headers: Default::default(),
+            };
+            if fetch_declared(root, &catalog, &name, &decl)? {
+                wrote_probe = Some(name.clone());
+                catalog = Catalog::load(root)?;
+            }
+            (
+                name.clone(),
+                crate::coord::Routed {
+                    probe: name,
+                    shape: "value".to_owned(),
+                    position: serde_json::json!({}),
+                    params: serde_json::Value::Null,
+                },
+            )
+        }
+    };
     let named = record
         .as_deref()
         .map(|address| stores.locate(address, None))
@@ -174,6 +282,12 @@ pub async fn run(
     }
 
     if !json {
+        if let Some(name) = &wrote_probe {
+            println!(
+                "declared  {}   [http.{name}]",
+                format!(".anchor/{}", crate::probes::RECIPES_FILE)
+            );
+        }
         let axes = crate::shapes::get(&routed.shape)
             .map(crate::shapes::axes_of)
             .unwrap_or_default();
@@ -342,5 +456,74 @@ mod tests {
         assert!(text.contains("about: a.rs#f"), "{text}");
         assert!(text.contains("auth must precede creation"), "{text}");
         assert!(!text.contains(UNWRITTEN), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod fetched_coordinates {
+    use super::*;
+
+    #[test]
+    fn only_a_url_is_a_fetched_fact() {
+        assert_eq!(
+            fetched("https://x/a#$.last"),
+            Some(("https://x/a".to_owned(), Some("$.last".to_owned())))
+        );
+        assert_eq!(fetched("http://x/a"), Some(("http://x/a".to_owned(), None)));
+        assert_eq!(
+            fetched("src/lib.rs#run"),
+            None,
+            "a path coordinate must keep routing by extension; `#` alone does not make a URL"
+        );
+    }
+
+    #[test]
+    fn the_name_is_a_name_and_the_url_is_not() {
+        assert_eq!(
+            derive_name(
+                "https://crates.io/api/v1/crates/serde",
+                Some("$.crate.max_stable_version")
+            ),
+            "serde-max-stable-version"
+        );
+        assert_eq!(derive_name("https://x/quote", Some("$.last")), "quote-last");
+        assert_eq!(derive_name("https://x/quote/", None), "quote");
+
+        let long = derive_name(
+            "https://x/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Some("$.bbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        );
+        assert!(
+            long.len() <= 64,
+            "D-3: an AnchorKey is at most 64 characters, and a real URL with a query string \
+             goes past that easily. The name is derived and cut to fit; the URL lives in the \
+             declaration, where nothing bounds it. Got {} chars: {long}",
+            long.len()
+        );
+        assert!(
+            !long.ends_with('-'),
+            "and cutting must not leave a trailing separator: {long}"
+        );
+    }
+
+    #[test]
+    fn a_derived_name_is_a_legal_probe_name() {
+        for (url, select) in [
+            ("https://API.Example.COM/v1/Foo_Bar", Some("$.a.b")),
+            ("https://x/a?q=1&r=2", Some("$.last")),
+            ("https://x/weird...name", None),
+        ] {
+            let name = derive_name(url, select);
+            assert!(
+                !name.is_empty()
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                    && !name.starts_with('-')
+                    && !name.contains("--"),
+                "`{url}` derived `{name}`, which ProbeName would refuse. The name is minted \
+                 for the user, so it has to be legal without them thinking about it"
+            );
+        }
     }
 }

@@ -117,6 +117,10 @@ pub async fn served(
         .transport(Arc::new(InProcess::new(&root, linked.probes)))
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
+        .transport(Arc::new(
+            gmr_transport::http::Http::new(crate::probes::Declared::at(&root))
+                .map_err(|e| CliError(format!("cannot build the http transport: {e}")))?,
+        ))
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.queue()))
         .sightings(Arc::new(store.queue()))
@@ -145,9 +149,10 @@ pub async fn served(
         }
         Command::Anchor {
             coordinate,
+            named,
             memory,
             record,
-        } => verbs::anchor::run(&rt, &root, &stores, coordinate, memory, record, json).await,
+        } => verbs::anchor::run(&rt, &root, &stores, coordinate, named, memory, record, json).await,
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,

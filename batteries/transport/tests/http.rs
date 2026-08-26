@@ -108,9 +108,12 @@ async fn a_selector_that_matches_nothing_is_absent_not_broken() {
     assert_eq!(
         got,
         Outcome::Found {
-            facts: gmr_core::Facts::new(serde_json::json!("1.2.3"))
+            facts: gmr_core::Facts::new(serde_json::json!({ "value": "1.2.3" }))
         },
-        "the declared path is what this probe reports; the whole body is not"
+        "the declared path is what this probe reports, under the one field name this \
+         transport exports as `VALUE`. It is named rather than bare so the probe's obs is \
+         an object like every other probe's, and so `unmet` can check a shape's reads \
+         against a declaration that says `facts = [\"value\"]`"
     );
 
     let missing = ask_with(

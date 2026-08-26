@@ -64,7 +64,15 @@ pub enum Command {
     #[command(display_order = 1)]
     Anchor {
         /// `path` or `path#name`. The probe, shape and position follow from it.
+        /// A `http://` or `https://` URL declares a fetched fact instead: the URL
+        /// and the `#` selector are written into .anchor/probes.toml as a probe you
+        /// can read and review, and the anchor is keyed by a short name, not the URL.
         coordinate: Option<String>,
+        /// The name to key a fetched fact by. Without it a name is derived from the
+        /// URL's last segment and the selector, and a collision is an error rather
+        /// than a guess. Ignored for path coordinates, which are their own name.
+        #[arg(long = "as")]
+        named: Option<String>,
         /// The memory itself, written into this repository as a note. Reach for it
         /// when you keep no memories of your own: in git a note is the memory and
         /// the declaration in one file. If you already have a memory system, write
