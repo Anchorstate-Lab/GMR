@@ -190,16 +190,27 @@ fn fetch_declared(
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Asked {
+    pub coordinate: Option<String>,
+    pub named: Option<String>,
+    pub memory: Option<String>,
+    pub record: Option<String>,
+}
+
 pub async fn run(
     rt: &Runtime,
     root: &Path,
     stores: &crate::stores::Stores,
-    coord: Option<String>,
-    named: Option<String>,
-    memory: Option<String>,
-    record: Option<String>,
+    asked: Asked,
     json: bool,
 ) -> Result<i32, CliError> {
+    let Asked {
+        coordinate: coord,
+        named,
+        memory,
+        record,
+    } = asked;
     let Some(coord) = coord else {
         return crate::verbs::sync::run(
             rt,
@@ -214,6 +225,8 @@ pub async fn run(
 
     let mut catalog = Catalog::load(root)?;
     let mut wrote_probe = None;
+    let mut wrote_anchor = false;
+    let mut minted = false;
     let (coord, routed) = match fetched(&coord) {
         None => {
             let mut routed = crate::coord::route(&coord, None, &catalog)?;
@@ -239,6 +252,7 @@ pub async fn run(
                 wrote_probe = Some(name.clone());
                 catalog = Catalog::load(root)?;
             }
+            minted = true;
             (
                 name.clone(),
                 crate::coord::Routed {
@@ -255,7 +269,16 @@ pub async fn run(
         .map(|address| stores.locate(address, None))
         .transpose()?;
 
-    let declared = already_declared(root, &catalog, &coord)?;
+    let mut declared = already_declared(root, &catalog, &coord)?;
+    if minted && !declared {
+        crate::verbs::sync::declare(
+            root,
+            crate::verbs::sync::DEFAULT_FILE,
+            &declaration(&coord, &routed),
+        )?;
+        declared = true;
+        wrote_anchor = true;
+    }
     let mut note = None;
     let mut fresh = false;
     match &memory {
@@ -284,8 +307,8 @@ pub async fn run(
     if !json {
         if let Some(name) = &wrote_probe {
             println!(
-                "declared  {}   [http.{name}]",
-                format!(".anchor/{}", crate::probes::RECIPES_FILE)
+                "declared  .anchor/{}   [http.{name}]",
+                crate::probes::RECIPES_FILE
             );
         }
         let axes = crate::shapes::get(&routed.shape)
@@ -296,6 +319,9 @@ pub async fn run(
             false => println!("watching  {coord}   {}", axes.join(" · ")),
         }
         match (&note, fresh) {
+            (Some(rel), true) if wrote_anchor => {
+                println!("wrote     {rel}   and {}", crate::verbs::sync::DEFAULT_FILE)
+            }
             (Some(rel), true) if declared => println!(
                 "wrote     {rel}   binding only; {} already declares this coordinate",
                 crate::verbs::sync::DEFAULT_FILE
@@ -303,6 +329,9 @@ pub async fn run(
             (Some(rel), true) => println!("wrote     {rel}"),
             (Some(rel), false) => println!("note      {rel}   already yours; left alone"),
             (None, true) => println!("declared  {}", crate::verbs::sync::DEFAULT_FILE),
+            (None, false) if wrote_anchor => {
+                println!("declared  {}", crate::verbs::sync::DEFAULT_FILE)
+            }
             (None, false) => println!("declared  already declared elsewhere; left alone"),
         }
     }

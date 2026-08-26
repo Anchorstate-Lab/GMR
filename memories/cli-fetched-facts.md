@@ -4,6 +4,7 @@ about:
   - domains/coding/cli/src/verbs/anchor.rs#derive_name
   - domains/coding/cli/src/verbs/anchor.rs#slug
   - domains/coding/cli/src/verbs/anchor.rs#fetch_declared
+  - domains/coding/cli/tests/fetched.rs#a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_memory
   - domains/coding/cli/src/probes.rs#HttpDecl
   - domains/coding/cli/src/probes.rs#Declared
   - domains/coding/cli/src/probes.rs#declare_http
@@ -43,6 +44,22 @@ an error naming both, not a second declaration and not an overwrite. Re-routing 
 existing name is a criteria change and goes through `revise` / `accept --criteria`,
 which is CLAUDE.md §2's rule about this file, applied to the one verb that writes it.
 Re-declaring the *same* URL under the same name is idempotent.
+
+## A fetched anchor is declared in the file even when a note carries its memory
+
+`gmr anchor <path> -m '...'` deliberately writes only a note: the note's
+frontmatter says `about: <coordinate>`, and the coordinate routes itself — a path
+names a file whose extension picks the probe. **A minted name routes to nothing.**
+Left undeclared it is re-derived as if it were a file path, falls through to the
+catchall probe, comes back as the `roster` shape, and reports `absent` forever
+while looking like a working anchor.
+
+So the fetched branch declares unconditionally, and the note then says
+`anchors:` — pointing at the declaration instead of asking to be routed. This was
+a real bug, found by running the thing on a real project rather than by reading
+it: three anchors opened, `status` said `roster`/`absent`, and nothing errored.
+A test drives `anchor::run` with a URL and a memory and asserts the declaration
+exists, because the failure is silent and looks healthy.
 
 ## Why the transport reads the repository instead of being handed a map
 

@@ -152,7 +152,15 @@ pub async fn served(
             named,
             memory,
             record,
-        } => verbs::anchor::run(&rt, &root, &stores, coordinate, named, memory, record, json).await,
+        } => {
+            let asked = verbs::anchor::Asked {
+                coordinate,
+                named,
+                memory,
+                record,
+            };
+            verbs::anchor::run(&rt, &root, &stores, asked, json).await
+        }
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,
