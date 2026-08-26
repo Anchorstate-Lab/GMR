@@ -48,6 +48,11 @@ impl Source {
     }
 }
 
+pub fn sqlite_url(url: &str) -> bool {
+    let scheme = url.split_once("://").map(|(s, _)| s).unwrap_or("");
+    scheme.is_empty() || scheme.eq_ignore_ascii_case("sqlite")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ask {
     pub source: Source,
@@ -171,9 +176,17 @@ impl Transport for Sql {
     }
 
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
+        let ask = self.asks.ask(name)?;
+        let local = match &ask.source {
+            Source::Given(url) => sqlite_url(url),
+            Source::FromEnv(_) => false,
+        };
         Some(Derivation {
-            version: self.asks.ask(name)?.version(),
-            verifiability: Verifiability::open([Openness::Network, Openness::Clock]),
+            version: ask.version(),
+            verifiability: match local {
+                true => Verifiability::Closed,
+                false => Verifiability::open([Openness::Network, Openness::Clock]),
+            },
         })
     }
 
@@ -193,6 +206,18 @@ impl Transport for Sql {
             .ok_or_else(|| ProbeError::spent(Spent::Deadline, call.budget))?;
 
         let url = ask.source.resolve()?;
+        if !sqlite_url(&url) {
+            return Err(ProbeError::with_code(
+                ReasonClass::Unusable,
+                ProbeErrorCode::ArtifactInvalid,
+                format!(
+                    "this build speaks sqlite, and the declared database names the `{}` \
+                     scheme. Another backend is a feature this binary was not built with, \
+                     which is a declaration to fix and never an outage to retry",
+                    url.split_once("://").map(|(s, _)| s).unwrap_or("(none)")
+                ),
+            ));
+        }
         let options = SqliteConnectOptions::from_str(&url)
             .map_err(|e| {
                 ProbeError::with_code(
@@ -219,10 +244,14 @@ impl Transport for Sql {
 
         match rows.len() {
             0 => Ok(Outcome::NotFound),
-            1 => Ok(crate::select::held(shaped(
-                &rows[0],
-                ask.column.as_deref(),
-            )?)),
+            1 => {
+                let value = shaped(&rows[0], ask.column.as_deref())?;
+                let size = serde_json::to_string(&value).map(|s| s.len()).unwrap_or(0);
+                if size > call.budget.output_cap() {
+                    return Err(ProbeError::too_large(size, call.budget.output_cap()));
+                }
+                Ok(crate::select::held(value))
+            }
             many => Err(ProbeError::unusable(format!(
                 "the query answered with {many} rows; a probe reports one fact, so say which \
                  one the declaration means"

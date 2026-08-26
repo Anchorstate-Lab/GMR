@@ -15,6 +15,14 @@ person wrote in the declaration — a name is either linked in (and therefore
 `[sql.…]`, or it falls through to `shell`. There is no option to get wrong
 by hand, because nothing hand-writes this mapping in the first place.
 
+**A kind `kind_of` can name and `probes list` cannot show is a probe that
+works while being invisible.** All three new families were missed there —
+`gmr probes` went on listing four builtins and two older kinds while three
+declared, working probes did not appear. Nothing connected `kind_of`
+gaining a branch to that list gaining a loop, so a test now declares one
+probe of every kind and asserts the listing shows each. That is the
+connection; the prose above is not.
+
 `http`, `file` and `sql` are the fourth, fifth and sixth, and all three
 arrived the way this note says one should: a table of their own and one more
 structural branch, never a `kind = "…"` line in the TOML for someone to

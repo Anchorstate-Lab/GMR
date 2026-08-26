@@ -245,3 +245,86 @@ async fn a_credential_that_cannot_be_resolved_says_the_variable_and_not_a_guess(
         "the variable's name is the useful half and is safe to say: {err}"
     );
 }
+
+#[tokio::test]
+async fn a_backend_this_build_cannot_speak_is_ours_to_fix_and_not_an_outage() {
+    let err = run(Ask::on(
+        Source::Given("postgres://user:secret@host:5432/db".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("this build speaks sqlite only");
+    assert_ne!(
+        err.code(),
+        "probe_unreachable",
+        "sqlx's sqlite parser takes ANY string as a filename, so a postgres url becomes a \
+         file named `postgres://...` and failing to open it read as `Unreachable` -- a \
+         transient outage the anchor backs off and retries forever, for a thing that can \
+         never work. Which code it carries matters less than which side of that line it \
+         falls on"
+    );
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "and the artifact a declared probe has is its declaration, which is what is wrong \
+         here -- the same code `http` gives an unresolvable one"
+    );
+    assert!(
+        !err.to_string().contains("secret"),
+        "and saying so must not quote the url back, which carries the password: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_reading_too_large_to_store_is_refused_rather_than_trimmed() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let mut asks = BTreeMap::new();
+    asks.insert(
+        ProbeName::new("db"),
+        Ask::on(
+            Source::Given(url),
+            "SELECT printf('%.*c', 5000, 'x') AS blob",
+        ),
+    );
+    let sql = Sql::new(asks);
+    let probe = ProbeRef::new(
+        Kind::new("sql"),
+        ProbeName::new("db"),
+        serde_json::Value::Null,
+    );
+    let err = sql
+        .invoke(&ProbeCall {
+            probe: &probe,
+            position: &serde_json::Value::Null,
+            budget: &Budget::within(Duration::from_secs(10), 100),
+        })
+        .await
+        .expect_err("a row past the cap is refused, never trimmed");
+    assert_eq!(
+        err.code(),
+        "probe_output_too_large",
+        "http and file both cap what they will store and this must too -- storing a \
+         truncated reading as fact would be a lie, and a query is the easiest of the three \
+         to point at something enormous"
+    );
+}
+
+#[test]
+fn a_local_database_is_not_a_remote_system() {
+    let mut asks = BTreeMap::new();
+    asks.insert(
+        ProbeName::new("db"),
+        Ask::on(Source::Given("sqlite://app.db".to_owned()), "SELECT 1"),
+    );
+    let d = Sql::new(asks).resolve(&ProbeName::new("db")).unwrap();
+    assert_eq!(
+        d.verifiability,
+        gmr_core::Verifiability::Closed,
+        "sqlite is a local file. Claiming `Network` openness says a remote system we cannot \
+         inspect took part, which is false -- and it is the opposite call from `file`, which \
+         reads a local file and is `Closed`, and from the extractors, which do the same. \
+         Openness must describe what actually happened; over-claiming it is not the safe \
+         direction, it is a wrong answer that a reader has no way to check"
+    );
+}

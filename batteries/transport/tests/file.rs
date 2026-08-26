@@ -209,3 +209,36 @@ fn nothing_here_can_reach_the_file_while_deciding_what_the_instrument_is() {
         "`Ask` holds a relative path and no root -- the root lives on `Files`. So `version()`          has nothing to open even if someone tried, which is the structural half of the          guarantee the test above checks behaviourally. If a root ever lands on `Ask`,          hashing the contents becomes one line away and every reading of a moved value          starts coming back `Incomparable`"
     );
 }
+
+#[tokio::test]
+async fn a_spent_budget_is_not_something_to_read_a_file_through_anyway() {
+    let dir = world(&[("deploy.yaml", "service:\n  replicas: 3\n")]);
+    let mut asks = BTreeMap::new();
+    asks.insert(
+        ProbeName::new("cfg"),
+        Ask::at("deploy.yaml").selecting("$.service.replicas"),
+    );
+    let files = Files::new(dir.path(), asks);
+    let spent = Budget::within(Duration::ZERO, 1 << 20);
+    let probe = ProbeRef::new(
+        Kind::new("file"),
+        ProbeName::new("cfg"),
+        serde_json::Value::Null,
+    );
+    let err = files
+        .invoke(&ProbeCall {
+            probe: &probe,
+            position: &serde_json::Value::Null,
+            budget: &spent,
+        })
+        .await
+        .expect_err("a budget with nothing left is a refusal, not a suggestion");
+    assert_eq!(
+        err.code(),
+        "probe_timed_out",
+        "`script` checks `remaining()` before it runs anything and this must too. A local \
+         read is usually quick, but `Budget` is the one thing a caller can say to bound a \
+         whole round, and a family that ignores it silently makes `pass` overrun the bound \
+         it was given by however many file probes are in the batch"
+    );
+}

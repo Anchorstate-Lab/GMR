@@ -5,6 +5,7 @@ about:
   - batteries/transport/src/sql.rs#version
   - batteries/transport/src/sql.rs#cell
   - batteries/transport/src/sql.rs#shaped
+  - batteries/transport/src/sql.rs#sqlite_url
 watch: [sig, logic]
 ---
 
@@ -42,6 +43,31 @@ responsible thing. A test rotates the secret and asserts the version does not mo
 The timeout stays out for D-11's reason: it decides whether there is an answer,
 not what the answer is.
 
+## A backend this build cannot speak is a declaration to fix
+
+`SqliteConnectOptions::from_str` accepts **any** string and treats it as a
+filename, so `postgres://user:pw@host/db` becomes a file by that name and failing
+to open it came back `Unreachable` — a transient outage an anchor backs off and
+retries forever, for something that can never work. `sqlite_url` checks the scheme
+first and refuses anything else as a declaration to fix.
+
+The audit that found it also checked the thing that would have been worse: sqlx's
+connect error does **not** quote the url back, so a password in a connection
+string does not reach the journal through that path. The refusal above names only
+the scheme.
+
+## A local database is not a remote system
+
+`resolve` reports `Closed` for a sqlite url and `Open{Network, Clock}` otherwise.
+It claimed `Network` unconditionally at first, which was simply false for a local
+file — and the opposite call from [[transport-file]], which reads a local file and
+is `Closed`, and from the extractors, which do the same. Over-claiming openness is
+not the safe direction; it is a wrong answer a reader has no way to check.
+
+A `FromEnv` source is treated as remote, because what it resolves to is not known
+while deciding what the instrument is, and guessing optimistically there is the
+wrong way to be wrong.
+
 ## Three answers, and a missing database is not the same as a missing file
 
 ```
@@ -65,6 +91,13 @@ object rather than by picking the first. Picking by position would change what a
 anchor watches the day somebody reorders a `SELECT`, and nothing would say so.
 Naming a column the query does not return is `Unusable`, and the error lists what
 it does return.
+
+The reading is capped against `budget.output_cap()` before it is returned — a
+query is the easiest of the three families to point at something enormous, and
+storing a truncated reading as fact would be a lie. That check was missing until
+an audit put the three families side by side: each had exactly one half of
+`Budget` and it was a different half each time, which is what copying a shape
+without a checklist looks like.
 
 `cell` reads INTEGER as a number and TEXT as a string, because state comparison is
 by value: a number that arrives as `"1700000000"` never equals one that arrives as

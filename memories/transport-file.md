@@ -51,6 +51,14 @@ same bytes is a different instrument and gets a different version.
 - **unreadable** (permissions, IO) → `Unreachable`. We could not look.
 - **unparseable** → `Unusable`. Ours to fix, and not the same as absence.
 
+## `Budget` is checked before the read, not only after it
+
+`remaining()` is asked first and a spent budget is a refusal, the way `script`
+does it. A local read is usually quick, which is exactly why this was missing —
+but `Budget` is the one thing a caller has to bound a whole round, and a family
+that ignores it makes `pass` overrun by however many file probes are in the batch.
+The output cap was already here; the deadline was not.
+
 ## A declaration may not read outside the tree
 
 `inside` refuses absolute paths and any `..` that escapes the root. Declarations

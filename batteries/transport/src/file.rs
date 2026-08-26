@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use gmr_budget::Spent;
 use gmr_core::{
     Derivation, Kind, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
     content_hash_of_bytes,
@@ -182,6 +183,10 @@ impl Transport for Files {
                 ),
             )
         })?;
+
+        if call.budget.remaining().is_none() {
+            return Err(ProbeError::spent(Spent::Deadline, call.budget));
+        }
 
         let text = match std::fs::read_to_string(&at) {
             Ok(text) => text,

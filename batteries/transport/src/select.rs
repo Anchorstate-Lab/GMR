@@ -17,19 +17,15 @@ pub fn pointer(select: &str) -> String {
 
 pub fn pick(body: &Value, select: Option<&str>) -> Outcome {
     let Some(select) = select else {
-        return found(body.clone());
+        return held(body.clone());
     };
     match body.pointer(&pointer(select)) {
-        Some(picked) => found(picked.clone()),
+        Some(picked) => held(picked.clone()),
         None => Outcome::NotFound,
     }
 }
 
 pub fn held(value: Value) -> Outcome {
-    found(value)
-}
-
-fn found(value: Value) -> Outcome {
     match value.is_null() {
         true => Outcome::NotFound,
         false => Outcome::Found {

@@ -189,3 +189,64 @@ async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
         "with the new value legible, so a reader sees 3 -> 5 rather than one hash -> another"
     );
 }
+
+#[test]
+fn every_kind_a_declaration_can_name_is_a_kind_probes_list_shows() {
+    let dir = a_repository();
+    let root = dir.path();
+    std::fs::write(
+        root.join(".anchor/probes.toml"),
+        r#"
+[http.a-http]
+url = "https://example.com/x"
+select = "$.a"
+
+[file.a-file]
+path = "deploy.yaml"
+select = "$.a"
+
+[sql.a-sql]
+url = "sqlite://app.db"
+query = "SELECT 1"
+
+[script.a-script]
+run = "probe.sh"
+obs = { schema = "gmr.probe.v1", facts = ["v"] }
+"#,
+    )
+    .unwrap();
+
+    let catalog = Catalog::load(root).unwrap();
+    let declared: Vec<String> = ["a-http", "a-file", "a-sql", "a-script"]
+        .iter()
+        .map(|n| catalog.kind_of(n).as_str().to_owned())
+        .collect();
+    assert_eq!(
+        declared,
+        vec!["http", "file", "sql", "script"],
+        "each table routes to its own kind"
+    );
+
+    let listed = coding_anchor::verbs::probes::rows(root).unwrap();
+    let by_name: std::collections::BTreeMap<&str, &str> = listed
+        .iter()
+        .map(|(name, kind)| (name.as_str(), *kind))
+        .collect();
+
+    for (name, kind) in [
+        ("a-http", "http"),
+        ("a-file", "file"),
+        ("a-sql", "sql"),
+        ("a-script", "script"),
+    ] {
+        assert_eq!(
+            by_name.get(name),
+            Some(&kind),
+            "`gmr probes` answers what this build can reach, and a declaration it cannot \\
+             show is a probe that works while being invisible. Three kinds were added and \\
+             all three were missed here, because nothing connected `kind_of` gaining a \\
+             branch to this list gaining a loop -- this assertion is that connection. \\
+             Listed: {by_name:?}"
+        );
+    }
+}

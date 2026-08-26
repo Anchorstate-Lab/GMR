@@ -61,7 +61,14 @@ struct Row {
     obs: ObsRow,
 }
 
-pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
+pub fn rows(root: &Path) -> Result<Vec<(String, &'static str)>, CliError> {
+    Ok(built(root)?
+        .into_iter()
+        .map(|r| (r.probe, r.kind))
+        .collect())
+}
+
+fn built(root: &Path) -> Result<Vec<Row>, CliError> {
     let recipes = Recipes::load(root)?;
     let artifacts = Artifacts::new(store_dir(root));
 
@@ -104,6 +111,42 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             ),
         });
     }
+    for (name, decl) in catalog.https() {
+        let obs = crate::probes::http_obs();
+        rows.push(Row {
+            probe: name.to_owned(),
+            kind: "http",
+            version: Some(decl.ask().version()),
+            address: None,
+            run: Some(decl.url.clone()),
+            handles: serde_json::json!([]),
+            obs: ObsRow::of(&obs.schema, &obs.at, &obs.identity, &obs.facts),
+        });
+    }
+    for (name, decl) in catalog.files() {
+        let obs = crate::probes::file_obs();
+        rows.push(Row {
+            probe: name.to_owned(),
+            kind: "file",
+            version: Some(decl.ask().version()),
+            address: None,
+            run: Some(decl.path.clone()),
+            handles: serde_json::json!([]),
+            obs: ObsRow::of(&obs.schema, &obs.at, &obs.identity, &obs.facts),
+        });
+    }
+    for (name, decl) in catalog.sqls() {
+        let obs = crate::probes::sql_obs();
+        rows.push(Row {
+            probe: name.to_owned(),
+            kind: "sql",
+            version: decl.ask().map(|a| a.version()),
+            address: None,
+            run: Some(decl.query.clone()),
+            handles: serde_json::json!([]),
+            obs: ObsRow::of(&obs.schema, &obs.at, &obs.identity, &obs.facts),
+        });
+    }
     let shell = gmr_transport::shell::Shell::new(root, store_dir(root));
     for (name, recipe) in recipes.iter() {
         let probe = gmr::ProbeName::new(name);
@@ -122,6 +165,12 @@ pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
             ),
         });
     }
+
+    Ok(rows)
+}
+
+pub fn list(root: &Path, verbose: bool, json: bool) -> Result<i32, CliError> {
+    let rows = built(root)?;
 
     if json {
         println!("{}", serde_json::json!({ "probes": rows }));
