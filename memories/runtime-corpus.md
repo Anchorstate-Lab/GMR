@@ -9,6 +9,7 @@ about:
   - crates/gmr-runtime/src/read.rs#knowledge_of
   - crates/gmr-runtime/src/edges.rs#the_two_corpus_walks_cannot_disagree_about_whether_a_record_is_fine
   - crates/gmr-runtime/tests/operations.rs#a_record_left_behind_by_the_anchor_that_watched_it_is_named
+  - crates/gmr-runtime/tests/operations.rs#the_same_record_buckets_under_two_holdings_because_it_hangs_on_two_anchors
 watch: [sig, logic]
 ---
 
@@ -99,7 +100,11 @@ point.** A footing is a property of the *record* — the same bytes are retrieva
 or not whichever anchor you came from, so one ref, one bucket, and a dedup inside
 each bucket is enough. A warrant is a property of the **(record, anchor)
 relation**: a note bound to two anchors can be `Holds` on one and `Moved` on the
-other, and a test pins exactly that. Flatten it to `Vec<Ref>` and the same
+other, and a test pins exactly that — one note on two anchors, one moved and one
+not, asserted to land in both buckets under the anchor that put it there. That
+sentence was written here before the test existed and was false for as long as it
+stood: `holdings` and `knowings` shipped with no coverage at all, so the shape
+this section argues for was resting on the argument alone. Flatten it to `Vec<Ref>` and the same
 reference lands in two kinds with nothing saying which anchor put it there —
 which is the one question a reader has when they see it.
 

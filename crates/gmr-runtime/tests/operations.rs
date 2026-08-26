@@ -1674,3 +1674,140 @@ async fn a_refresh_that_could_not_take_the_lease_says_so_rather_than_serving_sta
          from an answer that does not mention it: {asked:?}"
     );
 }
+
+fn at(k: &str, root: &std::path::Path, transitions: Transitions) -> OpenRequest {
+    OpenRequest {
+        key: AnchorKey::new(k),
+        ..request(root, transitions)
+    }
+}
+
+#[tokio::test]
+async fn an_unchanged_reading_appends_nothing_and_leaves_the_warrant_where_it_was() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let warrant = async || {
+        w.runtime.grounded(&key()).await.unwrap().memories[0]
+            .warrant
+            .clone()
+            .expect("a bound memory always has a warrant")
+    };
+    let before = warrant().await;
+    let head = w.runtime.log().head().await.unwrap();
+
+    for _ in 0..3 {
+        assert_eq!(
+            w.runtime.observe(&key()).await.unwrap(),
+            Observed::Still,
+            "the facts did not move and neither did the instrument, so re-reading them is \
+             not news"
+        );
+    }
+
+    assert_eq!(
+        w.runtime.log().head().await.unwrap(),
+        head,
+        "three re-observations of an unmoved fact must append nothing. Every entry is a \
+         reason to wake whoever depends on this anchor, so a log that grows on each poll \
+         is a product that pages a human for the world staying still"
+    );
+    let after = warrant().await;
+    assert_eq!(
+        after.holding, before.holding,
+        "and the axis that would wake anybody did not move either -- an early cutoff that \
+         still perturbs `holding` has only moved the firehose downstream"
+    );
+
+    let (Knowledge::Seen { at: then, .. }, Knowledge::Seen { at: now, .. }) =
+        (&before.knowledge, &after.knowledge)
+    else {
+        panic!("we looked, and looking is what `Seen` records: {after:?}")
+    };
+    assert!(
+        now > then,
+        "the other axis must move, and this is the whole reason there are two. Looking \
+         again at a fact that did not move is not news about the fact -- but it is news \
+         about us: we know it more recently than we did. That is recorded as a sighting on \
+         the scheduler rather than an entry in the journal, so freshness improves without \
+         costing anyone a wake-up. Collapse the axes and this becomes unsayable: either \
+         every poll appends, or a caller asking for a fact fresher than an hour is told to \
+         re-probe something that was read a second ago"
+    );
+}
+
+#[tokio::test]
+async fn the_same_record_buckets_under_two_holdings_because_it_hangs_on_two_anchors() {
+    let w = World::new();
+    w.write(r#"{"x":1,"y":1}"#);
+    w.runtime
+        .open(at("moves", w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .open(at("stays", w.dir.path(), watching("y")))
+        .await
+        .unwrap();
+
+    let reference = Ref::new("git", "m.md");
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("moves"), AnchorKey::new("stays")],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2,"y":1}"#);
+    w.runtime.observe(&AnchorKey::new("moves")).await.unwrap();
+    w.runtime.observe(&AnchorKey::new("stays")).await.unwrap();
+
+    let corpus = w.runtime.corpus().await.unwrap();
+    let holdings = &corpus.health().holdings;
+
+    assert_eq!(
+        holdings.get(&HoldingKind::Moved).map(|a| a
+            .iter()
+            .map(|(k, r)| (k.to_string(), r.clone()))
+            .collect::<Vec<_>>()),
+        Some(vec![("moves".to_owned(), vec![reference.clone()])]),
+        "the ground under `moves` shifted, and the tally must say which anchor that was"
+    );
+    assert_eq!(
+        holdings.get(&HoldingKind::Holds).map(|a| a
+            .iter()
+            .map(|(k, r)| (k.to_string(), r.clone()))
+            .collect::<Vec<_>>()),
+        Some(vec![("stays".to_owned(), vec![reference.clone()])]),
+        "the same record is still standing on `stays`, so it is in both buckets at once"
+    );
+
+    assert_eq!(
+        holdings
+            .values()
+            .flat_map(|a| a.values())
+            .flatten()
+            .filter(|r| **r == reference)
+            .count(),
+        2,
+        "one record, two anchors, two answers. This is why the tally is two levels deep: \
+         flattened to BTreeMap<HoldingKind, Vec<Ref>> the reader is told this note both \
+         moved and holds and cannot find out which anchor said which, which is the one \
+         thing they need in order to go and look"
+    );
+}

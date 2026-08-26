@@ -2,6 +2,8 @@
 about:
   - crates/gmr-runtime/src/read.rs#ground
   - crates/gmr-core/src/journal.rs#scan
+  - crates/gmr-runtime/src/observe.rs#settle
+  - crates/gmr-runtime/tests/operations.rs#an_unchanged_reading_appends_nothing_and_leaves_the_warrant_where_it_was
 watch: [sig, logic]
 ---
 
@@ -39,6 +41,26 @@ This is Salsa's **early cutoff** at the state level: a recomputed input that
 produces an unchanged value must not wake its dependents. Without it every
 reformatting, every re-hash, every probe upgrade would hand back the whole
 corpus to re-read, and the product would be an alert firehose nobody keeps on.
+
+## The cutoff is stronger when the address matches too, and it reaches the warrant
+
+The paragraph above is the case where the address moved and the state did not: an
+entry is written, `moved_at` stays. When **both** match, `settle` appends nothing
+at all — the `Some(_) => {}` arm — and answers `Still`. Nothing enters the log,
+so nothing can wake anyone.
+
+What makes this safe to do is that the two axes [[runtime-warrant]] separates come
+apart here as well, and a test holds all three halves together: `holding` stays
+where it was, the log head does not move, and `Knowledge::Seen`'s `at` **does**
+advance. Looking again at a fact that did not move is not news about the fact; it
+is news about us, and it is recorded as a sighting on the scheduler rather than an
+entry in the journal.
+
+Collapse the axes and this becomes unsayable. Either every poll appends — the
+firehose this section exists to prevent — or freshness stops improving, and a
+caller asking for a fact fresher than an hour is told to re-probe something that
+was read a second ago. That caller is `Instructions.max_staleness`, so the cutoff
+and the freshness bound are the same mechanism read from two ends.
 
 ## Why not derive it in the read path
 
