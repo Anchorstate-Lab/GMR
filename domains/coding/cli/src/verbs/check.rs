@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, AnchorView, Observed, Runtime, State};
+use gmr::{AnchorKey, AnchorView, Looked, Observed, Runtime, State};
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
@@ -71,8 +71,11 @@ pub async fn run(
     let (subs, unwatchable) = Subscriptions::load(root, &catalog, names)?;
 
     let mut views: Vec<AnchorView> = Vec::with_capacity(keys.len());
+    let mut looks: Vec<Observed> = Vec::with_capacity(keys.len());
     for key in &keys {
-        views.push(rt.read(key).await?);
+        let Looked { before, observed } = rt.look(key).await?;
+        views.push(before);
+        looks.push(observed);
     }
 
     let Audit {
@@ -88,14 +91,13 @@ pub async fn run(
     let mut snags: Vec<super::observe::Snag> = Vec::new();
     let mut quiet = 0;
 
-    for before in &views {
+    for (before, observed) in views.iter().zip(&looks) {
         let key = &before.key;
-        let observed = rt.observe(key).await?;
-        if let Observed::Attempt { code, message, .. } = &observed {
+        if let Observed::Attempt { code, message, .. } = observed {
             unseen.push((key.clone(), format!("{code:?}: {message}")));
             continue;
         }
-        let Some((moved, state)) = settled(&observed, &before.state) else {
+        let Some((moved, state)) = settled(observed, &before.state) else {
             continue;
         };
 

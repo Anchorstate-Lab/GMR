@@ -5,7 +5,7 @@ use gmr_core::{
     Transitions, Version,
 };
 use gmr_runtime::{
-    Bearing, Blind, Edge, Holding, Knowledge, Observed, OpenRequest, Policy, Runtime,
+    Bearing, Blind, Edge, Holding, Knowledge, Looked, Observed, OpenRequest, Policy, Runtime,
 };
 use gmr_store::BindingStore;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
@@ -15,11 +15,57 @@ fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     gmr_transport::shell::testkit::install_script(root.join(".probes"), "cat", "cat world.json")
 }
 
+#[derive(Default)]
+struct Counted {
+    inner: MemoryJournal,
+    reads: std::sync::atomic::AtomicUsize,
+}
+
+impl Counted {
+    fn reads(&self) -> usize {
+        self.reads.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn reset(&self) {
+        self.reads.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[async_trait::async_trait]
+impl gmr_store::Journal for Counted {
+    async fn append(
+        &self,
+        anchor: &AnchorKey,
+        entry: &gmr_core::Entry,
+        fence: gmr_store::Fence,
+    ) -> Result<gmr_core::Seq, gmr_store::StoreError> {
+        self.inner.append(anchor, entry, fence).await
+    }
+
+    async fn entries(
+        &self,
+        anchor: &AnchorKey,
+        from: gmr_core::Seq,
+    ) -> Result<Vec<(gmr_core::Seq, gmr_core::Entry)>, gmr_store::StoreError> {
+        self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.entries(anchor, from).await
+    }
+
+    async fn anchors(&self) -> Result<Vec<AnchorKey>, gmr_store::StoreError> {
+        self.inner.anchors().await
+    }
+
+    async fn head(&self) -> Result<gmr_core::Seq, gmr_store::StoreError> {
+        self.inner.head().await
+    }
+}
+
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
     bindings: Arc<MemoryBindings>,
     queue: Arc<MemoryQueue>,
+    journal: Arc<Counted>,
 }
 
 impl World {
@@ -35,9 +81,10 @@ impl World {
         let dir = tempfile::tempdir().unwrap();
         let bindings = Arc::new(MemoryBindings::default());
         let shared = Arc::new(MemoryQueue::default());
+        let journal = Arc::new(Counted::default());
         let mut b = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
-            .journal(Arc::new(MemoryJournal::default()))
+            .journal(journal.clone())
             .bindings(bindings.clone())
             .sealer(bindings.clone())
             .links(bindings.clone())
@@ -52,6 +99,7 @@ impl World {
             runtime: b.build(),
             bindings,
             queue: shared,
+            journal,
         }
     }
 
@@ -103,6 +151,48 @@ fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
         },
         supersedes: None,
     }
+}
+
+#[tokio::test]
+async fn one_look_reads_the_log_once_where_asking_twice_reads_it_twice() {
+    let w = World::new();
+    w.write(r#"{"shape":"old"}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("shape")))
+        .await
+        .unwrap();
+
+    w.journal.reset();
+    let read = w.runtime.read(&key()).await.unwrap();
+    let observed = w.runtime.observe(&key()).await.unwrap();
+    let apart = w.journal.reads();
+
+    w.journal.reset();
+    let Looked {
+        before,
+        observed: together,
+    } = w.runtime.look(&key()).await.unwrap();
+    let once = w.journal.reads();
+
+    assert_eq!(
+        apart, 2,
+        "reading and then observing folds the same log twice — that is the cost being removed"
+    );
+    assert_eq!(
+        once, 1,
+        "a look already folded the log to observe from it; handing that state back must not \
+         cost a second pass"
+    );
+    assert_eq!(
+        before.state, read.state,
+        "the view a look hands back is the one from before it looked, or `swapped` would \
+         compare this build's instrument against itself and never report a swap"
+    );
+    assert_eq!(
+        std::mem::discriminant(&together),
+        std::mem::discriminant(&observed),
+        "one call must answer what two answered"
+    );
 }
 
 #[tokio::test]

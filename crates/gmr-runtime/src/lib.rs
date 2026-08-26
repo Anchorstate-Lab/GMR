@@ -25,7 +25,7 @@ pub use error::RuntimeError;
 pub use health::{AnchorHealth, Corpus, CorpusHealth};
 pub use log::AnchorLog;
 pub use memory::{Bound, MemoryLens};
-pub use observe::Observed;
+pub use observe::{Looked, Observed};
 pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;

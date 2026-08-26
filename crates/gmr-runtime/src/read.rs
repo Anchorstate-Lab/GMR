@@ -528,6 +528,15 @@ fn project(
     })
     .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
+    Ok(viewed(s, key, looks, logged))
+}
+
+pub(crate) fn viewed(
+    s: AnchorState,
+    key: &AnchorKey,
+    looks: &Seen,
+    logged: u64,
+) -> (AnchorView, Option<Seq>) {
     let (sightings, last_sighting) = match looks.sightings {
         0 => (logged, s.last_sighting),
         counted => (counted, looks.last_at.or(s.last_sighting)),
@@ -539,8 +548,9 @@ fn project(
     };
     let derivation = s.latest.as_ref().map(|o| o.versions.derivation.clone());
     let facts = s.latest.as_ref().and_then(|o| o.facts().cloned());
+    let moved_at = s.moved_at;
 
-    Ok((
+    (
         AnchorView {
             key: key.clone(),
             status: s.state.status(),
@@ -548,15 +558,15 @@ fn project(
             anchor: s.anchor,
             sighting,
             closed: s.closed,
-            faltering: s.faltering.clone(),
+            faltering: s.faltering,
             entered_at: s.entered_at,
             last_sighting,
             sightings,
             derivation,
             facts,
         },
-        s.moved_at,
-    ))
+        moved_at,
+    )
 }
 
 async fn ground(

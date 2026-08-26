@@ -1,8 +1,8 @@
 use chrono::Utc;
 use gmr_budget::Budget;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, FailureCode, Observation, ReasonClass, Recorded, State, Versions,
-    fold, should_still,
+    Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded, State,
+    Versions, scan, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
 use gmr_store::{Disposition, Fence};
@@ -11,6 +11,7 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::observer::Observer;
+use crate::read::AnchorView;
 use crate::scheduler::Scheduler;
 use crate::translate::{Transitioned, transition};
 
@@ -31,6 +32,17 @@ pub enum Observed {
         attempts: u32,
     },
     Closed,
+}
+
+#[derive(Debug, Clone)]
+pub struct Looked {
+    pub before: AnchorView,
+    pub observed: Observed,
+}
+
+pub(crate) struct Stood {
+    pub anchor: AnchorState,
+    pub logged: u64,
 }
 
 impl Runtime {
@@ -60,6 +72,30 @@ impl Runtime {
         key: &AnchorKey,
         how: &crate::read::Instructions,
     ) -> Result<Observed, RuntimeError> {
+        Ok(self.looking(key, how).await?.0)
+    }
+
+    pub async fn look(&self, key: &AnchorKey) -> Result<Looked, RuntimeError> {
+        self.look_within(key, &crate::read::Instructions::default())
+            .await
+    }
+
+    pub async fn look_within(
+        &self,
+        key: &AnchorKey,
+        how: &crate::read::Instructions,
+    ) -> Result<Looked, RuntimeError> {
+        let looks = self.scheduler.seen(key).await?;
+        let (observed, stood) = self.looking(key, how).await?;
+        let (before, _) = crate::read::viewed(stood.anchor, key, &looks, stood.logged);
+        Ok(Looked { before, observed })
+    }
+
+    async fn looking(
+        &self,
+        key: &AnchorKey,
+        how: &crate::read::Instructions,
+    ) -> Result<(Observed, Stood), RuntimeError> {
         let policy = self.scheduler.policy();
         let budget = match how.budget {
             Some(span) => policy.budget().narrowed(span),
@@ -75,7 +111,7 @@ async fn observe(
     scheduler: &Scheduler,
     key: &AnchorKey,
     budget: &Budget,
-) -> Result<Observed, RuntimeError> {
+) -> Result<(Observed, Stood), RuntimeError> {
     if !scheduler.leases_configured() {
         return observe_with(log, observer, scheduler, key, Fence::Unleased, budget).await;
     }
@@ -88,7 +124,7 @@ async fn observe(
 
     let seen = observe_with(log, observer, scheduler, key, ticket.fence, budget).await;
     let after = match &seen {
-        Ok(Observed::Closed) => Disposition::Retire,
+        Ok((Observed::Closed, _)) => Disposition::Retire,
         _ => Disposition::Reschedule {
             after_secs: scheduler.cadence_for(key).await?,
         },
@@ -104,10 +140,30 @@ pub(crate) async fn observe_with(
     key: &AnchorKey,
     fence: Fence,
     budget: &Budget,
-) -> Result<Observed, RuntimeError> {
+) -> Result<(Observed, Stood), RuntimeError> {
+    let mut logged: u64 = 0;
     let entries = log.entries(key, 0).await?;
-    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    let s = scan(&entries, |_, entry, _| {
+        if entry.is_sighting() {
+            logged += 1;
+        }
+    })
+    .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
+    let observed = looked_at(log, observer, scheduler, key, fence, budget, &s).await?;
+    Ok((observed, Stood { anchor: s, logged }))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn looked_at(
+    log: &AnchorLog,
+    observer: &Observer,
+    scheduler: &Scheduler,
+    key: &AnchorKey,
+    fence: Fence,
+    budget: &Budget,
+    s: &AnchorState,
+) -> Result<Observed, RuntimeError> {
     if s.closed {
         return Ok(Observed::Closed);
     }
@@ -210,7 +266,7 @@ pub(crate) async fn observe_with(
         Some(_) => Observed::Still,
         None if s.state == next => Observed::Unchanged { state: next },
         None => Observed::Transitioned {
-            from: s.state,
+            from: s.state.clone(),
             to: next,
         },
     })

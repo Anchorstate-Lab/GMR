@@ -86,7 +86,7 @@ async fn pass(
             continue;
         }
 
-        let observed = observe_with(
+        let (observed, stood) = observe_with(
             log,
             observer,
             scheduler,
@@ -118,8 +118,7 @@ async fn pass(
                     out.moved.push(ticket.anchor.clone());
                 }
                 let sealed = matches!(other, Observed::Transitioned { to, .. }
-                    if fold(&log.entries(&ticket.anchor, 0).await?)
-                        .is_some_and(|s| s.anchor.is_terminal(to)));
+                    if stood.anchor.anchor.is_terminal(to));
                 if sealed {
                     out.retired += 1;
                     Disposition::Retire
