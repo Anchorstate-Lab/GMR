@@ -157,7 +157,33 @@ baseline and what this build measures cannot be told apart — so it is the same
 idea at the layer that needed it, not a new one.
 
 Re-reading it takes a fresh binding, not a recapture: recapture re-pins the
-anchor, and the memory is still dated against a reading nobody re-took.
+anchor, and the memory is still dated against a reading nobody re-took. Nothing
+in `accept --baseline` moves `bound_at_seq`; only a new dated assertion does.
+
+## Silence is not disagreement
+
+The paragraph above stops one step short, and the corpus paid for the gap: 91
+notes here sat at `Incomparable` and **45 of them differed only by `baseline.name`
+and `baseline.file` — paths the newer extractor started emitting and the older
+one had never measured.** The old reading did not contradict them. It was silent
+about them, and silence was being counted as a disagreement.
+
+So when the instruments differ, a path **added** by the newer one is dropped
+before the answer is decided, and an otherwise-empty diff is `Holds`. This is the
+same argument as the empty-diff case one paragraph up, applied per path instead
+of per state: agreement on everything both instruments measured is positive
+evidence, and a path only one of them measures carries no evidence either way.
+
+**Removals still count, and that is what closes the rename.** A path that
+vanished is not silence — it is an instrument that stopped looking, and nothing
+here can say whether what it used to measure moved. A renamed key arrives as an
+addition *and* a removal, so the removal is the half that refuses, and a rename
+can never be mistaken for `Holds`. A test holds both halves.
+
+What survives is what should: 46 notes here still disagree on paths both
+instruments measure — `baseline.body`, `baseline.after`, `v.place`, `v.logic` —
+and those genuinely cannot be told apart from here. That is the number a person
+has to read, and it was never 91.
 
 ## `Undated` is not `NeverEstablished`
 
@@ -195,3 +221,8 @@ Does a flat fold of the two axes come back? Ask what its precedence says. If the
 sentence is about whether a caller may rely on the answer, it is a verdict
 wearing an observation's clothes, and the last one got as far as being publicly
 exported from two crates before anyone asked.
+
+Does a path start being dropped from the diff for any reason other than the
+older instrument never having measured it? Dropping a *removal* is the rename
+hole, and dropping a shared path is answering "did the world move" with a
+shrug.

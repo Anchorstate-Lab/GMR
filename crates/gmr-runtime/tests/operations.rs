@@ -1237,6 +1237,113 @@ async fn a_binding_that_carries_no_date_says_so_rather_than_claiming_no_ground()
 }
 
 #[tokio::test]
+async fn a_key_only_the_newer_instrument_measures_is_not_the_older_one_disagreeing() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(
+            w.dir.path(),
+            rules(&[("true", r#"{ v: obs.x, status: "s" }"#)]),
+        ))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "cat",
+        "cat ./world.json",
+    );
+    w.runtime
+        .revise(
+            &key(),
+            Change::Retransition {
+                transitions: rules(&[("true", r#"{ v: obs.x, w: obs.x, status: "s" }"#)]),
+            },
+            b"the newer instrument measures one more thing",
+        )
+        .await
+        .unwrap();
+    w.runtime.observe(&key()).await.unwrap();
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+
+    assert_eq!(
+        holding,
+        Holding::Holds,
+        "`v` is unchanged and `w` is a path the older reading never carried. Silence is \
+         not disagreement: the old instrument did not contradict `w`, it never measured \
+         it. Counting it made 66 of this repository's own notes unanswerable after an \
+         extractor upgrade that changed nothing they were about"
+    );
+}
+
+#[tokio::test]
+async fn a_path_the_newer_instrument_stopped_measuring_still_cannot_be_compared() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(
+            w.dir.path(),
+            rules(&[("true", r#"{ v: obs.x, w: obs.x, status: "s" }"#)]),
+        ))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "cat",
+        "cat ./world.json",
+    );
+    w.runtime
+        .revise(
+            &key(),
+            Change::Retransition {
+                transitions: rules(&[("true", r#"{ v: obs.x, status: "s" }"#)]),
+            },
+            b"the newer instrument stopped measuring one thing",
+        )
+        .await
+        .unwrap();
+    w.runtime.observe(&key()).await.unwrap();
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+
+    assert!(
+        matches!(holding, Holding::Incomparable { .. }),
+        "a path that vanished is not silence, it is an instrument that stopped looking, \
+         and nothing here can say whether what it used to measure moved. Keeping removals \
+         is also what stops a renamed key from reading as `Holds`: a rename arrives as an \
+         addition and a removal, and the removal is the half that refuses: {holding:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_reading_a_different_instrument_took_is_not_diffed_against_this_one() {
     let w = World::new();
     w.write(r#"{"x":1}"#);

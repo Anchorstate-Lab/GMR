@@ -426,11 +426,18 @@ fn folded_at(entries: &[(Seq, Entry)], at: Seq) -> Option<AnchorState> {
     gmr_core::fold(&entries[..upto])
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Divergence {
+    Added,
+    Removed,
+    Differing,
+}
+
 fn differing(
     before: &serde_json::Value,
     now: &serde_json::Value,
     path: &str,
-    out: &mut Vec<String>,
+    out: &mut Vec<(String, Divergence)>,
 ) {
     match (before, now) {
         (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
@@ -447,19 +454,29 @@ fn differing(
                 };
                 match (a.get(k), b.get(k)) {
                     (Some(x), Some(y)) => differing(x, y, &next, out),
-                    _ => out.push(next),
+                    (None, Some(_)) => out.push((next, Divergence::Added)),
+                    (Some(_), None) => out.push((next, Divergence::Removed)),
+                    (None, None) => {}
                 }
             }
         }
-        _ if before != now => out.push(path.to_owned()),
+        _ if before != now => out.push((path.to_owned(), Divergence::Differing)),
         _ => {}
     }
 }
 
-fn axes_between(before: &State, now: &State) -> Vec<String> {
+fn axes_between(before: &State, now: &State) -> Vec<(String, Divergence)> {
     let mut out = Vec::new();
     differing(before.as_value(), now.as_value(), "", &mut out);
     out
+}
+
+fn measured_by_both(axes: &[(String, Divergence)]) -> bool {
+    axes.iter().any(|(_, d)| *d != Divergence::Added)
+}
+
+fn named(axes: Vec<(String, Divergence)>) -> Vec<String> {
+    axes.into_iter().map(|(path, _)| path).collect()
 }
 
 fn warranted(
@@ -523,11 +540,17 @@ fn holding(
         .map(|o| &o.versions.derivation.version);
     let reads = view.derivation.as_ref().map(|d| &d.version);
     match (took, reads) {
-        (Some(took), Some(reads)) if took != reads => Holding::Incomparable {
-            took: took.clone(),
-            reads: reads.clone(),
+        (Some(took), Some(reads)) if took != reads => match measured_by_both(&axes) {
+            true => Holding::Incomparable {
+                took: took.clone(),
+                reads: reads.clone(),
+            },
+            false => Holding::Holds,
         },
-        _ => Holding::Moved { axes, at: moved },
+        _ => Holding::Moved {
+            axes: named(axes),
+            at: moved,
+        },
     }
 }
 
