@@ -728,6 +728,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "sqlx",
  "tempfile",
  "thiserror",
  "tokio",

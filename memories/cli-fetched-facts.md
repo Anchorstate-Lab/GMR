@@ -15,9 +15,17 @@ watch: [sig, logic]
 
 D-9. `gmr anchor 'https://crates.io/api/v1/crates/serde#$.crate.max_stable_version'`
 works in one command, with no `probes.toml` to edit first and no `probes build`.
-`file://deploy.yaml#$.service.replicas` takes the same path into
-[[transport-file]] — `Reached::Over` a network, `Reached::In` the tree, and one
-generator, because the two differ only in where the bytes come from.
+`file://deploy.yaml#$.service.replicas` and
+`sql://sqlite://app.db#SELECT version FROM migrations` take the same path into
+[[transport-file]] and [[transport-sql]] — `Reached::Over` a network,
+`Reached::In` the tree, `Reached::Through` a database. One rule,
+`scheme://<where>#<what>`, and one generator, because the three differ only in
+where the bytes come from.
+
+For sql the `<what>` is the query, so a coordinate without one is **refused**
+rather than guessed at, and the name is derived from the database alone — a query
+makes no name anyone would want. A second query against the same database
+therefore collides, which is the refusal that asks for `--as`.
 What it writes is two declarations a person can read:
 
 ```toml

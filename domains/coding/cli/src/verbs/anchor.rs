@@ -122,25 +122,40 @@ fn declaration(coord: &str, routed: &crate::coord::Routed) -> crate::verbs::sync
 pub enum Reached {
     Over(String),
     In(String),
+    Through(String),
+}
+
+impl Reached {
+    pub fn at(&self) -> &str {
+        match self {
+            Self::Over(at) | Self::In(at) | Self::Through(at) => at,
+        }
+    }
 }
 
 pub fn fetched(coord: &str) -> Option<(Reached, Option<String>)> {
-    let where_ = if coord.starts_with("http://") || coord.starts_with("https://") {
-        Reached::Over(coord.to_owned())
-    } else {
-        Reached::In(coord.strip_prefix("file://")?.to_owned())
-    };
-    let (whole, select) = match where_ {
-        Reached::Over(url) => match url.split_once('#') {
-            Some((u, s)) => (Reached::Over(u.to_owned()), Some(s.to_owned())),
-            None => (Reached::Over(url), None),
-        },
-        Reached::In(path) => match path.split_once('#') {
-            Some((p, s)) => (Reached::In(p.to_owned()), Some(s.to_owned())),
-            None => (Reached::In(path), None),
+    let whole = match coord.strip_prefix("file://") {
+        Some(path) => Reached::In(path.to_owned()),
+        None => match coord.strip_prefix("sql://") {
+            Some(db) => Reached::Through(db.to_owned()),
+            None => match coord.starts_with("http://") || coord.starts_with("https://") {
+                true => Reached::Over(coord.to_owned()),
+                false => return None,
+            },
         },
     };
-    Some((whole, select))
+    let (at, select) = match whole.at().split_once('#') {
+        Some((at, select)) => (at.to_owned(), Some(select.to_owned())),
+        None => (whole.at().to_owned(), None),
+    };
+    Some((
+        match whole {
+            Reached::Over(_) => Reached::Over(at),
+            Reached::In(_) => Reached::In(at),
+            Reached::Through(_) => Reached::Through(at),
+        },
+        select,
+    ))
 }
 
 pub fn derive_name(url: &str, select: Option<&str>) -> String {
@@ -218,6 +233,37 @@ fn fetch_declared(
                 Ok(true)
             }
         },
+        Reached::Through(db) => match catalog.sqls().find(|(n, _)| *n == name) {
+            Some((_, held)) if held.url.as_deref() == Some(db.as_str()) => Ok(false),
+            Some((_, held)) => Err(taken(
+                name,
+                held.url
+                    .as_deref()
+                    .unwrap_or("a database from the environment"),
+                Some(&held.query),
+            )),
+            None => {
+                let query = select.ok_or_else(|| {
+                    CliError(
+                        "a sql coordinate is `sql://<database>#<query>`, and this one names \
+                         no query. A sql probe reports whatever its query returns, so there \
+                         is nothing to report without one"
+                            .to_owned(),
+                    )
+                })?;
+                crate::probes::declare_sql(
+                    root,
+                    name,
+                    &crate::probes::SqlDecl {
+                        url: Some(db.clone()),
+                        url_from_env: None,
+                        query: query.to_owned(),
+                        column: None,
+                    },
+                )?;
+                Ok(true)
+            }
+        },
         Reached::In(path) => match catalog.files().find(|(n, _)| *n == name) {
             Some((_, held)) if held.path == *path && held.select.as_deref() == select => Ok(false),
             Some((_, held)) => Err(taken(name, &held.path, held.select.as_deref())),
@@ -281,13 +327,13 @@ pub async fn run(
             (coord, routed)
         }
         Some((where_, select)) => {
-            let at = match &where_ {
-                Reached::Over(url) => url.clone(),
-                Reached::In(path) => path.clone(),
-            };
+            let at = where_.at().to_owned();
             let name = match named {
                 Some(given) => slug(&given),
-                None => derive_name(&at, select.as_deref()),
+                None => match where_ {
+                    Reached::Through(_) => derive_name(&at, None),
+                    _ => derive_name(&at, select.as_deref()),
+                },
             };
             if name.is_empty() {
                 return Err(CliError(format!(
@@ -295,7 +341,14 @@ pub async fn run(
                 )));
             }
             if fetch_declared(root, &catalog, &name, &where_, select.as_deref())? {
-                wrote_probe = Some((name.clone(), matches!(where_, Reached::Over(_))));
+                wrote_probe = Some((
+                    name.clone(),
+                    match where_ {
+                        Reached::Over(_) => "http",
+                        Reached::In(_) => "file",
+                        Reached::Through(_) => "sql",
+                    },
+                ));
                 catalog = Catalog::load(root)?;
             }
             minted = true;
@@ -351,11 +404,7 @@ pub async fn run(
     }
 
     if !json {
-        if let Some((name, over)) = &wrote_probe {
-            let table = match over {
-                true => "http",
-                false => "file",
-            };
+        if let Some((name, table)) = &wrote_probe {
             println!(
                 "declared  .anchor/{}   [{table}.{name}]",
                 crate::probes::RECIPES_FILE
@@ -569,6 +618,20 @@ mod fetched_coordinates {
             None,
             "a path coordinate must keep routing by extension; `#` alone does not make one \
              of these, and neither does having a dot in it"
+        );
+        assert_eq!(
+            fetched("sql://sqlite://app.db#SELECT version FROM migrations"),
+            Some((
+                Reached::Through("sqlite://app.db".to_owned()),
+                Some("SELECT version FROM migrations".to_owned())
+            )),
+            "one rule for all three: `scheme://<where>#<what>`. For sql the what is the \
+             query, which is why a coordinate without one is refused rather than guessed at"
+        );
+        assert_eq!(
+            fetched("sql://sqlite://app.db"),
+            Some((Reached::Through("sqlite://app.db".to_owned()), None)),
+            "parsing still succeeds; it is declaring that refuses, so the error can say why"
         );
         assert_eq!(
             fetched("deploy.yaml#replicas"),

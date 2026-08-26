@@ -125,6 +125,9 @@ pub async fn served(
             &root,
             crate::probes::Declared::at(&root),
         )))
+        .transport(Arc::new(gmr_transport::sql::Sql::new(
+            crate::probes::Declared::at(&root),
+        )))
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.queue()))
         .sightings(Arc::new(store.queue()))

@@ -19,6 +19,7 @@ tempfile = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 serde_yaml_ng = { version = "0.10", optional = true }
+sqlx = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -30,6 +31,8 @@ shell = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:
 http = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:reqwest"]
 # 本地文件：身份 = 声明（路径 + 选择器 + 格式），不是文件内容——内容才是事实。
 file = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:toml", "dep:serde_yaml_ng"]
+# 数据库：身份 = 声明（连接引用 + 查询 + 取哪一列），只读打开——探针观察，不改动。
+sql = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:sqlx"]
 # 进程内：机制在这里，探针本身由域注册。
 inproc = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 # 用户仓库里的一个文件。身份 = 那个文件的内容，调用时算。
@@ -38,9 +41,10 @@ script = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 testkit = ["shell", "dep:tempfile"]
 
 [dev-dependencies]
-gmr-transport = { path = ".", features = ["shell", "inproc", "script", "http", "file", "testkit"] }
+gmr-transport = { path = ".", features = ["shell", "inproc", "script", "http", "file", "sql", "testkit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = { workspace = true }
+sqlx = { workspace = true }
 
 [lints]
 workspace = true

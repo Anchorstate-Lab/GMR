@@ -98,6 +98,49 @@ impl FileDecl {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SqlDecl {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url_from_env: Option<String>,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+}
+
+impl SqlDecl {
+    pub fn source(&self) -> Result<gmr_transport::sql::Source, CliError> {
+        match (&self.url, &self.url_from_env) {
+            (Some(url), None) => Ok(gmr_transport::sql::Source::Given(url.clone())),
+            (None, Some(var)) => Ok(gmr_transport::sql::Source::FromEnv(var.clone())),
+            (None, None) => Err(CliError(
+                "a sql probe needs either `url` or `url_from_env`".to_owned(),
+            )),
+            (Some(_), Some(_)) => Err(CliError(
+                "a sql probe names both `url` and `url_from_env`; say which one it is".to_owned(),
+            )),
+        }
+    }
+
+    pub fn ask(&self) -> Option<gmr_transport::sql::Ask> {
+        Some(gmr_transport::sql::Ask {
+            source: self.source().ok()?,
+            query: self.query.clone(),
+            column: self.column.clone(),
+        })
+    }
+}
+
+pub fn sql_obs() -> Obs {
+    Obs {
+        schema: gmr_transport::sql::SCHEMA.to_owned(),
+        at: Vec::new(),
+        identity: Vec::new(),
+        facts: vec![gmr_transport::sql::VALUE.to_owned()],
+    }
+}
+
 pub fn file_obs() -> Obs {
     Obs {
         schema: gmr_transport::file::SCHEMA.to_owned(),
@@ -134,6 +177,8 @@ struct File {
     http: BTreeMap<String, HttpDecl>,
     #[serde(default)]
     file: BTreeMap<String, FileDecl>,
+    #[serde(default)]
+    sql: BTreeMap<String, SqlDecl>,
 }
 
 #[derive(Debug, Default)]
@@ -368,6 +413,7 @@ pub struct Catalog {
     scripts: BTreeMap<String, ScriptDecl>,
     https: BTreeMap<String, HttpDecl>,
     files: BTreeMap<String, FileDecl>,
+    sqls: BTreeMap<String, SqlDecl>,
 }
 
 impl Catalog {
@@ -378,6 +424,7 @@ impl Catalog {
             scripts: file.script,
             https: file.http,
             files: file.file,
+            sqls: file.sql,
         })
     }
 
@@ -402,6 +449,9 @@ impl Catalog {
         if self.files.contains_key(name) {
             return Kind::new("file");
         }
+        if self.sqls.contains_key(name) {
+            return Kind::new("sql");
+        }
         match self.scripts.contains_key(name) {
             true => Kind::new("script"),
             false => Kind::new("shell"),
@@ -424,6 +474,9 @@ impl Catalog {
         }
         if self.files.contains_key(name) {
             return Ok(file_obs());
+        }
+        if self.sqls.contains_key(name) {
+            return Ok(sql_obs());
         }
         if let Some(d) = self.scripts.get(name) {
             return Ok(d.obs.clone());
@@ -456,6 +509,10 @@ impl Catalog {
         self.files.iter().map(|(n, d)| (n.as_str(), d))
     }
 
+    pub fn sqls(&self) -> impl Iterator<Item = (&str, &SqlDecl)> {
+        self.sqls.iter().map(|(n, d)| (n.as_str(), d))
+    }
+
     pub fn asks(&self) -> BTreeMap<gmr::ProbeName, gmr_transport::http::Ask> {
         self.https
             .iter()
@@ -484,6 +541,16 @@ impl gmr_transport::http::Asks for Declared {
     }
 }
 
+impl gmr_transport::sql::Asks for Declared {
+    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::sql::Ask> {
+        Catalog::load(&self.root)
+            .ok()?
+            .sqls()
+            .find(|(n, _)| *n == name.as_str())
+            .and_then(|(_, d)| d.ask())
+    }
+}
+
 impl gmr_transport::file::Asks for Declared {
     fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::file::Ask> {
         Catalog::load(&self.root)
@@ -500,6 +567,10 @@ pub fn declare_http(root: &Path, name: &str, decl: &HttpDecl) -> Result<(), CliE
 
 pub fn declare_file(root: &Path, name: &str, decl: &FileDecl) -> Result<(), CliError> {
     declare_probe(root, "file", name, decl)
+}
+
+pub fn declare_sql(root: &Path, name: &str, decl: &SqlDecl) -> Result<(), CliError> {
+    declare_probe(root, "sql", name, decl)
 }
 
 fn declare_probe<T: Serialize>(

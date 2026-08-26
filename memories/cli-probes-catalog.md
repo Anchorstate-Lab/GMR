@@ -7,21 +7,22 @@ watch: [sig, logic]
 
 `Catalog` is every probe this build can reach: the extractors linked into
 the binary, plus whatever `probes.toml` declares as recipes or scripts.
-`kind_of` computes which `Kind` (`builtin`/`script`/`http`/`file`/`shell`)
-a name maps to by checking where the name is actually registered, rather
-than reading a `kind` field a person wrote in the declaration — a name is
-either linked in (and therefore `builtin`), declared under `[script.…]`,
-`[http.…]` or `[file.…]`, or it falls through to `shell`. There is no
-option to get wrong by hand, because nothing hand-writes this mapping in
-the first place.
+`kind_of` computes which `Kind`
+(`builtin`/`script`/`http`/`file`/`sql`/`shell`) a name maps to by checking
+where the name is actually registered, rather than reading a `kind` field a
+person wrote in the declaration — a name is either linked in (and therefore
+`builtin`), declared under `[script.…]`, `[http.…]`, `[file.…]` or
+`[sql.…]`, or it falls through to `shell`. There is no option to get wrong
+by hand, because nothing hand-writes this mapping in the first place.
 
-`http` and `file` are the fourth and fifth, and both arrived the way this
-note says one should: a table of their own and one more structural branch,
-never a `kind = "…"` line in the TOML for someone to contradict. Their
-`obs` is not declared either — both report a single field their transport
-names, so `obs_of` builds it from that transport's constants instead of
-trusting a `facts = [...]` list that is free to drift from what actually
-comes back. See [[cli-fetched-facts]] and [[transport-file]].
+`http`, `file` and `sql` are the fourth, fifth and sixth, and all three
+arrived the way this note says one should: a table of their own and one more
+structural branch, never a `kind = "…"` line in the TOML for someone to
+contradict. Their `obs` is not declared either — each reports a single field
+its transport names, so `obs_of` builds it from that transport's constants
+instead of trusting a `facts = [...]` list that is free to drift from what
+actually comes back. See [[cli-fetched-facts]], [[transport-file]] and
+[[transport-sql]].
 
 ## When this changes, ask
 

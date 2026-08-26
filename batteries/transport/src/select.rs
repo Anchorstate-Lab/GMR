@@ -25,6 +25,10 @@ pub fn pick(body: &Value, select: Option<&str>) -> Outcome {
     }
 }
 
+pub fn held(value: Value) -> Outcome {
+    found(value)
+}
+
 fn found(value: Value) -> Outcome {
     match value.is_null() {
         true => Outcome::NotFound,

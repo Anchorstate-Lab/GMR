@@ -8,9 +8,11 @@ pub mod http;
 pub mod inproc;
 #[cfg(feature = "script")]
 pub mod script;
-#[cfg(any(feature = "http", feature = "file"))]
+#[cfg(any(feature = "http", feature = "file", feature = "sql"))]
 pub mod select;
 #[cfg(feature = "shell")]
 pub mod shell;
+#[cfg(feature = "sql")]
+pub mod sql;
 
 pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};
