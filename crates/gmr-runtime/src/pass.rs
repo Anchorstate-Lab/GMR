@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use gmr_core::{AnchorKey, ReasonClass, RunSettings, fold};
+use gmr_core::{AnchorKey, ReasonClass, RunSettings};
 use gmr_store::Disposition;
 use serde::Serialize;
 
@@ -50,8 +50,7 @@ async fn ensure_scheduled(
     scheduler: &Scheduler,
     key: &AnchorKey,
 ) -> Result<bool, RuntimeError> {
-    let entries = log.entries(key, 0).await?;
-    match fold(&entries) {
+    match log.state(key).await? {
         Some(state) if !state.closed => scheduler.ensure_enqueued(key, Utc::now()).await,
         _ => Ok(false),
     }

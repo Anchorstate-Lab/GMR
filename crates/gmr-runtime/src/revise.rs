@@ -1,5 +1,5 @@
 use chrono::Utc;
-use gmr_core::{AnchorKey, Change, ContentHash, Entry, fold};
+use gmr_core::{AnchorKey, Change, ContentHash, Entry};
 use gmr_store::Fence;
 
 use crate::assembly::Runtime;
@@ -35,8 +35,10 @@ async fn revise(
     change: Change,
     rationale: &[u8],
 ) -> Result<Revised, RuntimeError> {
-    let entries = log.entries(key, 0).await?;
-    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    let s = log
+        .state(key)
+        .await?
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
     if s.closed {
         return Err(RuntimeError::AnchorClosed { key: key.clone() });

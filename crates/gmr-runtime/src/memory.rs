@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version, fold};
+use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version};
 use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Revocation, Sealer};
 use serde::Serialize;
 
@@ -265,7 +265,7 @@ pub(crate) async fn chain_from(
     let mut at = from.clone();
 
     for _ in 0..GENERATIONS {
-        let Some(state) = fold(&log.entries(&at, 0).await?) else {
+        let Some(state) = log.state(&at).await? else {
             break;
         };
         let Some(older) = state.anchor.supersedes.as_ref().map(|s| s.key.clone()) else {

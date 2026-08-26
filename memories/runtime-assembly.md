@@ -24,7 +24,18 @@ it the ability to touch, say, the queue when all it needed was the
 journal. `AnchorLog` is the smallest of the four: it wraps only a
 `Journal`, with no probe, no bindings, no queue — a verb that only reads or
 appends log entries cannot reach any other store through it, even by
-accident. `MemoryLens` is the mirror case: bindings, seals, links, and
+accident. It also holds the one piece of mutable state in this crate: a
+checkpoint of each anchor's folded state, so `state()` and `stood()` ask the
+journal only for the entries appended since they last looked. That is not a
+second store and reaches nothing new — it is derived from the journal it already
+wraps, and throwing it away changes only how long a fold takes. It is safe to
+keep with **no invalidation at all** because the journal is append-only: a state
+at a seq can go stale, never wrong, so catching it up is extension and never
+correction. `append` deliberately does not write to it — extension is the only
+operation the cache has, and a second writer is how an invalidation bug gets in.
+Two runtimes over one journal, holding checkpoints of different ages, fold to
+byte-identical states; a test pins that, because it is the property that makes
+this safe to leave per-process rather than shared. `MemoryLens` is the mirror case: bindings, seals, links, and
 content providers, but no journal, no transport, no queue — a verb dealing
 with bound content cannot reach the log or the scheduler through it.
 `Observer` holds only the wired-up `Transport`s — no journal, no bindings,

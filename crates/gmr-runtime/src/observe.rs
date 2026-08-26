@@ -2,14 +2,14 @@ use chrono::Utc;
 use gmr_budget::Budget;
 use gmr_core::{
     Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded, State,
-    Versions, scan, should_still,
+    Versions, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
 use gmr_store::{Disposition, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
-use crate::log::AnchorLog;
+use crate::log::{AnchorLog, Stood};
 use crate::observer::Observer;
 use crate::read::AnchorView;
 use crate::scheduler::Scheduler;
@@ -38,11 +38,6 @@ pub enum Observed {
 pub struct Looked {
     pub before: AnchorView,
     pub observed: Observed,
-}
-
-pub(crate) struct Stood {
-    pub anchor: AnchorState,
-    pub logged: u64,
 }
 
 impl Runtime {
@@ -141,17 +136,13 @@ pub(crate) async fn observe_with(
     fence: Fence,
     budget: &Budget,
 ) -> Result<(Observed, Stood), RuntimeError> {
-    let mut logged: u64 = 0;
-    let entries = log.entries(key, 0).await?;
-    let s = scan(&entries, |_, entry, _| {
-        if entry.is_sighting() {
-            logged += 1;
-        }
-    })
-    .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    let stood = log
+        .stood(key)
+        .await?
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
-    let observed = looked_at(log, observer, scheduler, key, fence, budget, &s).await?;
-    Ok((observed, Stood { anchor: s, logged }))
+    let observed = looked_at(log, observer, scheduler, key, fence, budget, &stood.anchor).await?;
+    Ok((observed, stood))
 }
 
 #[allow(clippy::too_many_arguments)]

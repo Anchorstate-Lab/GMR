@@ -20,6 +20,7 @@ fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
 struct Counted {
     inner: MemoryJournal,
     reads: std::sync::atomic::AtomicUsize,
+    rows: std::sync::atomic::AtomicUsize,
 }
 
 impl Counted {
@@ -27,8 +28,13 @@ impl Counted {
         self.reads.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    fn rows(&self) -> usize {
+        self.rows.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     fn reset(&self) {
         self.reads.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.rows.store(0, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -49,7 +55,12 @@ impl gmr_store::Journal for Counted {
         from: gmr_core::Seq,
     ) -> Result<Vec<(gmr_core::Seq, gmr_core::Entry)>, gmr_store::StoreError> {
         self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.inner.entries(anchor, from).await
+        let got = self.inner.entries(anchor, from).await;
+        if let Ok(rows) = &got {
+            self.rows
+                .fetch_add(rows.len(), std::sync::atomic::Ordering::SeqCst);
+        }
+        got
     }
 
     async fn anchors(&self) -> Result<Vec<AnchorKey>, gmr_store::StoreError> {
@@ -101,6 +112,28 @@ impl World {
             bindings,
             queue: shared,
             journal,
+        }
+    }
+
+    fn elsewhere(&self) -> World {
+        let dir = tempfile::tempdir().unwrap();
+        let bindings = Arc::new(MemoryBindings::default());
+        let runtime = Runtime::builder()
+            .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
+            .journal(self.journal.clone())
+            .bindings(bindings.clone())
+            .sealer(bindings.clone())
+            .links(bindings.clone())
+            .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
+            .policy(Policy::default())
+            .build();
+        World {
+            dir,
+            runtime,
+            bindings,
+            queue: Arc::new(MemoryQueue::default()),
+            journal: self.journal.clone(),
         }
     }
 
@@ -1809,5 +1842,79 @@ async fn the_same_record_buckets_under_two_holdings_because_it_hangs_on_two_anch
          flattened to BTreeMap<HoldingKind, Vec<Ref>> the reader is told this note both \
          moved and holds and cannot find out which anchor said which, which is the one \
          thing they need in order to go and look"
+    );
+}
+
+#[tokio::test]
+async fn folding_the_same_log_again_reads_only_what_was_appended_since() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    for n in 1..=8 {
+        w.write(&format!(r#"{{"x":{n}}}"#));
+        w.runtime.observe(&key()).await.unwrap();
+    }
+
+    w.journal.reset();
+    let caught_up = w.runtime.read(&key()).await.unwrap();
+    assert_eq!(
+        w.journal.rows(),
+        1,
+        "observing folds *before* it appends, so the checkpoint trails the last append by \
+         exactly one entry and reading it back costs that one. `append` deliberately does \
+         not fold onto the checkpoint: extension is the only operation this cache has, and \
+         giving it a second writer is how an invalidation bug gets in"
+    );
+
+    w.journal.reset();
+    let warm = w.runtime.read(&key()).await.unwrap();
+    assert_eq!(
+        w.journal.rows(),
+        0,
+        "and with nothing appended since, the next fold reads nothing at all. This is the \
+         cost D-5 was about: this repository's own journal is 47 MB across 60k entries, \
+         and `check` was deserializing all of it twice per run to learn what it already knew"
+    );
+    assert_eq!(
+        warm.state, caught_up.state,
+        "reading twice cannot change the answer"
+    );
+
+    let cold = w.elsewhere();
+    cold.journal.reset();
+    let fresh = cold.runtime.read(&key()).await.unwrap();
+    assert!(
+        cold.journal.rows() >= 9,
+        "a runtime that has never folded this log has no checkpoint to stand on and reads \
+         all of it: {}",
+        cold.journal.rows()
+    );
+    assert_eq!(
+        fresh.state, warm.state,
+        "and it lands byte for byte where the warm one did. Two readers holding \
+         checkpoints of different ages must not be able to disagree -- that is what makes \
+         this safe to keep per-process and safe to leave with no invalidation at all"
+    );
+
+    w.write(r#"{"x":99"#);
+    let _ = w.runtime.observe(&key()).await;
+    w.write(r#"{"x":99}"#);
+    w.runtime.observe(&key()).await.unwrap();
+
+    w.journal.reset();
+    let moved = w.runtime.read(&key()).await.unwrap();
+    assert!(
+        w.journal.rows() <= 3,
+        "a log that grew by a failed look and a move costs those entries to catch up on, \
+         not the whole log: {}",
+        w.journal.rows()
+    );
+    assert_eq!(
+        moved.state.0.get("x").and_then(|v| v.as_i64()),
+        Some(99),
+        "the caught-up state is the real one, not a stale checkpoint handed back"
     );
 }

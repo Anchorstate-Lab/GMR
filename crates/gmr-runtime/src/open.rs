@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, ProbeRef, RunSettings, State, StatusId, Superseded, Transitions, fold,
+    Anchor, AnchorKey, Entry, ProbeRef, RunSettings, State, StatusId, Superseded, Transitions,
 };
 use gmr_store::Fence;
 
@@ -143,7 +143,9 @@ async fn seal_supersede(
     memory: &MemoryLens,
     s: Supersede,
 ) -> Result<Superseded, RuntimeError> {
-    let old = fold(&log.entries(&s.key, 0).await?)
+    let old = log
+        .state(&s.key)
+        .await?
         .ok_or_else(|| RuntimeError::NoSuchAnchor { key: s.key.clone() })?;
     if !old.closed {
         return Err(RuntimeError::NotClosedYet { key: s.key });

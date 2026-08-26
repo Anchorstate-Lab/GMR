@@ -223,9 +223,17 @@ pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
 
 pub fn scan(
     entries: &[(Seq, Entry)],
+    each: impl FnMut(Seq, &Entry, &AnchorState),
+) -> Option<AnchorState> {
+    resume(None, entries, each)
+}
+
+pub fn resume(
+    from: Option<AnchorState>,
+    entries: &[(Seq, Entry)],
     mut each: impl FnMut(Seq, &Entry, &AnchorState),
 ) -> Option<AnchorState> {
-    let mut acc: Option<AnchorState> = None;
+    let mut acc: Option<AnchorState> = from;
 
     for (seq, entry) in entries {
         match entry {
@@ -473,6 +481,76 @@ mod tests {
              reason behind for the next reader to act on"
         );
         assert_eq!(s.last_sighting, Some(at(20)));
+    }
+
+    #[test]
+    fn resuming_from_any_point_lands_where_folding_the_whole_log_lands() {
+        let log = vec![
+            opened(&["settled"], json!({ POSITION: "a.rs", STATUS: "open" })),
+            (
+                2,
+                Entry::Attempt {
+                    reason: ReasonClass::Unreachable,
+                    code: Some(FailureCode::Unreachable),
+                    message: "gone".to_owned(),
+                    at: at(5),
+                },
+            ),
+            (
+                3,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ POSITION: "b.rs", STATUS: "drifted" })),
+                    at: at(10),
+                },
+            ),
+            (
+                4,
+                Entry::Still {
+                    ref_entry: 3,
+                    at: at(15),
+                    versions: versions(),
+                },
+            ),
+            (
+                5,
+                Entry::Revise {
+                    change: Change::Restate {
+                        state: State::new(json!({ POSITION: "c.rs", STATUS: "ok" })),
+                    },
+                    context: seal(),
+                    rationale: seal(),
+                    at: at(20),
+                },
+            ),
+            (
+                6,
+                Entry::Close {
+                    at: at(25),
+                    context: seal(),
+                    rationale: seal(),
+                },
+            ),
+        ];
+
+        let whole = fold(&log).expect("a log that opens folds");
+
+        for cut in 1..=log.len() {
+            let checkpoint = fold(&log[..cut]).expect("every prefix opens too");
+            assert_eq!(
+                resume(Some(checkpoint), &log[cut..], |_, _, _| {}),
+                Some(whole.clone()),
+                "a checkpoint taken after {cut} entries and carried forward over the rest \
+                 must land exactly where folding all {} lands. This is the whole licence \
+                 for caching a fold: on an append-only log a state at a seq only ever goes \
+                 stale, never wrong, so catching it up needs no invalidation. The property \
+                 holds because every arm of this fold reads only the accumulator and the \
+                 entry -- `Still` carries `ref_entry` and does not follow it. An arm that \
+                 reached back for an earlier entry would break this without breaking any \
+                 test that folds from zero",
+                log.len()
+            );
+        }
     }
 
     #[test]

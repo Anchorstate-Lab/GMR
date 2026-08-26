@@ -14,7 +14,7 @@ pub use anchor::{
 };
 pub use journal::{
     AnchorState, Change, ChangeKind, Entry, FailureCode, Faltering, Observation, ReasonClass, Seq,
-    Versions, fold, scan, should_still,
+    Versions, fold, resume, scan, should_still,
 };
 pub use memory::{Binding, ExternalId, Link, LinkKind, ProviderId, Ref, Source, Version};
 pub use probe::{

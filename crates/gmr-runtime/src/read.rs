@@ -308,8 +308,9 @@ fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> 
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
-        let entries = self.log.entries(key, 0).await?;
-        Ok(project(&entries, key, &self.scheduler.seen(key).await?)?.0)
+        Ok(stand(&self.log, key, &self.scheduler.seen(key).await?)
+            .await?
+            .0)
     }
 
     pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
@@ -317,8 +318,7 @@ impl Runtime {
         let mut out = Vec::new();
         for key in self.log.anchors().await? {
             let looks = seen.get(&key).copied().unwrap_or_default();
-            let entries = self.log.entries(&key, 0).await?;
-            out.push(project(&entries, &key, &looks)?.0);
+            out.push(stand(&self.log, &key, &looks).await?.0);
         }
         Ok(out)
     }
@@ -552,6 +552,18 @@ fn holding(
             at: moved,
         },
     }
+}
+
+pub(crate) async fn stand(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    looks: &Seen,
+) -> Result<(AnchorView, Option<Seq>), RuntimeError> {
+    let stood = log
+        .stood(key)
+        .await?
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    Ok(viewed(stood.anchor, key, looks, stood.logged))
 }
 
 fn project(
