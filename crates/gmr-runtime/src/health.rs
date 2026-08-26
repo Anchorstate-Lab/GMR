@@ -8,7 +8,7 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
-use crate::read::{AnchorView, Footing, Grounded};
+use crate::read::{AnchorView, Footing, Grounded, HoldingKind, KnowledgeKind, knowledge_of};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AnchorHealth {
@@ -30,6 +30,8 @@ pub struct CorpusHealth {
     pub barren_anchors: Vec<AnchorKey>,
     pub unsupervised: Vec<Ref>,
     pub footings: BTreeMap<Footing, Vec<Ref>>,
+    pub holdings: BTreeMap<HoldingKind, BTreeMap<AnchorKey, Vec<Ref>>>,
+    pub knowings: BTreeMap<KnowledgeKind, Vec<AnchorKey>>,
 }
 
 impl CorpusHealth {
@@ -197,6 +199,39 @@ async fn corpus_health(
         refs.dedup();
     }
 
+    let mut holdings: BTreeMap<HoldingKind, BTreeMap<AnchorKey, Vec<Ref>>> = BTreeMap::new();
+    for held in grounded {
+        for m in &held.memories {
+            let Some(warrant) = m.warrant.as_ref() else {
+                continue;
+            };
+            holdings
+                .entry(warrant.holding.kind())
+                .or_default()
+                .entry(held.view.key.clone())
+                .or_default()
+                .push(m.reference.clone());
+        }
+    }
+    for anchors in holdings.values_mut() {
+        for refs in anchors.values_mut() {
+            refs.sort();
+            refs.dedup();
+        }
+    }
+
+    let mut knowings: BTreeMap<KnowledgeKind, Vec<AnchorKey>> = BTreeMap::new();
+    for view in views().filter(|v| !v.closed) {
+        knowings
+            .entry(knowledge_of(view).kind())
+            .or_default()
+            .push(view.key.clone());
+    }
+    for keys in knowings.values_mut() {
+        keys.sort();
+        keys.dedup();
+    }
+
     Ok(CorpusHealth {
         bound_refs: bindings.len(),
         active_anchors: open.len(),
@@ -204,5 +239,7 @@ async fn corpus_health(
         barren_anchors: barren,
         unsupervised,
         footings,
+        holdings,
+        knowings,
     })
 }

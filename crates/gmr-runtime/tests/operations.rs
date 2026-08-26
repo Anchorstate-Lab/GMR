@@ -5,7 +5,8 @@ use gmr_core::{
     Transitions, Version,
 };
 use gmr_runtime::{
-    Bearing, Blind, Edge, Holding, Knowledge, Looked, Observed, OpenRequest, Policy, Runtime,
+    Blind, Edge, Holding, HoldingKind, Knowledge, KnowledgeKind, Looked, Observed, OpenRequest,
+    Policy, Runtime,
 };
 use gmr_store::BindingStore;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
@@ -972,18 +973,18 @@ async fn a_failed_observation_does_not_move_the_ground_under_a_memory() {
         .await
         .unwrap();
 
-    let bearing = async || {
+    let warrant = async || {
         w.runtime.grounded(&key()).await.unwrap().memories[0]
             .warrant
-            .as_ref()
+            .clone()
             .expect("a bound memory always has a warrant")
-            .bearing()
     };
 
+    let settled = warrant().await;
     assert_eq!(
-        bearing().await,
-        Bearing::Holds,
-        "nothing has happened since this was bound"
+        (settled.holding.kind(), settled.knowledge.kind()),
+        (HoldingKind::Holds, KnowledgeKind::Seen),
+        "nothing has happened since this was bound, and we looked"
     );
 
     w.remove();
@@ -992,21 +993,28 @@ async fn a_failed_observation_does_not_move_the_ground_under_a_memory() {
         matches!(observed, Observed::Attempt { .. }),
         "the probe cannot read a file that is not there, so this is our failure: {observed:?}"
     );
+    let blinded = warrant().await;
     assert_eq!(
-        bearing().await,
-        Bearing::Blind,
+        blinded.holding.kind(),
+        HoldingKind::Holds,
         "one failed look does not move the world. This compared the binding's seq against \
          the journal head, and the head advances on every entry -- including `Attempt`, \
          which records that we could not observe at all. Reported as moved, a memory reads \
          as standing on ground that shifted, when what actually happened is that nobody \
          could go and look"
     );
+    assert!(
+        matches!(blinded.knowledge, Knowledge::Blind { .. }),
+        "and the failure is said on the axis that owns it, not by degrading the other one: \
+         {:?}",
+        blinded.knowledge
+    );
 
     w.write(r#"{"x":2}"#);
     w.runtime.observe(&key()).await.unwrap();
     assert_eq!(
-        bearing().await,
-        Bearing::Moved,
+        warrant().await.holding.kind(),
+        HoldingKind::Moved,
         "the world did move this time, and a comparison that never says so is worth less \
          than no comparison at all -- it reports every memory as standing on firm ground \
          forever"
@@ -1069,12 +1077,6 @@ async fn a_ground_that_moved_and_then_went_dark_says_both() {
          the move would claim currency we do not have: {:?}",
         warrant.knowledge
     );
-    assert_eq!(
-        warrant.bearing(),
-        Bearing::Moved,
-        "flattened for counting, the established fact wins -- a reader chasing what moved \
-         must still find it. The flat view is a tally, and the structured one is the answer"
-    );
 }
 
 async fn open_named(w: &World, name: &str) -> AnchorKey {
@@ -1117,17 +1119,18 @@ async fn a_memory_about_several_anchors_is_dated_against_each_of_them() {
         .await
         .unwrap();
 
-    let bearing_on = async |k: &AnchorKey| {
+    let holding_on = async |k: &AnchorKey| {
         w.runtime.grounded(k).await.unwrap().memories[0]
             .warrant
             .as_ref()
             .expect("a bound memory always has a warrant")
-            .bearing()
+            .holding
+            .kind()
     };
 
     assert_eq!(
-        (bearing_on(&a).await, bearing_on(&b).await),
-        (Bearing::Holds, Bearing::Holds),
+        (holding_on(&a).await, holding_on(&b).await),
+        (HoldingKind::Holds, HoldingKind::Holds),
         "a binding that names two anchors used to be stamped with no seq at all, on the \
          grounds that `which anchor's head would this be` has no answer. The journal's seq \
          is one global counter, so the question was the wrong one: a binding is dated \
@@ -1138,8 +1141,8 @@ async fn a_memory_about_several_anchors_is_dated_against_each_of_them() {
     w.runtime.observe(&b).await.unwrap();
 
     assert_eq!(
-        (bearing_on(&a).await, bearing_on(&b).await),
-        (Bearing::Holds, Bearing::Moved),
+        (holding_on(&a).await, holding_on(&b).await),
+        (HoldingKind::Holds, HoldingKind::Moved),
         "one anchor moved and the other did not, and the same stamp has to tell them \
          apart. A stamp that reported both would hand back every memory in the corpus \
          whenever any one anchor moved"
@@ -1231,7 +1234,6 @@ async fn a_binding_that_carries_no_date_says_so_rather_than_claiming_no_ground()
          is false about a note that is bound and whose anchor is settled -- and it was the \
          answer for more than half of this repository's own notes"
     );
-    assert_eq!(warrant.bearing(), Bearing::Undated);
 }
 
 #[tokio::test]

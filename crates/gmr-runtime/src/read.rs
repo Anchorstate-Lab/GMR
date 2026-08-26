@@ -208,15 +208,50 @@ pub enum Blind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Bearing {
+pub enum HoldingKind {
     Holds,
     Moved,
     Incomparable,
     Absent,
     NeverEstablished,
     Undated,
-    Blind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeKind {
+    Seen,
     NeverAsked,
+    Unreachable,
+    Unusable,
+    Unevaluable,
+}
+
+impl Holding {
+    pub fn kind(&self) -> HoldingKind {
+        match self {
+            Self::Holds => HoldingKind::Holds,
+            Self::Moved { .. } => HoldingKind::Moved,
+            Self::Incomparable { .. } => HoldingKind::Incomparable,
+            Self::Absent => HoldingKind::Absent,
+            Self::NeverEstablished => HoldingKind::NeverEstablished,
+            Self::Undated => HoldingKind::Undated,
+        }
+    }
+}
+
+impl Knowledge {
+    pub fn kind(&self) -> KnowledgeKind {
+        match self {
+            Self::Seen { .. } => KnowledgeKind::Seen,
+            Self::Blind { why, .. } => match why {
+                Blind::NeverAsked => KnowledgeKind::NeverAsked,
+                Blind::Unreachable { .. } => KnowledgeKind::Unreachable,
+                Blind::Unusable { .. } => KnowledgeKind::Unusable,
+                Blind::Unevaluable { .. } => KnowledgeKind::Unevaluable,
+            },
+        }
+    }
 }
 
 impl Blind {
@@ -226,27 +261,6 @@ impl Blind {
             (code, ReasonClass::Unreachable) => Self::Unreachable { code },
             (code, ReasonClass::Unusable) => Self::Unusable { code },
             (code, ReasonClass::Unevaluable) => Self::Unevaluable { code },
-        }
-    }
-}
-
-impl Warrant {
-    pub fn bearing(&self) -> Bearing {
-        match (&self.holding, &self.knowledge) {
-            (Holding::Moved { .. }, _) => Bearing::Moved,
-            (Holding::Incomparable { .. }, _) => Bearing::Incomparable,
-            (Holding::Absent, _) => Bearing::Absent,
-            (Holding::NeverEstablished, _) => Bearing::NeverEstablished,
-            (Holding::Undated, _) => Bearing::Undated,
-            (Holding::Holds, Knowledge::Seen { .. }) => Bearing::Holds,
-            (
-                Holding::Holds,
-                Knowledge::Blind {
-                    why: Blind::NeverAsked,
-                    ..
-                },
-            ) => Bearing::NeverAsked,
-            (Holding::Holds, Knowledge::Blind { .. }) => Bearing::Blind,
         }
     }
 }
@@ -454,7 +468,14 @@ fn warranted(
     entries: &[(Seq, Entry)],
     moved_at: Option<Seq>,
 ) -> Warrant {
-    let knowledge = match (
+    Warrant {
+        holding: holding(held.bound_at_seq, view, entries, moved_at),
+        knowledge: knowledge_of(view),
+    }
+}
+
+pub(crate) fn knowledge_of(view: &AnchorView) -> Knowledge {
+    match (
         &view.faltering,
         view.last_sighting,
         view.derivation.as_ref(),
@@ -471,11 +492,6 @@ fn warranted(
             since,
             why: Blind::NeverAsked,
         },
-    };
-
-    Warrant {
-        holding: holding(held.bound_at_seq, view, entries, moved_at),
-        knowledge,
     }
 }
 

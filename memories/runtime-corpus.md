@@ -4,6 +4,9 @@ about:
   - crates/gmr-runtime/src/health.rs#CorpusHealth
   - crates/gmr-runtime/src/health.rs#corpus_health
   - crates/gmr-runtime/src/read.rs#Footing
+  - crates/gmr-runtime/src/read.rs#HoldingKind
+  - crates/gmr-runtime/src/read.rs#KnowledgeKind
+  - crates/gmr-runtime/src/read.rs#knowledge_of
   - crates/gmr-runtime/src/edges.rs#the_two_corpus_walks_cannot_disagree_about_whether_a_record_is_fine
   - crates/gmr-runtime/tests/operations.rs#a_record_left_behind_by_the_anchor_that_watched_it_is_named
 watch: [sig, logic]
@@ -40,7 +43,7 @@ it misses revocations, and it misses a memory carried forward from a
 superseded generation, so an heir holding a full corpus reports barren. See
 [[store-orset-projection]].
 
-## `Footing` is the one classifier
+## `Footing` is the content side's classifier
 
 `Grounding::footing()` maps the retrieval outcome onto the eight names `doctor`
 prints a line for, including the two splits that only `doctor` cared about:
@@ -77,6 +80,54 @@ holding the repository can supersede the anchor into a new generation (see
 [[anchor-Superseded]]), point the note at something still watched, or unbind it —
 and `bind --detach` works even when the record itself is gone, which is the state
 that most often produces one (see [[cli-bind-run]]).
+
+## The fact side has two more, and they are not the same shape
+
+`footings` answers "can these records still be retrieved". For a long time that
+was the *only* corpus-level tally, and the fact side — "does the ground these
+records were bound to still hold" — had none at all. `doctor` could say twelve
+records were gone and could not say a word about how many stood on ground that
+had moved. `holdings` and `knowings` close that, keyed by payload-free tags in
+the shape `gmr-core` already had for `Change`/`ChangeKind`.
+
+They are filled in the same walk as `footings`, from the `warrant` that
+`grounded_all` has already put on every `MemoryView`, so the fact side costs no
+extra journal read.
+
+**`holdings` is keyed by anchor and `footings` is not, and that difference is the
+point.** A footing is a property of the *record* — the same bytes are retrievable
+or not whichever anchor you came from, so one ref, one bucket, and a dedup inside
+each bucket is enough. A warrant is a property of the **(record, anchor)
+relation**: a note bound to two anchors can be `Holds` on one and `Moved` on the
+other, and a test pins exactly that. Flatten it to `Vec<Ref>` and the same
+reference lands in two kinds with nothing saying which anchor put it there —
+which is the one question a reader has when they see it.
+
+So `holdings` is `BTreeMap<HoldingKind, BTreeMap<AnchorKey, Vec<Ref>>>`, and its
+totals count **pairs, not records**. They do not sum against `footings` and are
+not meant to. The shapes differ on purpose: a reader who notices the types are
+not parallel has already learned the thing they needed to know.
+
+`knowings` is keyed by neither — it lists `AnchorKey`. `knowledge_of` reads only
+`faltering`, `last_sighting` and `derivation`, all of them anchor-level, so the
+whole axis is the same for every memory on an anchor. Listing refs would repeat
+one anchor's outage once per note bound to it.
+
+`knowledge_of` is a function rather than a body inside `warranted` for the reason
+this file keeps returning to: `doctor` used to derive blindness a second way, as
+`faltering.is_some()`, and two derivations of one fact is the drift this corpus
+walk exists to avoid. It happens to be exactly equivalent — after `Open` every
+anchor has a `last_sighting` and a `derivation`, so `faltering: None` is always
+`Seen` — but equivalent-by-accident is not a property anything checks. Now
+`doctor`'s `unseen` is the union of the four blind kinds, and the split into
+`Unreachable` / `Unusable` / `Unevaluable` is finally printed, which is what
+[[render-warrant]] asks for: three different people's problem, said three ways.
+
+Neither is on `Verdict`. They fail [[cli-doctor-run]]'s entry test the way
+`Footing::Unreachable` does — ground moving is `check`'s sentence and `check`
+already exits on it, and two commands going red for one fact is the drifting
+second copy in exit-code form. Adding a kind to `Verdict` later is additive;
+taking one out breaks somebody's CI.
 
 ## When this changes, ask
 

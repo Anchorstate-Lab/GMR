@@ -24,10 +24,11 @@ pub use gmr_core::{
 pub use gmr_expr::EVALUATOR_VERSION;
 pub use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 pub use gmr_runtime::{
-    AnchorHealth, AnchorLog, AnchorView, AssemblyError, Bearing, Before, Blind, Bound, Corpus,
-    CorpusHealth, Edge, Edges, Footing, Grounded, Grounding, Holding, Instructions, Knowledge,
-    Landed, Looked, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Part, Passed, Policy,
-    Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede, Warrant,
+    AnchorHealth, AnchorLog, AnchorView, AssemblyError, Before, Blind, Bound, Corpus, CorpusHealth,
+    Edge, Edges, Footing, Grounded, Grounding, Holding, HoldingKind, Instructions, Knowledge,
+    KnowledgeKind, Landed, Looked, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Part,
+    Passed, Policy, Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
+    Warrant,
 };
 pub use gmr_store::{
     BindingStore, Chained, Disposition, ErrorCode, ErrorKind, Fence, Journal, LinkStore, Queue,

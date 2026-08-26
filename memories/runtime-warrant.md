@@ -46,13 +46,35 @@ annotation, not its sibling.
 `Unreachable`. That design already decided that "the record changed" and "we
 could not fetch the old version" are independent, and expressed it by nesting
 rather than by making them siblings. `Warrant` is the same decision on the fact
-side. Two layers, again: the complete answer, and `bearing()` folding it flat
-for counting, exactly as `Grounding::footing()` does.
+side.
 
-`bearing()` folds with a precedence, and the precedence has a rule: **blindness
-only downgrades a claim that depends on currency.** `Moved` survives it, because
-a move we witnessed stays witnessed. `Holds` does not, because "nothing has
-moved" is a statement about now, and we cannot see now.
+## The flat fold that used to live here was a verdict, and it left
+
+`Warrant` briefly shipped a third type beside it: `Bearing`, eight flat variants,
+produced by `bearing()` folding the two axes into one. Its precedence rule was
+**blindness only downgrades a claim that depends on currency** — `Moved`
+survives, `Holds` does not.
+
+Read that rule again as a sentence about the caller. It says *when you may still
+rely on this*. `Moved > Blind` and `Holds + Blind -> Blind` are not facts about
+what was observed; they are one policy about what to do with two facts that are
+both true. GMR does not emit verdicts — that reduction is the caller's, and
+`docs/GMR.md`'s boundary puts it outside. The rule is not lost: it is written
+down as the **draft default policy for the warrant-to-verdict adapter**, which is
+where a named, optional, versioned reduction belongs.
+
+The justification for shipping it here was symmetry with `Grounding::footing()`,
+and the symmetry was **not earned**. `Footing` is flat because something counts
+with it: `CorpusHealth.footings` is a `BTreeMap<Footing, _>` and `doctor` buckets
+by it in seven places. `bearing()` had no caller at all outside its own tests.
+The precedent was cited, not met — and a classification with no consumer is the
+thing [[render-warrant]] says was never made.
+
+What the fact side actually lacked was the *other* half of that precedent: a
+corpus-level tally. [[runtime-corpus]] is where that landed, keyed by
+`HoldingKind` and `KnowledgeKind` — payload-free tags in the shape `gmr-core`
+already had for `Change`/`ChangeKind`, carrying no precedence and therefore
+unable to grow one without the name becoming a lie.
 
 ## Where the orthogonal quantities went
 
@@ -169,6 +191,7 @@ Does something start deciding `holding` from a seq comparison again? `moved_at`
 is a cursor: it says the state changed, never that it changed *away from what
 this memory was bound to*. Only the diff says that.
 
-Does `bearing()` grow a precedence that lets blindness erase an established
-move? Then the flat view contradicts the structured one, and the flat one is the
-one people count.
+Does a flat fold of the two axes come back? Ask what its precedence says. If the
+sentence is about whether a caller may rely on the answer, it is a verdict
+wearing an observation's clothes, and the last one got as far as being publicly
+exported from two crates before anyone asked.

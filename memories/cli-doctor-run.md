@@ -24,8 +24,25 @@ instead of two that could quietly drift apart from each other.
 here would be a second answer beside `edges`', over a different set of anchors,
 and the two would be free to disagree while this one holds the exit code. The
 classification lives in `CorpusHealth`, computed over `Corpus::views`, and `run`
-reads `Footing` off it. `live` is used only for the three questions it is the
-right slice for: `absent`, `unseen`, `stranded`. See [[runtime-corpus]].
+reads `Footing` off it. `live` is used only for the two questions it is the
+right slice for: `absent` and `stranded`. See [[runtime-corpus]].
+
+`unseen` used to be a third, and it was this section's own rule being broken in
+plain sight: `live.filter(|v| v.faltering.is_some())` is a second definition of
+blindness beside `Warrant`'s. It now reads `CorpusHealth.knowings`, and the union
+it prints is the same set it always was — after `Open` an anchor always has a
+`last_sighting` and a `derivation`, so `faltering: None` is exactly `Seen`. What
+changed is that there is one definition instead of two that happened to agree,
+and that the three classes are now printed apart: `Unreachable` is somebody
+else's service, `Unusable` is whoever writes the probe, `Unevaluable` is whoever
+wrote the rules. Three different people, three lines — [[render-warrant]].
+
+The fact-side lines beside them (`moved`, `incomparable`, `absent gnd`,
+`no ground`, `undated`, from `CorpusHealth.holdings`) print counts and are on no
+`Verdict` field. Ground moving is `check`'s sentence and `check` already exits on
+it; two verbs going red for one fact is the drifting second copy in exit-code
+form. They print because until they did, `doctor` could name twelve records the
+store had lost and not one that stood on ground that had moved.
 
 ## What a declared store can do is printed, and never weighed
 
