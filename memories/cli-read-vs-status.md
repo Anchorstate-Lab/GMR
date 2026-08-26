@@ -2,6 +2,8 @@
 about:
   - domains/coding/cli/src/verbs/read.rs#run
   - domains/coding/cli/src/verbs/status.rs#run
+  - crates/gmr-runtime/src/read.rs#AnchorView
+  - crates/gmr-runtime/src/read.rs#MemoryView
 watch: [sig]
 ---
 
@@ -21,8 +23,8 @@ different question ("show me this one") and `status <key>` no longer filters `cl
 for that case either, but the no-argument listing still does, on purpose.
 
 **Their JSON shapes are not the same schema at two verbosity levels.** `read --json`
-serializes `gmr::AnchorView` verbatim — `attempts`, `sighting`, `derivation`, and per
-memory `grounded`/`rewritten`/`retrievable`/`content_at_bind`. `status --json` hand-
+serializes `gmr::AnchorView` verbatim — `sighting`, `faltering`, `derivation`, `facts`,
+and per memory `grounded`, `warrant` and `grounding`. `status --json` hand-
 builds a projection (`anchor`, `shape`, `status`, `state`, `memories` with an
 `unwritten` flag) and adds `criteria_drifted`/`criteria_unreadable`/`criteria_undeclared`
 from `sync::audit` (see [[check-drift]]), which `read` never computes at all. Nobody
@@ -33,6 +35,16 @@ starts getting fields it didn't ask for.
 
 So `read` stays: it is the raw substrate dump — the one place the CLI shows exactly
 what `gmr-runtime` recorded, closed anchors included, with no curation layered on top.
+
+## Which is why `AnchorView` and `MemoryView` are anchored here
+
+"Serializes it verbatim" makes this note's claim a claim about *those two types*, and
+for a while it was anchored only to the two verbs — which do not change when a field
+is renamed under them. The list above said `attempts`, `retrievable` and
+`content_at_bind` long after `faltering`, `grounding` and `warrant` replaced them, and
+`check` stayed green the whole time, correctly: nothing it was watching had moved.
+A note that quotes another layer's field names has to watch that layer, or it is
+grounded to the wrong thing and the green means nothing.
 
 ## `--fresher-than-secs` is the one thing it does besides dump
 
