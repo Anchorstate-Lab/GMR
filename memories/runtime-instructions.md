@@ -36,14 +36,25 @@ default is "serve the reading on record, whatever its age". Saying it that way
 matters: the read path had no freshness behaviour to speak of before, and it
 would be easy to read the short form as *unpoliced* rather than as *this policy*.
 
-## Asking is not promising
+## A refresh that could not happen is said, not inferred
 
-A refresh that cannot happen does not fail the call. A held lease means another
-writer is already doing it, so the stored reading is served — and the reading
-carries its own date, so nothing is hidden by serving it. A probe that fails
-lands an `Attempt` in the log the ordinary way and comes back on the knowledge
-axis as `Blind`, which is the whole reason that axis is separate from what the
-fact did.
+A probe that fails lands an `Attempt` in the log the ordinary way and comes back
+on the knowledge axis as `Blind` — that is the whole reason that axis is separate
+from what the fact did, and it needs nothing extra here.
+
+A **held lease** is different: nothing failed, nobody looked, and the call
+returns. That was swallowed at first, on the argument that another writer is
+already doing the looking and the reading carries its own date, so a caller could
+tell by comparing `observed_at` against the bound they passed. Both halves are
+true and the conclusion was still wrong. Leaving a caller to *infer* that their
+instruction was not carried out is a failure path with nothing on it, which is
+the one thing CLAUDE.md refuses outright — and it is the product boundary in the
+mirror: whether to wait, retry, or accept what is on record is exactly the kind
+of judgement GMR does not make, and it cannot be made from an answer that does
+not mention the question.
+
+So `Leased` propagates. A busy anchor stops the call rather than quietly
+answering a different one.
 
 ## Not `Policy.stalled_staleness_secs`
 

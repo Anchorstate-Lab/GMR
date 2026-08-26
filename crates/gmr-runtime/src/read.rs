@@ -344,10 +344,8 @@ impl Runtime {
         if view.closed || !how.stale(view.last_sighting, Utc::now()) {
             return Ok(());
         }
-        match self.observe_within(key, how).await {
-            Ok(_) | Err(RuntimeError::Leased { .. }) => Ok(()),
-            Err(e) => Err(e),
-        }
+        self.observe_within(key, how).await?;
+        Ok(())
     }
 
     pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {

@@ -19,6 +19,7 @@ struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
     bindings: Arc<MemoryBindings>,
+    queue: Arc<MemoryQueue>,
 }
 
 impl World {
@@ -33,6 +34,7 @@ impl World {
     fn with(policy: Policy, queue: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let bindings = Arc::new(MemoryBindings::default());
+        let shared = Arc::new(MemoryQueue::default());
         let mut b = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(Arc::new(MemoryJournal::default()))
@@ -43,12 +45,13 @@ impl World {
             .sightings(Arc::new(MemoryQueue::default()))
             .policy(policy);
         if queue {
-            b = b.queue(Arc::new(MemoryQueue::default()));
+            b = b.queue(shared.clone());
         }
         Self {
             dir,
             runtime: b.build(),
             bindings,
+            queue: shared,
         }
     }
 
@@ -1433,4 +1436,42 @@ async fn a_reading_that_could_not_be_refreshed_is_served_with_its_own_date_on_it
         warrant.knowledge
     );
     assert_eq!(warrant.holding, Holding::Holds);
+}
+
+#[tokio::test]
+async fn a_refresh_that_could_not_take_the_lease_says_so_rather_than_serving_stale_quietly() {
+    use gmr_store::Queue;
+
+    let w = World::polled(Policy::default());
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime.pass().await.unwrap();
+
+    let held = w
+        .queue
+        .lease(&key(), chrono::Utc::now(), chrono::Duration::seconds(60))
+        .await
+        .unwrap();
+    assert!(held.is_some(), "somebody else now holds this anchor");
+
+    w.write(r#"{"x":2}"#);
+    let asked = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::ZERO),
+        )
+        .await;
+
+    assert!(
+        matches!(asked, Err(gmr_runtime::RuntimeError::Leased { .. })),
+        "the caller instructed a fresh reading and it could not be taken. Swallowing that \
+         and serving the stored one left them to infer it from `observed_at` -- a failure \
+         path with nothing on it, which is the one thing CLAUDE.md refuses. Who waits, \
+         retries or accepts what is on record is the caller's call, and it cannot be made \
+         from an answer that does not mention it: {asked:?}"
+    );
 }
