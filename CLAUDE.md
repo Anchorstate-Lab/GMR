@@ -79,9 +79,11 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
   (The obs‑strict / state‑lenient semantics and `changed()` convention are anchor‑layer decisions, not generic evaluator features – they merely happen to have no compile‑time dependency on `gmr-core`; do not read “no dependency” as “ignorant of anchors”.)
 - **`gmr-probe`**: probe invocation contract. No concrete transport implementation. `Budget` also lives here: it is the shared vocabulary for every outbound call, not a probe-only idea, and `gmr-content` is its second user. Two users do not justify a crate of its own; a third does — move it then rather than growing a second budget vocabulary alongside it.
 - **`gmr-content`**: retrieval and discovery contracts. What every store must do sits in `ContentProvider` itself; what only some can do gets its own trait (`History`, `MemorySource`), so declining a capability means not implementing it rather than answering "I have none". No concrete provider implementation, and no opinion about which store to enumerate or how much of it.
-- **`gmr-store`**: storage traits and feature‑gated backends. Sliced by mutability: Journal / BindingStore / Sealer / LinkStore / Queue / Settings / Sightings.
+- **`gmr-store`**: storage traits and feature‑gated backends, in the two tiers `gmr-content` has. Contracts every store must implement, sliced by **mutability**: `Journal` / `BindingStore` / `Sealer` / `LinkStore` / `Queue` / `Settings` / `Sightings`. Capabilities a store declines by not implementing them: `Chained`. Which tier a new trait joins is decided by one question — **can a store refuse it and still be a complete store?** A journal with no `Chained` is still a journal; a journal with no `append` is not.
 - **`gmr-runtime`**: sole orchestration layer. May depend on core / expr / probe / content / store, but must not make domain decisions.
 - **`gmr`**: only re‑exports.
+
+Every trait named above is compared against the crate by `tools/gate.py`. A roster in prose is a drift path — this document and `memories/layers.md` both carried a seven‑name list while `gmr-store` held eight, and neither noticed. The names stay here because this is where the boundary is decided; the checking does not.
 
 ---
 

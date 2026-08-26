@@ -76,7 +76,7 @@ their own, and deleting either one leaves a gap the other cannot fill.
 | `gmr-expr` | pure expression evaluation | is there IO · a clock · a dependency on gmr-core |
 | `gmr-probe` | the probe invocation contract | has a concrete transport implementation crept in |
 | `gmr-content` | the retrieval and discovery contracts | is it a concrete provider (that belongs to a battery), or has a required method appeared that only some stores can honour — that one belongs in its own trait, not in `ContentProvider` |
-| `gmr-store` | storage traits and feature-gated backends | is the new trait split by **mutability** (Journal / Binding / Sealer / Link / Queue / Settings / Sightings) |
+| `gmr-store` | storage traits and feature-gated backends | can a store refuse it and still be a complete store — if not, it is a contract and is sliced by **mutability**; if so, it is a capability it declines by not implementing |
 | `gmr-runtime` | the one orchestration layer | is it starting to make the domain's judgments for it |
 | `gmr` | re-exports only | any definition of its own is out of bounds |
 
@@ -84,6 +84,13 @@ The tests come from CLAUDE.md's crate-boundary section. This does not restate it
 it wires it to an anchor that can speak — a boundary written in a document waits
 for someone to remember to go and read it, while a boundary hung on an anchor
 hands this table back on the day it is crossed.
+
+That claim was once false. The `gmr-store` row carried the same seven-name trait
+roster CLAUDE.md carried, both went stale when an eighth arrived, and the entry
+test then asked a question the list could no longer answer — which is how a
+boundary gets decided from a roster that is wrong. The rosters are CLAUDE.md's
+alone now and `tools/gate.py` compares them against the crates, so what is left
+in this column is the part a machine cannot decide: the question to ask.
 
 `gmr-content` was added to both late, and the gap is the argument for this anchor
 rather than a footnote to it. That crate held three public items and appeared in

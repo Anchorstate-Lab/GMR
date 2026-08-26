@@ -265,6 +265,45 @@ def check_version_bump():
     return []
 
 
+TRAIT_ROSTERS = {"gmr-store": "crates/gmr-store", "gmr-content": "crates/gmr-content"}
+
+
+def check_trait_roster():
+    """Every public trait a rostered crate defines is named in its CLAUDE.md bullet.
+
+    A roster in prose is a drift path. This repository carried a seven-name
+    list in CLAUDE.md and the same seven in memories/layers.md while
+    gmr-store held eight, and nothing noticed until somebody read all three
+    -- so the boundary went on being decided from a list that was wrong.
+    The names stay in CLAUDE.md because that is where the boundary is
+    decided; this is what stops them going stale there.
+
+    Testkit traits are excluded: they are doubles for tests, not contracts
+    a store implements, and CLAUDE.md does not speak for them.
+    """
+    errors = []
+    claude = (ROOT / "CLAUDE.md").read_text()
+    for crate, path in TRAIT_ROSTERS.items():
+        bullet = next(
+            (l for l in claude.splitlines() if l.startswith(f"- **`{crate}`**")), None
+        )
+        if bullet is None:
+            errors.append(f"CLAUDE.md has no crate-boundary bullet for {crate}")
+            continue
+        named = set(re.findall(r"`(\w+)`", bullet))
+        for f in sorted((ROOT / path / "src").rglob("*.rs")):
+            if f.name == "testkit.rs":
+                continue
+            for t in re.findall(r"^pub trait (\w+)", f.read_text(), re.M):
+                if t not in named:
+                    errors.append(
+                        f"{crate} defines `{t}` ({f.relative_to(ROOT)}) and CLAUDE.md's "
+                        f"boundary bullet does not name it — the boundary is decided from "
+                        f"that list, so a trait missing from it is a boundary nobody drew"
+                    )
+    return errors
+
+
 def check_acceptance_intact():
     """The portal's sentinel exists, says how many steps ran, and CI greps that number.
 
@@ -404,6 +443,7 @@ CHECKS = [
     ("base layer must not ship a concrete implementation", check_no_concrete_impl),
     ("base layer must not produce any binary", check_no_binaries),
     ("facade: only re-exports", check_facade_only_reexports),
+    ("every trait a rostered crate defines is named in CLAUDE.md", check_trait_roster),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
