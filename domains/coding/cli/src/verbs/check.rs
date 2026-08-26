@@ -70,13 +70,12 @@ pub async fn run(
     let catalog = Catalog::load(root)?;
     let (subs, unwatchable) = Subscriptions::load(root, &catalog, names)?;
 
-    let mut views: Vec<AnchorView> = Vec::with_capacity(keys.len());
-    let mut looks: Vec<Observed> = Vec::with_capacity(keys.len());
-    for key in &keys {
-        let Looked { before, observed } = rt.look(key).await?;
-        views.push(before);
-        looks.push(observed);
-    }
+    let (views, looks): (Vec<AnchorView>, Vec<Observed>) = rt
+        .look_all(&keys)
+        .await?
+        .into_iter()
+        .map(|Looked { before, observed }| (before, observed))
+        .unzip();
 
     let Audit {
         drifted,

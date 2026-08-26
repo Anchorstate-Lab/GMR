@@ -667,6 +667,7 @@ version = "0.4.6"
 dependencies = [
  "async-trait",
  "chrono",
+ "futures-util",
  "gmr-budget",
  "gmr-content",
  "gmr-core",

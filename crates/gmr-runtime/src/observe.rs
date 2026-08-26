@@ -1,4 +1,5 @@
 use chrono::Utc;
+use futures_util::{StreamExt, TryStreamExt};
 use gmr_budget::Budget;
 use gmr_core::{
     Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded, State,
@@ -84,6 +85,23 @@ impl Runtime {
         let (observed, stood) = self.looking(key, how).await?;
         let (before, _) = crate::read::viewed(stood.anchor, key, &looks, stood.logged);
         Ok(Looked { before, observed })
+    }
+
+    pub async fn look_all(&self, keys: &[AnchorKey]) -> Result<Vec<Looked>, RuntimeError> {
+        self.look_all_within(keys, &crate::read::Instructions::default())
+            .await
+    }
+
+    pub async fn look_all_within(
+        &self,
+        keys: &[AnchorKey],
+        how: &crate::read::Instructions,
+    ) -> Result<Vec<Looked>, RuntimeError> {
+        futures_util::stream::iter(keys)
+            .map(|key| self.look_within(key, how))
+            .buffered(self.scheduler.policy().observe_at_once.max(1))
+            .try_collect()
+            .await
     }
 
     async fn looking(

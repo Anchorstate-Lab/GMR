@@ -4,6 +4,7 @@ about:
   - crates/gmr-runtime/src/observe.rs#look_within
   - crates/gmr-runtime/src/observe.rs#looking
   - crates/gmr-runtime/src/observe.rs#looked_at
+  - crates/gmr-runtime/src/observe.rs#look_all_within
   - crates/gmr-runtime/src/read.rs#viewed
   - crates/gmr-runtime/tests/operations.rs#one_look_reads_the_log_once_where_asking_twice_reads_it_twice
 watch: [sig, logic]
@@ -80,3 +81,43 @@ Does something want the view *after* the look? That is a real question with a
 real cost — a second fold, or a seeded one — and it must not be answered by
 quietly moving `viewed` past the observation, which is the `swapped` bug above
 arriving through the back door.
+
+## Looking at many is one call, and the concurrency lives here
+
+`look_all_within` is the same look, bounded by `Policy.observe_at_once`. It is in
+the runtime rather than in `check`'s loop because observing a *set* of anchors is
+orchestration, and M3 plans two more shells — an MCP server and SDK adapters — that
+would each otherwise write this loop again, each with its own idea of how many at
+once and whether order survives.
+
+**Order survives, and that is load-bearing.** `check` zips these answers against
+the keys it asked about and prints one line per pair, so a reordered batch
+attributes one anchor's drift to another — silently, and worse the more anchors
+there are. That is `buffered`, not `buffer_unordered`, and the difference is one
+identifier with no compiler between it and a wrong report.
+
+A test pins it, and the first version of that test **did not**: five in-memory
+anchors complete in poll order, so it passed under `buffer_unordered` too. It
+earns its keep now only because the journal under it is made to answer out of
+order on purpose, slowest for the key asked first. A concurrency test that cannot
+observe concurrency is a test of nothing.
+
+## The threads are not ours, and that is why there is still no tokio here
+
+`futures_util::buffered` is a combinator: it polls futures already in hand, on
+whoever's runtime is driving. It picks no executor, so [[layers]]' entry test for
+this crate is untouched and the property M1 leans on — `gmr-runtime` depends on no
+runtime, which is what makes the daemon a deployment rather than a rewrite — still
+holds.
+
+The parallelism that results is real anyway, and it was already paid for: the
+in-process extractors run under `spawn_blocking` in the transport battery, so
+sixteen concurrent looks become sixteen extractions on tokio's blocking pool.
+**The runtime supplies the concurrency and the battery supplies the threads.**
+Measured here: the look loop went 3.08s to 1.59s and `check` from ~3.4s to ~2.1s,
+with CPU crossing 100% for the first time.
+
+What is left is not this loop. Roughly 0.7s of every run is fixed startup —
+loading the extract cache, the catalog, the subscriptions — and it is paid whether
+one anchor is checked or all 528. That is the next thing worth measuring, not more
+concurrency.

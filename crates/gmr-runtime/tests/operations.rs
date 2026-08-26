@@ -21,11 +21,17 @@ struct Counted {
     inner: MemoryJournal,
     reads: std::sync::atomic::AtomicUsize,
     rows: std::sync::atomic::AtomicUsize,
+    stagger: std::sync::atomic::AtomicBool,
 }
 
 impl Counted {
     fn reads(&self) -> usize {
         self.reads.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn stagger(&self) {
+        self.stagger
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn rows(&self) -> usize {
@@ -55,6 +61,11 @@ impl gmr_store::Journal for Counted {
         from: gmr_core::Seq,
     ) -> Result<Vec<(gmr_core::Seq, gmr_core::Entry)>, gmr_store::StoreError> {
         self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.stagger.load(std::sync::atomic::Ordering::SeqCst) {
+            let first = anchor.as_str().bytes().next().unwrap_or(b'a');
+            let ms = u64::from(b'z'.saturating_sub(first)) * 4;
+            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+        }
         let got = self.inner.entries(anchor, from).await;
         if let Ok(rows) = &got {
             self.rows
@@ -1916,5 +1927,83 @@ async fn folding_the_same_log_again_reads_only_what_was_appended_since() {
         moved.state.0.get("x").and_then(|v| v.as_i64()),
         Some(99),
         "the caught-up state is the real one, not a stale checkpoint handed back"
+    );
+}
+
+#[tokio::test]
+async fn looking_at_many_at_once_answers_in_the_order_asked() {
+    let w = World::new();
+    w.write(r#"{"x":1,"y":1,"z":1}"#);
+    let keys: Vec<AnchorKey> = ["c", "a", "b", "e", "d"]
+        .iter()
+        .map(|k| AnchorKey::new(*k))
+        .collect();
+    for (k, axis) in keys.iter().zip(["x", "y", "z", "x", "y"]) {
+        w.runtime
+            .open(at(k.as_str(), w.dir.path(), watching(axis)))
+            .await
+            .unwrap();
+    }
+
+    w.journal.stagger();
+    let together = w.runtime.look_all(&keys).await.unwrap();
+    assert_eq!(
+        together
+            .iter()
+            .map(|l| l.before.key.clone())
+            .collect::<Vec<_>>(),
+        keys,
+        "concurrency must not reorder the answers. `check` zips these against the keys it \
+         asked about and prints one line per pair, so an answer arriving out of order would \
+         attribute one anchor's drift to another -- silently, and worse the more anchors \
+         there are. `buffered` keeps the order; `buffer_unordered` would not"
+    );
+
+    let mut serially = Vec::new();
+    for key in &keys {
+        serially.push(w.runtime.look(key).await.unwrap());
+    }
+    assert_eq!(
+        together
+            .iter()
+            .map(|l| (l.before.key.clone(), l.before.state.clone()))
+            .collect::<Vec<_>>(),
+        serially
+            .iter()
+            .map(|l| (l.before.key.clone(), l.before.state.clone()))
+            .collect::<Vec<_>>(),
+        "and observing five anchors at once must land where observing them one at a time \
+         lands. Each holds its own fence and appends only under its own key, so there is \
+         nothing for them to race over -- this is the assertion that keeps that true if \
+         anything shared ever creeps in"
+    );
+}
+
+#[tokio::test]
+async fn a_batch_of_one_and_a_batch_of_none_are_both_answerable() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    assert!(
+        w.runtime.look_all(&[]).await.unwrap().is_empty(),
+        "no anchors is an empty answer, not an error -- `check` on a fresh repository asks \
+         exactly this"
+    );
+    assert_eq!(
+        w.runtime.look_all(&[key()]).await.unwrap().len(),
+        1,
+        "and one anchor still answers once, whatever the concurrency bound is"
+    );
+    assert!(
+        w.runtime
+            .look_all(&[AnchorKey::new("never-opened")])
+            .await
+            .is_err(),
+        "an anchor nobody opened is still the error it was one at a time. A batch must not \
+         quietly drop the member it could not answer for"
     );
 }
