@@ -91,8 +91,10 @@ CREATE TABLE IF NOT EXISTS settings (
     retain        TEXT    NOT NULL,   -- Retain, snake_case
     cadence_secs  INTEGER,            -- NULL defers to the deployment default
     budget_ms     INTEGER,            -- NULL defers to the deployment default
-    facts         TEXT    NOT NULL    -- Recorded, snake_case. A separate question
-                        DEFAULT 'plain'  -- from retain: whether repeats collapse and
+    facts         TEXT    NOT NULL    -- Recorded, snake_case. Beside retain, not
+                  DEFAULT 'plain'       -- inside it: retain decides whether an
+                                        -- unchanged observation is written at all,
+                                        -- this decides whether one may be plaintext
 );
 
 -- ── Sightings: how often we looked and found the anchor where it should be,

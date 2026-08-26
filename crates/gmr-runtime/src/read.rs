@@ -30,13 +30,6 @@ impl Instructions {
         }
     }
 
-    pub fn within(self, span: Duration) -> Self {
-        Self {
-            budget: Some(span),
-            ..self
-        }
-    }
-
     fn stale(&self, last_sighting: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
         let Some(max) = self.max_staleness else {
             return false;
@@ -382,12 +375,13 @@ impl Runtime {
         let policy = self.scheduler.policy();
         let total = reaching(policy, how);
         let call = policy.content_call();
-        for key in self.log.anchors().await? {
-            self.refresh(&key, how).await?;
+        let keys = self.log.anchors().await?;
+        for key in &keys {
+            self.refresh(key, how).await?;
         }
         let seen = self.scheduler.all_seen().await?;
         let mut out = Vec::new();
-        for key in self.log.anchors().await? {
+        for key in keys {
             let looks = seen.get(&key).copied().unwrap_or_default();
             let entries = self.log.entries(&key, 0).await?;
             let (view, moved_at) = project(&entries, &key, &looks)?;
@@ -512,10 +506,13 @@ fn holding(
     let took = before
         .latest
         .as_ref()
-        .map(|o| o.versions.derivation.version.clone());
-    let reads = view.derivation.as_ref().map(|d| d.version.clone());
+        .map(|o| &o.versions.derivation.version);
+    let reads = view.derivation.as_ref().map(|d| &d.version);
     match (took, reads) {
-        (Some(took), Some(reads)) if took != reads => Holding::Incomparable { took, reads },
+        (Some(took), Some(reads)) if took != reads => Holding::Incomparable {
+            took: took.clone(),
+            reads: reads.clone(),
+        },
         _ => Holding::Moved { axes, at: moved },
     }
 }
