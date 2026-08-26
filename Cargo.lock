@@ -724,6 +724,7 @@ dependencies = [
  "gmr-core",
  "gmr-probe",
  "gmr-transport",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",

@@ -16,6 +16,7 @@ tokio = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -23,6 +24,8 @@ default = []
 #    也跟 crates/gmr-store 的 sqlite feature 一样。加 http = 加一个
 #    feature + 一个模块，不是加一个包。
 shell = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:thiserror", "dep:serde"]
+# 网络：身份 = 声明（url + 选择器 + 头名），调用时算。凭证只存引用不存值。
+http = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:reqwest"]
 # 进程内：机制在这里，探针本身由域注册。
 inproc = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 # 用户仓库里的一个文件。身份 = 那个文件的内容，调用时算。
@@ -31,7 +34,7 @@ script = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 testkit = ["shell", "dep:tempfile"]
 
 [dev-dependencies]
-gmr-transport = { path = ".", features = ["shell", "inproc", "script", "testkit"] }
+gmr-transport = { path = ".", features = ["shell", "inproc", "script", "http", "testkit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = { workspace = true }
 
