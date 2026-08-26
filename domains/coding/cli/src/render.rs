@@ -1,4 +1,4 @@
-use gmr::{Before, Blind, Grounded, Grounding, Holding, Knowledge, Source, Verifiability, Warrant};
+use gmr::{Before, Blind, Grounded, Grounding, Holding, Knowledge, Source, Warrant};
 use serde_json::Value;
 
 pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
@@ -159,18 +159,16 @@ pub fn holding(h: &Holding) -> Option<String> {
 
 pub fn knowledge(k: &Knowledge) -> Option<String> {
     match k {
-        Knowledge::Seen {
-            verifiability: Verifiability::Closed,
-            ..
-        } => None,
-        Knowledge::Seen {
-            verifiability: Verifiability::Open,
-            ..
-        } => Some(
-            "read by a probe whose closure is open: something outside its version can change \
-             the answer"
-                .to_owned(),
-        ),
+        Knowledge::Seen { verifiability, .. } if verifiability.is_closed() => None,
+        Knowledge::Seen { verifiability, .. } => Some(format!(
+            "read by a probe whose closure is open: {} can change the answer",
+            verifiability
+                .over()
+                .iter()
+                .map(|o| o.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
         Knowledge::Blind { why, .. } => Some(format!("unconfirmed: {}", unseen(why))),
     }
 }

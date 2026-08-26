@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Openness, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
@@ -41,7 +41,7 @@ impl Transport for Script {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: closure::of_path(&self.entry(name)?)?,
-            verifiability: Verifiability::Open,
+            verifiability: Verifiability::open([Openness::Interpreter, Openness::HostEnv]),
         })
     }
 
@@ -200,7 +200,12 @@ mod tests {
         let w = World::new();
         w.write("p.sh", "echo '{\"x\":1}'");
         let before = w.script("p.sh").resolve(&ProbeName::new("deploy")).unwrap();
-        assert_eq!(before.verifiability, Verifiability::Open);
+        assert_eq!(
+            before.verifiability,
+            Verifiability::open([Openness::Interpreter, Openness::HostEnv]),
+            "a script names what it does not close over, so a later grading can tell an \
+             interpreter on PATH from a network call"
+        );
 
         w.write("p.sh", "echo '{\"x\":2}'");
         let after = w.script("p.sh").resolve(&ProbeName::new("deploy")).unwrap();

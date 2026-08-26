@@ -26,6 +26,12 @@ hashed manifest keeps the closure honestly `Open`, however precisely the
 artifact's bytes are pinned otherwise — `host_env_opens_the_closure` is
 what exercises exactly that flip.
 
+That `env` map is now also the **answer**, not just the trigger:
+`Open { over: {HostEnv} }` says which surface is open, where a bare `Open` made
+this transport indistinguishable from one that calls out to a network. See
+[[probe-Verifiability]] — the reason was always here and was being discarded one
+line after it was computed.
+
 ## When this changes, ask
 
 Does a new way of parameterizing a probe (beyond `args` and `env`) get

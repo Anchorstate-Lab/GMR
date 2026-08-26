@@ -28,5 +28,11 @@ dependency versions are pinned — is decided by the concrete transport;
 `coding-extract`'s `build.rs` is one example. The substrate does not dictate the
 algorithm, only that it must close over its inputs.
 
+When it cannot, the transport now says **what** it failed to close over rather
+than only that it failed — `Verifiability::Open { over }`, see
+[[probe-Verifiability]]. That is still the transport's business and not the
+substrate's: the base owns the closed vocabulary of surfaces, and only the
+transport knows which of them apply to it.
+
 Shipping a new probe version: derivation moves, declaration does not. Those two
 have to be separable, which is why they are two fields in [[journal-Versions]].

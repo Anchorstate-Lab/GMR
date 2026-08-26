@@ -21,7 +21,9 @@ isolation.
 a deliberate admission rather than a missing feature: the interpreter that
 actually reads the script (`sh`, `python3`, whatever `#!` names) is not
 part of the hash, and the child process inherits this process's environment
-rather than running with it cleared. Clearing the environment would only
+rather than running with it cleared. Those are exactly the two surfaces it
+names — `open([Interpreter, HostEnv])` — so the admission is now legible to a
+grading rather than only to a reader of this note ([[probe-Verifiability]]). Clearing the environment would only
 break the script's ability to find its own interpreter on `$PATH`; the
 honest move is to inherit it and say plainly that the closure is open,
 instead of quietly claiming a closed guarantee this transport cannot back.

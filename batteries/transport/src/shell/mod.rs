@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Openness, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
@@ -49,7 +49,7 @@ impl Transport for Shell {
             version: resolved.manifest.derivation.clone(),
             verifiability: match resolved.manifest.env.is_empty() {
                 true => Verifiability::Closed,
-                false => Verifiability::Open,
+                false => Verifiability::open([Openness::HostEnv]),
             },
         })
     }
@@ -494,6 +494,10 @@ mod tests {
         assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Closed);
 
         w.publish_with_env("echo '{}'", &[("HOME", "/somewhere")]);
-        assert_eq!(w.resolve().unwrap().verifiability, Verifiability::Open);
+        assert_eq!(
+            w.resolve().unwrap().verifiability,
+            Verifiability::open([Openness::HostEnv]),
+            "the manifest's env list is the openness, so `Open` carries its reason"
+        );
     }
 }

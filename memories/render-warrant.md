@@ -33,6 +33,13 @@ ways.
 our clock running out, and [[content-budget]] makes the same split on the other
 side.
 
+An open closure is printed the same way, and now names its surface rather than
+gesturing at one: "something outside its version can change the answer" was true
+of every open probe and told a reader nothing they could act on. `Verifiability`
+carries `over` ([[probe-Verifiability]]), so the line says *the interpreter that
+runs it* or *a remote system* — and `Unknown` prints as "something nobody
+recorded", which is the one case where the vague sentence is the honest one.
+
 ## One phrasing, two surfaces
 
 `gmr read` prints these as trailing clauses and `gmr atlas` hangs them off nodes

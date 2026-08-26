@@ -486,7 +486,7 @@ pub(crate) fn knowledge_of(view: &AnchorView) -> Knowledge {
         },
         (None, Some(at), Some(d)) => Knowledge::Seen {
             at,
-            verifiability: d.verifiability,
+            verifiability: d.verifiability.clone(),
         },
         (None, since, _) => Knowledge::Blind {
             since,

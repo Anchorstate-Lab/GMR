@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -60,13 +62,96 @@ impl FactAddress {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Openness {
+    HostEnv,
+    Interpreter,
+    Network,
+    Clock,
+    Implementation,
+    Unknown,
+}
+
+impl Openness {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::HostEnv => "the host environment",
+            Self::Interpreter => "the interpreter that runs it",
+            Self::Network => "a remote system",
+            Self::Clock => "when it was asked",
+            Self::Implementation => "an implementation living somewhere else",
+            Self::Unknown => "something nobody recorded",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verifiability {
+    Closed,
+    Open { over: BTreeSet<Openness> },
+}
+
+impl Verifiability {
+    pub fn open(over: impl IntoIterator<Item = Openness>) -> Self {
+        let over: BTreeSet<Openness> = over.into_iter().collect();
+        match over.is_empty() {
+            true => Self::Open {
+                over: BTreeSet::from([Openness::Unknown]),
+            },
+            false => Self::Open { over },
+        }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        matches!(self, Self::Closed)
+    }
+
+    pub fn over(&self) -> &BTreeSet<Openness> {
+        static NONE: std::sync::LazyLock<BTreeSet<Openness>> =
+            std::sync::LazyLock::new(BTreeSet::new);
+        match self {
+            Self::Closed => &NONE,
+            Self::Open { over } => over,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum BareVerifiability {
     #[serde(alias = "content_addressed")]
     Closed,
     #[serde(alias = "declared", alias = "unverifiable")]
     Open,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum TaggedVerifiability {
+    Closed,
+    Open { over: BTreeSet<Openness> },
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireVerifiability {
+    Bare(BareVerifiability),
+    Tagged(TaggedVerifiability),
+}
+
+impl<'de> Deserialize<'de> for Verifiability {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match WireVerifiability::deserialize(d)? {
+            WireVerifiability::Bare(BareVerifiability::Closed)
+            | WireVerifiability::Tagged(TaggedVerifiability::Closed) => Self::Closed,
+            WireVerifiability::Bare(BareVerifiability::Open) => Self::Open {
+                over: BTreeSet::from([Openness::Unknown]),
+            },
+            WireVerifiability::Tagged(TaggedVerifiability::Open { over }) => Self::open(over),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -279,5 +364,52 @@ mod tests {
             let s = serde_json::to_string(&o).unwrap();
             assert_eq!(serde_json::from_str::<Outcome>(&s).unwrap(), o);
         }
+    }
+
+    #[test]
+    fn an_entry_written_before_the_open_surface_existed_stays_unknown() {
+        for legacy in ["\"open\"", "\"declared\"", "\"unverifiable\""] {
+            let read: Verifiability = serde_json::from_str(legacy).unwrap();
+            assert_eq!(
+                read,
+                Verifiability::Open {
+                    over: BTreeSet::from([Openness::Unknown])
+                },
+                "a row from before probes declared what they do not close over cannot be \
+                 re-graded later, only blessed. `Unknown` is that row saying so out loud, \
+                 which is the whole reason the field went in before M2 mints observations \
+                 rather than after"
+            );
+        }
+    }
+
+    #[test]
+    fn a_closed_probe_reads_back_closed_in_either_spelling() {
+        for closed in ["\"closed\"", "\"content_addressed\""] {
+            assert_eq!(
+                serde_json::from_str::<Verifiability>(closed).unwrap(),
+                Verifiability::Closed
+            );
+        }
+    }
+
+    #[test]
+    fn an_open_surface_survives_the_wire() {
+        let v = Verifiability::open([Openness::Network, Openness::Clock]);
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(serde_json::from_str::<Verifiability>(&s).unwrap(), v);
+    }
+
+    #[test]
+    fn open_over_nothing_is_unknown_rather_than_a_quiet_closed() {
+        assert_eq!(
+            Verifiability::open([]),
+            Verifiability::Open {
+                over: BTreeSet::from([Openness::Unknown])
+            },
+            "an empty surface would read as `Open` with nothing outside it, which is \
+             `Closed` said badly. Refusing the empty set keeps the rule that there is \
+             no `counts as closed really` spelling"
+        );
     }
 }
