@@ -1,7 +1,7 @@
+use chrono::DateTime;
 use chrono::Utc;
 use futures_util::{StreamExt, TryStreamExt};
 use gmr_budget::Budget;
-use chrono::DateTime;
 use gmr_core::{
     Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded,
     RunSettings, State, Versions, should_still,
@@ -282,9 +282,7 @@ async fn recorded(
         };
 
         if let Some(entry) = &entry
-            && let Err(e) = log
-                .append(key, entry, fence, Expected::Head(s.head))
-                .await
+            && let Err(e) = log.append(key, entry, fence, Expected::Head(s.head)).await
         {
             if !e.head_moved() {
                 return Err(e);

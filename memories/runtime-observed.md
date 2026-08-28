@@ -14,6 +14,14 @@ compacted into a back-reference instead — see `should_still` in
 variant would hide from a caller whether a full entry actually landed in
 the log.
 
+`Contended` is neither a failure nor a look that changed nothing: the probe
+answered, and the entry was not written because the log moved under the fold
+more times than [[runtime-recorded]] will replay. Folding it into `Attempt`
+would file a real reading as a failed one and start an exponential backoff
+over a collision; folding it into `Still` would claim a look was recorded
+when none was. What a caller does about it is its own third thing — come
+back sooner, and do not count it against the anchor.
+
 `Attempt.attempts` is the streak length *after* this attempt, not before —
 callers use it directly against `policy.stalled_attempts` without an
 off-by-one adjustment.

@@ -27,6 +27,12 @@ exists not to do.
 `pass` now checks the budget before each ticket and, when it is spent, settles
 the rest as `Reschedule { after_secs: 0 }` without observing them at all.
 
+`Observed::Contended` settles the same way and for the same reason. The
+probe ran and answered; the entry lost a race for the head
+([[runtime-recorded]]). Backing that off would be the identical mistake in a
+new place — announcing that an anchor is struggling when what happened is
+that somebody else wrote first.
+
 ## Zero, not a cadence
 
 The skipped anchor is still due — nothing about it was answered. Rescheduling

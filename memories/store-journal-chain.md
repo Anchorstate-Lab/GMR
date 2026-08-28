@@ -10,7 +10,7 @@ watch: [sig, logic]
 # Append-only is enforced by a trigger; the chain is what answers when something gets past one
 
 The journal already refuses `UPDATE` and `DELETE` by trigger
-([[store-journal-guard]] covers the other half, stale fences). A trigger binds
+([[store-journal-guard]] covers the other half, the premise a write states). A trigger binds
 whoever goes through this code. It binds nobody who opens the file with
 `sqlite3`, and it says nothing at all about a copy that travelled.
 

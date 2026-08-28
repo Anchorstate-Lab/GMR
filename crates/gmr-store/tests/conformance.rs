@@ -85,7 +85,10 @@ async fn journal_hands_back_what_it_was_given<J: Journal>(j: &J) {
     let key = AnchorKey::new("core::modules");
     let entry = open_entry("core::modules", &["count"], serde_json::json!(5));
 
-    let seq = j.append(&key, &entry, Fence::Unleased, Expected::Any).await.unwrap();
+    let seq = j
+        .append(&key, &entry, Fence::Unleased, Expected::Any)
+        .await
+        .unwrap();
     let back = j.entries(&key, 0).await.unwrap();
 
     assert_eq!(back.len(), 1);

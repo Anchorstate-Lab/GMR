@@ -148,7 +148,12 @@ async fn a_state_outlives_the_process_that_captured_it() {
         let store = gmr_store::sqlite::open(&path).await.unwrap();
         store
             .journal()
-            .append(&key, &entry("captured-first"), Fence::Unleased, Expected::Any)
+            .append(
+                &key,
+                &entry("captured-first"),
+                Fence::Unleased,
+                Expected::Any,
+            )
             .await
             .unwrap();
         store.close().await;
@@ -282,7 +287,12 @@ async fn two_writers_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
                     let key = gmr_core::AnchorKey::new(format!("anchor-{who}"));
                     for n in 0..EACH {
                         journal
-                            .append(&key, &attempt(who * 1000 + n), Fence::Unleased, Expected::Any)
+                            .append(
+                                &key,
+                                &attempt(who * 1000 + n),
+                                Fence::Unleased,
+                                Expected::Any,
+                            )
                             .await
                             .expect("a second writer is contention, not a failure");
                     }
@@ -366,7 +376,12 @@ async fn cross_process_journal_writer() {
 
     for n in 0..EACH {
         journal
-            .append(&key, &attempt(who * 1000 + n), Fence::Unleased, Expected::Any)
+            .append(
+                &key,
+                &attempt(who * 1000 + n),
+                Fence::Unleased,
+                Expected::Any,
+            )
             .await
             .expect("a writer in another process is contention, not a failure");
     }
@@ -467,7 +482,12 @@ async fn two_writers_folding_from_one_head_cannot_both_land() {
                     let store = gmr_store::sqlite::open(&path).await.unwrap();
                     let landed = store
                         .journal()
-                        .append(&key, &attempt(who + 1), Fence::Unleased, Expected::Head(head))
+                        .append(
+                            &key,
+                            &attempt(who + 1),
+                            Fence::Unleased,
+                            Expected::Head(head),
+                        )
                         .await;
                     store.close().await;
                     landed

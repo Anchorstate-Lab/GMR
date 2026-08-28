@@ -46,6 +46,19 @@ warning attached to a *successful* `Opened`, never as an error — reporting
 hits `AlreadyOpen` while the real gap (missing settings, or not enqueued)
 stays unrepaired.
 
+## `AlreadyOpen` stopped being advice
+
+The emptiness check and the append are separated by a probe call, so two
+opens racing on one key both used to see an empty log and both used to
+write. That was not a duplicate entry problem: `fold` **replaces** its
+accumulator when it meets an `Entry::Open`, so the second one silently
+discarded every observation and every accumulated bit since the first.
+
+The append now states `Expected::Head(0)` ([[store-journal-expected]]), so
+the store refuses the second one whatever the check saw. The check stays
+because it is what turns the refusal into a sentence naming the anchor,
+rather than a head that moved.
+
 ## When this changes, ask
 
 Does a failure after the `Entry::Open` append ever propagate as an `Err`
