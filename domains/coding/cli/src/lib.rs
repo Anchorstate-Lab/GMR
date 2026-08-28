@@ -129,11 +129,11 @@ pub async fn served(
             crate::probes::Declared::at(&root),
         )))
         .queue(Arc::new(store.queue()))
-        .settings(Arc::new(store.queue()))
-        .sightings(Arc::new(store.queue()))
+        .settings(Arc::new(store.settings()))
+        .sightings(Arc::new(store.sightings()))
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
-        .sealer(Arc::new(store.bindings()))
+        .sealer(Arc::new(store.sealer()))
         .links(Arc::new(store.links()));
     let stores = stores::assembled(&root)?;
     for store in &stores.built {

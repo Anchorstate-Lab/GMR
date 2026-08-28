@@ -22,11 +22,11 @@ async fn a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_m
     let rt = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
-        .sealer(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
         .links(std::sync::Arc::new(store.links()))
         .queue(std::sync::Arc::new(store.queue()))
-        .settings(std::sync::Arc::new(store.queue()))
-        .sightings(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(
             gmr_transport::http::Http::new(coding_anchor::probes::Declared::at(root)).unwrap(),
         ))
@@ -116,11 +116,11 @@ async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
     let mut builder = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
-        .sealer(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
         .links(std::sync::Arc::new(store.links()))
         .queue(std::sync::Arc::new(store.queue()))
-        .settings(std::sync::Arc::new(store.queue()))
-        .sightings(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
             root,
             coding_anchor::probes::Declared::at(root),

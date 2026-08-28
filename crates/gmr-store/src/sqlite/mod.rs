@@ -295,7 +295,19 @@ impl SqliteStore {
         SqliteBindings::new(self.pool.clone())
     }
 
+    pub fn sealer(&self) -> SqliteBindings {
+        SqliteBindings::new(self.pool.clone())
+    }
+
     pub fn queue(&self) -> SqliteQueue {
+        SqliteQueue::new(self.pool.clone())
+    }
+
+    pub fn settings(&self) -> SqliteQueue {
+        SqliteQueue::new(self.pool.clone())
+    }
+
+    pub fn sightings(&self) -> SqliteQueue {
         SqliteQueue::new(self.pool.clone())
     }
 
