@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gmr_budget::Budget;
-use gmr_core::{ProbeName, ProbeVersion};
+use gmr_core::{ProbeName, ProbeVersion, Verifiability};
 use gmr_survey::bridge::Bridge;
 use gmr_survey::sqlite::{self, SqliteIndex};
 use gmr_survey::{Corpus, Halt};
@@ -183,6 +183,7 @@ pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {
                 Registered {
                     version: ProbeVersion::try_new(*version)
                         .expect("build.rs earns every version as a sha256 of its closure"),
+                    verifiability: Verifiability::Closed,
                     extract: Arc::new(move |reach: &Reach| {
                         let bridge = gmr_survey::bridge::run_blocking(Bridge::<SqliteIndex>::open(
                             &reach.cwd,
@@ -216,6 +217,7 @@ fn bind(corpus: Arc<Bridge<SqliteIndex>>) -> BTreeMap<ProbeName, Registered> {
                 Registered {
                     version: ProbeVersion::try_new(*version)
                         .expect("build.rs earns every version as a sha256 of its closure"),
+                    verifiability: Verifiability::Closed,
                     extract: Arc::new(move |reach: &Reach| {
                         probe(
                             &narrow_of(&reach.params),

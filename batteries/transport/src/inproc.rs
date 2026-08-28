@@ -38,6 +38,7 @@ pub type Extract = dyn Fn(&Reach) -> Result<Value, ExtractError> + Send + Sync;
 
 pub struct Registered {
     pub version: ProbeVersion,
+    pub verifiability: Verifiability,
     pub extract: Arc<Extract>,
 }
 
@@ -68,9 +69,10 @@ impl Transport for InProcess {
     }
 
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
+        let registered = self.probes.get(name)?;
         Some(Derivation {
-            version: self.probes.get(name)?.version.clone(),
-            verifiability: Verifiability::Closed,
+            version: registered.version.clone(),
+            verifiability: registered.verifiability.clone(),
         })
     }
 
@@ -153,6 +155,7 @@ mod tests {
                 ProbeName::new(name),
                 Registered {
                     version: version("a"),
+                    verifiability: Verifiability::Closed,
                     extract,
                 },
             )]),
@@ -323,6 +326,27 @@ mod tests {
             Verifiability::Closed
         );
         assert!(t.resolve(&ProbeName::new("absent")).is_none());
+    }
+
+    #[test]
+    fn what_a_closure_leaves_open_is_the_registrant_s_to_say() {
+        let open = gmr_core::Verifiability::open([gmr_core::Openness::Network]);
+        let t = InProcess::new(
+            ".",
+            BTreeMap::from([(
+                ProbeName::new("p"),
+                Registered {
+                    version: version("a"),
+                    verifiability: open.clone(),
+                    extract: Arc::new(|_| Ok(json!({}))),
+                },
+            )]),
+        );
+        assert_eq!(
+            t.resolve(&ProbeName::new("p")).unwrap().verifiability,
+            open,
+            "this transport links whatever closure a domain hands it, and a closure that              reaches the network is one of the things a domain may hand it. Answering              Closed for every registration would be the transport making a provenance              claim on behalf of code it has never seen -- the one claim this system              exists to not make. Every sibling transport derives or declares this; only              this one had no way for the registrant to speak"
+        );
     }
 
     #[tokio::test]
