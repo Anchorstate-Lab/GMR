@@ -1038,3 +1038,255 @@ async fn an_anchor_names_each_memory_once_however_many_assertions_stand_on_it() 
         1,
     );
 }
+
+type Deadline = Arc<std::sync::Mutex<Vec<std::time::Instant>>>;
+
+struct Deadlines {
+    inner: Arc<Versioned>,
+    seen: Deadline,
+}
+
+#[async_trait]
+impl ContentProvider for Deadlines {
+    fn provider(&self) -> &ProviderId {
+        self.inner.provider()
+    }
+
+    async fn fetch(
+        &self,
+        id: &ExternalId,
+        budget: &Budget,
+    ) -> Result<Option<Fetched>, ContentError> {
+        self.seen.lock().unwrap().push(budget.deadline());
+        self.inner.fetch(id, budget).await
+    }
+}
+
+struct Probing {
+    kind: gmr_core::Kind,
+    seen: Deadline,
+}
+
+#[async_trait]
+impl gmr_probe::Transport for Probing {
+    fn kind(&self) -> &gmr_core::Kind {
+        &self.kind
+    }
+
+    fn resolve(&self, _name: &gmr_core::ProbeName) -> Option<gmr_core::Derivation> {
+        Some(gmr_core::Derivation {
+            version: gmr_core::ProbeVersion::of(gmr_core::content_hash_of_bytes(b"probing")),
+            verifiability: gmr_core::Verifiability::Closed,
+        })
+    }
+
+    async fn invoke(
+        &self,
+        call: &gmr_probe::ProbeCall<'_>,
+    ) -> Result<gmr_core::Outcome, gmr_probe::ProbeError> {
+        self.seen.lock().unwrap().push(call.budget.deadline());
+        Ok(gmr_core::Outcome::Found {
+            facts: gmr_core::Facts::new(serde_json::json!({ "x": 1 })),
+        })
+    }
+}
+
+fn watched() -> (World, Deadline, Deadline) {
+    let probed: Deadline = Default::default();
+    let fetched: Deadline = Default::default();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("memories")).unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":1}"#).unwrap();
+    let bindings = Arc::new(MemoryBindings::default());
+    let runtime = Runtime::builder()
+        .transport(Arc::new(Probing {
+            kind: gmr_core::Kind::new("shell"),
+            seen: probed.clone(),
+        }))
+        .provider(Arc::new(Deadlines {
+            inner: Arc::new(Versioned::new(dir.path().to_path_buf(), true)),
+            seen: fetched.clone(),
+        }))
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(bindings.clone())
+        .sealer(bindings.clone())
+        .links(bindings)
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+    (World { dir, runtime }, probed, fetched)
+}
+
+#[tokio::test]
+async fn one_sentence_on_four_anchors_comes_back_with_four_warrants() {
+    let w = World::new(true);
+    for key in ["a", "b", "c", "d"] {
+        w.open(key).await;
+    }
+    w.memory("m.md", "one sentence about four things");
+    w.bind("m.md", &["a", "b", "c", "d"]).await;
+
+    let refs = [Ref::new("git", "memories/m.md")];
+    let out = w
+        .runtime
+        .ground(&refs, &gmr_runtime::Instructions::default())
+        .await
+        .unwrap();
+
+    assert_eq!(out.len(), 1);
+    assert_eq!(
+        out[0].on.len(),
+        4,
+        "each anchor carries its own observation state. A single warrant would have to be \
+         relative to whichever anchor the caller happened to ask through, and a reference \
+         keyed call has no such anchor"
+    );
+    assert!(
+        out[0]
+            .on
+            .iter()
+            .all(|a| matches!(a, gmr_runtime::Anchored::On { .. })),
+        "{:?}",
+        out[0].on
+    );
+    assert!(matches!(out[0].record, Grounding::Current { .. }));
+}
+
+#[tokio::test]
+async fn the_answers_come_back_in_the_order_they_were_asked_for() {
+    let w = World::new(true);
+    w.open("a").await;
+    for name in ["z.md", "m.md", "a.md"] {
+        w.memory(name, name);
+        w.bind(name, &["a"]).await;
+    }
+
+    let refs: Vec<Ref> = ["z.md", "m.md", "a.md"]
+        .iter()
+        .map(|n| Ref::new("git", format!("memories/{n}")))
+        .collect();
+    let out = w
+        .runtime
+        .ground(&refs, &gmr_runtime::Instructions::default())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        out.iter().map(|s| &s.reference).collect::<Vec<_>>(),
+        refs.iter().collect::<Vec<_>>(),
+        "a caller zips these against what it asked for. Reordering does not lose an answer, \
+         it attributes one sentence's drift to another, silently, and worse the more \
+         sentences there are"
+    );
+}
+
+#[tokio::test]
+async fn one_reference_nobody_can_answer_for_does_not_take_the_batch_with_it() {
+    let w = World::new(true);
+    w.open("a").await;
+    w.memory("bound.md", "bound to a live anchor");
+    w.bind("bound.md", &["a"]).await;
+    w.memory("dangling.md", "bound to a key nothing opened");
+    w.bind("dangling.md", &["never-opened"]).await;
+    w.memory("loose.md", "bound to nothing at all");
+
+    let refs: Vec<Ref> = ["bound.md", "dangling.md", "loose.md"]
+        .iter()
+        .map(|n| Ref::new("git", format!("memories/{n}")))
+        .collect();
+    let out = w
+        .runtime
+        .ground(&refs, &gmr_runtime::Instructions::default())
+        .await
+        .expect("a reference GMR cannot justify is an answer about that reference, not a fault");
+
+    assert_eq!(out.len(), 3);
+    assert!(matches!(out[0].on[0], gmr_runtime::Anchored::On { .. }));
+    assert!(
+        matches!(out[1].on[0], gmr_runtime::Anchored::Unopened { .. }),
+        "bound to a key nothing ever opened: go fix the binding, which is not what an empty \
+         `on` tells you to do"
+    );
+    assert!(
+        out[2].on.is_empty(),
+        "nothing anchors this sentence, so nothing warrants it -- and that is an answer"
+    );
+    assert!(
+        matches!(out[0].record, Grounding::Current { .. })
+            && matches!(out[1].record, Grounding::Current { .. }),
+        "the record side is answered whatever the anchor side says -- the dangling one's text \
+         is still exactly what was bound, and a broken binding does not change that"
+    );
+    assert!(
+        matches!(out[2].record, Grounding::Unverified { .. }),
+        "never bound means no baseline to compare against, which is a different answer from \
+         `unchanged` and must not be dressed up as one: {:?}",
+        out[2].record
+    );
+}
+
+#[tokio::test]
+async fn evidence_carries_addresses_and_versions_and_no_values() {
+    let w = World::new(true);
+    w.open("a").await;
+    w.memory("m.md", "a sentence");
+    w.bind("m.md", &["a"]).await;
+
+    let refs = [Ref::new("git", "memories/m.md")];
+    let out = w
+        .runtime
+        .ground(&refs, &gmr_runtime::Instructions::default())
+        .await
+        .unwrap();
+
+    let gmr_runtime::Anchored::On { evidence, .. } = &out[0].on[0] else {
+        panic!("expected an opened anchor")
+    };
+    assert!(evidence.reading.is_some(), "the address of what was read");
+    assert!(evidence.instrument.is_some(), "which instrument read it");
+    assert!(evidence.bound_at.is_some(), "when the sentence was bound");
+
+    let json = serde_json::to_value(evidence).unwrap();
+    let text = json.to_string();
+    assert!(
+        !text.contains("\"x\""),
+        "evidence names what to go and check, never the value it would check. GMR neither \
+         caches business data nor promises its freshness, so handing back the reading would \
+         make it a bad database: {text}"
+    );
+}
+
+#[tokio::test]
+async fn both_phases_of_one_call_run_against_one_deadline() {
+    let (w, probed, fetched) = watched();
+    w.open("a").await;
+    w.memory("m.md", "a sentence");
+    w.bind("m.md", &["a"]).await;
+    probed.lock().unwrap().clear();
+    fetched.lock().unwrap().clear();
+
+    let refs = [Ref::new("git", "memories/m.md")];
+    w.runtime
+        .ground(
+            &refs,
+            &gmr_runtime::Instructions {
+                max_staleness: Some(std::time::Duration::ZERO),
+                budget: Some(std::time::Duration::from_millis(40)),
+            },
+        )
+        .await
+        .unwrap();
+
+    let probed = probed.lock().unwrap().clone();
+    let fetched = fetched.lock().unwrap().clone();
+    assert_eq!(probed.len(), 1, "the anchor was observed once");
+    assert_eq!(fetched.len(), 1, "the record was fetched once");
+    assert_eq!(
+        probed[0], fetched[0],
+        "a caller asking for 40ms means this call takes 40ms, not 40 for looking at the \
+         world and 40 more for reading the sentence. Both phases descend from one budget \
+         and are minted together, so a span shorter than either phase's own limit clamps \
+         both to the same instant -- which is only observable if they were not started one \
+         after the other"
+    );
+}

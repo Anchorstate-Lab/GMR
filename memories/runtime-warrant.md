@@ -5,6 +5,7 @@ about:
   - crates/gmr-runtime/src/read.rs#Knowledge
   - crates/gmr-runtime/src/read.rs#warranted
   - crates/gmr-runtime/src/read.rs#holding
+  - crates/gmr-runtime/src/read.rs#folded
 watch: [sig, logic]
 ---
 
@@ -124,6 +125,12 @@ firehose arriving through the other door.
 
 So the state diff decides and `moved_at` only gates it: `bound >= moved_at`
 means no state change has happened since the bind, so the fold can be skipped.
+The gate is now what decides whether the journal is read at all: `holding` takes
+the log rather than a slice of entries, answers `Holds`, `Absent` or `Undated`
+off the view alone, and calls `entries` only on the far side of the gate, where
+`folded` does the comparison. Folding back to the moment of binding is the one
+question in the read path that genuinely needs the whole log, and it is now the
+only thing that asks for it.
 Past that gate the answer comes from comparing the two states, and an empty diff
 is `Holds` — including when the world moved out and came back, which is the same
 early cutoff [[runtime-moved-at]] argues for one level down.

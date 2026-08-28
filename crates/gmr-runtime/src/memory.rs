@@ -147,7 +147,7 @@ impl MemoryLens {
             links: self.links.links_of(&reference).await?,
             grounded: !bound.anchors().is_empty(),
             grounding: self
-                .ground(&reference, bound_version.as_ref(), budget)
+                .grounding_of(&reference, bound_version.as_ref(), budget)
                 .await,
             reference,
             bound_version,
@@ -159,7 +159,7 @@ impl MemoryLens {
         })
     }
 
-    async fn ground(
+    pub(crate) async fn grounding_of(
         &self,
         reference: &Ref,
         bound_version: Option<&Version>,

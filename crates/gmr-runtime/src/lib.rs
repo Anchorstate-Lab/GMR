@@ -31,8 +31,8 @@ pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;
 pub use read::{
-    AnchorView, Before, Blind, Footing, Grounded, Grounding, Holding, HoldingKind, Instructions,
-    Knowledge, KnowledgeKind, MemoryView, Sighting, Warrant,
+    AnchorView, Anchored, Before, Blind, Evidence, Footing, Grounded, Grounding, Holding,
+    HoldingKind, Instructions, Knowledge, KnowledgeKind, MemoryView, Sighting, Standing, Warrant,
 };
 pub use revise::Revised;
 pub use scheduler::Scheduler;

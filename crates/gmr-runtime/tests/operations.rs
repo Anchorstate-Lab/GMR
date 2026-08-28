@@ -140,7 +140,7 @@ impl World {
 
     fn elsewhere(&self) -> World {
         let dir = tempfile::tempdir().unwrap();
-        let bindings = Arc::new(MemoryBindings::default());
+        let bindings = self.bindings.clone();
         let runtime = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(self.journal.clone())
@@ -2184,5 +2184,92 @@ async fn two_opens_of_one_key_cannot_both_land() {
         1,
         "a second Open replaces the fold outright, so it does not add a duplicate entry -- \
          it silently discards every observation and every accumulated bit since the first one"
+    );
+}
+
+#[tokio::test]
+async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let early = Ref::new("git", "early.md");
+    w.runtime
+        .bind(
+            early.clone(),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    for n in 1..=8 {
+        w.write(&format!(r#"{{"x":{n}}}"#));
+        w.runtime.observe(&key()).await.unwrap();
+    }
+
+    let late = Ref::new("git", "late.md");
+    w.runtime
+        .bind(
+            late.clone(),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let how = gmr_runtime::Instructions::default();
+
+    w.journal.reset();
+    w.runtime
+        .ground(std::slice::from_ref(&late), &how)
+        .await
+        .unwrap();
+    assert_eq!(
+        w.journal.rows(),
+        0,
+        "bound after the last move, so the answer is `Holds` and nothing has to be folded \
+         back to. The view itself comes off the checkpoint"
+    );
+
+    w.journal.reset();
+    let held = w
+        .runtime
+        .ground(std::slice::from_ref(&early), &how)
+        .await
+        .unwrap();
+    assert!(
+        w.journal.rows() >= 9,
+        "bound before the moves, so `Holding` has to fold the log back to the moment of \
+         binding to say what changed. That read is the one thing here that genuinely needs \
+         the whole log, and it is asked for only in this case: {}",
+        w.journal.rows()
+    );
+    assert!(
+        matches!(held[0].on[0].warrant(), Some(w) if !matches!(w.holding, Holding::Holds)),
+        "{:?}",
+        held[0].on[0]
+    );
+
+    let cold = w.elsewhere();
+    cold.journal.reset();
+    cold.runtime.ground(&[late], &how).await.unwrap();
+    assert!(
+        cold.journal.rows() >= 9,
+        "a runtime that has never folded this log has no checkpoint to stand on, which is \
+         what makes the zero above a measurement and not an accident: {}",
+        cold.journal.rows()
+    );
+
+    w.journal.reset();
+    w.runtime.ground(&[early], &how).await.unwrap();
+    assert!(
+        w.journal.rows() >= 9,
+        "and the fold-back is not cached either"
     );
 }

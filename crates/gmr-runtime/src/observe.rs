@@ -120,7 +120,7 @@ impl Runtime {
     }
 }
 
-async fn observe(
+pub(crate) async fn observe(
     log: &AnchorLog,
     observer: &Observer,
     scheduler: &Scheduler,

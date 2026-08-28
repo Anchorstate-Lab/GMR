@@ -14,7 +14,9 @@ be compared against `bound_at_seq` to answer "did the ground move under this
 memory". It no longer answers that — see [[runtime-warrant]]: a recapture
 changes the state too, so the seq alone reported a move where the diff showed
 none. What `moved_at` does now is **gate** that question cheaply: at or before
-it, no state change has happened since the bind, so nothing needs folding.
+it, no state change has happened since the bind, so nothing needs folding -- and
+since [[runtime-warrant]]'s `holding` reads the journal only past this gate,
+what the gate saves is not arithmetic but a whole-log read.
 
 It used to be compared against `head`.
 

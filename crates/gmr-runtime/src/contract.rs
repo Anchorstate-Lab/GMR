@@ -1,7 +1,10 @@
 pub use gmr_core::{Openness, Ref, Verifiability, Version};
 
-pub use crate::read::{Before, Blind, Grounding, Holding, Instructions, Knowledge, Warrant};
+pub use crate::read::{
+    Anchored, Before, Blind, Evidence, Grounding, Holding, Instructions, Knowledge, Standing,
+    Warrant,
+};
 
-pub const CONTRACT: &str = "gmr.contract.v1";
+pub const CONTRACT: &str = "gmr.contract.v2";
 
-pub const SHAPE: &str = "sha256:156ad45f17928933ef9b1250083b5b86ee64a189d697956fdd00805aa8b6d976";
+pub const SHAPE: &str = "sha256:e591d8d4ec80c2446a450b2368d25ba387d086e7f414e1c1ac5a4374ba01a860";
