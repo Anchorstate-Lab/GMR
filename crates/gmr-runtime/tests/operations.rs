@@ -396,7 +396,7 @@ async fn edges_can_be_filtered_by_status() {
             .changed_since(start, Some(&StatusId::new("body-moved")))
             .await
             .unwrap()
-            .standing
+            .raised
             .is_none(),
         "a status filter is a specific question about edges; standing has no \
          status to filter by, so it must come back absent, not an empty list \
@@ -768,9 +768,9 @@ async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
 
     let a = stale.runtime.changed_since(0, None).await.unwrap();
     let b = stale.runtime.changed_since(a.cursor, None).await.unwrap();
-    assert_eq!(a.standing.iter().flatten().count(), 1);
+    assert_eq!(a.raised.iter().flatten().count(), 1);
     assert_eq!(
-        b.standing.iter().flatten().count(),
+        b.raised.iter().flatten().count(),
         1,
         "there are no new entries after the cursor, but the anchor is still stale now"
     );

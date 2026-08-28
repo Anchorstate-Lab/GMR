@@ -28,7 +28,7 @@ pub use gmr_runtime::{
     AnchorHealth, AnchorLog, AnchorView, AssemblyError, Before, Blind, Bound, Corpus, CorpusHealth,
     Edge, Edges, Footing, Grounded, Grounding, Holding, HoldingKind, Instructions, Knowledge,
     KnowledgeKind, Landed, Looked, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Part,
-    Passed, Policy, Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
+    Passed, Policy, Raised, Revised, Runtime, RuntimeError, Scheduler, Sighting, Supersede,
     Warrant,
 };
 pub use gmr_store::{

@@ -9,7 +9,7 @@ use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
-use gmr_runtime::{Before, Grounding, OpenRequest, Runtime, Standing};
+use gmr_runtime::{Before, Grounding, OpenRequest, Raised, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
@@ -286,10 +286,10 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
     let before = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
         !before
-            .standing
+            .raised
             .iter()
             .flatten()
-            .any(|e| matches!(e, Standing::Rewritten { .. })),
+            .any(|e| matches!(e, Raised::Rewritten { .. })),
         "not rewritten yet"
     );
 
@@ -314,15 +314,15 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
-        after.standing.iter().flatten().any(|e| matches!(
+        after.raised.iter().flatten().any(|e| matches!(
             e,
-            Standing::Rewritten {
+            Raised::Rewritten {
                 before: Before::Retrieved { .. },
                 ..
             }
         )),
         "record rewrites must be reported: {:?}",
-        after.standing
+        after.raised
     );
 }
 
@@ -399,12 +399,12 @@ async fn an_unreachable_bound_version_is_flagged_not_silently_dropped() {
             .changed_since(0, None)
             .await
             .unwrap()
-            .standing
+            .raised
             .iter()
             .flatten()
             .any(|e| matches!(
                 e,
-                Standing::Rewritten {
+                Raised::Rewritten {
                     before: Before::NoHistory,
                     ..
                 }
@@ -744,12 +744,12 @@ async fn a_store_that_will_not_answer_is_reported_not_read_as_nothing_happened()
         view.memories[0].grounding
     );
 
-    let standing = w.runtime.changed_since(0, None).await.unwrap().standing;
+    let standing = w.runtime.changed_since(0, None).await.unwrap().raised;
     assert!(
         standing
             .iter()
             .flatten()
-            .any(|e| matches!(e, Standing::Unreachable { .. })),
+            .any(|e| matches!(e, Raised::Unreachable { .. })),
         "a provider that cannot be reached used to leave `rewritten` false, so this walk \
          emitted nothing at all and `gmr edges` told the reader everything was fine. \
          Not knowing is a standing condition of its own: {standing:?}"

@@ -21,7 +21,7 @@ mod translate;
 
 pub use assembly::{AssemblyError, Part, Runtime, RuntimeBuilder};
 pub use bind::Landed;
-pub use edges::{Edge, Edges, Standing};
+pub use edges::{Edge, Edges, Raised};
 pub use error::RuntimeError;
 pub use health::{AnchorHealth, Corpus, CorpusHealth};
 pub use log::AnchorLog;
