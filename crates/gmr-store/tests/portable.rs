@@ -3,7 +3,7 @@ use gmr_core::{
     Observation, Outcome, ProbeName, ProbeRef, ProbeVersion, Ref, Rule, State, Transitions,
     Version, Versions, fold,
 };
-use gmr_store::{Asserted, BindingStore, ErrorKind, Fence, Journal, LinkStore, Sealer};
+use gmr_store::{Asserted, BindingStore, ErrorKind, Expected, Fence, Journal, LinkStore, Sealer};
 
 fn versions() -> Versions {
     Versions {
@@ -58,6 +58,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 at: chrono::Utc::now(),
             },
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();
@@ -72,6 +73,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 versions: versions(),
             },
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();
@@ -91,6 +93,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 at: chrono::Utc::now(),
             },
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();

@@ -1,4 +1,4 @@
-use crate::{Chained, Fence, Journal, StoreError};
+use crate::{Chained, Expected, Fence, Journal, StoreError};
 use async_trait::async_trait;
 use gmr_core::{AnchorKey, Entry, Seq};
 use sqlx::{Row, SqlitePool};
@@ -22,6 +22,7 @@ impl Journal for SqliteJournal {
         anchor: &AnchorKey,
         entry: &Entry,
         fence: Fence,
+        expected: Expected,
     ) -> Result<Seq, StoreError> {
         let body = serde_json::to_string(entry)
             .map_err(|e| StoreError::other(format!("could not serialise the entry: {e}")))?;
@@ -32,7 +33,7 @@ impl Journal for SqliteJournal {
             .await
             .map_err(db_err)?;
 
-        let appended = appended(&mut held, anchor, entry, fence, &body).await;
+        let appended = appended(&mut held, anchor, entry, fence, expected, &body).await;
         let closed = sqlx::query(match appended.is_ok() {
             true => "COMMIT",
             false => "ROLLBACK",
@@ -94,16 +95,17 @@ async fn appended(
     anchor: &AnchorKey,
     entry: &Entry,
     fence: Fence,
+    expected: Expected,
     body: &str,
 ) -> Result<Seq, StoreError> {
-    let seen: i64 =
-        sqlx::query_scalar("SELECT COALESCE(MAX(fence), 0) FROM journal WHERE anchor = ?1")
+    let head: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM journal WHERE anchor = ?1")
             .bind(anchor.as_str())
             .fetch_one(&mut *held)
             .await
             .map_err(db_err)?;
 
-    crate::journal::guard(fence, seen, entry)?;
+    crate::journal::guard(anchor, expected, head as Seq)?;
 
     let prev: Option<String> = sqlx::query_scalar("SELECT hash FROM journal ORDER BY seq DESC")
         .fetch_optional(&mut *held)

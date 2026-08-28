@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use gmr_core::{AnchorKey, AnchorState, Entry, Seq, resume};
-use gmr_store::{Fence, Journal};
+use gmr_store::{Expected, Fence, Journal};
 
 use crate::error::RuntimeError;
 
@@ -74,8 +74,9 @@ impl AnchorLog {
         key: &AnchorKey,
         entry: &Entry,
         fence: Fence,
+        expected: Expected,
     ) -> Result<Seq, RuntimeError> {
-        Ok(self.journal.append(key, entry, fence).await?)
+        Ok(self.journal.append(key, entry, fence, expected).await?)
     }
 
     pub async fn anchors(&self) -> Result<Vec<AnchorKey>, RuntimeError> {

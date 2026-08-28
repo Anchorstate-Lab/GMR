@@ -22,7 +22,7 @@ fn criteria(
 
 fn settled(observed: &Observed, before: &State) -> Option<(bool, State)> {
     match observed {
-        Observed::Attempt { .. } | Observed::Closed => None,
+        Observed::Attempt { .. } | Observed::Closed | Observed::Contended => None,
         Observed::Transitioned { to, .. } => Some((true, to.clone())),
         Observed::Unchanged { state } => Some((false, state.clone())),
         Observed::Still => Some((false, before.clone())),

@@ -2,7 +2,7 @@ use gmr_core::{
     Anchor, AnchorKey, Entry, Expr, FactAddress, Facts, Kind, Observation, Outcome, ProbeName,
     ProbeRef, ProbeVersion, Rule, State, Transitions, Versions, fold,
 };
-use gmr_store::{ErrorCode, ErrorKind, Fence, Journal};
+use gmr_store::{ErrorCode, ErrorKind, Expected, Fence, Journal};
 
 fn entry(value: &str) -> Entry {
     Entry::Open {
@@ -48,6 +48,7 @@ async fn the_log_refuses_rewriting_itself() {
             &AnchorKey::new("core::pure"),
             &entry("old"),
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();
@@ -147,7 +148,7 @@ async fn a_state_outlives_the_process_that_captured_it() {
         let store = gmr_store::sqlite::open(&path).await.unwrap();
         store
             .journal()
-            .append(&key, &entry("captured-first"), Fence::Unleased)
+            .append(&key, &entry("captured-first"), Fence::Unleased, Expected::Any)
             .await
             .unwrap();
         store.close().await;
@@ -203,7 +204,7 @@ async fn the_journal_links_every_entry_onto_the_one_before_it() {
     let b = gmr_core::AnchorKey::new("b");
     for (key, at) in [(&a, 1), (&b, 2), (&a, 3)] {
         journal
-            .append(key, &attempt(at), Fence::Unleased)
+            .append(key, &attempt(at), Fence::Unleased, Expected::Any)
             .await
             .unwrap();
     }
@@ -281,7 +282,7 @@ async fn two_writers_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
                     let key = gmr_core::AnchorKey::new(format!("anchor-{who}"));
                     for n in 0..EACH {
                         journal
-                            .append(&key, &attempt(who * 1000 + n), Fence::Unleased)
+                            .append(&key, &attempt(who * 1000 + n), Fence::Unleased, Expected::Any)
                             .await
                             .expect("a second writer is contention, not a failure");
                     }
@@ -365,7 +366,7 @@ async fn cross_process_journal_writer() {
 
     for n in 0..EACH {
         journal
-            .append(&key, &attempt(who * 1000 + n), Fence::Unleased)
+            .append(&key, &attempt(who * 1000 + n), Fence::Unleased, Expected::Any)
             .await
             .expect("a writer in another process is contention, not a failure");
     }

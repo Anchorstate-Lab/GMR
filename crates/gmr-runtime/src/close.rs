@@ -1,6 +1,6 @@
 use chrono::Utc;
 use gmr_core::{AnchorKey, Entry};
-use gmr_store::Fence;
+use gmr_store::{Expected, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -44,6 +44,7 @@ async fn close(
             at: Utc::now(),
         },
         Fence::Unleased,
+        Expected::Head(state.head),
     )
     .await?;
     Ok(())

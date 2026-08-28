@@ -3,7 +3,7 @@ use gmr_core::{
     ProbeName, ProbeRef, ProbeVersion, ReasonClass, Ref, Rule, State, Transitions, Version,
     Versions, fold,
 };
-use gmr_store::{Asserted, BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
+use gmr_store::{Asserted, BindingStore, ErrorCode, ErrorKind, Expected, Fence, Journal, Sealer};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()
@@ -85,7 +85,7 @@ async fn journal_hands_back_what_it_was_given<J: Journal>(j: &J) {
     let key = AnchorKey::new("core::modules");
     let entry = open_entry("core::modules", &["count"], serde_json::json!(5));
 
-    let seq = j.append(&key, &entry, Fence::Unleased).await.unwrap();
+    let seq = j.append(&key, &entry, Fence::Unleased, Expected::Any).await.unwrap();
     let back = j.entries(&key, 0).await.unwrap();
 
     assert_eq!(back.len(), 1);
@@ -104,6 +104,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
         &a,
         &open_entry("a", &["x"], serde_json::json!(1)),
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -111,6 +112,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
         &b,
         &open_entry("b", &["x"], serde_json::json!(2)),
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -123,6 +125,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
             at: at(10),
         },
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -136,41 +139,49 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
     assert_eq!(anchors, vec![a, b]);
 }
 
-fn author_entry() -> Entry {
-    Entry::Close {
-        context: gmr_core::ContentHash::try_new("e".repeat(64)).unwrap(),
-        rationale: gmr_core::ContentHash::try_new("f".repeat(64)).unwrap(),
-        at: at(20),
-    }
-}
+async fn journal_refuses_an_entry_folded_against_a_head_that_moved<J: Journal>(j: &J) {
+    let key = AnchorKey::new("contended");
+    let other = AnchorKey::new("elsewhere");
+    let entry = open_entry("contended", &["x"], serde_json::json!(1));
 
-async fn journal_refuses_a_stale_fencing_token<J: Journal>(j: &J) {
-    let key = AnchorKey::new("fenced");
-    let entry = open_entry("fenced", &["x"], serde_json::json!(1));
-
-    j.append(&key, &entry, Fence::Unleased).await.unwrap();
-    j.append(&key, &entry, Fence::Unleased).await.unwrap();
-
-    j.append(&key, &entry, Fence::Held(7)).await.unwrap();
-
-    let err = j.append(&key, &entry, Fence::Held(3)).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Constraint);
-    assert_eq!(err.code, ErrorCode::StaleFence);
-    assert!(
-        !err.kind.is_retryable(),
-        "retrying a stale token cannot help"
-    );
-
-    j.append(&key, &entry, Fence::Held(8)).await.unwrap();
-
-    let err = j.append(&key, &entry, Fence::Unleased).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Constraint);
-    assert_eq!(err.code, ErrorCode::LeaseManagedObservation);
-
-    j.append(&key, &author_entry(), Fence::Unleased)
+    let first = j
+        .append(&key, &entry, Fence::Unleased, Expected::Head(0))
         .await
         .unwrap();
-    assert_eq!(j.entries(&key, 0).await.unwrap().len(), 5);
+
+    let err = j
+        .append(&key, &entry, Fence::Unleased, Expected::Head(0))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Constraint);
+    assert_eq!(err.code, ErrorCode::HeadMoved);
+    assert!(
+        !err.kind.is_retryable(),
+        "the entry has to be recomputed against the head that is actually there; \
+         re-sending the same bytes cannot help"
+    );
+
+    let second = j
+        .append(&key, &entry, Fence::Unleased, Expected::Head(first))
+        .await
+        .unwrap();
+
+    j.append(&other, &entry, Fence::Unleased, Expected::Any)
+        .await
+        .unwrap();
+    j.append(&key, &entry, Fence::Unleased, Expected::Head(second))
+        .await
+        .expect(
+            "seq is global but a head is this anchor's own — an append elsewhere must not \
+             invalidate work folded against this anchor, or every anchor would conflict with \
+             every other one",
+        );
+
+    j.append(&key, &entry, Fence::Unleased, Expected::Any)
+        .await
+        .expect("an entry decided by nothing it read carries no expectation to break");
+
+    assert_eq!(j.entries(&key, 0).await.unwrap().len(), 4);
 }
 
 async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
@@ -179,6 +190,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
         &key,
         &open_entry("folded", &["shape"], serde_json::json!("old")),
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -190,6 +202,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
             at: at(10),
         },
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -507,7 +520,7 @@ macro_rules! links_conformance {
 journal_conformance!(
     journal_hands_back_what_it_was_given,
     journal_is_ordered_and_scoped_per_anchor,
-    journal_refuses_a_stale_fencing_token,
+    journal_refuses_an_entry_folded_against_a_head_that_moved,
     a_stored_log_folds_back_into_state,
 );
 

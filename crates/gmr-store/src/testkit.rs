@@ -11,7 +11,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::bindings::{Asserted, BindingRecord, BindingStore, Revocation};
 use crate::error::StoreError;
-use crate::journal::{Fence, Journal};
+use crate::journal::{Expected, Fence, Journal};
 use crate::links::LinkStore;
 use crate::queue::{Disposition, Queue, Ticket};
 use crate::sealer::Sealer;
@@ -19,7 +19,6 @@ use crate::sealer::Sealer;
 #[derive(Default)]
 struct JournalInner {
     entries: Vec<(AnchorKey, Seq, Entry)>,
-    fences: HashMap<AnchorKey, u64>,
     next: Seq,
 }
 
@@ -34,14 +33,18 @@ impl Journal for MemoryJournal {
         &self,
         anchor: &AnchorKey,
         entry: &Entry,
-        fence: Fence,
+        _fence: Fence,
+        expected: Expected,
     ) -> Result<Seq, StoreError> {
         let mut inner = self.inner.lock().unwrap();
-        let seen = inner.fences.get(anchor).copied().unwrap_or(0);
-        crate::journal::guard(fence, seen as i64, entry)?;
-        inner
-            .fences
-            .insert(anchor.clone(), fence.epoch().unwrap_or(0).max(seen));
+        let head = inner
+            .entries
+            .iter()
+            .filter(|(a, _, _)| a == anchor)
+            .map(|(_, s, _)| *s)
+            .next_back()
+            .unwrap_or(0);
+        crate::journal::guard(anchor, expected, head)?;
         inner.next += 1;
         let seq = inner.next;
         inner.entries.push((anchor.clone(), seq, entry.clone()));

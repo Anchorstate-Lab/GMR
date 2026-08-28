@@ -4,7 +4,7 @@ use chrono::Utc;
 use gmr_core::{
     Anchor, AnchorKey, Entry, ProbeRef, RunSettings, State, StatusId, Superseded, Transitions,
 };
-use gmr_store::Fence;
+use gmr_store::{Expected, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -111,6 +111,7 @@ async fn open(
             at,
         },
         Fence::Unleased,
+        Expected::Head(0),
     )
     .await?;
 

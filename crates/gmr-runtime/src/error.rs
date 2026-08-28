@@ -61,6 +61,10 @@ pub enum RuntimeError {
 }
 
 impl RuntimeError {
+    pub fn head_moved(&self) -> bool {
+        matches!(self, Self::Store(e) if e.code == gmr_store::ErrorCode::HeadMoved)
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Self::NoSuchAnchor { .. } => "no_such_anchor",
