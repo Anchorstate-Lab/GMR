@@ -18,6 +18,12 @@ allowed through to open an anchor that could only ever fail identically on
 every future observation — refusing early is strictly better than refusing
 forever, one observation at a time.
 
+Opening an anchor that records digests only over a probe that answers in
+plaintext is refused for the same reason, and by the same guard `observe`
+passes through ([[anchor-recorded]]): the refusal is what makes the mode worth
+declaring, so the one write path that could have opened without it does not
+get to.
+
 Failing to compute an initial *state*, though, is not itself a reason to
 refuse opening: an anchor can legitimately precede whatever it is
 watching, in which case the transition table naturally resolves to

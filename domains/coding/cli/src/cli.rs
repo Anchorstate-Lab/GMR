@@ -64,7 +64,15 @@ pub enum Command {
     #[command(display_order = 1)]
     Anchor {
         /// `path` or `path#name`. The probe, shape and position follow from it.
+        /// A `http://` or `https://` URL declares a fetched fact instead: the URL
+        /// and the `#` selector are written into .anchor/probes.toml as a probe you
+        /// can read and review, and the anchor is keyed by a short name, not the URL.
         coordinate: Option<String>,
+        /// The name to key a fetched fact by. Without it a name is derived from the
+        /// URL's last segment and the selector, and a collision is an error rather
+        /// than a guess. Ignored for path coordinates, which are their own name.
+        #[arg(long = "as")]
+        named: Option<String>,
         /// The memory itself, written into this repository as a note. Reach for it
         /// when you keep no memories of your own: in git a note is the memory and
         /// the declaration in one file. If you already have a memory system, write
@@ -126,7 +134,13 @@ pub enum Command {
 
     /// Each anchor's current state.
     #[command(hide = true)]
-    Read { key: Option<String> },
+    Read {
+        key: Option<String>,
+        /// Look again first if the last sighting is older than this many seconds.
+        /// Unset, the stored reading is served whatever its age.
+        #[arg(long)]
+        fresher_than_secs: Option<u64>,
+    },
 
     /// Accept what an anchor now shows: re-pin its baseline, or take the
     /// criteria its declaration changed. Needs --why, and the reason is sealed.

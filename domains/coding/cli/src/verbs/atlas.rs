@@ -56,7 +56,7 @@ fn trail_of(key: &str) -> Vec<String> {
 fn anchor_tone(view: &AnchorView, delivering: bool, unclaimed: bool) -> Tone {
     if view.closed {
         Tone::Muted
-    } else if view.attempts > 0 || matches!(view.sighting, Sighting::Absent) {
+    } else if view.faltering.is_some() || matches!(view.sighting, Sighting::Absent) {
         Tone::Alarm
     } else if delivering || unclaimed {
         Tone::Notice
@@ -92,8 +92,8 @@ fn anchor_node(view: &AnchorView, tone: Tone) -> Node {
             node = node.badge(status.to_string());
         }
     }
-    if view.attempts > 0 {
-        node = node.fact("failed attempts", view.attempts.to_string());
+    if let Some(f) = &view.faltering {
+        node = node.fact("failed attempts", f.attempts.to_string());
     }
     if let Some(at) = view.last_sighting {
         node = node.fact("last seen", at.format("%Y-%m-%d %H:%M").to_string());
@@ -116,8 +116,13 @@ fn memory_node(m: &MemoryView, names: &crate::memories::Names, detail: Option<St
     if let Some(html) = detail {
         node = node.detail(html);
     }
-    if m.stale == Some(true) {
-        node = node.fact("bound at", "before this anchor's latest entry");
+    if let Some(w) = &m.warrant {
+        if let Some(said) = crate::render::holding(&w.holding) {
+            node = node.fact("ground", said);
+        }
+        if let Some(said) = crate::render::knowledge(&w.knowledge) {
+            node = node.fact("reading", said);
+        }
     }
     match &m.grounding {
         Grounding::Gone => node = node.fact("gone", "the provider says this record is gone"),
@@ -311,7 +316,7 @@ mod tests {
         );
     }
 
-    fn view_memory(grounded: bool, rewritten: bool, stale: Option<bool>) -> MemoryView {
+    fn view_memory(grounded: bool, rewritten: bool, warrant: Option<gmr::Warrant>) -> MemoryView {
         MemoryView {
             reference: gmr::Ref::new("git", "memories/a.md"),
             bound_version: Some(gmr::Version::new("v1")),
@@ -335,7 +340,7 @@ mod tests {
             grounded,
             links: Vec::new(),
             bound_at_seq: None,
-            stale,
+            warrant,
         }
     }
 
@@ -357,7 +362,7 @@ mod tests {
             status: Some(gmr::StatusId::new(status)),
             sighting: Sighting::Found,
             closed,
-            attempts: 0,
+            faltering: None,
             entered_at: None,
             last_sighting: None,
             sightings: 1,
@@ -393,7 +398,21 @@ mod tests {
     #[test]
     fn a_memory_bound_before_the_latest_entry_is_not_an_alert_by_itself() {
         assert_eq!(
-            memory_tone(&view_memory(true, false, Some(true))).0,
+            memory_tone(&view_memory(
+                true,
+                false,
+                Some(gmr::Warrant {
+                    holding: gmr::Holding::Moved {
+                        axes: vec!["sig".to_owned()],
+                        at: 7,
+                    },
+                    knowledge: gmr::Knowledge::Seen {
+                        at: chrono::Utc::now(),
+                        verifiability: gmr::Verifiability::Closed,
+                    },
+                })
+            ))
+            .0,
             Tone::Calm
         );
         assert_eq!(memory_tone(&view_memory(true, false, None)).0, Tone::Calm);

@@ -3,13 +3,12 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Openness, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
-use gmr_probe::{
-    PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Spent, Transport,
-};
+use gmr_budget::Spent;
+use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Transport};
 
 use crate::closure;
 
@@ -42,7 +41,7 @@ impl Transport for Script {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: closure::of_path(&self.entry(name)?)?,
-            verifiability: Verifiability::Open,
+            verifiability: Verifiability::open([Openness::Interpreter, Openness::HostEnv]),
         })
     }
 
@@ -126,8 +125,8 @@ impl Transport for Script {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gmr_budget::Budget;
     use gmr_core::{ProbeRef, ReasonClass};
-    use gmr_probe::Budget;
     use serde_json::json;
     use std::time::Duration;
 
@@ -201,7 +200,12 @@ mod tests {
         let w = World::new();
         w.write("p.sh", "echo '{\"x\":1}'");
         let before = w.script("p.sh").resolve(&ProbeName::new("deploy")).unwrap();
-        assert_eq!(before.verifiability, Verifiability::Open);
+        assert_eq!(
+            before.verifiability,
+            Verifiability::open([Openness::Interpreter, Openness::HostEnv]),
+            "a script names what it does not close over, so a later grading can tell an \
+             interpreter on PATH from a network call"
+        );
 
         w.write("p.sh", "echo '{\"x\":2}'");
         let after = w.script("p.sh").resolve(&ProbeName::new("deploy")).unwrap();

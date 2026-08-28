@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gmr-budget",
     "crates/gmr-core",
     "crates/gmr-expr",
     "crates/gmr-probe",
@@ -17,7 +18,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.6"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.88.0"
 license = "MIT"
@@ -30,6 +31,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 async-trait = "0.1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 sha2 = "0.10"
 ryu = "1"
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "time", "io-util"] }

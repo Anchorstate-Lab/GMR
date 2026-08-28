@@ -13,22 +13,25 @@ live resolution (see [[runtime-instrument]]) to notice a swapped probe from
 the outside, the same signal `observe` uses internally to catch it.
 
 `MemoryView.bound_at_seq` is the same field `BindingRecord` carries (see
-[[store-binding-record]]) — `None` unless the binding names exactly one
-anchor — taken from the assertion that established the standing baseline
-rather than from the newest one, for the reason in
-[[runtime-standing-baseline]]. `MemoryView.stale` is derived from it inside `read`, relative to
-*this* anchor's current head (`seq < s.head`): a bound-at seq behind the
-head means the anchor has moved since the binding was made. `stale` stays
-`None` when there is nothing to compare against, which includes every
-record carried in via `MemoryLens::carry_linked` (see
-[[runtime-carry-linked]]) — a linked-in record was never bound to this
-anchor at all, so "moved since bound" has no meaning for it.
+[[store-binding-record]]) — the journal's position at bind time — taken
+from the assertion that established the standing baseline rather than from
+the newest one, for the reason in [[runtime-standing-baseline]].
+`MemoryView.warrant` is what `read` derives from it: whether the ground this
+record was bound to still holds, decided by comparing the state as of that seq
+against the state now, with `moved_at` only gating the comparison rather than
+answering it — [[runtime-warrant]] is why that distinction is the whole design,
+[[runtime-moved-at]] is why the gate is `moved_at` and not the head.
+
+`warrant` is `None` on exactly the records that were never bound to this anchor:
+`ground` fills it in while walking `bindings_on`, and `MemoryLens::carry_linked`
+(see [[runtime-carry-linked]]) appends its records afterwards. A linked-in record
+has no binding seq here, so "moved since bound" has nothing to mean.
 
 Everything about *whether the record still says what it said* lives in one
 field, `MemoryView.grounding`, and is written up in [[runtime-grounding]].
-`stale` and `grounding` answer different questions and neither implies the
-other: `stale` is about this anchor moving, `grounding` is about the record
-moving.
+`warrant` and `grounding` answer different questions and neither implies the
+other: `warrant` is about the fact underneath the record, `grounding` is about
+the record itself.
 
 ## A `MemoryView` carries how its assertions arose
 
@@ -46,7 +49,13 @@ with no recorded time has none to give.
 
 ## When this changes, ask
 
-Is `view.stale` still computed only for records actually bound to this
-anchor, never for ones carried in by a link? Computing it for a linked
-record would compare against a head the binding was never actually made
-against.
+Is `view.warrant` still computed only for records actually bound to this
+anchor, never for ones carried in by a link? Today that is positional — filled
+in during the `bindings_on` walk, before `carry_linked` appends — and an
+ordering change is all it would take to start answering "the ground moved" about
+a record that never stood on it.
+
+This section described `MemoryView.stale` for the whole of this branch after the
+field became `warrant`, and nothing caught it: the anchor was re-pinned and the
+prose was not brought along. Re-pinning is what says "I looked"; it is not what
+says "the words are still true".

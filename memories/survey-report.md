@@ -43,20 +43,17 @@ author writes `ITEMS` in declares "which field best preserves identity".
 An out-of-range `nth` is an error, not a clamp. Quietly substituting another
 candidate means pointing the anchor at a different thing with nobody knowing.
 
-## Why `matches` is gone
+## The report carries one candidate's facts, and identity for the rest
 
-There used to be a `matches` as well, holding the `{at, facts}` of every tied
-candidate. Once [[survey-roll]] took over its identity duties, all that was left
-was bulk: one transition of `layer::gmr-core` came to 35,430 bytes of facts, of
-which 34,892 were that field — 98%, and no criterion read it. The rest of it
-(body hashes of the other tied members) was meaningless to the anchor anyway: an
-anchor watches **one** thing.
+`at` and `facts` describe the selected candidate only. An anchor watches **one**
+thing, so the other tied members' facts are bulk no criterion reads — their
+identity is what matters when the tie changes, and [[survey-roll]] carries that
+in `roll`.
 
-The `MAX_BYTES` ceiling was originally set to catch that field. With it gone, an
-equally wide coordinate produces a twentieth of the output; the ceiling stays, but
-what it now guards is `roll`.
+`MAX_BYTES` is the ceiling on the whole report, and `roll` is what can grow
+against it: a coordinate wide enough to tie hundreds of candidates. It refuses
+rather than truncates, because a truncated roll hides which member disappeared.
 
-One cost: the test in `extract` that says "every declared `at` key must come back
-from a real run" used to get every candidate at once from `matches`, and now runs
-them one at a time by `nth`. **The test pays that cost, production does not** —
-which is exactly the right place for the split.
+A caller that needs every tied candidate's facts asks for them one at a time by
+`nth`. That is the right place for the cost: it is a test's question, not
+production's.

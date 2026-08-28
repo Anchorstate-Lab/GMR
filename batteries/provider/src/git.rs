@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::{ContentError, ContentProvider, Fetched, History, MemoryStore};
 use gmr_core::{ExternalId, ProviderId, Version};
-use gmr_probe::Budget;
 
 pub struct Git {
     root: PathBuf,

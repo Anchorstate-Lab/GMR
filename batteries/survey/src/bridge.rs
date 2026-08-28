@@ -3,7 +3,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 
 use crate::corpus::{self, Corpus, Halt};
 use crate::index::{Generation, Index, IndexError, Indexed, Row as IndexRow, Snapshot};
@@ -11,7 +11,7 @@ use crate::matching::{Fragment, Want};
 use crate::recipe::Recipe;
 
 fn index_halt(e: IndexError) -> Halt {
-    Halt::Refused(format!("{:?}: {e}", e.fault))
+    Halt::Faulted(format!("{:?}: {e}", e.fault))
 }
 
 fn located_to_fragments(snapshot: Option<Snapshot>) -> Vec<Fragment> {
@@ -29,15 +29,21 @@ fn located_to_fragments(snapshot: Option<Snapshot>) -> Vec<Fragment> {
         .unwrap_or_default()
 }
 
-thread_local! {
-    static FALLBACK: tokio::runtime::Runtime = tokio::runtime::Runtime::new()
-        .expect("gmr-survey: no ambient tokio runtime and a fallback one would not start");
+static FALLBACK: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+
+fn fallback() -> &'static tokio::runtime::Runtime {
+    FALLBACK.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("gmr-survey: no ambient tokio runtime and a fallback one would not start")
+    })
 }
 
 pub fn run_blocking<F: Future>(fut: F) -> F::Output {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => handle.block_on(fut),
-        Err(_) => FALLBACK.with(|rt| rt.block_on(fut)),
+        Err(_) => fallback().block_on(fut),
     }
 }
 
@@ -127,7 +133,9 @@ impl<I: Index> Corpus for Bridge<I> {
             return walked.clone();
         }
         let walked = self.walk(recipe, &of, budget);
-        memo.lock().expect(WALK_POISONED).insert(of, walked.clone());
+        if walked.as_ref().err().is_none_or(Halt::deterministic) {
+            memo.lock().expect(WALK_POISONED).insert(of, walked.clone());
+        }
         walked
     }
 

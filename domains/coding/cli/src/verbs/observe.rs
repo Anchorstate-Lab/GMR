@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, Observed, Runtime, State};
+use gmr::{AnchorKey, Looked, Observed, Runtime, State};
 
 use crate::delivery::Subscriptions;
 use crate::error::CliError;
@@ -25,7 +25,7 @@ pub async fn run(
     let mut unclaimed = Vec::new();
     let mut report = Vec::new();
     for key in &keys {
-        let observed = rt.observe(key).await?;
+        let Looked { before, observed } = rt.look(key).await?;
         let (word, detail) = match &observed {
             Observed::Unchanged { .. } => ("settled", None),
             Observed::Transitioned { to, .. } => {
@@ -41,7 +41,7 @@ pub async fn run(
 
         let memories = match &observed {
             Observed::Transitioned { to, .. } => {
-                let shape = crate::shapes::of(&rt.read(key).await?.anchor.transitions);
+                let shape = crate::shapes::of(&before.anchor.transitions);
                 delivered(rt, &subs, key, shape, to, true, &mut unclaimed).await?
             }
             _ => Vec::new(),

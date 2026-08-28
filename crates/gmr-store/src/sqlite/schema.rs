@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 11;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -10,7 +10,11 @@ CREATE TABLE IF NOT EXISTS journal (
     seq     INTEGER PRIMARY KEY AUTOINCREMENT,
     anchor  TEXT    NOT NULL,
     fence   INTEGER NOT NULL,     -- monotonic epoch; 0 when no lease is configured
-    body    TEXT    NOT NULL      -- the entry itself, verbatim
+    body    TEXT    NOT NULL,     -- the entry itself, verbatim
+    prev    TEXT,                 -- the hash this row was linked onto; NULL for the first,
+                                  -- and for rows a build without the chain wrote
+    hash    TEXT                  -- over the canonical form, not over `body`'s bytes: the
+                                  -- same entries exported and imported must chain the same
 );
 CREATE INDEX IF NOT EXISTS journal_by_anchor ON journal(anchor, seq);
 
@@ -22,9 +26,9 @@ CREATE TABLE IF NOT EXISTS bindings (
     body            TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
     bound_version   TEXT,              -- content version this assertion cited; NULL until a
                                        -- fetch has answered for the record even once
-    bound_at_seq    INTEGER,           -- the single anchor's journal head at bind time;
-                                       -- NULL when the binding names zero or several anchors,
-                                       -- where "which anchor's head" has no single answer
+    bound_at_seq    INTEGER,           -- the journal's position at bind time; seq is global
+                                       -- across anchors, so one number dates a binding to
+                                       -- any number of them. NULL only predates this column
     source          TEXT NOT NULL,     -- how this assertion came to be; the domain's word
     asserted_at     TEXT,              -- RFC3339; NULL predates this column
     baseline_at_seq INTEGER            -- the bindings row whose fetch established bound_version;
@@ -86,7 +90,11 @@ CREATE TABLE IF NOT EXISTS settings (
     anchor        TEXT    PRIMARY KEY,
     retain        TEXT    NOT NULL,   -- Retain, snake_case
     cadence_secs  INTEGER,            -- NULL defers to the deployment default
-    budget_ms     INTEGER             -- NULL defers to the deployment default
+    budget_ms     INTEGER,            -- NULL defers to the deployment default
+    facts         TEXT    NOT NULL    -- Recorded, snake_case. Beside retain, not
+                  DEFAULT 'plain'       -- inside it: retain decides whether an
+                                        -- unchanged observation is written at all,
+                                        -- this decides whether one may be plaintext
 );
 
 -- ── Sightings: how often we looked and found the anchor where it should be,
@@ -241,5 +249,23 @@ CREATE TRIGGER binding_revocations_no_delete BEFORE DELETE ON binding_revocation
 CREATE TRIGGER binding_revoked_tags_no_update BEFORE UPDATE ON binding_revoked_tags
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER binding_revoked_tags_no_delete BEFORE DELETE ON binding_revoked_tags
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+"#;
+
+pub const V9_TO_V10: &str = r#"
+ALTER TABLE settings ADD COLUMN facts TEXT NOT NULL DEFAULT 'plain';
+"#;
+
+pub const V10_TO_V11_OPEN: &str = r#"
+DROP TRIGGER IF EXISTS journal_no_update;
+DROP TRIGGER IF EXISTS journal_no_delete;
+ALTER TABLE journal ADD COLUMN prev TEXT;
+ALTER TABLE journal ADD COLUMN hash TEXT;
+"#;
+
+pub const V10_TO_V11_CLOSE: &str = r#"
+CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 "#;

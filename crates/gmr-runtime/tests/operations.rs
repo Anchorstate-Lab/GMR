@@ -4,7 +4,11 @@ use gmr_core::{
     AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, RunSettings, State, StatusId,
     Transitions, Version,
 };
-use gmr_runtime::{Edge, OpenRequest, Policy, Runtime};
+use gmr_runtime::{
+    Blind, Edge, Holding, HoldingKind, Knowledge, KnowledgeKind, Looked, Observed, OpenRequest,
+    Policy, Runtime,
+};
+use gmr_store::BindingStore;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
@@ -12,9 +16,79 @@ fn cat_probe(root: &std::path::Path) -> gmr_core::ProbeRef {
     gmr_transport::shell::testkit::install_script(root.join(".probes"), "cat", "cat world.json")
 }
 
+#[derive(Default)]
+struct Counted {
+    inner: MemoryJournal,
+    reads: std::sync::atomic::AtomicUsize,
+    rows: std::sync::atomic::AtomicUsize,
+    stagger: std::sync::atomic::AtomicBool,
+}
+
+impl Counted {
+    fn reads(&self) -> usize {
+        self.reads.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn stagger(&self) {
+        self.stagger
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn rows(&self) -> usize {
+        self.rows.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn reset(&self) {
+        self.reads.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.rows.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[async_trait::async_trait]
+impl gmr_store::Journal for Counted {
+    async fn append(
+        &self,
+        anchor: &AnchorKey,
+        entry: &gmr_core::Entry,
+        fence: gmr_store::Fence,
+    ) -> Result<gmr_core::Seq, gmr_store::StoreError> {
+        self.inner.append(anchor, entry, fence).await
+    }
+
+    async fn entries(
+        &self,
+        anchor: &AnchorKey,
+        from: gmr_core::Seq,
+    ) -> Result<Vec<(gmr_core::Seq, gmr_core::Entry)>, gmr_store::StoreError> {
+        self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.stagger.load(std::sync::atomic::Ordering::SeqCst) {
+            let first = anchor.as_str().bytes().next().unwrap_or(b'a');
+            let ms = u64::from(b'z'.saturating_sub(first)) * 4;
+            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+        }
+        let got = self.inner.entries(anchor, from).await;
+        if let Ok(rows) = &got {
+            self.rows
+                .fetch_add(rows.len(), std::sync::atomic::Ordering::SeqCst);
+        }
+        got
+    }
+
+    async fn anchors(&self) -> Result<Vec<AnchorKey>, gmr_store::StoreError> {
+        self.inner.anchors().await
+    }
+
+    async fn head(&self) -> Result<gmr_core::Seq, gmr_store::StoreError> {
+        self.inner.head().await
+    }
+}
+
 struct World {
     dir: tempfile::TempDir,
     runtime: Runtime,
+    bindings: Arc<MemoryBindings>,
+    queue: Arc<MemoryQueue>,
+    journal: Arc<Counted>,
 }
 
 impl World {
@@ -29,21 +103,48 @@ impl World {
     fn with(policy: Policy, queue: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let bindings = Arc::new(MemoryBindings::default());
+        let shared = Arc::new(MemoryQueue::default());
+        let journal = Arc::new(Counted::default());
         let mut b = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
-            .journal(Arc::new(MemoryJournal::default()))
+            .journal(journal.clone())
             .bindings(bindings.clone())
             .sealer(bindings.clone())
-            .links(bindings)
+            .links(bindings.clone())
             .settings(Arc::new(MemoryQueue::default()))
             .sightings(Arc::new(MemoryQueue::default()))
             .policy(policy);
         if queue {
-            b = b.queue(Arc::new(MemoryQueue::default()));
+            b = b.queue(shared.clone());
         }
         Self {
             dir,
             runtime: b.build(),
+            bindings,
+            queue: shared,
+            journal,
+        }
+    }
+
+    fn elsewhere(&self) -> World {
+        let dir = tempfile::tempdir().unwrap();
+        let bindings = Arc::new(MemoryBindings::default());
+        let runtime = Runtime::builder()
+            .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
+            .journal(self.journal.clone())
+            .bindings(bindings.clone())
+            .sealer(bindings.clone())
+            .links(bindings.clone())
+            .settings(Arc::new(MemoryQueue::default()))
+            .sightings(Arc::new(MemoryQueue::default()))
+            .policy(Policy::default())
+            .build();
+        World {
+            dir,
+            runtime,
+            bindings,
+            queue: Arc::new(MemoryQueue::default()),
+            journal: self.journal.clone(),
         }
     }
 
@@ -88,12 +189,55 @@ fn request(root: &std::path::Path, transitions: Transitions) -> OpenRequest {
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            facts: gmr_core::Recorded::Plain,
             budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,
         },
         supersedes: None,
     }
+}
+
+#[tokio::test]
+async fn one_look_reads_the_log_once_where_asking_twice_reads_it_twice() {
+    let w = World::new();
+    w.write(r#"{"shape":"old"}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("shape")))
+        .await
+        .unwrap();
+
+    w.journal.reset();
+    let read = w.runtime.read(&key()).await.unwrap();
+    let observed = w.runtime.observe(&key()).await.unwrap();
+    let apart = w.journal.reads();
+
+    w.journal.reset();
+    let Looked {
+        before,
+        observed: together,
+    } = w.runtime.look(&key()).await.unwrap();
+    let once = w.journal.reads();
+
+    assert_eq!(
+        apart, 2,
+        "reading and then observing folds the same log twice — that is the cost being removed"
+    );
+    assert_eq!(
+        once, 1,
+        "a look already folded the log to observe from it; handing that state back must not \
+         cost a second pass"
+    );
+    assert_eq!(
+        before.state, read.state,
+        "the view a look hands back is the one from before it looked, or `swapped` would \
+         compare this build's instrument against itself and never report a swap"
+    );
+    assert_eq!(
+        std::mem::discriminant(&together),
+        std::mem::discriminant(&observed),
+        "one call must answer what two answered"
+    );
 }
 
 #[tokio::test]
@@ -131,9 +275,9 @@ async fn every_failure_path_emits_an_edge() {
     w.write(r#"{"shape":"recovered"}"#);
     w.runtime.observe(&key()).await.unwrap();
     assert_eq!(
-        w.runtime.read(&key()).await.unwrap().attempts,
-        0,
-        "one successful observation should reset attempts"
+        w.runtime.read(&key()).await.unwrap().faltering,
+        None,
+        "one successful observation should clear the run of failures"
     );
 
     let mid = w
@@ -769,6 +913,7 @@ async fn open_slow(w: &World, name: &str, secs: &str) -> AnchorKey {
             terminal: Default::default(),
             initial: None,
             settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
                 budget_ms: None,
                 retain: Retain::Tick,
                 cadence_secs: None,
@@ -798,7 +943,7 @@ async fn a_batch_that_runs_out_of_budget_does_not_blame_the_anchors_it_never_rea
 
     let mut blamed = Vec::new();
     for key in &keys {
-        if w.runtime.read(key).await.unwrap().attempts > 0 {
+        if w.runtime.read(key).await.unwrap().faltering.is_some() {
             blamed.push(key.to_string());
         }
     }
@@ -851,5 +996,1014 @@ async fn an_anchor_the_budget_never_reached_comes_back_at_the_front_of_the_next_
          away would hide a starving tail behind a cadence of {}s, which is how a batch that \
          is permanently too small for its queue looks healthy forever",
         3600
+    );
+}
+
+#[tokio::test]
+async fn a_failed_observation_does_not_move_the_ground_under_a_memory() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let warrant = async || {
+        w.runtime.grounded(&key()).await.unwrap().memories[0]
+            .warrant
+            .clone()
+            .expect("a bound memory always has a warrant")
+    };
+
+    let settled = warrant().await;
+    assert_eq!(
+        (settled.holding.kind(), settled.knowledge.kind()),
+        (HoldingKind::Holds, KnowledgeKind::Seen),
+        "nothing has happened since this was bound, and we looked"
+    );
+
+    w.remove();
+    let observed = w.runtime.observe(&key()).await.unwrap();
+    assert!(
+        matches!(observed, Observed::Attempt { .. }),
+        "the probe cannot read a file that is not there, so this is our failure: {observed:?}"
+    );
+    let blinded = warrant().await;
+    assert_eq!(
+        blinded.holding.kind(),
+        HoldingKind::Holds,
+        "one failed look does not move the world. This compared the binding's seq against \
+         the journal head, and the head advances on every entry -- including `Attempt`, \
+         which records that we could not observe at all. Reported as moved, a memory reads \
+         as standing on ground that shifted, when what actually happened is that nobody \
+         could go and look"
+    );
+    assert!(
+        matches!(blinded.knowledge, Knowledge::Blind { .. }),
+        "and the failure is said on the axis that owns it, not by degrading the other one: \
+         {:?}",
+        blinded.knowledge
+    );
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    assert_eq!(
+        warrant().await.holding.kind(),
+        HoldingKind::Moved,
+        "the world did move this time, and a comparison that never says so is worth less \
+         than no comparison at all -- it reports every memory as standing on firm ground \
+         forever"
+    );
+}
+
+#[tokio::test]
+async fn a_ground_that_moved_and_then_went_dark_says_both() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    w.remove();
+    assert!(matches!(
+        w.runtime.observe(&key()).await.unwrap(),
+        Observed::Attempt { .. }
+    ));
+
+    let warrant = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant");
+
+    let Holding::Moved { ref axes, .. } = warrant.holding else {
+        panic!(
+            "we saw it move, and that stays established. Reporting only the outage would \
+             throw away the one thing here we are certain of: {:?}",
+            warrant.holding
+        )
+    };
+    assert_eq!(
+        axes,
+        &["x".to_owned()],
+        "the state paths that differ are named, so a reader can tell a memory about `x` \
+         from one that never cared. An empty list here would make every move look alike"
+    );
+    assert!(
+        matches!(
+            warrant.knowledge,
+            Knowledge::Blind {
+                why: Blind::Unreachable { .. },
+                ..
+            }
+        ),
+        "and we cannot see it now, so we cannot say it has not moved again. Reporting only \
+         the move would claim currency we do not have: {:?}",
+        warrant.knowledge
+    );
+}
+
+async fn open_named(w: &World, name: &str) -> AnchorKey {
+    let key = AnchorKey::new(name);
+    w.runtime
+        .open(OpenRequest {
+            key: key.clone(),
+            probe: cat_probe(w.dir.path()),
+            transitions: watching("x"),
+            terminal: Default::default(),
+            initial: None,
+            settings: RunSettings {
+                facts: gmr_core::Recorded::Plain,
+                budget_ms: None,
+                retain: Retain::Tick,
+                cadence_secs: None,
+            },
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+    key
+}
+
+#[tokio::test]
+async fn a_memory_about_several_anchors_is_dated_against_each_of_them() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    let a = open_named(&w, "a").await;
+    let b = open_named(&w, "b").await;
+
+    let note = Ref::new("git", "many.md");
+    w.runtime
+        .bind(
+            note.clone(),
+            vec![a.clone(), b.clone()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let holding_on = async |k: &AnchorKey| {
+        w.runtime.grounded(k).await.unwrap().memories[0]
+            .warrant
+            .as_ref()
+            .expect("a bound memory always has a warrant")
+            .holding
+            .kind()
+    };
+
+    assert_eq!(
+        (holding_on(&a).await, holding_on(&b).await),
+        (HoldingKind::Holds, HoldingKind::Holds),
+        "a binding that names two anchors used to be stamped with no seq at all, on the \
+         grounds that `which anchor's head would this be` has no answer. The journal's seq \
+         is one global counter, so the question was the wrong one: a binding is dated \
+         against the log, and one number does that for any number of anchors"
+    );
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&b).await.unwrap();
+
+    assert_eq!(
+        (holding_on(&a).await, holding_on(&b).await),
+        (HoldingKind::Holds, HoldingKind::Moved),
+        "one anchor moved and the other did not, and the same stamp has to tell them \
+         apart. A stamp that reported both would hand back every memory in the corpus \
+         whenever any one anchor moved"
+    );
+}
+
+#[tokio::test]
+async fn recapturing_a_world_that_did_not_move_leaves_the_memories_on_it_alone() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let warrant = async || {
+        w.runtime.grounded(&key()).await.unwrap().memories[0]
+            .warrant
+            .clone()
+            .expect("a bound memory always has a warrant")
+    };
+
+    let before = w.runtime.read(&key()).await.unwrap().state;
+    let blank = State::new(serde_json::json!({ "position": before.position() }));
+    w.runtime
+        .revise(
+            &key(),
+            Change::Restate { state: blank },
+            b"the instrument moved",
+        )
+        .await
+        .unwrap();
+    w.runtime.observe(&key()).await.unwrap();
+
+    assert_eq!(
+        warrant().await.holding,
+        Holding::Holds,
+        "a recapture is the author re-pinning the anchor, not the world moving under it. \
+         It restates and re-observes, so it advances `moved_at` while the state it lands \
+         on is the state it left. Deciding by the seq alone reported `Moved` with an empty \
+         axis list -- a claim contradicted by the very diff attached to it -- and one \
+         `gmr rebase --all` after an extractor upgrade would have said that about every \
+         dated note in the corpus at once"
+    );
+}
+
+#[tokio::test]
+async fn a_binding_that_carries_no_date_says_so_rather_than_claiming_no_ground() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    w.bindings
+        .bind(&gmr_store::Asserted {
+            binding: gmr_core::Binding {
+                reference: Ref::new("git", "m.md"),
+                anchors: vec![key()],
+            },
+            bound_version: Some(Version::new("v1")),
+            bound_at_seq: None,
+            source: gmr_core::Source::Adjudicated,
+            at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    let warrant = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant");
+
+    assert_eq!(
+        warrant.holding,
+        Holding::Undated,
+        "a row written before bindings carried a seq cannot be compared against the log \
+         at all. Answering `NeverEstablished` said no ground was ever established, which \
+         is false about a note that is bound and whose anchor is settled -- and it was the \
+         answer for more than half of this repository's own notes"
+    );
+}
+
+#[tokio::test]
+async fn a_key_only_the_newer_instrument_measures_is_not_the_older_one_disagreeing() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(
+            w.dir.path(),
+            rules(&[("true", r#"{ v: obs.x, status: "s" }"#)]),
+        ))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "cat",
+        "cat ./world.json",
+    );
+    w.runtime
+        .revise(
+            &key(),
+            Change::Retransition {
+                transitions: rules(&[("true", r#"{ v: obs.x, w: obs.x, status: "s" }"#)]),
+            },
+            b"the newer instrument measures one more thing",
+        )
+        .await
+        .unwrap();
+    w.runtime.observe(&key()).await.unwrap();
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+
+    assert_eq!(
+        holding,
+        Holding::Holds,
+        "`v` is unchanged and `w` is a path the older reading never carried. Silence is \
+         not disagreement: the old instrument did not contradict `w`, it never measured \
+         it. Counting it made 66 of this repository's own notes unanswerable after an \
+         extractor upgrade that changed nothing they were about"
+    );
+}
+
+#[tokio::test]
+async fn a_path_the_newer_instrument_stopped_measuring_still_cannot_be_compared() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(
+            w.dir.path(),
+            rules(&[("true", r#"{ v: obs.x, w: obs.x, status: "s" }"#)]),
+        ))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "cat",
+        "cat ./world.json",
+    );
+    w.runtime
+        .revise(
+            &key(),
+            Change::Retransition {
+                transitions: rules(&[("true", r#"{ v: obs.x, status: "s" }"#)]),
+            },
+            b"the newer instrument stopped measuring one thing",
+        )
+        .await
+        .unwrap();
+    w.runtime.observe(&key()).await.unwrap();
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+
+    assert!(
+        matches!(holding, Holding::Incomparable { .. }),
+        "a path that vanished is not silence, it is an instrument that stopped looking, \
+         and nothing here can say whether what it used to measure moved. Keeping removals \
+         is also what stops a renamed key from reading as `Holds`: a rename arrives as an \
+         addition and a removal, and the removal is the half that refuses: {holding:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_reading_a_different_instrument_took_is_not_diffed_against_this_one() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "cat",
+        "cat ./world.json",
+    );
+    w.runtime.observe(&key()).await.unwrap();
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+
+    let Holding::Incomparable { took, reads } = holding else {
+        panic!(
+            "the state this memory was bound against was read by one extractor and the \
+             state now by another. Diffing them answers `did the world move` with `the \
+             instrument changed shape`: this repository's own corpus had 74 memories \
+             reporting `Moved` on axes that were new keys in the state, with every body \
+             hash identical. GMR.md's blast-radius clause asks the consumer to identify \
+             that batch, not to absorb it: {holding:?}"
+        )
+    };
+    assert_ne!(took, reads);
+}
+
+#[tokio::test]
+async fn re_asserting_an_undated_binding_dates_it_instead_of_writing_nothing() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let note = Ref::new("git", "m.md");
+    w.bindings
+        .bind(&gmr_store::Asserted {
+            binding: gmr_core::Binding {
+                reference: note.clone(),
+                anchors: vec![key()],
+            },
+            bound_version: Some(Version::new("v1")),
+            bound_at_seq: None,
+            source: gmr_core::Source::Derived,
+            at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    let landed = w
+        .runtime
+        .bind(
+            note.clone(),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    assert!(
+        landed.recorded,
+        "`says` compared anchors, version and source, and a binding row also carries the \
+         seq it was asserted at. Re-stating the claim over an undated row does add \
+         something -- the date -- so answering `this already stands` left every row \
+         written before the column permanently unanswerable, and nothing in the corpus \
+         could ever heal itself"
+    );
+
+    let holding = w.runtime.grounded(&key()).await.unwrap().memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant")
+        .holding;
+    assert_eq!(holding, Holding::Holds);
+
+    let again = w
+        .runtime
+        .bind(
+            note,
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    assert!(
+        !again.recorded,
+        "and once dated it settles: the healing is one row per binding, not a row per run"
+    );
+}
+
+#[tokio::test]
+async fn an_anchor_that_records_digests_only_never_lets_a_plaintext_secret_into_the_log() {
+    const SECRET: &str = "hunter2-the-actual-password";
+
+    let w = World::new();
+    w.write(&format!(r#"{{"x":"{SECRET}"}}"#));
+    let mut opening = request(w.dir.path(), watching("x"));
+    opening.settings.facts = gmr_core::Recorded::Digests;
+    w.runtime.open(opening).await.unwrap_err();
+
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+    assert!(
+        entries.is_empty(),
+        "an anchor that records digests only refuses the observation outright, so nothing \
+         derived from the plaintext -- not the facts, not the state the rules built from \
+         them -- is written. Replacing the facts with their hash on the way in would have \
+         left the state, which the rules computed from the plaintext"
+    );
+
+    w.write(&format!(
+        r#"{{"x":"{}"}}"#,
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    ));
+    let mut opening = request(w.dir.path(), watching("x"));
+    opening.settings.facts = gmr_core::Recorded::Digests;
+    w.runtime.open(opening).await.unwrap();
+
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+    assert_eq!(entries.len(), 1, "a digest answers, so the anchor opens");
+
+    let written = serde_json::to_string(&entries).unwrap();
+    assert!(
+        !written.contains(SECRET),
+        "and the acceptance is mechanical rather than a promise: the secret is not \
+         findable anywhere in what was written"
+    );
+}
+
+#[tokio::test]
+async fn refusing_an_undigested_reading_is_the_probes_to_fix_and_says_so() {
+    let w = World::new();
+    w.write(r#"{"x":"plaintext"}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .set_settings(
+            &key(),
+            &RunSettings {
+                retain: Retain::Tick,
+                facts: gmr_core::Recorded::Digests,
+                cadence_secs: None,
+                budget_ms: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let observed = w.runtime.observe(&key()).await.unwrap();
+    let Observed::Attempt { reason, code, .. } = observed else {
+        panic!("an undigested reading on a digests-only anchor is refused: {observed:?}")
+    };
+    assert_eq!(
+        (reason, code),
+        (
+            gmr_core::ReasonClass::Unusable,
+            gmr_core::FailureCode::Unusable,
+        ),
+        "the probe answered, and its answer cannot be used here. `Unreachable` would blame \
+         the world for our own declaration, and `Unevaluable` would blame the rules, which \
+         never ran"
+    );
+}
+
+#[tokio::test]
+async fn a_freshness_bound_decides_whether_to_look_again_not_what_to_report() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2}"#);
+
+    let served = w.runtime.grounded(&key()).await.unwrap();
+    assert_eq!(
+        served.view.state.as_value()["x"],
+        1,
+        "with no freshness bound, grounding serves the reading it has and never goes out. \
+         An instruction-free call is a default, not an absence of one"
+    );
+
+    let looked = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::ZERO),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        looked.view.state.as_value()["x"],
+        2,
+        "a bound of zero means anything already on record is too old, so this one goes and \
+         looks. That is what makes staleness an observation instruction rather than a \
+         verdict: it changes what GMR does, the way a budget does, instead of grading an \
+         answer GMR had already settled on"
+    );
+
+    let again = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::from_secs(3600)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        again.view.last_sighting, looked.view.last_sighting,
+        "and an hour's slack over a reading taken a moment ago goes nowhere near the world"
+    );
+}
+
+#[tokio::test]
+async fn a_reading_that_could_not_be_refreshed_is_served_with_its_own_date_on_it() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.remove();
+    let held = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::ZERO),
+        )
+        .await
+        .unwrap();
+
+    let warrant = held.memories[0]
+        .warrant
+        .clone()
+        .expect("a bound memory always has a warrant");
+    assert!(
+        matches!(
+            warrant.knowledge,
+            Knowledge::Blind {
+                why: Blind::Unreachable { .. },
+                ..
+            }
+        ),
+        "the refresh was asked for and failed, and the answer says so on the knowledge axis \
+         rather than refusing the whole call. A freshness bound instructs; it does not \
+         promise that the world will answer: {:?}",
+        warrant.knowledge
+    );
+    assert_eq!(warrant.holding, Holding::Holds);
+}
+
+#[tokio::test]
+async fn a_refresh_that_could_not_take_the_lease_says_so_rather_than_serving_stale_quietly() {
+    use gmr_store::Queue;
+
+    let w = World::polled(Policy::default());
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime.pass().await.unwrap();
+
+    let held = w
+        .queue
+        .lease(&key(), chrono::Utc::now(), chrono::Duration::seconds(60))
+        .await
+        .unwrap();
+    assert!(held.is_some(), "somebody else now holds this anchor");
+
+    w.write(r#"{"x":2}"#);
+    let asked = w
+        .runtime
+        .grounded_within(
+            &key(),
+            &gmr_runtime::Instructions::fresher_than(std::time::Duration::ZERO),
+        )
+        .await;
+
+    assert!(
+        matches!(asked, Err(gmr_runtime::RuntimeError::Leased { .. })),
+        "the caller instructed a fresh reading and it could not be taken. Swallowing that \
+         and serving the stored one left them to infer it from `observed_at` -- a failure \
+         path with nothing on it, which is the one thing CLAUDE.md refuses. Who waits, \
+         retries or accepts what is on record is the caller's call, and it cannot be made \
+         from an answer that does not mention it: {asked:?}"
+    );
+}
+
+fn at(k: &str, root: &std::path::Path, transitions: Transitions) -> OpenRequest {
+    OpenRequest {
+        key: AnchorKey::new(k),
+        ..request(root, transitions)
+    }
+}
+
+#[tokio::test]
+async fn an_unchanged_reading_appends_nothing_and_leaves_the_warrant_where_it_was() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .bind(
+            Ref::new("git", "m.md"),
+            vec![key()],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let warrant = async || {
+        w.runtime.grounded(&key()).await.unwrap().memories[0]
+            .warrant
+            .clone()
+            .expect("a bound memory always has a warrant")
+    };
+    let before = warrant().await;
+    let head = w.runtime.log().head().await.unwrap();
+
+    for _ in 0..3 {
+        assert_eq!(
+            w.runtime.observe(&key()).await.unwrap(),
+            Observed::Still,
+            "the facts did not move and neither did the instrument, so re-reading them is \
+             not news"
+        );
+    }
+
+    assert_eq!(
+        w.runtime.log().head().await.unwrap(),
+        head,
+        "three re-observations of an unmoved fact must append nothing. Every entry is a \
+         reason to wake whoever depends on this anchor, so a log that grows on each poll \
+         is a product that pages a human for the world staying still"
+    );
+    let after = warrant().await;
+    assert_eq!(
+        after.holding, before.holding,
+        "and the axis that would wake anybody did not move either -- an early cutoff that \
+         still perturbs `holding` has only moved the firehose downstream"
+    );
+
+    let (Knowledge::Seen { at: then, .. }, Knowledge::Seen { at: now, .. }) =
+        (&before.knowledge, &after.knowledge)
+    else {
+        panic!("we looked, and looking is what `Seen` records: {after:?}")
+    };
+    assert!(
+        now > then,
+        "the other axis must move, and this is the whole reason there are two. Looking \
+         again at a fact that did not move is not news about the fact -- but it is news \
+         about us: we know it more recently than we did. That is recorded as a sighting on \
+         the scheduler rather than an entry in the journal, so freshness improves without \
+         costing anyone a wake-up. Collapse the axes and this becomes unsayable: either \
+         every poll appends, or a caller asking for a fact fresher than an hour is told to \
+         re-probe something that was read a second ago"
+    );
+}
+
+#[tokio::test]
+async fn the_same_record_buckets_under_two_holdings_because_it_hangs_on_two_anchors() {
+    let w = World::new();
+    w.write(r#"{"x":1,"y":1}"#);
+    w.runtime
+        .open(at("moves", w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    w.runtime
+        .open(at("stays", w.dir.path(), watching("y")))
+        .await
+        .unwrap();
+
+    let reference = Ref::new("git", "m.md");
+    w.runtime
+        .bind(
+            reference.clone(),
+            vec![AnchorKey::new("moves"), AnchorKey::new("stays")],
+            Some(Version::new("v1")),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    w.write(r#"{"x":2,"y":1}"#);
+    w.runtime.observe(&AnchorKey::new("moves")).await.unwrap();
+    w.runtime.observe(&AnchorKey::new("stays")).await.unwrap();
+
+    let corpus = w.runtime.corpus().await.unwrap();
+    let holdings = &corpus.health().holdings;
+
+    assert_eq!(
+        holdings.get(&HoldingKind::Moved).map(|a| a
+            .iter()
+            .map(|(k, r)| (k.to_string(), r.clone()))
+            .collect::<Vec<_>>()),
+        Some(vec![("moves".to_owned(), vec![reference.clone()])]),
+        "the ground under `moves` shifted, and the tally must say which anchor that was"
+    );
+    assert_eq!(
+        holdings.get(&HoldingKind::Holds).map(|a| a
+            .iter()
+            .map(|(k, r)| (k.to_string(), r.clone()))
+            .collect::<Vec<_>>()),
+        Some(vec![("stays".to_owned(), vec![reference.clone()])]),
+        "the same record is still standing on `stays`, so it is in both buckets at once"
+    );
+
+    assert_eq!(
+        holdings
+            .values()
+            .flat_map(|a| a.values())
+            .flatten()
+            .filter(|r| **r == reference)
+            .count(),
+        2,
+        "one record, two anchors, two answers. This is why the tally is two levels deep: \
+         flattened to BTreeMap<HoldingKind, Vec<Ref>> the reader is told this note both \
+         moved and holds and cannot find out which anchor said which, which is the one \
+         thing they need in order to go and look"
+    );
+}
+
+#[tokio::test]
+async fn folding_the_same_log_again_reads_only_what_was_appended_since() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+    for n in 1..=8 {
+        w.write(&format!(r#"{{"x":{n}}}"#));
+        w.runtime.observe(&key()).await.unwrap();
+    }
+
+    w.journal.reset();
+    let caught_up = w.runtime.read(&key()).await.unwrap();
+    assert_eq!(
+        w.journal.rows(),
+        1,
+        "observing folds *before* it appends, so the checkpoint trails the last append by \
+         exactly one entry and reading it back costs that one. `append` deliberately does \
+         not fold onto the checkpoint: extension is the only operation this cache has, and \
+         giving it a second writer is how an invalidation bug gets in"
+    );
+
+    w.journal.reset();
+    let warm = w.runtime.read(&key()).await.unwrap();
+    assert_eq!(
+        w.journal.rows(),
+        0,
+        "and with nothing appended since, the next fold reads nothing at all. This is the \
+         cost D-5 was about: this repository's own journal is 47 MB across 60k entries, \
+         and `check` was deserializing all of it twice per run to learn what it already knew"
+    );
+    assert_eq!(
+        warm.state, caught_up.state,
+        "reading twice cannot change the answer"
+    );
+
+    let cold = w.elsewhere();
+    cold.journal.reset();
+    let fresh = cold.runtime.read(&key()).await.unwrap();
+    assert!(
+        cold.journal.rows() >= 9,
+        "a runtime that has never folded this log has no checkpoint to stand on and reads \
+         all of it: {}",
+        cold.journal.rows()
+    );
+    assert_eq!(
+        fresh.state, warm.state,
+        "and it lands byte for byte where the warm one did. Two readers holding \
+         checkpoints of different ages must not be able to disagree -- that is what makes \
+         this safe to keep per-process and safe to leave with no invalidation at all"
+    );
+
+    w.write(r#"{"x":99"#);
+    let _ = w.runtime.observe(&key()).await;
+    w.write(r#"{"x":99}"#);
+    w.runtime.observe(&key()).await.unwrap();
+
+    w.journal.reset();
+    let moved = w.runtime.read(&key()).await.unwrap();
+    assert!(
+        w.journal.rows() <= 3,
+        "a log that grew by a failed look and a move costs those entries to catch up on, \
+         not the whole log: {}",
+        w.journal.rows()
+    );
+    assert_eq!(
+        moved.state.0.get("x").and_then(|v| v.as_i64()),
+        Some(99),
+        "the caught-up state is the real one, not a stale checkpoint handed back"
+    );
+}
+
+#[tokio::test]
+async fn looking_at_many_at_once_answers_in_the_order_asked() {
+    let w = World::new();
+    w.write(r#"{"x":1,"y":1,"z":1}"#);
+    let keys: Vec<AnchorKey> = ["c", "a", "b", "e", "d"]
+        .iter()
+        .map(|k| AnchorKey::new(*k))
+        .collect();
+    for (k, axis) in keys.iter().zip(["x", "y", "z", "x", "y"]) {
+        w.runtime
+            .open(at(k.as_str(), w.dir.path(), watching(axis)))
+            .await
+            .unwrap();
+    }
+
+    w.journal.stagger();
+    let together = w.runtime.look_all(&keys).await.unwrap();
+    assert_eq!(
+        together
+            .iter()
+            .map(|l| l.before.key.clone())
+            .collect::<Vec<_>>(),
+        keys,
+        "concurrency must not reorder the answers. `check` zips these against the keys it \
+         asked about and prints one line per pair, so an answer arriving out of order would \
+         attribute one anchor's drift to another -- silently, and worse the more anchors \
+         there are. `buffered` keeps the order; `buffer_unordered` would not"
+    );
+
+    let mut serially = Vec::new();
+    for key in &keys {
+        serially.push(w.runtime.look(key).await.unwrap());
+    }
+    assert_eq!(
+        together
+            .iter()
+            .map(|l| (l.before.key.clone(), l.before.state.clone()))
+            .collect::<Vec<_>>(),
+        serially
+            .iter()
+            .map(|l| (l.before.key.clone(), l.before.state.clone()))
+            .collect::<Vec<_>>(),
+        "and observing five anchors at once must land where observing them one at a time \
+         lands. Each holds its own fence and appends only under its own key, so there is \
+         nothing for them to race over -- this is the assertion that keeps that true if \
+         anything shared ever creeps in"
+    );
+}
+
+#[tokio::test]
+async fn a_batch_of_one_and_a_batch_of_none_are_both_answerable() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    assert!(
+        w.runtime.look_all(&[]).await.unwrap().is_empty(),
+        "no anchors is an empty answer, not an error -- `check` on a fresh repository asks \
+         exactly this"
+    );
+    assert_eq!(
+        w.runtime.look_all(&[key()]).await.unwrap().len(),
+        1,
+        "and one anchor still answers once, whatever the concurrency bound is"
+    );
+    assert!(
+        w.runtime
+            .look_all(&[AnchorKey::new("never-opened")])
+            .await
+            .is_err(),
+        "an anchor nobody opened is still the error it was one at a time. A batch must not \
+         quietly drop the member it could not answer for"
     );
 }

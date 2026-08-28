@@ -36,6 +36,6 @@ part ways, some shape goes to read an `obs.at.<key>` that no candidate carries â
 rule fault, or worse, an axis that **can never move and nobody notices**.
 
 So every declared key has to come back from a real run. That test walks the tied
-candidates one at a time by `nth` and takes the union; it used to get them all at
-once from the report's `matches` field, which was deleted for 98% of the bulk (see
-[[survey-report]]). **The test pays that cost, production does not.**
+candidates one at a time by `nth` and takes the union, because the report carries
+the facts of the selected candidate only ([[survey-report]]). **The test pays
+that cost, production does not.**

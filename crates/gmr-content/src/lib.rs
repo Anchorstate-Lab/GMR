@@ -2,8 +2,8 @@
 pub mod testkit;
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_core::{ExternalId, ProviderId, Ref, Version};
-use gmr_probe::Budget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fetched {

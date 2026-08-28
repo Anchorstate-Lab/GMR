@@ -127,3 +127,13 @@ memories, and the three read-only contracts stop describing what it does.
 
 Does anything start rewriting an existing declaration? That is a criteria
 change wearing the front door's clothes, and it escapes `--why`.
+
+## A URL takes the other branch
+
+`run` splits on whether the coordinate is a URL. A path routes by extension as it
+always has; a `http://` or `https://` coordinate is instead *generated into* a
+declaration — an `[http.<name>]` probe and an anchor keyed by a short name rather
+than by the URL itself. The rule this file states about `.anchor/anchors.toml`
+is unchanged and is what governs it: append only, and re-routing a name that is
+already taken is a criteria change rather than an overwrite. [[cli-fetched-facts]]
+is the whole of that path.

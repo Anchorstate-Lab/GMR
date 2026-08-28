@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 use gmr_survey as coord;
 use serde_json::{Value, json};
 

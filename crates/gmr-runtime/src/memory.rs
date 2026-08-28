@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version, fold};
+use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version};
 use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Revocation, Sealer};
 use serde::Serialize;
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::read::{Before, Grounding, MemoryView};
+use gmr_budget::Budget;
 use gmr_content::{ContentError, ContentProvider};
-use gmr_probe::Budget;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderWarning {
@@ -53,13 +53,7 @@ impl MemoryLens {
         source: Source,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
-        let bound_at_seq = match binding.anchors.as_slice() {
-            [only] => {
-                let entries = log.entries(only, 0).await?;
-                fold(&entries).map(|s| s.head)
-            }
-            _ => None,
-        };
+        let bound_at_seq = Some(log.head().await?);
         Ok(self
             .bindings
             .bind(&Asserted {
@@ -139,7 +133,9 @@ impl MemoryLens {
         let standing = bound
             .standing()
             .expect("a view is only assembled from at least one assertion");
-        let baseline = bound.baseline().unwrap_or(standing);
+        let baseline = bound
+            .dating()
+            .expect("a view is only assembled from at least one assertion");
         let reference = standing.binding.reference.clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
@@ -159,7 +155,7 @@ impl MemoryLens {
             baseline_at,
             sources,
             asserted_at,
-            stale: None,
+            warrant: None,
         })
     }
 
@@ -269,7 +265,7 @@ pub(crate) async fn chain_from(
     let mut at = from.clone();
 
     for _ in 0..GENERATIONS {
-        let Some(state) = fold(&log.entries(&at, 0).await?) else {
+        let Some(state) = log.state(&at).await? else {
             break;
         };
         let Some(older) = state.anchor.supersedes.as_ref().map(|s| s.key.clone()) else {
@@ -334,6 +330,10 @@ impl Bound {
             .max_by_key(|r| r.seq)
     }
 
+    pub fn dating(&self) -> Option<&BindingRecord> {
+        self.baseline().or_else(|| self.standing())
+    }
+
     pub fn bound_version(&self) -> Option<&Version> {
         self.baseline().and_then(|r| r.bound_version.as_ref())
     }
@@ -362,5 +362,6 @@ impl Bound {
             && anchors.iter().all(|a| self.anchors.contains(a))
             && self.sources().contains(&source)
             && self.bound_version() == version
+            && self.dating().is_some_and(|r| r.bound_at_seq.is_some())
     }
 }

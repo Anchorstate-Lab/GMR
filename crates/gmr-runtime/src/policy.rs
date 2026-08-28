@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gmr_probe::Budget;
+use gmr_budget::Budget;
 
 #[derive(Debug, Clone)]
 pub struct Policy {
@@ -9,6 +9,7 @@ pub struct Policy {
     pub backoff_base_secs: u64,
     pub backoff_cap_secs: u64,
     pub batch: usize,
+    pub observe_at_once: usize,
     pub stalled_attempts: u32,
     pub stalled_staleness_secs: i64,
     pub probe_budget_ms: u64,
@@ -25,6 +26,7 @@ impl Default for Policy {
             backoff_base_secs: 30,
             backoff_cap_secs: 3600,
             batch: 64,
+            observe_at_once: 16,
             stalled_attempts: 3,
             stalled_staleness_secs: 24 * 3600,
             probe_budget_ms: 30_000,

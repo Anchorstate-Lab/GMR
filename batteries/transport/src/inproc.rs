@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 
-pub use gmr_probe::{Budget, Spent};
+pub use gmr_budget::{Budget, Spent};
 
 pub struct Reach {
     pub cwd: PathBuf,

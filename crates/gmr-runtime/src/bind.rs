@@ -1,5 +1,5 @@
 use chrono::Utc;
-use gmr_core::{AnchorKey, Binding, Ref, Source, Version, fold};
+use gmr_core::{AnchorKey, Binding, Ref, Source, Version};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -48,7 +48,7 @@ impl Runtime {
         let mut at = key.clone();
         let mut seen = std::collections::BTreeSet::from([at.clone()]);
         for _ in 0..crate::memory::GENERATIONS {
-            let Some(state) = fold(&self.log.entries(&at, 0).await?) else {
+            let Some(state) = self.log.state(&at).await? else {
                 break;
             };
             if !state.closed {
@@ -67,7 +67,10 @@ impl Runtime {
 
     async fn heir_of(&self, key: &AnchorKey) -> Result<Option<AnchorKey>, RuntimeError> {
         for candidate in self.anchors().await? {
-            let superseded = fold(&self.log.entries(&candidate, 0).await?)
+            let superseded = self
+                .log
+                .state(&candidate)
+                .await?
                 .and_then(|s| s.anchor.supersedes.map(|x| x.key));
             if superseded.as_ref() == Some(key) {
                 return Ok(Some(candidate));

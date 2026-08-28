@@ -5,6 +5,7 @@ Invoked by gate.sh after cargo fmt/clippy/test. Exits 0 if every check below
 holds, otherwise prints every violation found (not just the first) and exits 1.
 """
 
+import hashlib
 import json
 import pathlib
 import re
@@ -28,8 +29,9 @@ ARCH_TOML = ROOT / "architecture.toml"
 FACADE = ROOT / "crates" / "gmr" / "src" / "lib.rs"
 ACCEPTANCE = ROOT / "acceptance.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "rust.yml"
+CONTRACT_MODULE = ROOT / "crates" / "gmr-runtime" / "src" / "contract.rs"
 
-PURE_ROOTS = ["gmr-core", "gmr-expr"]
+PURE_ROOTS = ["gmr-budget", "gmr-core", "gmr-expr"]
 
 NO_CONCRETE_IMPL = {
     "gmr-probe": {"tokio", "reqwest", "hyper"},
@@ -265,6 +267,211 @@ def check_version_bump():
     return []
 
 
+
+CONTRACT_CRATES = {"gmr_core": "crates/gmr-core", "gmr_budget": "crates/gmr-budget"}
+
+
+def block_from(source, open_at):
+    depth = 0
+    for i in range(open_at, len(source)):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[open_at : i + 1]
+    return None
+
+
+def with_attributes(source, start):
+    lines = source[:start].splitlines()
+    kept = []
+    while lines and lines[-1].lstrip().startswith("#["):
+        kept.insert(0, lines.pop())
+    return kept
+
+
+def declaration_of(source, name):
+    m = re.search(rf"^pub (?:struct|enum) {name}\b", source, re.M)
+    if m is not None:
+        brace = source.index("{", m.start())
+        body = block_from(source, brace)
+        if body is None:
+            return None
+        head = source[m.start() : brace]
+        return with_attributes(source, m.start()) + (head + body).splitlines()
+
+    m = re.search(rf"^\s*admitted {name},(.+)$", source, re.M)
+    if m is None:
+        return None
+    validator = m.group(1).strip()
+    lines = [m.group(0).strip()]
+    v = re.search(rf"^fn {re.escape(validator)}\b", source, re.M)
+    if v is not None:
+        brace = source.index("{", v.start())
+        body = block_from(source, brace)
+        if body is not None:
+            lines += (source[v.start() : brace] + body).splitlines()
+    return lines
+
+
+def contract_types(module):
+    """The contract is whatever `contract.rs` re-exports -- read, never restated.
+
+    A second list of these names in this file would be exactly the drift the
+    trait roster check exists to stop, one directory over.
+    """
+    out, unresolved = [], []
+    for path, names in re.findall(r"pub use ([\w:]+)::\{([^}]*)\}", module):
+        wanted = [n.strip() for n in names.split(",") if n.strip()]
+        if path.startswith("crate::"):
+            files = [ROOT / "crates/gmr-runtime/src" / f"{path.split('::')[1]}.rs"]
+        elif path in CONTRACT_CRATES:
+            files = sorted((ROOT / CONTRACT_CRATES[path] / "src").rglob("*.rs"))
+        else:
+            unresolved += [f"{n} (via `{path}`)" for n in wanted]
+            continue
+        for name in wanted:
+            hit = next(
+                (
+                    (f, declaration_of(f.read_text(), name))
+                    for f in files
+                    if f.exists() and declaration_of(f.read_text(), name)
+                ),
+                None,
+            )
+            if hit is None:
+                unresolved.append(f"{name} (looked under `{path}`)")
+            else:
+                out.append((name, hit[1]))
+    return out, unresolved
+
+
+def contract_shape():
+    module = CONTRACT_MODULE.read_text()
+    found, unresolved = contract_types(module)
+    parts = [f"{name}\n" + "\n".join(l.rstrip() for l in decl) for name, decl in found]
+    digest = hashlib.sha256("\n".join(parts).encode()).hexdigest()
+    return f"sha256:{digest}", unresolved
+
+
+def recorded(source):
+    def const(name):
+        m = re.search(rf'pub const {name}: &str = "([^"]*)"', source)
+        return m.group(1) if m else None
+
+    return const("CONTRACT"), const("SHAPE")
+
+
+def check_contract_shape_is_earned():
+    """A contract type may not change shape without the contract saying so.
+
+    D-6 drew the line between what callers are promised (`Instructions` in;
+    `Warrant`, `Grounding`, `Verifiability`, `Ref`, `Version` out) and what is
+    ours to move (`Footing`, the `Kind` keys, the health aggregates). The line
+    is only worth drawing if crossing it is noticed, and adding a field is the
+    quiet way to cross it: nothing fails to compile, every test still passes,
+    and a consumer that matched exhaustively on last week's shape is broken by
+    a diff that never mentions the contract.
+
+    So `contract::SHAPE` is an earned hash, in the sense CLAUDE.md rule 5 uses
+    for probe versions -- a hash over every input that can change what callers
+    see, not over bytes that happen to sit nearby. It is recomputed here from
+    the declarations themselves, so it cannot drift from them: change a field,
+    a variant, or a serde tag, and the recorded digest stops matching until
+    somebody writes the new one down.
+
+    Recording the digest is not on its own the promise; moving `CONTRACT` is.
+    So the second half compares both against the latest tag: a shape that moved
+    since the last release without the version moving with it is the case this
+    check exists for. It is skipped when there is no tag, and when the module
+    did not yet exist at that tag.
+    """
+    if not CONTRACT_MODULE.exists():
+        return [f"the contract module is gone ({CONTRACT_MODULE.relative_to(ROOT)})"]
+
+    source = CONTRACT_MODULE.read_text()
+    version, shape = recorded(source)
+    if version is None or shape is None:
+        return [
+            "the contract module must declare both `CONTRACT` and `SHAPE` as "
+            "`pub const .. : &str` -- they are what a caller compares against"
+        ]
+
+    computed, unresolved = contract_shape()
+    errors = [
+        f"the contract re-exports `{m}` and no declaration for it was found -- it "
+        "moved or was renamed, and the shape stopped being computed over it"
+        for m in unresolved
+    ]
+    if errors:
+        return errors
+    if computed != shape:
+        return [
+            f"the contract's shape is {computed} and `SHAPE` still records {shape} "
+            "-- a contract type gained, lost, or renamed something. If callers must "
+            "know, move `CONTRACT` past "
+            f"`{version}` and record the new digest; if they need not, record it alone"
+        ]
+
+    tag = latest_version_tag()
+    if tag is None:
+        return []
+    r = run(["git", "show", f"{tag}:crates/gmr-runtime/src/contract.rs"])
+    if r.returncode:
+        return []
+    was_version, was_shape = recorded(r.stdout)
+    if was_shape is None or was_shape == shape:
+        return []
+    if was_version == version:
+        return [
+            f"the contract's shape moved since {tag} ({was_shape} -> {shape}) and "
+            f"`CONTRACT` is still `{version}` -- callers pin that string to know "
+            "what they may match on, so a shape that moves under it is a break "
+            "they were told did not happen"
+        ]
+    return []
+
+
+TRAIT_ROSTERS = {"gmr-store": "crates/gmr-store", "gmr-content": "crates/gmr-content"}
+
+
+def check_trait_roster():
+    """Every public trait a rostered crate defines is named in its CLAUDE.md bullet.
+
+    A roster in prose is a drift path. This repository carried a seven-name
+    list in CLAUDE.md and the same seven in memories/layers.md while
+    gmr-store held eight, and nothing noticed until somebody read all three
+    -- so the boundary went on being decided from a list that was wrong.
+    The names stay in CLAUDE.md because that is where the boundary is
+    decided; this is what stops them going stale there.
+
+    Testkit traits are excluded: they are doubles for tests, not contracts
+    a store implements, and CLAUDE.md does not speak for them.
+    """
+    errors = []
+    claude = (ROOT / "CLAUDE.md").read_text()
+    for crate, path in TRAIT_ROSTERS.items():
+        bullet = next(
+            (l for l in claude.splitlines() if l.startswith(f"- **`{crate}`**")), None
+        )
+        if bullet is None:
+            errors.append(f"CLAUDE.md has no crate-boundary bullet for {crate}")
+            continue
+        named = set(re.findall(r"`(\w+)`", bullet))
+        for f in sorted((ROOT / path / "src").rglob("*.rs")):
+            if f.name == "testkit.rs":
+                continue
+            for t in re.findall(r"^pub trait (\w+)", f.read_text(), re.M):
+                if t not in named:
+                    errors.append(
+                        f"{crate} defines `{t}` ({f.relative_to(ROOT)}) and CLAUDE.md's "
+                        f"boundary bullet does not name it — the boundary is decided from "
+                        f"that list, so a trait missing from it is a boundary nobody drew"
+                    )
+    return errors
+
+
 def check_acceptance_intact():
     """The portal's sentinel exists, says how many steps ran, and CI greps that number.
 
@@ -404,6 +611,8 @@ CHECKS = [
     ("base layer must not ship a concrete implementation", check_no_concrete_impl),
     ("base layer must not produce any binary", check_no_binaries),
     ("facade: only re-exports", check_facade_only_reexports),
+    ("every trait a rostered crate defines is named in CLAUDE.md", check_trait_roster),
+    ("the contract's shape is the one its version claims", check_contract_shape_is_earned),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),

@@ -2,11 +2,11 @@
 pub mod testkit;
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::{
     ContentError, ContentProvider, Fetched, History, MemorySource, MemoryStore, Record,
 };
 use gmr_core::{ExternalId, ProviderId, Ref, Version, content_hash_of_bytes};
-use gmr_probe::Budget;
 use serde::Deserialize;
 
 use crate::http::{Answer, Credential, Http};

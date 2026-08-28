@@ -10,7 +10,7 @@ watch: [sig, logic]
 
 # A partial statement has to be a partial type, or it overwrites what it cannot say
 
-`RunSettings` has three fields, and `sync` reconciles a declaration against what
+`RunSettings` has four fields, and `sync` reconciles a declaration against what
 an anchor is running. Building a **complete** `RunSettings` out of an **incomplete** declaration and
 then comparing by equality resets, on every sync, every knob the declaration had
 no way to mention — and to a value nobody wrote. It is unrecoverable in the
@@ -39,7 +39,7 @@ store and the deployment's own cadence written out behave identically — see
 still reachable, it just has to be stated rather than implied by a deletion.
 Stating it is the point: a declaration changes what it names.
 
-## Three knobs, one vocabulary, both grids
+## Four knobs, one vocabulary, both grids
 
 `AnchorDecl` and a note's long-hand `Spec` both `#[serde(flatten)]` the same
 `Declared`, so `.anchor/anchors.toml` and YAML frontmatter can say exactly the
@@ -65,9 +65,11 @@ distinguishable from stated-as-empty, here in the half of the declaration that
 
 ## When this changes, ask
 
-Does a new field on `RunSettings` arrive on `Declared` too? A fourth knob only
-`open` can set is this bug again, and it will present as sync quietly undoing
-somebody's tuning rather than as anything that looks like a bug.
+Does a new field on `RunSettings` arrive on `Declared` too? A knob only `open`
+can set is this bug again, and it will present as sync quietly undoing somebody's
+tuning rather than as anything that looks like a bug. `digests`
+([[anchor-recorded]]) was the fourth and arrived through this door because this
+note was standing at it.
 
 Does anything build a whole `RunSettings` from a declaration in order to compare
 it? That comparison is only sound while the declaration can express every field,

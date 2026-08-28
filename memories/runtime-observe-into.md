@@ -14,8 +14,18 @@ gets addressed the same way as `Found`: absence is itself an answer from a
 specific derivation, not a lack of one, so it is not exempted from having a
 `fact_address`.
 
+This is also the only place an `Outcome` becomes an `Observation`, which is
+why the digests-only guard sits here rather than beside either append — see
+[[anchor-recorded]]. Addressing and admitting are two jobs in one function
+because they are the same moment: the point where a reading is accepted as
+something the log may hold.
+
 ## When this changes, ask
 
 Does the new code address a fact using the anchor's declared probe instead
 of the resolved `derivation`? And does `NotFound` still get a real
 `fact_address` rather than being skipped as "nothing to address"?
+
+Does a second way to build an `Observation` appear? Then the guard has a
+bypass, and `docs/GMR.md`'s rule about write tokens covering *every* path is
+the argument against it.

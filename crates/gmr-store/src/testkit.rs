@@ -69,6 +69,10 @@ impl Journal for MemoryJournal {
         keys.dedup();
         Ok(keys)
     }
+
+    async fn head(&self) -> Result<Seq, StoreError> {
+        Ok(self.inner.lock().unwrap().next)
+    }
 }
 
 #[derive(Default)]

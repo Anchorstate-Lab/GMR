@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use gmr_probe::{Budget, Spent};
+use gmr_budget::{Budget, Spent};
 
 use crate::matching::{Fragment, Want};
 use crate::recipe::Recipe;
@@ -10,7 +10,14 @@ use crate::walk::{Held, Stamp, hash, sort_key, visit};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Halt {
     Spent(Spent),
+    Faulted(String),
     Refused(String),
+}
+
+impl Halt {
+    pub fn deterministic(&self) -> bool {
+        matches!(self, Self::Refused(_))
+    }
 }
 
 impl From<String> for Halt {
@@ -23,7 +30,7 @@ impl std::fmt::Display for Halt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Spent(spent) => f.write_str(spent.as_str()),
-            Self::Refused(why) => f.write_str(why),
+            Self::Faulted(why) | Self::Refused(why) => f.write_str(why),
         }
     }
 }

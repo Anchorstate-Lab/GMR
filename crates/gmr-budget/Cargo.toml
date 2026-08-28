@@ -1,0 +1,12 @@
+[package]
+name = "gmr-budget"
+description = "The vocabulary every outbound call shares: a deadline, an output cap, and a cancellation that inherits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,113 +1,85 @@
 ---
 about:
   - batteries/survey/src/recipe.rs#Recipe
-  - domains/coding/extract/src/ast.rs#RECIPE
-  - domains/coding/extract/src/name.rs#RECIPE
   - batteries/survey/src/recipe.rs#look
   - batteries/survey/src/recipe.rs#Merge
-  - batteries/survey/src/cache.rs#gather
-  - batteries/survey/src/cache.rs#scan
-  - batteries/survey/src/cache.rs#a_file_the_recipe_rules_out_leaves_no_trace_in_the_cache
+  - batteries/survey/src/recipe.rs#the_eligible_predicate_decides_what_the_corpus_even_contains
+  - domains/coding/extract/src/ast.rs#RECIPE
+  - domains/coding/extract/src/name.rs#RECIPE
 watch: [sig, logic]
 ---
 
-# An extractor is six things, and it was read out of the four that exist
+# An extractor is nine declared things, and no body of its own
 
-The four `probe` bodies were word-for-word identical. Reading them side by side,
-everything that differed is a field:
+Everything that distinguishes one extractor from another is a field on
+`Recipe`. `look` is the single body all of them run, so a probe function is one
+line.
 
 ```
-name       "ast-map"                       the scope the cache is keyed by
-version    env!("GMR_EXTRACTOR_AST")       the earned hash it reports as `extractor`
-items      ITEMS                           which position fields form the want
-eligible   lang::for_path(rel).is_some()   which files this probe can read at all
-collect    fn(rel, bytes, out)             the per-file parse
-merge      Concat | Fold(rolled)           whether candidates are the fragments
-barren     "contains no parseable nodes"   what an empty corpus means for this probe
+name         the probe's name          half of the index address
+version      the earned hash           the other half
+items        which position fields form the want, in priority order
+narrows_on   which want keys may narrow the index query
+identity     which want keys make a candidate eligible at all
+eligible     which files this probe can read
+collect      the per-file parse, emitting fragments
+merge        Concat | Fold             whether fragments are already candidates
+barren       what an empty corpus means for this probe
 ```
 
-That is `Recipe`, and `look` is the body. It was derived, not designed: three
-things the plan assumed turned out not to be true of the code.
+An extractor that needs behaviour `look` does not have is asking for a tenth
+field. It is not asking for a body of its own: a second body is a second place
+for the walk, the barren check, the narrowing decision and the report to drift
+apart, and the four extractors here differ in none of those.
 
-## `parse(rel, src: &str)` cannot express `addr-map`
+## `collect` takes bytes, and each extractor decodes for itself
 
-The plan had extractors take a `&str`. `addr-map` needs **bytes** — it reports
-`bytes.len()` and fingerprints the content — so `collect` takes `&[u8]` and each
-extractor decodes for itself. `ast`, `name` and `prose` use
-`str::from_utf8(bytes).ok()`, which is what `read_to_string` already was: it
-fails on invalid UTF-8 and the file is skipped. Swapping in `from_utf8_lossy`
-would have made previously-invisible files produce candidates, which is an
-output change wearing the clothes of a refactor.
+`addr-map` reports `bytes.len()` and fingerprints content, so the parameter
+cannot be `&str`. The three that want text call `str::from_utf8(bytes).ok()`
+and skip the file when it fails, which is what makes "not valid text" a file
+that contributes nothing rather than a reading that refuses. Decoding lossily
+instead would let previously-invisible files produce candidates — an output
+change, not a decoding detail.
 
-## `order` is not a member; it follows from `merge`
+## `eligible` decides what the corpus contains, not what the query sees
 
-The plan listed `order()` alongside the rest. It has no counterpart in the code:
-`Concat` yields walk order, and a `Fold` yields whatever its own key gives —
-`name-map`'s is `(name, scope)`, which is not a path at all. Declaring an order
-separately would have been inventing a member and then finding two
-implementations for it. See [[survey-index-shape]] for where a sort key does
-become necessary, and note it is derived from `rel` there rather than declared
-here.
+A file the predicate rules out is never read, so it cannot contribute a
+fragment under any coordinate.
+`the_eligible_predicate_decides_what_the_corpus_even_contains` pins that: the
+same tree seen through `anything` and through `rust_only` yields a different
+candidate count for one identical query.
 
-## Splitting `Fragment` from `Candidate` does not belong to this step
+That is why the predicate belongs to the extractor and rides inside its earned
+version. It is an input to every answer the probe gives, so a change to it has
+to change the index address ([[survey-index-shape]]) — otherwise a generation
+built when the predicate was narrower keeps serving answers the current
+predicate would not produce.
 
-[[survey-fragment-debt]] sets the trigger precisely: **before `narrow` gets its
-first caller**. That is the query rewrite, not this. Bringing the split forward
-would have forced the cache's `Entry` to change type, which drags the four
-extractors in and turns one commit into a coupled pair for no benefit anyone
-could name yet.
+## Order follows from `merge`; it is not a member
 
-## Two costs the old signature was hiding
+`Concat` yields walk order, which the index reproduces by sorting on
+`(sort, ord)` ([[survey-index-shape]]). A `Fold` yields whatever its own key
+gives — `name-map`'s is `(name, scope)`, which is not a path at all. Declaring
+an `order` member would mean inventing a question with two answers already, one
+of which is "not applicable".
 
-**Every file was read twice on a cache miss.** `scan` reads the bytes to hash
-them for freshness, then the old `collect` took a `&Path` and read the same file
-again. Handing the bytes on removes the second read;
-`the_bytes_the_recipe_is_handed_are_the_ones_the_cache_hashed` pins it by
-fingerprinting what `collect` received and comparing it to the entry the cache
-keyed.
+## `identity` gates eligibility; `items` order sets priority
 
-**Every file was read, hashed and cached — including ones no extractor could
-use.** `prose-map` handles `.md` and this repository has 305 files; `ast-map`
-handles source and 129 of them are. The rest were read, hashed, handed to
-`collect`, and stored with an empty candidate list. `eligible` now runs before
-the read, so they are not touched at all.
+They are separate because they answer separate questions. `items` order is the
+priority `report` ranks by ([[survey-report]]). `identity` names the keys that
+make a candidate worth considering: when the want touches any of them, a
+candidate must hit at least one to be eligible; when it touches none, a
+candidate must hit every wanted pair.
 
-`eligible` belongs to the extractor and therefore to its earned version, which
-is not a stylistic choice: [[survey-cache-scope]] warns that `Vocabulary.reads`
-(the extension list, or `Reads::Anything` — see [[extract-vocabulary]]) lives in
-`lib.rs`, outside the closure, and that using it as a scan filter would repeat
-that incident. A predicate that decides which files reach `collect`
-decides what the answer can contain, so it is exactly the kind of input Rule 5
-means by *earned*.
-
-The budget checkpoint stays **ahead** of the predicate. A tree of a hundred
-thousand ineligible files still has to be interruptible, and a cheap skip that
-cannot be cancelled is a slow scan with no way out.
-
-## The fold still has to be remembered
-
-`name-map` is the only `Fold`, and [[name-map-cache]] measured what memoising it
-is worth: 467ms to 7.4ms. `Merge::Fold` therefore does not run in `look`; it runs
-through `cache::folded`, in the same `Flight` slot the path it replaced used.
-`Merge::Concat` hands the gathered `Arc` straight back — a fold memo for the
-identity would be a full copy of the corpus on every question.
-
-## The translation was proved, not hoped
-
-Landing this earns all four extractors a new version, which is only honest if
-the answers did not move. 1149 readings — every `path#symbol` coordinate this
-repository's own memories declare, each asked of the probe that owns it and of
-the ones that do not, plus roster shapes and `nth` sweeps — run against a frozen
-copy of the tree under both codes: 941 `found`, 208 `found:false`, and **zero
-differences apart from the `extractor` field itself**.
-
-The barren branch has no reading in that set, which is worth saying rather than
-leaving to be discovered: it is covered by unit tests in this file, not by the
-sweep.
+`ast-map` declares `name`/`callee`/`member`/`shape` and not `file`, so a
+coordinate naming a file and a symbol cannot return every node in that file
+merely because they all match on `file`.
 
 ## When this changes, ask
 
-Does `collect` still receive the bytes the scan already read, or has something
-gone back to taking a path? And is `eligible` still inside the closure — a
-predicate that filters the corpus from outside it is a version that does not
-change when the answer does.
+Does a field arrive that some extractor cannot answer? Then it is two fields,
+or it belongs to `merge` — `Recipe` is what every extractor declares, and an
+`Option` here means the shape is wrong.
+
+Does an extractor grow a body beside `look`? Whatever it needed is a field, and
+the second body is where the walk and the report start disagreeing.

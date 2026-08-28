@@ -1,5 +1,5 @@
 use chrono::Utc;
-use gmr_core::{AnchorKey, Entry, fold};
+use gmr_core::{AnchorKey, Entry};
 use gmr_store::Fence;
 
 use crate::assembly::Runtime;
@@ -20,8 +20,10 @@ async fn close(
     key: &AnchorKey,
     rationale: &[u8],
 ) -> Result<(), RuntimeError> {
-    let entries = log.entries(key, 0).await?;
-    let state = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    let state = log
+        .state(key)
+        .await?
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
     if state.closed {
         return Err(RuntimeError::AnchorClosed { key: key.clone() });

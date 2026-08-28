@@ -35,6 +35,13 @@ pub enum RuntimeError {
     )]
     CannotOpen { message: String },
 
+    #[error(
+        "anchor `{key}` records digests only, and the probe answered with values that are \
+         not sha256 digests. Nothing was written -- refusing is the enforcement, because an \
+         anchor whose facts are secret cannot be protected by asking its probe nicely"
+    )]
+    Undigested { key: AnchorKey },
+
     #[error("this deployment has no Queue — pass is a polling-only verb")]
     NoQueue,
 
@@ -63,6 +70,7 @@ impl RuntimeError {
             Self::AnchorClosed { .. } => "anchor_closed",
             Self::NotClosedYet { .. } => "not_closed_yet",
             Self::CannotOpen { .. } => "cannot_open",
+            Self::Undigested { .. } => "undigested",
             Self::NoQueue => "no_queue",
             Self::Leased { .. } => "leased",
             Self::Store(e) => e.code(),

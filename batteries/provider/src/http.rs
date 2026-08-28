@@ -1,6 +1,6 @@
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::ContentError;
-use gmr_probe::Budget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Answer {
@@ -70,8 +70,8 @@ impl Http for Reqwest {
 pub(crate) mod testkit {
     use super::{Answer, Http};
     use async_trait::async_trait;
+    use gmr_budget::Budget;
     use gmr_content::ContentError;
-    use gmr_probe::Budget;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 

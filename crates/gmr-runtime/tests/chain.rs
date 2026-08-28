@@ -2,11 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_content::{ContentError, ContentProvider, Fetched};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
-use gmr_probe::Budget;
 use gmr_runtime::{OpenRequest, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
@@ -87,6 +87,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            facts: gmr_core::Recorded::Plain,
             budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,

@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use gmr_budget::Budget;
 use gmr_core::{ExternalId, Version};
-use gmr_probe::Budget;
 
 use crate::{ContentProvider, MemorySource};
 

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gmr::{AnchorKey, Footing, Runtime};
+use gmr::{AnchorKey, Footing, HoldingKind, KnowledgeKind, Runtime};
 
 use crate::error::CliError;
 use crate::probes::Catalog;
@@ -28,6 +28,7 @@ struct Verdict {
     no_provider: bool,
     skill_stale: bool,
     unsupervised: bool,
+    chain_broken: bool,
 }
 
 impl Verdict {
@@ -40,11 +41,43 @@ impl Verdict {
             || self.no_provider
             || self.skill_stale
             || self.unsupervised
+            || self.chain_broken
     }
 }
 
 fn addresses(refs: &[gmr::Ref]) -> Vec<String> {
     refs.iter().map(crate::memories::addressed).collect()
+}
+
+fn grounds_json(ground: &gmr::CorpusHealth) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    for kind in [
+        HoldingKind::Holds,
+        HoldingKind::Moved,
+        HoldingKind::Incomparable,
+        HoldingKind::Absent,
+        HoldingKind::NeverEstablished,
+        HoldingKind::Undated,
+    ] {
+        let mut anchors = serde_json::Map::new();
+        if let Some(on) = ground.holdings.get(&kind) {
+            for (anchor, refs) in on {
+                anchors.insert(anchor.to_string(), serde_json::json!(addresses(refs)));
+            }
+        }
+        let name = serde_json::to_value(kind).unwrap_or_default();
+        out.insert(
+            name.as_str().unwrap_or("unknown").to_owned(),
+            serde_json::Value::Object(anchors),
+        );
+    }
+    serde_json::Value::Object(out)
+}
+
+fn grounds_line(ground: &gmr::CorpusHealth, kind: HoldingKind) -> Option<String> {
+    let on = ground.holdings.get(&kind)?;
+    let pairs: usize = on.values().map(Vec::len).sum();
+    Some(format!("{pairs} record(s) on {} anchor(s)", on.len()))
 }
 
 fn spelled(refs: &[gmr::Ref], names: &crate::memories::Names) -> String {
@@ -72,6 +105,7 @@ pub async fn run(
     root: &Path,
     names: &crate::memories::Names,
     cache_fault: Option<&str>,
+    chain_break: Option<gmr::Seq>,
     json: bool,
 ) -> Result<i32, CliError> {
     let declared_providers = crate::providers::declared(root)?;
@@ -79,11 +113,22 @@ pub async fn run(
     let live = corpus.live();
     let ground = corpus.health();
 
-    let unseen: Vec<&str> = live
-        .iter()
-        .filter(|v| v.attempts > 0)
-        .map(|v| v.key.as_str())
-        .collect();
+    let blind = |kind: KnowledgeKind| -> Vec<&str> {
+        ground
+            .knowings
+            .get(&kind)
+            .map(|keys| keys.iter().map(|k| k.as_str()).collect())
+            .unwrap_or_default()
+    };
+    let unseen: Vec<&str> = [
+        KnowledgeKind::NeverAsked,
+        KnowledgeKind::Unreachable,
+        KnowledgeKind::Unusable,
+        KnowledgeKind::Unevaluable,
+    ]
+    .into_iter()
+    .flat_map(blind)
+    .collect();
     let absent: Vec<&str> = live
         .iter()
         .filter(|v| v.sighting == gmr::Sighting::Absent)
@@ -121,6 +166,7 @@ pub async fn run(
             no_provider: !ground.on(Footing::NoProvider).is_empty(),
             skill_stale: !skill_stale.is_empty(),
             unsupervised: !ground.unsupervised.is_empty(),
+            chain_broken: chain_break.is_some(),
         }
         .theirs_to_fix(),
     );
@@ -135,6 +181,11 @@ pub async fn run(
             serde_json::json!({
                 "anchors": corpus.len(), "live": live.len(),
                 "absent": absent, "unseen": unseen, "barren": barren,
+                "unseen_unreachable": blind(KnowledgeKind::Unreachable),
+                "unseen_unusable": blind(KnowledgeKind::Unusable),
+                "unseen_unevaluable": blind(KnowledgeKind::Unevaluable),
+                "unseen_never_asked": blind(KnowledgeKind::NeverAsked),
+                "grounds": grounds_json(ground),
                 "stranded": stranded, "undeclared": undeclared,
                 "gone": addresses(ground.on(Footing::Gone)),
                 "no_provider": addresses(ground.on(Footing::NoProvider)),
@@ -146,6 +197,7 @@ pub async fn run(
                 "unsupervised": addresses(&ground.unsupervised),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
+                "chain_break": chain_break,
                 "provider_warnings": provider_warnings, "cache_fault": cache_fault,
                 "declared_providers": declared_providers.iter().map(|(name, decl)| serde_json::json!({
                     "provider": name, "can": decl.can(), "caveat": decl.caveat(),
@@ -159,6 +211,13 @@ pub async fn run(
         return Ok(exit_code);
     }
 
+    if let Some(seq) = chain_break {
+        println!(
+            "journal   BROKEN at seq {seq} — this entry's link does not cover it. \
+             The log is append-only by trigger; something got past that, or the file \
+             was edited underneath. Do not trust readings at or after this point"
+        );
+    }
     println!("anchors   {} (live {})", corpus.len(), live.len());
     for (name, decl) in &declared_providers {
         println!("provider  {name}   {}", decl.can().join(" · "));
@@ -180,11 +239,63 @@ pub async fn run(
             absent.join(", ")
         );
     }
-    if !unseen.is_empty() {
-        println!(
-            "unseen    {}  <- fix the probe or credentials",
-            unseen.join(", ")
-        );
+    for (kind, label, whose) in [
+        (
+            KnowledgeKind::Unreachable,
+            "unreachable",
+            "the probe could not be reached — somebody else's service or your credentials",
+        ),
+        (
+            KnowledgeKind::Unusable,
+            "unusable  ",
+            "the probe answered and the answer cannot be used — whoever writes the probe",
+        ),
+        (
+            KnowledgeKind::Unevaluable,
+            "unevaluable",
+            "the rules cannot be evaluated against what came back — whoever wrote the rules",
+        ),
+        (
+            KnowledgeKind::NeverAsked,
+            "never asked",
+            "our clock ran out before their turn, not anybody's outage",
+        ),
+    ] {
+        let keys = blind(kind);
+        if !keys.is_empty() {
+            println!("{label} {}\n          <- {whose}", keys.join(", "));
+        }
+    }
+    for (kind, label, whose) in [
+        (
+            HoldingKind::Moved,
+            "moved     ",
+            "the ground under these records moved after they were bound. `gmr check` is where you read them again",
+        ),
+        (
+            HoldingKind::Incomparable,
+            "incomparable",
+            "a different extractor took the reading these are dated against, so a diff would answer `the instrument changed shape`, not `the world moved`",
+        ),
+        (
+            HoldingKind::Absent,
+            "absent gnd",
+            "the coordinate these records are about is not there any more",
+        ),
+        (
+            HoldingKind::NeverEstablished,
+            "no ground ",
+            "bound at a seq that predates the anchor's first entry — there was no ground yet",
+        ),
+        (
+            HoldingKind::Undated,
+            "undated   ",
+            "written before bindings carried a seq, so they cannot be compared against the log at all",
+        ),
+    ] {
+        if let Some(line) = grounds_line(ground, kind) {
+            println!("{label} {line}\n          <- {whose}");
+        }
     }
     if !barren.is_empty() {
         println!(
@@ -295,7 +406,7 @@ mod tests {
 
     #[test]
     fn every_condition_this_repositorys_owner_can_act_on_turns_it_red() {
-        let each: [fn(&mut Verdict); 8] = [
+        let each: [fn(&mut Verdict); 9] = [
             |v| v.stranded = true,
             |v| v.provider_unavailable = true,
             |v| v.breaking_notes = true,
@@ -304,6 +415,7 @@ mod tests {
             |v| v.no_provider = true,
             |v| v.skill_stale = true,
             |v| v.unsupervised = true,
+            |v| v.chain_broken = true,
         ];
         for set in each {
             let mut v = Verdict::default();
@@ -316,11 +428,15 @@ mod tests {
     fn a_store_that_would_not_answer_is_not_among_them() {
         assert_eq!(
             std::mem::size_of::<Verdict>(),
-            8,
+            9,
             "Verdict is one bool per condition that makes this run red, and a store being \
              unreachable is deliberately not one of them: nobody holding this repository can \
              fix somebody else's service, and a build that fails on it fails for a reason its \
-             owner cannot act on. Adding a field here means claiming otherwise"
+             owner cannot act on. Adding a field here means claiming otherwise. \
+             `chain_broken` is a claim of exactly that kind and it holds: the journal is \
+             this repository's own file, append-only by trigger, and a link that no longer \
+             covers its row means something got past that or edited it underneath -- \
+             whoever holds the repository is the only one who can go and look"
         );
     }
 }

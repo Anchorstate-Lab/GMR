@@ -2,39 +2,43 @@
 about: domains/coding/extract/src/lib.rs#narrow_of
 ---
 
-# The tree to walk and the subtree to narrow to are different axes, not one joined path
+# The tree to walk and the subtree to report on are two axes, never one joined path
 
-`root_of(cwd, params)` used to join the CLI's repository root with an
-anchor's `params.root` into one absolute path, and every extractor's
-`probe()` took that single joined path as both "where to walk" and "what to
-report on". That is the exact shape [[survey-cache-scope]] measured as a
-bug: seven `layer::*` anchors narrowing `ast-map` to seven different crates
-meant seven different joined roots, so the old `Cache` (keyed by
-`probe@stamp@root`) stored the same file's content once per layer anchor —
-4.5 MB of distinct content held as 6.5 MB, growing with every anchor
-somebody opens.
+`Bridge`'s `tree` is fixed once, at construction — `registry()` takes
+`root: &Path` for exactly that. `narrow_of(params)` extracts `params.root`
+alone, with no `cwd` joined into it, and that plain relative string reaches
+`look()`'s `root` parameter, where it narrows a query against the one
+already-built index.
 
-`Bridge`'s `tree` is fixed once, at construction (`registry()` now takes
-`root: &Path` for exactly this). `narrow_of(params)` extracts `params.root`
-alone — no `cwd` joined in — and that plain relative string is what reaches
-`look()`'s `root: &str` parameter, where it narrows a query against the one
-already-built index rather than re-scoping a second walk. Opening a new
-`layer::*` anchor now costs zero index bytes: it asks a different question
-about facts that already exist, it does not create new ones.
+Keeping them apart is what makes a narrowing anchor free. The `layer::*`
+anchors point `ast-map` at one crate each ([[layers]]); they ask a different
+question about facts that already exist rather than creating new ones, so
+opening another one costs zero index bytes. Joining the two axes into a single
+path would make each narrowing its own walk and its own stored copy of every
+file underneath it, and the duplication grows with every anchor somebody opens.
 
-`registry_uncached()` could not get the same treatment. Its own tests
-(`domains/coding/extract/src/lib.rs`'s `tests` module) reuse one registry
-across several different `reach.cwd` values — a fresh temp dir per test —
-which a `Bridge` with one fixed tree cannot serve. Its real caller
-(`probes::list`) only ever reads `.version` off the result and never calls
-`.extract` at scale, so its closures build a fresh throwaway in-memory
-`Bridge` scoped to that call's own `reach.cwd` instead — matching
-"uncached" literally, and matching what `root_of` used to do per call
-anyway, just without the join.
+It is also what lets `root` be a predicate rather than part of the address —
+see [[survey-index-shape]] for why `under(rel, root)` decides containment and
+the generation does not mention the root at all.
+
+`registry_uncached()` builds a throwaway in-memory `Bridge` per call, scoped to
+that call's own `reach.cwd`. Its real caller reads `.version` off the result and
+never extracts at scale, and its tests reuse one registry across a fresh temp
+dir per test — which one fixed tree cannot serve.
+
+## It comes from params, so the anchor can state what it meant
+
+`params` enter the declaration hash, so an anchor records the subtree it was
+always about. A process's working directory differs with whoever runs it: the
+same anchor would observe two different trees on two machines, the logs would
+not line up, and nothing anywhere would record that they disagreed.
+
+The seven `layer::*` anchors narrow to a single package exactly this way, with
+`params: {root: crates/X}`.
 
 ## When this changes, ask
 
-Does any extractor or call site reach for `reach.cwd` and `params.root`
-together again, joined into one path? That is the old bug's exact shape —
-the tree a `Corpus` walks must come from where it was constructed, never
-from a per-call join with the narrowing string.
+Does any call site reach for `reach.cwd` and `params.root` together and join
+them? The tree a `Corpus` walks comes from where it was constructed; a per-call
+join puts the walk back on the query path, where every narrowing pays for a
+scan of its own.

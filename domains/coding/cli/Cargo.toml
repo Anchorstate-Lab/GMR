@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "coding_anchor"
+path = "src/lib.rs"
+
 [[bin]]
 name = "gmr"
 path = "src/main.rs"
@@ -14,7 +18,7 @@ path = "src/main.rs"
 # 基底
 gmr = { path = "../../../crates/gmr", features = ["sqlite"] }
 # 电池 —— **挑哪一块是域的决定**，这三行就是那个决定
-gmr-transport = { path = "../../../batteries/transport", features = ["shell", "inproc", "script"] }
+gmr-transport = { path = "../../../batteries/transport", features = ["shell", "inproc", "script", "http", "file", "sql"] }
 gmr-provider = { path = "../../../batteries/provider", features = ["git", "claude-code", "mem0", "declared"] }
 gmr-survey = { path = "../../../batteries/survey" }
 gmr-atlas = { path = "../../../batteries/atlas" }

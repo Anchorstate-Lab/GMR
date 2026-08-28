@@ -183,15 +183,26 @@ pub fn should_still(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Faltering {
+    pub attempts: u32,
+    pub reason: ReasonClass,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<FailureCode>,
+    pub message: String,
+    pub at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnchorState {
     pub anchor: Anchor,
     pub state: State,
     pub latest: Option<Observation>,
     pub latest_seq: Option<Seq>,
     pub closed: bool,
-    pub attempts: u32,
+    pub faltering: Option<Faltering>,
     pub last_sighting: Option<DateTime<Utc>>,
     pub entered_at: Option<DateTime<Utc>>,
+    pub moved_at: Option<Seq>,
     pub head: Seq,
     pub revisions: BTreeMap<ChangeKind, u32>,
 }
@@ -199,6 +210,10 @@ pub struct AnchorState {
 impl AnchorState {
     pub fn position(&self) -> &serde_json::Value {
         self.state.position()
+    }
+
+    pub fn attempts(&self) -> u32 {
+        self.faltering.as_ref().map_or(0, |f| f.attempts)
     }
 }
 
@@ -208,9 +223,17 @@ pub fn fold(entries: &[(Seq, Entry)]) -> Option<AnchorState> {
 
 pub fn scan(
     entries: &[(Seq, Entry)],
+    each: impl FnMut(Seq, &Entry, &AnchorState),
+) -> Option<AnchorState> {
+    resume(None, entries, each)
+}
+
+pub fn resume(
+    from: Option<AnchorState>,
+    entries: &[(Seq, Entry)],
     mut each: impl FnMut(Seq, &Entry, &AnchorState),
 ) -> Option<AnchorState> {
-    let mut acc: Option<AnchorState> = None;
+    let mut acc: Option<AnchorState> = from;
 
     for (seq, entry) in entries {
         match entry {
@@ -226,9 +249,10 @@ pub fn scan(
                     latest: Some(observation.clone()),
                     latest_seq: Some(*seq),
                     closed: false,
-                    attempts: 0,
+                    faltering: None,
                     last_sighting: Some(*at),
                     entered_at: Some(*at),
+                    moved_at: Some(*seq),
                     head: *seq,
                     revisions: BTreeMap::new(),
                 });
@@ -241,28 +265,40 @@ pub fn scan(
                 let Some(s) = acc.as_mut() else { continue };
                 if s.state != *state {
                     s.entered_at = Some(*at);
+                    s.moved_at = Some(*seq);
                 }
                 s.state = state.clone();
                 s.latest = Some(observation.clone());
                 s.latest_seq = Some(*seq);
-                s.attempts = 0;
+                s.faltering = None;
                 s.last_sighting = Some(*at);
                 s.head = *seq;
             }
             Entry::Still { at, .. } => {
                 let Some(s) = acc.as_mut() else { continue };
-                s.attempts = 0;
+                s.faltering = None;
                 s.last_sighting = Some(*at);
                 s.head = *seq;
             }
-            Entry::Attempt { .. } => {
+            Entry::Attempt {
+                reason,
+                code,
+                message,
+                at,
+            } => {
                 let Some(s) = acc.as_mut() else { continue };
-                s.attempts += 1;
+                s.faltering = Some(Faltering {
+                    attempts: s.attempts() + 1,
+                    reason: *reason,
+                    code: *code,
+                    message: message.clone(),
+                    at: *at,
+                });
                 s.head = *seq;
             }
             Entry::Revise { change, at, .. } => {
                 let Some(s) = acc.as_mut() else { continue };
-                apply(s, change, *at);
+                apply(s, change, *at, *seq);
                 s.head = *seq;
             }
             Entry::Close { .. } => {
@@ -281,7 +317,7 @@ pub fn scan(
     acc
 }
 
-fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
+fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>, seq: Seq) {
     *s.revisions.entry(change.kind()).or_insert(0) += 1;
 
     match change {
@@ -291,6 +327,7 @@ fn apply(s: &mut AnchorState, change: &Change, at: DateTime<Utc>) {
         Change::Restate { state } => {
             if s.state != *state {
                 s.entered_at = Some(at);
+                s.moved_at = Some(seq);
             }
             s.state = state.clone();
         }
@@ -400,7 +437,7 @@ mod tests {
             ),
         ];
         let s = fold(&log).unwrap();
-        assert_eq!(s.attempts, 2);
+        assert_eq!(s.attempts(), 2);
         assert_eq!(
             s.state.status(),
             Some(StatusId::new("ok")),
@@ -437,8 +474,174 @@ mod tests {
             ),
         ];
         let s = fold(&log).unwrap();
-        assert_eq!(s.attempts, 0);
+        assert_eq!(s.attempts(), 0);
+        assert_eq!(
+            s.faltering, None,
+            "the count and the reason are one value, so a cleared streak cannot leave a \
+             reason behind for the next reader to act on"
+        );
         assert_eq!(s.last_sighting, Some(at(20)));
+    }
+
+    #[test]
+    fn resuming_from_any_point_lands_where_folding_the_whole_log_lands() {
+        let log = vec![
+            opened(&["settled"], json!({ POSITION: "a.rs", STATUS: "open" })),
+            (
+                2,
+                Entry::Attempt {
+                    reason: ReasonClass::Unreachable,
+                    code: Some(FailureCode::Unreachable),
+                    message: "gone".to_owned(),
+                    at: at(5),
+                },
+            ),
+            (
+                3,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ POSITION: "b.rs", STATUS: "drifted" })),
+                    at: at(10),
+                },
+            ),
+            (
+                4,
+                Entry::Still {
+                    ref_entry: 3,
+                    at: at(15),
+                    versions: versions(),
+                },
+            ),
+            (
+                5,
+                Entry::Revise {
+                    change: Change::Restate {
+                        state: State::new(json!({ POSITION: "c.rs", STATUS: "ok" })),
+                    },
+                    context: seal(),
+                    rationale: seal(),
+                    at: at(20),
+                },
+            ),
+            (
+                6,
+                Entry::Close {
+                    at: at(25),
+                    context: seal(),
+                    rationale: seal(),
+                },
+            ),
+        ];
+
+        let whole = fold(&log).expect("a log that opens folds");
+
+        for cut in 1..=log.len() {
+            let checkpoint = fold(&log[..cut]).expect("every prefix opens too");
+            assert_eq!(
+                resume(Some(checkpoint), &log[cut..], |_, _, _| {}),
+                Some(whole.clone()),
+                "a checkpoint taken after {cut} entries and carried forward over the rest \
+                 must land exactly where folding all {} lands. This is the whole licence \
+                 for caching a fold: on an append-only log a state at a seq only ever goes \
+                 stale, never wrong, so catching it up needs no invalidation. The property \
+                 holds because every arm of this fold reads only the accumulator and the \
+                 entry -- `Still` carries `ref_entry` and does not follow it. An arm that \
+                 reached back for an earlier entry would break this without breaking any \
+                 test that folds from zero",
+                log.len()
+            );
+        }
+    }
+
+    #[test]
+    fn the_clock_and_the_cursor_mark_the_same_move() {
+        let log = vec![
+            opened(&[], json!({ STATUS: "ok" })),
+            (
+                2,
+                Entry::Attempt {
+                    reason: ReasonClass::Unreachable,
+                    code: None,
+                    message: "boom".into(),
+                    at: at(10),
+                },
+            ),
+            (
+                3,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ STATUS: "ok" })),
+                    at: at(20),
+                },
+            ),
+            (
+                4,
+                Entry::Transition {
+                    observation: obs(),
+                    state: State::new(json!({ STATUS: "drifted" })),
+                    at: at(30),
+                },
+            ),
+        ];
+
+        let s = fold(&log).unwrap();
+
+        assert_eq!(
+            (s.entered_at, s.moved_at),
+            (Some(at(30)), Some(4)),
+            "`entered_at` and `moved_at` are one event in two units -- when the state \
+             changed, and where in the log it changed. Set one without the other and a \
+             reader comparing seqs disagrees with a reader comparing clocks about whether \
+             the ground moved"
+        );
+        assert_eq!(
+            s.head, 4,
+            "the head is every entry; the move is only the entries that changed the state. \
+             A failed attempt and a transition that restated the same value both advance \
+             the head and neither is the ground moving"
+        );
+    }
+
+    #[test]
+    fn a_streak_carries_the_reason_of_its_latest_failure() {
+        let log = vec![
+            opened(&[], json!({ STATUS: "ok" })),
+            (
+                2,
+                Entry::Attempt {
+                    reason: ReasonClass::Unreachable,
+                    code: Some(FailureCode::TimedOut),
+                    message: "boom".into(),
+                    at: at(10),
+                },
+            ),
+            (
+                3,
+                Entry::Attempt {
+                    reason: ReasonClass::Unevaluable,
+                    code: Some(FailureCode::NoSuchField),
+                    message: "no such field".into(),
+                    at: at(20),
+                },
+            ),
+        ];
+
+        let f = fold(&log)
+            .unwrap()
+            .faltering
+            .expect("two failures and no sighting since is a streak");
+
+        assert_eq!(
+            (f.reason, f.code),
+            (ReasonClass::Unevaluable, Some(FailureCode::NoSuchField)),
+            "a fold that keeps only a count tells a reader that something failed twice and \
+             not whether the source could not be reached or the rules could not be \
+             evaluated -- which are different people's problem. `check` escapes this only \
+             because it observes afresh and reads the code off the live outcome; anything \
+             answering from folded state has no second chance to ask"
+        );
+        assert_eq!(f.at, at(20), "the streak is dated by its latest failure");
+        assert_eq!(f.attempts, 2);
     }
 
     #[test]
@@ -677,7 +880,7 @@ mod tests {
         assert_eq!(*code, None, "absent, not guessed at");
 
         let s = fold(&[opened(&[], json!({ STATUS: "ok" })), (2, e)]).unwrap();
-        assert_eq!(s.attempts, 1);
+        assert_eq!(s.attempts(), 1);
     }
 
     #[test]

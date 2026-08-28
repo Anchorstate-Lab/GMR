@@ -1,13 +1,16 @@
+pub use gmr_budget as budget;
 pub use gmr_content as content;
 pub use gmr_core as core;
 pub use gmr_expr as expr;
 pub use gmr_probe as probe;
 pub use gmr_runtime as runtime;
+pub use gmr_runtime::contract;
 pub use gmr_store as store;
 
 #[cfg(feature = "sqlite")]
 pub use gmr_store::sqlite;
 
+pub use gmr_budget::{Budget, Spent};
 pub use gmr_content::{
     ContentError, ContentErrorCode, ContentProvider, Fetched, History, MemorySource, MemoryStore,
     Record,
@@ -15,18 +18,20 @@ pub use gmr_content::{
 pub use gmr_core::{
     Anchor, AnchorKey, AnchorState, Binding, CanonicalizeError, Change, ChangeKind, ContentHash,
     Derivation, Entry, Expr, ExternalId, Facts, FailureCode, Kind, Link, LinkKind, NewtypeError,
-    OUTCOME_CONTRACT, Observation, Outcome, ProbeName, ProbeRef, ProbeVersion, ProviderId,
-    ReasonClass, Ref, Retain, Rule, RunSettings, Source, State, StatusId, Superseded, Transitions,
-    Verifiability, Version, fold,
+    OUTCOME_CONTRACT, Observation, Openness, Outcome, ProbeName, ProbeRef, ProbeVersion,
+    ProviderId, ReasonClass, Recorded, Ref, Retain, Rule, RunSettings, Seq, Source, State,
+    StatusId, Superseded, Transitions, Verifiability, Version, fold,
 };
 pub use gmr_expr::EVALUATOR_VERSION;
 pub use gmr_probe::{ProbeError, ProbeErrorCode, Transport};
 pub use gmr_runtime::{
-    AnchorHealth, AnchorLog, AnchorView, Before, Bound, Corpus, CorpusHealth, Edge, Edges, Footing,
-    Grounded, Grounding, Landed, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Passed,
-    Policy, Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
+    AnchorHealth, AnchorLog, AnchorView, AssemblyError, Before, Blind, Bound, Corpus, CorpusHealth,
+    Edge, Edges, Footing, Grounded, Grounding, Holding, HoldingKind, Instructions, Knowledge,
+    KnowledgeKind, Landed, Looked, MemoryLens, MemoryView, Observed, OpenRequest, Opened, Part,
+    Passed, Policy, Revised, Runtime, RuntimeError, Scheduler, Sighting, Standing, Supersede,
+    Warrant,
 };
 pub use gmr_store::{
-    BindingStore, Disposition, ErrorCode, ErrorKind, Fence, Journal, LinkStore, Queue, Sealer,
-    Settings, StoreError, Ticket,
+    BindingStore, Chained, Disposition, ErrorCode, ErrorKind, Fence, Journal, LinkStore, Queue,
+    Sealer, Settings, StoreError, Ticket,
 };

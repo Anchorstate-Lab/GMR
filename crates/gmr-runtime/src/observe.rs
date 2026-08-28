@@ -1,16 +1,18 @@
 use chrono::Utc;
+use futures_util::{StreamExt, TryStreamExt};
+use gmr_budget::Budget;
 use gmr_core::{
-    Anchor, AnchorKey, Entry, FailureCode, Observation, ReasonClass, State, Versions, fold,
-    should_still,
+    Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded, State,
+    Versions, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
-use gmr_probe::Budget;
 use gmr_store::{Disposition, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
-use crate::log::AnchorLog;
+use crate::log::{AnchorLog, Stood};
 use crate::observer::Observer;
+use crate::read::AnchorView;
 use crate::scheduler::Scheduler;
 use crate::translate::{Transitioned, transition};
 
@@ -33,6 +35,12 @@ pub enum Observed {
     Closed,
 }
 
+#[derive(Debug, Clone)]
+pub struct Looked {
+    pub before: AnchorView,
+    pub observed: Observed,
+}
+
 impl Runtime {
     pub fn instrument(
         &self,
@@ -51,7 +59,61 @@ impl Runtime {
     }
 
     pub async fn observe(&self, key: &AnchorKey) -> Result<Observed, RuntimeError> {
-        let budget = self.scheduler.policy().budget();
+        self.observe_within(key, &crate::read::Instructions::default())
+            .await
+    }
+
+    pub async fn observe_within(
+        &self,
+        key: &AnchorKey,
+        how: &crate::read::Instructions,
+    ) -> Result<Observed, RuntimeError> {
+        Ok(self.looking(key, how).await?.0)
+    }
+
+    pub async fn look(&self, key: &AnchorKey) -> Result<Looked, RuntimeError> {
+        self.look_within(key, &crate::read::Instructions::default())
+            .await
+    }
+
+    pub async fn look_within(
+        &self,
+        key: &AnchorKey,
+        how: &crate::read::Instructions,
+    ) -> Result<Looked, RuntimeError> {
+        let looks = self.scheduler.seen(key).await?;
+        let (observed, stood) = self.looking(key, how).await?;
+        let (before, _) = crate::read::viewed(stood.anchor, key, &looks, stood.logged);
+        Ok(Looked { before, observed })
+    }
+
+    pub async fn look_all(&self, keys: &[AnchorKey]) -> Result<Vec<Looked>, RuntimeError> {
+        self.look_all_within(keys, &crate::read::Instructions::default())
+            .await
+    }
+
+    pub async fn look_all_within(
+        &self,
+        keys: &[AnchorKey],
+        how: &crate::read::Instructions,
+    ) -> Result<Vec<Looked>, RuntimeError> {
+        futures_util::stream::iter(keys)
+            .map(|key| self.look_within(key, how))
+            .buffered(self.scheduler.policy().observe_at_once.max(1))
+            .try_collect()
+            .await
+    }
+
+    async fn looking(
+        &self,
+        key: &AnchorKey,
+        how: &crate::read::Instructions,
+    ) -> Result<(Observed, Stood), RuntimeError> {
+        let policy = self.scheduler.policy();
+        let budget = match how.budget {
+            Some(span) => policy.budget().narrowed(span),
+            None => policy.budget(),
+        };
         observe(&self.log, &self.observer, &self.scheduler, key, &budget).await
     }
 }
@@ -62,7 +124,7 @@ async fn observe(
     scheduler: &Scheduler,
     key: &AnchorKey,
     budget: &Budget,
-) -> Result<Observed, RuntimeError> {
+) -> Result<(Observed, Stood), RuntimeError> {
     if !scheduler.leases_configured() {
         return observe_with(log, observer, scheduler, key, Fence::Unleased, budget).await;
     }
@@ -75,7 +137,7 @@ async fn observe(
 
     let seen = observe_with(log, observer, scheduler, key, ticket.fence, budget).await;
     let after = match &seen {
-        Ok(Observed::Closed) => Disposition::Retire,
+        Ok((Observed::Closed, _)) => Disposition::Retire,
         _ => Disposition::Reschedule {
             after_secs: scheduler.cadence_for(key).await?,
         },
@@ -91,10 +153,26 @@ pub(crate) async fn observe_with(
     key: &AnchorKey,
     fence: Fence,
     budget: &Budget,
-) -> Result<Observed, RuntimeError> {
-    let entries = log.entries(key, 0).await?;
-    let s = fold(&entries).ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+) -> Result<(Observed, Stood), RuntimeError> {
+    let stood = log
+        .stood(key)
+        .await?
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
+    let observed = looked_at(log, observer, scheduler, key, fence, budget, &stood.anchor).await?;
+    Ok((observed, stood))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn looked_at(
+    log: &AnchorLog,
+    observer: &Observer,
+    scheduler: &Scheduler,
+    key: &AnchorKey,
+    fence: Fence,
+    budget: &Budget,
+    s: &AnchorState,
+) -> Result<Observed, RuntimeError> {
     if s.closed {
         return Ok(Observed::Closed);
     }
@@ -104,7 +182,8 @@ pub(crate) async fn observe_with(
     let derivation = match observer.resolve(&s.anchor.probe) {
         Ok(d) => d,
         Err(e) => {
-            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts() + 1)
+                .await;
         }
     };
 
@@ -117,18 +196,33 @@ pub(crate) async fn observe_with(
     let outcome = match observer.invoke(&s.anchor, s.position(), &mine).await {
         Ok(o) => o,
         Err(e) => {
-            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, e.code.into(), e.message, fence, s.attempts() + 1)
+                .await;
         }
     };
 
-    let observation = observe_into(&s.anchor, outcome, derivation)?;
+    let observation = match observe_into(&s.anchor, outcome, derivation, run.facts) {
+        Ok(o) => o,
+        Err(e @ RuntimeError::Undigested { .. }) => {
+            return record_attempt(
+                log,
+                key,
+                FailureCode::Unusable,
+                e.to_string(),
+                fence,
+                s.attempts() + 1,
+            )
+            .await;
+        }
+        Err(e) => return Err(e),
+    };
     let entered_at = s.entered_at.unwrap_or(at);
 
     let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
         Transitioned::To(next) => next,
         Transitioned::Unchanged => s.state.clone(),
         Transitioned::Unevaluable(code, message) => {
-            return record_attempt(log, key, code, message, fence, s.attempts + 1).await;
+            return record_attempt(log, key, code, message, fence, s.attempts() + 1).await;
         }
     };
 
@@ -149,7 +243,7 @@ pub(crate) async fn observe_with(
     };
 
     match still_ref {
-        Some(ref_entry) if s.attempts > 0 => {
+        Some(ref_entry) if s.attempts() > 0 => {
             log.append(
                 key,
                 &Entry::Still {
@@ -181,7 +275,7 @@ pub(crate) async fn observe_with(
         Some(_) => Observed::Still,
         None if s.state == next => Observed::Unchanged { state: next },
         None => Observed::Transitioned {
-            from: s.state,
+            from: s.state.clone(),
             to: next,
         },
     })
@@ -219,7 +313,13 @@ pub(crate) fn observe_into(
     anchor: &Anchor,
     outcome: gmr_core::Outcome,
     derivation: gmr_core::Derivation,
+    recorded: Recorded,
 ) -> Result<Observation, RuntimeError> {
+    if matches!(recorded, Recorded::Digests) && !outcome.digested() {
+        return Err(RuntimeError::Undigested {
+            key: anchor.key.clone(),
+        });
+    }
     let fact_address = outcome.address(&derivation.version)?;
     Ok(Observation {
         outcome,

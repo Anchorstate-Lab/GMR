@@ -9,15 +9,15 @@ pub use addr::{
     content_hash_of_bytes,
 };
 pub use anchor::{
-    Anchor, AnchorKey, Expr, POSITION, Retain, Rule, RunSettings, STATUS, State, StatusId,
-    Superseded, Transitions,
+    Anchor, AnchorKey, Expr, POSITION, Recorded, Retain, Rule, RunSettings, STATUS, State,
+    StatusId, Superseded, Transitions,
 };
 pub use journal::{
-    AnchorState, Change, ChangeKind, Entry, FailureCode, Observation, ReasonClass, Seq, Versions,
-    fold, scan, should_still,
+    AnchorState, Change, ChangeKind, Entry, FailureCode, Faltering, Observation, ReasonClass, Seq,
+    Versions, fold, resume, scan, should_still,
 };
 pub use memory::{Binding, ExternalId, Link, LinkKind, ProviderId, Ref, Source, Version};
 pub use probe::{
-    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Outcome, ProbeName, ProbeRef,
+    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Openness, Outcome, ProbeName, ProbeRef,
     ProbeVersion, Verifiability,
 };

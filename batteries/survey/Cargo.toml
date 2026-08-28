@@ -19,7 +19,7 @@ testkit = []
 bridge = ["dep:tokio"]
 
 [dependencies]
-gmr-probe = { path = "../../crates/gmr-probe" }
+gmr-budget = { path = "../../crates/gmr-budget" }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }

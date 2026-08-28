@@ -80,6 +80,7 @@ async fn run_settings_are_meant_to_be_overwritten() {
     assert_eq!(q.get(&key).await.unwrap(), None, "nothing was ever set");
 
     let full = RunSettings {
+        facts: gmr_core::Recorded::Plain,
         budget_ms: None,
         retain: Retain::Full,
         cadence_secs: Some(900),
@@ -88,6 +89,7 @@ async fn run_settings_are_meant_to_be_overwritten() {
     assert_eq!(q.get(&key).await.unwrap(), Some(full));
 
     let tick = RunSettings {
+        facts: gmr_core::Recorded::Plain,
         budget_ms: None,
         retain: Retain::Tick,
         cadence_secs: None,
@@ -186,4 +188,133 @@ async fn a_database_from_another_generation_is_refused() {
 async fn a_fresh_database_is_intact() {
     let store = gmr_store::sqlite::open_in_memory().await.unwrap();
     assert_eq!(store.integrity().await.unwrap(), "ok");
+}
+
+#[tokio::test]
+async fn the_journal_links_every_entry_onto_the_one_before_it() {
+    use gmr_store::{Chained, Fence, Journal};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("m.db");
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    let journal = store.journal();
+
+    let a = gmr_core::AnchorKey::new("a");
+    let b = gmr_core::AnchorKey::new("b");
+    for (key, at) in [(&a, 1), (&b, 2), (&a, 3)] {
+        journal
+            .append(key, &attempt(at), Fence::Unleased)
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(
+        journal.chain_break().await.unwrap(),
+        None,
+        "three entries across two anchors chain in one line, because the seq they are \
+         ordered by is one global counter"
+    );
+
+    store.close().await;
+
+    let raw = sqlx_connect(&path).await;
+    sqlx::query("PRAGMA writable_schema = ON")
+        .execute(&raw)
+        .await
+        .unwrap();
+    sqlx::query("DROP TRIGGER journal_no_update")
+        .execute(&raw)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE journal SET body = replace(body, 'attempt-2', 'attempt-9') WHERE seq = 2")
+        .execute(&raw)
+        .await
+        .unwrap();
+    raw.close().await;
+
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    assert_eq!(
+        store.journal().chain_break().await.unwrap(),
+        Some(2),
+        "rewriting a body in place is what the append-only trigger stops and what the chain \
+         is for when something gets past it: the row still parses, and its own hash no \
+         longer covers it"
+    );
+}
+
+async fn sqlx_connect(path: &std::path::Path) -> sqlx::SqlitePool {
+    sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(path))
+        .await
+        .unwrap()
+}
+
+fn attempt(n: u32) -> gmr_core::Entry {
+    gmr_core::Entry::Attempt {
+        reason: gmr_core::ReasonClass::Unreachable,
+        code: None,
+        message: format!("attempt-{n}"),
+        at: chrono::DateTime::from_timestamp(n as i64, 0).unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn two_writers_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
+    use gmr_store::{Chained, Fence, Journal};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("m.db");
+    gmr_store::sqlite::open(&path).await.unwrap().close().await;
+
+    const EACH: u32 = 40;
+    let writing: Vec<_> = (0..2u32)
+        .map(|who| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
+                    let store = gmr_store::sqlite::open(&path).await.unwrap();
+                    let journal = store.journal();
+                    let key = gmr_core::AnchorKey::new(format!("anchor-{who}"));
+                    for n in 0..EACH {
+                        journal
+                            .append(&key, &attempt(who * 1000 + n), Fence::Unleased)
+                            .await
+                            .expect("a second writer is contention, not a failure");
+                    }
+                    store.close().await;
+                });
+            })
+        })
+        .collect();
+    for w in writing {
+        w.join().unwrap();
+    }
+
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    let journal = store.journal();
+    for who in 0..2u32 {
+        assert_eq!(
+            journal
+                .entries(&gmr_core::AnchorKey::new(format!("anchor-{who}")), 0)
+                .await
+                .unwrap()
+                .len() as u32,
+            EACH,
+            "nothing either writer appended may go missing"
+        );
+    }
+    assert_eq!(
+        journal.chain_break().await.unwrap(),
+        None,
+        "and the two interleaved streams are still one unbroken line. `pool.begin()` is \
+         BEGIN DEFERRED, which takes the read lock first and upgrades on the write -- under \
+         WAL the second writer meets BUSY_SNAPSHOT, which busy_timeout does not retry, and \
+         a chain read before that write would link onto a tail somebody else had already \
+         moved. BEGIN IMMEDIATE takes the write lock up front, so contention becomes a wait"
+    );
 }

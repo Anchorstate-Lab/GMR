@@ -687,7 +687,7 @@ mod tests {
         async fn fetch(
             &self,
             _id: &ExternalId,
-            _budget: &gmr::probe::Budget,
+            _budget: &gmr::Budget,
         ) -> Result<Option<Fetched>, gmr::ContentError> {
             Ok(Some(Fetched {
                 version: Version::new("v1"),

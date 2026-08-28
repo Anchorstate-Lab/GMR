@@ -1,6 +1,7 @@
 pub mod assembly;
 pub mod bind;
 pub mod close;
+pub mod contract;
 pub mod edges;
 pub mod error;
 pub mod health;
@@ -18,17 +19,20 @@ mod scheduler;
 mod seal_context;
 mod translate;
 
-pub use assembly::{Runtime, RuntimeBuilder};
+pub use assembly::{AssemblyError, Part, Runtime, RuntimeBuilder};
 pub use bind::Landed;
 pub use edges::{Edge, Edges, Standing};
 pub use error::RuntimeError;
 pub use health::{AnchorHealth, Corpus, CorpusHealth};
 pub use log::AnchorLog;
 pub use memory::{Bound, MemoryLens};
-pub use observe::Observed;
+pub use observe::{Looked, Observed};
 pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;
-pub use read::{AnchorView, Before, Footing, Grounded, Grounding, MemoryView, Sighting};
+pub use read::{
+    AnchorView, Before, Blind, Footing, Grounded, Grounding, Holding, HoldingKind, Instructions,
+    Knowledge, KnowledgeKind, MemoryView, Sighting, Warrant,
+};
 pub use revise::Revised;
 pub use scheduler::Scheduler;

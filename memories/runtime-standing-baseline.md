@@ -2,6 +2,8 @@
 about:
   - crates/gmr-runtime/src/memory.rs#fetch_memory
   - crates/gmr-runtime/src/memory.rs#baseline
+  - crates/gmr-runtime/src/memory.rs#dating
+  - crates/gmr-runtime/src/memory.rs#says
 watch: [sig, logic]
 ---
 
@@ -28,10 +30,31 @@ silence as the new baseline turns a memory somebody verified into
 afterwards. An assertion that verified nothing has nothing to overwrite a
 verification with.
 
-`Bound::baseline` is `None` when no assertion ever cited a version, and
-`fetch_memory` falls back to `standing` for that case.
+`Bound::baseline` is `None` when no assertion ever cited a version, and that
+fallback to `standing` has a name — **`dating`** — because two callers need
+the same answer to "which row is this binding dated by", and two copies of
+`baseline().unwrap_or(standing)` are two chances to pick different rows.
 That is the genuinely unverified case, and `baseline_at` stays `None` for it
 rather than pointing at an assertion that established nothing.
+
+## `says` has to weigh everything the row carries
+
+`says` answers "would writing this row add nothing", and `bind` returns
+without recording when it is true. It compared anchors, version and source —
+everything a binding said *before* it carried a date. Once
+[[runtime-bind]] started stamping `bound_at_seq`, re-stating the same claim
+over an undated row did add something, and answering `this already stands`
+made the omission permanent: a row written before the column existed could
+never be re-dated, so [[runtime-warrant]] had nothing to compare it against
+for the rest of its life. It was the answer for more than half of this
+repository's own notes until `says` learned to ask `dating` whether the row
+is dated at all.
+
+Re-asserting is honest here and does not forge anything: `sync` re-reads a
+note's own `about:` and binds as `Derived`, which is a fact about the file,
+not a judgement about the code. The healing is also self-limiting — the new
+row carries a seq, so the next run answers `already stands` and writes
+nothing.
 
 `sources` and `asserted_at` are still taken across the whole set, not from
 either of these two: they describe how the link came to be, and every live
@@ -42,3 +65,6 @@ assertion took part in that.
 Does a new field get read off `standing` because it is "the current one"?
 Anything about *what the record said* belongs to `baseline`; only what the
 relation is about belongs to `standing`.
+
+Does a binding row grow another field? Then `says` has to weigh it, or that
+field silently never gets written for any binding that already stands.

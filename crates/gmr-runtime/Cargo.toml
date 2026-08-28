@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+gmr-budget = { path = "../gmr-budget" }
 gmr-core = { path = "../gmr-core" }
 gmr-expr = { path = "../gmr-expr" }
 # default-features = false：runtime 只要 Transport trait，不替使用方
@@ -19,6 +20,9 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+# 组合子，不是执行器。`buffered` 只是并发地 poll 已有的 future,
+# 由调用方的运行时驱动 —— gmr-runtime 仍然零 tokio 依赖。
+futures-util = { workspace = true }
 
 [dev-dependencies]
 # **测试要一个真传输,而传输是电池。** dev 依赖不进 production 的依赖

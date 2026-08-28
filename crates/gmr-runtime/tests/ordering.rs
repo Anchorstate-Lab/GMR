@@ -38,6 +38,7 @@ async fn every_sealed_address_a_revise_cites_is_retrievable() {
         terminal: Default::default(),
         initial: None,
         settings: RunSettings {
+            facts: gmr_core::Recorded::Plain,
             budget_ms: None,
             retain: Retain::Tick,
             cadence_secs: None,

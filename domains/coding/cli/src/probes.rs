@@ -40,6 +40,125 @@ pub struct Recipe {
     pub handles: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeaderDecl {
+    Given(String),
+    FromEnv(String),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HttpDecl {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, HeaderDecl>,
+}
+
+impl HttpDecl {
+    pub fn ask(&self) -> gmr_transport::http::Ask {
+        gmr_transport::http::Ask {
+            url: self.url.clone(),
+            select: self.select.clone(),
+            headers: self
+                .headers
+                .iter()
+                .map(|(name, value)| {
+                    let value = match value {
+                        HeaderDecl::Given(v) => gmr_transport::http::Header::Given(v.clone()),
+                        HeaderDecl::FromEnv(v) => gmr_transport::http::Header::FromEnv(v.clone()),
+                    };
+                    (name.clone(), value)
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FileDecl {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shaped: Option<String>,
+}
+
+impl FileDecl {
+    pub fn ask(&self) -> gmr_transport::file::Ask {
+        gmr_transport::file::Ask {
+            path: self.path.clone(),
+            select: self.select.clone(),
+            shaped: self
+                .shaped
+                .as_deref()
+                .and_then(gmr_transport::file::Shaped::of_extension),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SqlDecl {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url_from_env: Option<String>,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+}
+
+impl SqlDecl {
+    pub fn source(&self) -> Result<gmr_transport::sql::Source, CliError> {
+        match (&self.url, &self.url_from_env) {
+            (Some(url), None) => Ok(gmr_transport::sql::Source::Given(url.clone())),
+            (None, Some(var)) => Ok(gmr_transport::sql::Source::FromEnv(var.clone())),
+            (None, None) => Err(CliError(
+                "a sql probe needs either `url` or `url_from_env`".to_owned(),
+            )),
+            (Some(_), Some(_)) => Err(CliError(
+                "a sql probe names both `url` and `url_from_env`; say which one it is".to_owned(),
+            )),
+        }
+    }
+
+    pub fn ask(&self) -> Option<gmr_transport::sql::Ask> {
+        Some(gmr_transport::sql::Ask {
+            source: self.source().ok()?,
+            query: self.query.clone(),
+            column: self.column.clone(),
+        })
+    }
+}
+
+pub fn sql_obs() -> Obs {
+    Obs {
+        schema: gmr_transport::sql::SCHEMA.to_owned(),
+        at: Vec::new(),
+        identity: Vec::new(),
+        facts: vec![gmr_transport::sql::VALUE.to_owned()],
+    }
+}
+
+pub fn file_obs() -> Obs {
+    Obs {
+        schema: gmr_transport::file::SCHEMA.to_owned(),
+        at: Vec::new(),
+        identity: Vec::new(),
+        facts: vec![gmr_transport::file::VALUE.to_owned()],
+    }
+}
+
+pub fn http_obs() -> Obs {
+    Obs {
+        schema: gmr_transport::http::SCHEMA.to_owned(),
+        at: Vec::new(),
+        identity: Vec::new(),
+        facts: vec![gmr_transport::http::VALUE.to_owned()],
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScriptDecl {
     pub run: String,
@@ -48,12 +167,18 @@ pub struct ScriptDecl {
     pub handles: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct File {
     #[serde(default)]
     probe: BTreeMap<String, Recipe>,
     #[serde(default)]
     script: BTreeMap<String, ScriptDecl>,
+    #[serde(default)]
+    http: BTreeMap<String, HttpDecl>,
+    #[serde(default)]
+    file: BTreeMap<String, FileDecl>,
+    #[serde(default)]
+    sql: BTreeMap<String, SqlDecl>,
 }
 
 #[derive(Debug, Default)]
@@ -119,14 +244,13 @@ impl Recipes {
     }
 }
 
-fn read_scripts(root: &Path) -> Result<BTreeMap<String, ScriptDecl>, CliError> {
+fn read_file(root: &Path) -> Result<File, CliError> {
     let path = anchor_dir(root).join(RECIPES_FILE);
     let Ok(text) = std::fs::read_to_string(&path) else {
-        return Ok(BTreeMap::new());
+        return Ok(File::default());
     };
-    Ok(toml::from_str::<File>(&text)
-        .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))?
-        .script)
+    toml::from_str::<File>(&text)
+        .map_err(|e| CliError(format!("cannot read {}: {e}", path.display())))
 }
 
 impl Recipe {
@@ -287,13 +411,20 @@ fn copy_mode(_src: &Path, _dst: &Path) -> Result<(), CliError> {
 pub struct Catalog {
     recipes: Recipes,
     scripts: BTreeMap<String, ScriptDecl>,
+    https: BTreeMap<String, HttpDecl>,
+    files: BTreeMap<String, FileDecl>,
+    sqls: BTreeMap<String, SqlDecl>,
 }
 
 impl Catalog {
     pub fn load(root: &Path) -> Result<Self, CliError> {
+        let file = read_file(root)?;
         Ok(Self {
             recipes: Recipes::load(root)?,
-            scripts: read_scripts(root)?,
+            scripts: file.script,
+            https: file.http,
+            files: file.file,
+            sqls: file.sql,
         })
     }
 
@@ -312,6 +443,15 @@ impl Catalog {
         if Self::builtin(name).is_some() {
             return Kind::new("builtin");
         }
+        if self.https.contains_key(name) {
+            return Kind::new("http");
+        }
+        if self.files.contains_key(name) {
+            return Kind::new("file");
+        }
+        if self.sqls.contains_key(name) {
+            return Kind::new("sql");
+        }
         match self.scripts.contains_key(name) {
             true => Kind::new("script"),
             false => Kind::new("shell"),
@@ -328,6 +468,15 @@ impl Catalog {
                     .unwrap_or_default(),
                 facts: v.facts.iter().map(|s| (*s).to_owned()).collect(),
             });
+        }
+        if self.https.contains_key(name) {
+            return Ok(http_obs());
+        }
+        if self.files.contains_key(name) {
+            return Ok(file_obs());
+        }
+        if self.sqls.contains_key(name) {
+            return Ok(sql_obs());
         }
         if let Some(d) = self.scripts.get(name) {
             return Ok(d.obs.clone());
@@ -351,6 +500,113 @@ impl Catalog {
     pub fn scripts(&self) -> impl Iterator<Item = (&str, &ScriptDecl)> {
         self.scripts.iter().map(|(n, d)| (n.as_str(), d))
     }
+
+    pub fn https(&self) -> impl Iterator<Item = (&str, &HttpDecl)> {
+        self.https.iter().map(|(n, d)| (n.as_str(), d))
+    }
+
+    pub fn files(&self) -> impl Iterator<Item = (&str, &FileDecl)> {
+        self.files.iter().map(|(n, d)| (n.as_str(), d))
+    }
+
+    pub fn sqls(&self) -> impl Iterator<Item = (&str, &SqlDecl)> {
+        self.sqls.iter().map(|(n, d)| (n.as_str(), d))
+    }
+
+    pub fn asks(&self) -> BTreeMap<gmr::ProbeName, gmr_transport::http::Ask> {
+        self.https
+            .iter()
+            .map(|(n, d)| (gmr::ProbeName::new(n.clone()), d.ask()))
+            .collect()
+    }
+}
+
+pub struct Declared {
+    root: PathBuf,
+}
+
+impl Declared {
+    pub fn at(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+}
+
+impl gmr_transport::http::Asks for Declared {
+    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::http::Ask> {
+        Catalog::load(&self.root)
+            .ok()?
+            .https()
+            .find(|(n, _)| *n == name.as_str())
+            .map(|(_, d)| d.ask())
+    }
+}
+
+impl gmr_transport::sql::Asks for Declared {
+    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::sql::Ask> {
+        Catalog::load(&self.root)
+            .ok()?
+            .sqls()
+            .find(|(n, _)| *n == name.as_str())
+            .and_then(|(_, d)| d.ask())
+    }
+}
+
+impl gmr_transport::file::Asks for Declared {
+    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::file::Ask> {
+        Catalog::load(&self.root)
+            .ok()?
+            .files()
+            .find(|(n, _)| *n == name.as_str())
+            .map(|(_, d)| d.ask())
+    }
+}
+
+pub fn declare_http(root: &Path, name: &str, decl: &HttpDecl) -> Result<(), CliError> {
+    declare_probe(root, "http", name, decl)
+}
+
+pub fn declare_file(root: &Path, name: &str, decl: &FileDecl) -> Result<(), CliError> {
+    declare_probe(root, "file", name, decl)
+}
+
+pub fn declare_sql(root: &Path, name: &str, decl: &SqlDecl) -> Result<(), CliError> {
+    declare_probe(root, "sql", name, decl)
+}
+
+fn declare_probe<T: Serialize>(
+    root: &Path,
+    table: &str,
+    name: &str,
+    decl: &T,
+) -> Result<(), CliError> {
+    let mut block = BTreeMap::new();
+    block.insert(name.to_owned(), decl);
+    let mut outer = BTreeMap::new();
+    outer.insert(table.to_owned(), block);
+    let written = toml::to_string(&outer)
+        .map_err(|e| CliError(format!("cannot write a probe for `{name}`: {e}")))?;
+
+    let dir = anchor_dir(root);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| CliError(format!("cannot create {}: {e}", dir.display())))?;
+    let path = dir.join(RECIPES_FILE);
+    let mut held = std::fs::read_to_string(&path).unwrap_or_default();
+    if !held.is_empty() && !held.ends_with('\n') {
+        held.push('\n');
+    }
+    if !held.is_empty() {
+        held.push('\n');
+    }
+    std::fs::write(&path, format!("{held}{written}"))
+        .map_err(|e| CliError(format!("cannot write {}: {e}", path.display())))
+}
+
+pub fn stem_of(segment: &str) -> Option<&str> {
+    let (stem, ext) = segment.rsplit_once('.')?;
+    if stem.is_empty() {
+        return None;
+    }
+    gmr_transport::file::Shaped::of_extension(ext).map(|_| stem)
 }
 
 pub fn anchor_dir(root: &Path) -> PathBuf {

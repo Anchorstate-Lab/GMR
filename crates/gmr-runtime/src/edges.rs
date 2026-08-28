@@ -224,11 +224,11 @@ fn walk(
 
         if fresh
             && let Entry::Attempt { reason, .. } = entry
-            && (*reason == ReasonClass::Unevaluable || now.attempts == policy.stalled_attempts)
+            && (*reason == ReasonClass::Unevaluable || now.attempts() == policy.stalled_attempts)
         {
             out.push(Edge::Stalled {
                 anchor: key.clone(),
-                count: now.attempts,
+                count: now.attempts(),
                 last: *reason,
                 seq,
                 at: entry.at(),
@@ -257,7 +257,7 @@ mod tests {
             sources: std::collections::BTreeSet::from([gmr_core::Source::Adjudicated]),
             baseline_at: None,
             asserted_at: None,
-            stale: None,
+            warrant: None,
             grounding,
         }
     }

@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use gmr_budget::Budget;
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, Derivation, Facts, Link, Outcome, ProviderId, Ref, Seq, Source, State,
-    StatusId, Version, scan,
+    Anchor, AnchorKey, AnchorState, Derivation, Entry, Facts, FailureCode, Faltering, Link,
+    Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State, StatusId,
+    Verifiability, Version, scan,
 };
-use gmr_probe::Budget;
 use gmr_store::Seen;
 use serde::Serialize;
 
@@ -14,6 +15,34 @@ use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Instructions {
+    pub max_staleness: Option<Duration>,
+    pub budget: Option<Duration>,
+}
+
+impl Instructions {
+    pub fn fresher_than(span: Duration) -> Self {
+        Self {
+            max_staleness: Some(span),
+            ..Self::default()
+        }
+    }
+
+    fn stale(&self, last_sighting: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
+        let Some(max) = self.max_staleness else {
+            return false;
+        };
+        match last_sighting {
+            None => true,
+            Some(at) => now
+                .signed_duration_since(at)
+                .to_std()
+                .is_ok_and(|since| since > max),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,7 +59,8 @@ pub struct AnchorView {
     pub status: Option<StatusId>,
     pub sighting: Sighting,
     pub closed: bool,
-    pub attempts: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faltering: Option<Faltering>,
     pub entered_at: Option<DateTime<Utc>>,
     pub last_sighting: Option<DateTime<Utc>>,
     pub sightings: u64,
@@ -60,7 +90,7 @@ pub struct MemoryView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asserted_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stale: Option<bool>,
+    pub warrant: Option<Warrant>,
     pub grounding: Grounding,
 }
 
@@ -132,6 +162,110 @@ impl Grounding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Warrant {
+    pub holding: Holding,
+    pub knowledge: Knowledge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "holding", rename_all = "snake_case")]
+pub enum Holding {
+    Holds,
+    Moved {
+        axes: Vec<String>,
+        at: Seq,
+    },
+    Incomparable {
+        took: ProbeVersion,
+        reads: ProbeVersion,
+    },
+    Absent,
+    NeverEstablished,
+    Undated,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "knowledge", rename_all = "snake_case")]
+pub enum Knowledge {
+    Seen {
+        at: DateTime<Utc>,
+        verifiability: Verifiability,
+    },
+    Blind {
+        since: Option<DateTime<Utc>>,
+        why: Blind,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "blind", rename_all = "snake_case")]
+pub enum Blind {
+    NeverAsked,
+    Unreachable { code: Option<FailureCode> },
+    Unusable { code: Option<FailureCode> },
+    Unevaluable { code: Option<FailureCode> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HoldingKind {
+    Holds,
+    Moved,
+    Incomparable,
+    Absent,
+    NeverEstablished,
+    Undated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeKind {
+    Seen,
+    NeverAsked,
+    Unreachable,
+    Unusable,
+    Unevaluable,
+}
+
+impl Holding {
+    pub fn kind(&self) -> HoldingKind {
+        match self {
+            Self::Holds => HoldingKind::Holds,
+            Self::Moved { .. } => HoldingKind::Moved,
+            Self::Incomparable { .. } => HoldingKind::Incomparable,
+            Self::Absent => HoldingKind::Absent,
+            Self::NeverEstablished => HoldingKind::NeverEstablished,
+            Self::Undated => HoldingKind::Undated,
+        }
+    }
+}
+
+impl Knowledge {
+    pub fn kind(&self) -> KnowledgeKind {
+        match self {
+            Self::Seen { .. } => KnowledgeKind::Seen,
+            Self::Blind { why, .. } => match why {
+                Blind::NeverAsked => KnowledgeKind::NeverAsked,
+                Blind::Unreachable { .. } => KnowledgeKind::Unreachable,
+                Blind::Unusable { .. } => KnowledgeKind::Unusable,
+                Blind::Unevaluable { .. } => KnowledgeKind::Unevaluable,
+            },
+        }
+    }
+}
+
+impl Blind {
+    fn of(f: &Faltering) -> Self {
+        match (f.code, f.reason) {
+            (Some(FailureCode::TimedOut), _) => Self::NeverAsked,
+            (code, ReasonClass::Unreachable) => Self::Unreachable { code },
+            (code, ReasonClass::Unusable) => Self::Unusable { code },
+            (code, ReasonClass::Unevaluable) => Self::Unevaluable { code },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "before", rename_all = "snake_case")]
 pub enum Before {
     Retrieved {
@@ -174,7 +308,7 @@ fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> 
 
 impl Runtime {
     pub async fn read(&self, key: &AnchorKey) -> Result<AnchorView, RuntimeError> {
-        Ok(projected(&self.log, key, &self.scheduler.seen(key).await?)
+        Ok(stand(&self.log, key, &self.scheduler.seen(key).await?)
             .await?
             .0)
     }
@@ -184,23 +318,48 @@ impl Runtime {
         let mut out = Vec::new();
         for key in self.log.anchors().await? {
             let looks = seen.get(&key).copied().unwrap_or_default();
-            out.push(projected(&self.log, &key, &looks).await?.0);
+            out.push(stand(&self.log, &key, &looks).await?.0);
         }
         Ok(out)
     }
 
     pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
+        self.grounded_within(key, &Instructions::default()).await
+    }
+
+    pub async fn grounded_within(
+        &self,
+        key: &AnchorKey,
+        how: &Instructions,
+    ) -> Result<Grounded, RuntimeError> {
         let policy = self.scheduler.policy();
-        let (view, head) = projected(&self.log, key, &self.scheduler.seen(key).await?).await?;
+        self.refresh(key, how).await?;
+        let entries = self.log.entries(key, 0).await?;
+        let (view, moved_at) = project(&entries, key, &self.scheduler.seen(key).await?)?;
         ground(
             &self.log,
             &self.memory,
             view,
-            head,
-            &policy.content_budget(),
+            &entries,
+            moved_at,
+            &reaching(policy, how),
             policy.content_call(),
         )
         .await
+    }
+
+    async fn refresh(&self, key: &AnchorKey, how: &Instructions) -> Result<(), RuntimeError> {
+        if how.max_staleness.is_none() {
+            return Ok(());
+        }
+        let looks = self.scheduler.seen(key).await?;
+        let entries = self.log.entries(key, 0).await?;
+        let (view, _) = project(&entries, key, &looks)?;
+        if view.closed || !how.stale(view.last_sighting, Utc::now()) {
+            return Ok(());
+        }
+        self.observe_within(key, how).await?;
+        Ok(())
     }
 
     pub async fn current_version(&self, reference: &Ref) -> Result<Option<Version>, RuntimeError> {
@@ -218,34 +377,217 @@ impl Runtime {
     }
 
     pub async fn grounded_all(&self) -> Result<Vec<Grounded>, RuntimeError> {
+        self.grounded_all_within(&Instructions::default()).await
+    }
+
+    pub async fn grounded_all_within(
+        &self,
+        how: &Instructions,
+    ) -> Result<Vec<Grounded>, RuntimeError> {
         let policy = self.scheduler.policy();
-        let total = policy.content_budget();
+        let total = reaching(policy, how);
         let call = policy.content_call();
+        let keys = self.log.anchors().await?;
+        for key in &keys {
+            self.refresh(key, how).await?;
+        }
         let seen = self.scheduler.all_seen().await?;
         let mut out = Vec::new();
-        for key in self.log.anchors().await? {
+        for key in keys {
             let looks = seen.get(&key).copied().unwrap_or_default();
-            let (view, head) = projected(&self.log, &key, &looks).await?;
-            out.push(ground(&self.log, &self.memory, view, head, &total, call).await?);
+            let entries = self.log.entries(&key, 0).await?;
+            let (view, moved_at) = project(&entries, &key, &looks)?;
+            out.push(
+                ground(
+                    &self.log,
+                    &self.memory,
+                    view,
+                    &entries,
+                    moved_at,
+                    &total,
+                    call,
+                )
+                .await?,
+            );
         }
         Ok(out)
     }
 }
 
-async fn projected(
+fn reaching(policy: &crate::Policy, how: &Instructions) -> Budget {
+    match how.budget {
+        Some(span) => policy.content_budget().narrowed(span),
+        None => policy.content_budget(),
+    }
+}
+
+fn folded_at(entries: &[(Seq, Entry)], at: Seq) -> Option<AnchorState> {
+    let upto = entries.partition_point(|(seq, _)| *seq <= at);
+    gmr_core::fold(&entries[..upto])
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Divergence {
+    Added,
+    Removed,
+    Differing,
+}
+
+fn differing(
+    before: &serde_json::Value,
+    now: &serde_json::Value,
+    path: &str,
+    out: &mut Vec<(String, Divergence)>,
+) {
+    match (before, now) {
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            let mut keys: Vec<&String> = a.keys().chain(b.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for k in keys {
+                if path.is_empty() && (k == gmr_core::POSITION || k == gmr_core::STATUS) {
+                    continue;
+                }
+                let next = match path.is_empty() {
+                    true => k.clone(),
+                    false => format!("{path}.{k}"),
+                };
+                match (a.get(k), b.get(k)) {
+                    (Some(x), Some(y)) => differing(x, y, &next, out),
+                    (None, Some(_)) => out.push((next, Divergence::Added)),
+                    (Some(_), None) => out.push((next, Divergence::Removed)),
+                    (None, None) => {}
+                }
+            }
+        }
+        _ if before != now => out.push((path.to_owned(), Divergence::Differing)),
+        _ => {}
+    }
+}
+
+fn axes_between(before: &State, now: &State) -> Vec<(String, Divergence)> {
+    let mut out = Vec::new();
+    differing(before.as_value(), now.as_value(), "", &mut out);
+    out
+}
+
+fn measured_by_both(axes: &[(String, Divergence)]) -> bool {
+    axes.iter().any(|(_, d)| *d != Divergence::Added)
+}
+
+fn named(axes: Vec<(String, Divergence)>) -> Vec<String> {
+    axes.into_iter().map(|(path, _)| path).collect()
+}
+
+fn warranted(
+    held: &MemoryView,
+    view: &AnchorView,
+    entries: &[(Seq, Entry)],
+    moved_at: Option<Seq>,
+) -> Warrant {
+    Warrant {
+        holding: holding(held.bound_at_seq, view, entries, moved_at),
+        knowledge: knowledge_of(view),
+    }
+}
+
+pub(crate) fn knowledge_of(view: &AnchorView) -> Knowledge {
+    match (
+        &view.faltering,
+        view.last_sighting,
+        view.derivation.as_ref(),
+    ) {
+        (Some(f), since, _) => Knowledge::Blind {
+            since,
+            why: Blind::of(f),
+        },
+        (None, Some(at), Some(d)) => Knowledge::Seen {
+            at,
+            verifiability: d.verifiability.clone(),
+        },
+        (None, since, _) => Knowledge::Blind {
+            since,
+            why: Blind::NeverAsked,
+        },
+    }
+}
+
+fn holding(
+    bound_at_seq: Option<Seq>,
+    view: &AnchorView,
+    entries: &[(Seq, Entry)],
+    moved_at: Option<Seq>,
+) -> Holding {
+    if view.sighting == Sighting::Absent {
+        return Holding::Absent;
+    }
+    let (Some(bound), Some(moved)) = (bound_at_seq, moved_at) else {
+        return Holding::Undated;
+    };
+    if bound >= moved {
+        return Holding::Holds;
+    }
+    let Some(before) = folded_at(entries, bound) else {
+        return Holding::NeverEstablished;
+    };
+    let axes = axes_between(&before.state, &view.state);
+    if axes.is_empty() {
+        return Holding::Holds;
+    }
+    let took = before
+        .latest
+        .as_ref()
+        .map(|o| &o.versions.derivation.version);
+    let reads = view.derivation.as_ref().map(|d| &d.version);
+    match (took, reads) {
+        (Some(took), Some(reads)) if took != reads => match measured_by_both(&axes) {
+            true => Holding::Incomparable {
+                took: took.clone(),
+                reads: reads.clone(),
+            },
+            false => Holding::Holds,
+        },
+        _ => Holding::Moved {
+            axes: named(axes),
+            at: moved,
+        },
+    }
+}
+
+pub(crate) async fn stand(
     log: &AnchorLog,
     key: &AnchorKey,
     looks: &Seen,
-) -> Result<(AnchorView, Seq), RuntimeError> {
-    let entries = log.entries(key, 0).await?;
+) -> Result<(AnchorView, Option<Seq>), RuntimeError> {
+    let stood = log
+        .stood(key)
+        .await?
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
+    Ok(viewed(stood.anchor, key, looks, stood.logged))
+}
+
+fn project(
+    entries: &[(Seq, Entry)],
+    key: &AnchorKey,
+    looks: &Seen,
+) -> Result<(AnchorView, Option<Seq>), RuntimeError> {
     let mut logged: u64 = 0;
-    let s = scan(&entries, |_, entry, _| {
+    let s = scan(entries, |_, entry, _| {
         if entry.is_sighting() {
             logged += 1;
         }
     })
     .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
 
+    Ok(viewed(s, key, looks, logged))
+}
+
+pub(crate) fn viewed(
+    s: AnchorState,
+    key: &AnchorKey,
+    looks: &Seen,
+    logged: u64,
+) -> (AnchorView, Option<Seq>) {
     let (sightings, last_sighting) = match looks.sightings {
         0 => (logged, s.last_sighting),
         counted => (counted, looks.last_at.or(s.last_sighting)),
@@ -257,8 +599,9 @@ async fn projected(
     };
     let derivation = s.latest.as_ref().map(|o| o.versions.derivation.clone());
     let facts = s.latest.as_ref().and_then(|o| o.facts().cloned());
+    let moved_at = s.moved_at;
 
-    Ok((
+    (
         AnchorView {
             key: key.clone(),
             status: s.state.status(),
@@ -266,29 +609,30 @@ async fn projected(
             anchor: s.anchor,
             sighting,
             closed: s.closed,
-            attempts: s.attempts,
+            faltering: s.faltering,
             entered_at: s.entered_at,
             last_sighting,
             sightings,
             derivation,
             facts,
         },
-        s.head,
-    ))
+        moved_at,
+    )
 }
 
 async fn ground(
     log: &AnchorLog,
     memory: &MemoryLens,
     view: AnchorView,
-    head: Seq,
+    entries: &[(Seq, Entry)],
+    moved_at: Option<Seq>,
     total: &Budget,
     call: Duration,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
         let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
-        held.stale = held.bound_at_seq.map(|seq| seq < head);
+        held.warrant = Some(warranted(&held, &view, entries, moved_at));
         memories.push(held);
     }
     memory.carry_linked(&mut memories, total, call).await?;
