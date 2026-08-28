@@ -267,7 +267,6 @@ async fn two_writers_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
     let path = dir.path().join("m.db");
     gmr_store::sqlite::open(&path).await.unwrap().close().await;
 
-    const EACH: u32 = 40;
     let writing: Vec<_> = (0..2u32)
         .map(|who| {
             let path = path.clone();
@@ -316,5 +315,124 @@ async fn two_writers_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
          WAL the second writer meets BUSY_SNAPSHOT, which busy_timeout does not retry, and \
          a chain read before that write would link onto a tail somebody else had already \
          moved. BEGIN IMMEDIATE takes the write lock up front, so contention becomes a wait"
+    );
+}
+
+const EACH: u32 = 40;
+const CHILD_DB: &str = "GMR_CROSS_PROCESS_DB";
+const CHILD_WHO: &str = "GMR_CROSS_PROCESS_WHO";
+
+fn ready_at(dir: &std::path::Path, who: u32) -> std::path::PathBuf {
+    dir.join(format!("ready-{who}"))
+}
+
+fn go_at(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join("go")
+}
+
+fn await_file(path: &std::path::Path, whose: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !path.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "waited 30s for {whose} and it never came. The writers run with --nocapture, \
+             so whatever killed one is above this line"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[tokio::test]
+#[ignore = "a child of two_processes_on_one_journal_lose_nothing_and_leave_the_chain_whole, \
+            which re-runs this binary; it does nothing when run without its environment"]
+async fn cross_process_journal_writer() {
+    let Ok(db) = std::env::var(CHILD_DB) else {
+        return;
+    };
+    let path = std::path::PathBuf::from(db);
+    let dir = path
+        .parent()
+        .expect("the parent hands down a path inside its tempdir")
+        .to_owned();
+    let who: u32 = std::env::var(CHILD_WHO).unwrap().parse().unwrap();
+
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    let journal = store.journal();
+    let key = gmr_core::AnchorKey::new(format!("anchor-{who}"));
+
+    std::fs::write(ready_at(&dir, who), []).unwrap();
+    await_file(&go_at(&dir), "the go-ahead");
+
+    for n in 0..EACH {
+        journal
+            .append(&key, &attempt(who * 1000 + n), Fence::Unleased)
+            .await
+            .expect("a writer in another process is contention, not a failure");
+    }
+    store.close().await;
+}
+
+#[tokio::test]
+async fn two_processes_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
+    use gmr_store::Chained;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("m.db");
+    gmr_store::sqlite::open(&path).await.unwrap().close().await;
+
+    let exe = std::env::current_exe()
+        .expect("a test binary that cannot name itself cannot re-run itself as a writer");
+
+    let mut writing: Vec<std::process::Child> = (0..2u32)
+        .map(|who| {
+            std::process::Command::new(&exe)
+                .args([
+                    "cross_process_journal_writer",
+                    "--exact",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env(CHILD_DB, &path)
+                .env(CHILD_WHO, who.to_string())
+                .spawn()
+                .expect("the writers are this same binary, re-run")
+        })
+        .collect();
+
+    for who in 0..2u32 {
+        await_file(&ready_at(dir.path(), who), "a writer to open the database");
+    }
+    std::fs::write(go_at(dir.path()), []).unwrap();
+
+    for (who, child) in writing.iter_mut().enumerate() {
+        assert!(
+            child.wait().unwrap().success(),
+            "writer {who} did not finish. Its appends were refused rather than made to \
+             wait, which is the whole question this test exists to ask"
+        );
+    }
+
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    let journal = store.journal();
+    for who in 0..2u32 {
+        assert_eq!(
+            journal
+                .entries(&gmr_core::AnchorKey::new(format!("anchor-{who}")), 0)
+                .await
+                .unwrap()
+                .len() as u32,
+            EACH,
+            "nothing either process appended may go missing"
+        );
+    }
+    assert_eq!(
+        journal.chain_break().await.unwrap(),
+        None,
+        "and the two interleaved streams are still one unbroken line. The sibling test \
+         above asks this of two threads, which is a different question and not a weaker \
+         one: inside one process SQLite serialises connections through its own inode \
+         table and one shared WAL index, so that test never reaches the POSIX advisory \
+         locks and the -shm mapping that are all a second process has. Both are real \
+         deployments -- a server with a pool, and the CLI running beside it"
     );
 }
