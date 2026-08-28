@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gmr_core::{
     AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, RunSettings, State, StatusId,
@@ -22,6 +22,7 @@ struct Counted {
     reads: std::sync::atomic::AtomicUsize,
     rows: std::sync::atomic::AtomicUsize,
     stagger: std::sync::atomic::AtomicBool,
+    contend: Mutex<Option<gmr_core::Entry>>,
 }
 
 impl Counted {
@@ -42,6 +43,10 @@ impl Counted {
         self.reads.store(0, std::sync::atomic::Ordering::SeqCst);
         self.rows.store(0, std::sync::atomic::Ordering::SeqCst);
     }
+
+    fn contend_once_with(&self, entry: gmr_core::Entry) {
+        *self.contend.lock().unwrap() = Some(entry);
+    }
 }
 
 #[async_trait::async_trait]
@@ -51,8 +56,15 @@ impl gmr_store::Journal for Counted {
         anchor: &AnchorKey,
         entry: &gmr_core::Entry,
         fence: gmr_store::Fence,
+        expected: gmr_store::Expected,
     ) -> Result<gmr_core::Seq, gmr_store::StoreError> {
-        self.inner.append(anchor, entry, fence).await
+        let ahead = self.contend.lock().unwrap().take();
+        if let Some(ahead) = ahead {
+            self.inner
+                .append(anchor, &ahead, fence, gmr_store::Expected::Any)
+                .await?;
+        }
+        self.inner.append(anchor, entry, fence, expected).await
     }
 
     async fn entries(
@@ -867,8 +879,8 @@ async fn a_hand_run_observation_takes_the_lease_instead_of_slipping_past_it() {
 }
 
 #[tokio::test]
-async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() {
-    use gmr_store::Fence;
+async fn an_entry_folded_against_a_head_that_moved_is_refused() {
+    use gmr_store::{Expected, Fence};
 
     let w = World::polled(Policy::default());
     w.write(r#"{"x":1}"#);
@@ -880,19 +892,34 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
     w.runtime.pass().await.unwrap();
 
     let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
-    let (_, sighting) = entries
+    let (at, sighting) = entries
         .iter()
         .rev()
         .find(|(_, e)| e.is_sighting())
         .unwrap()
         .clone();
+    let head = entries.last().unwrap().0;
+
     let err = w
         .runtime
         .log()
-        .append(&key(), &sighting, Fence::Unleased)
+        .append(&key(), &sighting, Fence::Unleased, Expected::Head(at - 1))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "lease_managed_observation");
+    assert_eq!(
+        err.code(),
+        "head_moved",
+        "an observation folded against a state that has since been written past is not \
+         admitted just because the writer holds no lease -- the lease was never what made \
+         it safe"
+    );
+    assert!(err.head_moved());
+
+    w.runtime
+        .log()
+        .append(&key(), &sighting, Fence::Unleased, Expected::Head(head))
+        .await
+        .expect("folded against the head that is actually there, it goes in unleased");
 }
 
 fn slow_probe(root: &std::path::Path, secs: &str) -> ProbeRef {
@@ -2005,5 +2032,157 @@ async fn a_batch_of_one_and_a_batch_of_none_are_both_answerable() {
             .is_err(),
         "an anchor nobody opened is still the error it was one at a time. A batch must not \
          quietly drop the member it could not answer for"
+    );
+}
+
+fn folded_state(entries: &[(gmr_core::Seq, gmr_core::Entry)]) -> State {
+    gmr_core::fold(entries).unwrap().state
+}
+
+#[tokio::test]
+async fn no_entry_is_ever_folded_from_a_state_something_else_already_replaced() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let stolen = {
+        let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+        let (_, opened) = entries.last().unwrap().clone();
+        let gmr_core::Entry::Open {
+            observation, at, ..
+        } = opened
+        else {
+            unreachable!("opening appends an Open")
+        };
+        gmr_core::Entry::Transition {
+            observation,
+            state: State::new(serde_json::json!({ "x": 7, "status": "drifted" })),
+            at,
+        }
+    };
+
+    w.write(r#"{"x":2}"#);
+    w.journal.contend_once_with(stolen);
+    w.runtime.observe(&key()).await.unwrap();
+
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+    assert_eq!(
+        entries.len(),
+        3,
+        "the open, the entry that got in first, and the replayed one -- the observation is \
+         not thrown away and it is not written twice"
+    );
+
+    for cut in 1..entries.len() {
+        let (seq, entry) = &entries[cut];
+        let gmr_core::Entry::Transition { state, .. } = entry else {
+            continue;
+        };
+        let before = folded_state(&entries[..cut]);
+        let after = folded_state(&entries[..=cut]);
+        assert_eq!(
+            &after, state,
+            "entry {seq} claims a state the fold does not land on"
+        );
+        assert_ne!(
+            before, *state,
+            "entry {seq} was folded against a state something else had already replaced \
+             -- this is the lost update the head expectation exists to refuse"
+        );
+    }
+
+    assert_eq!(
+        w.runtime.read(&key()).await.unwrap().state.as_value()["x"],
+        2,
+        "the replay recomputed against what the other writer left, so the reading we \
+         actually took is the one standing"
+    );
+}
+
+#[tokio::test]
+async fn a_replay_does_not_put_out_a_bit_the_other_writer_just_lit() {
+    let accumulating = rules(&[(
+        "true",
+        r#"{ x: obs.x, lit: state.lit or (obs.y != 0), status: "seen" }"#,
+    )]);
+
+    let w = World::new();
+    w.write(r#"{"x":1,"y":0}"#);
+    let mut opening = request(w.dir.path(), accumulating);
+    opening.initial = Some(State::new(
+        serde_json::json!({ "x": 1, "lit": false, "status": "seen" }),
+    ));
+    w.runtime.open(opening).await.unwrap();
+    assert_eq!(
+        w.runtime.read(&key()).await.unwrap().state.as_value()["lit"],
+        serde_json::json!(false),
+        "opening starts the accumulation at zero"
+    );
+
+    let lit = {
+        let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+        let (_, opened) = entries.last().unwrap().clone();
+        let gmr_core::Entry::Open {
+            observation, at, ..
+        } = opened
+        else {
+            unreachable!("opening appends an Open")
+        };
+        gmr_core::Entry::Transition {
+            observation,
+            state: State::new(serde_json::json!({ "x": 1, "lit": true, "status": "seen" })),
+            at,
+        }
+    };
+
+    w.write(r#"{"x":2,"y":0}"#);
+    w.journal.contend_once_with(lit);
+    w.runtime.observe(&key()).await.unwrap();
+
+    let state = w.runtime.read(&key()).await.unwrap().state;
+    assert_eq!(
+        state.as_value()["x"],
+        serde_json::json!(2),
+        "our own reading is what stands on the axis we actually measured"
+    );
+    assert_eq!(
+        state.as_value()["lit"],
+        serde_json::json!(true),
+        "our observation reads `y` unchanged, so nothing we saw lights this bit -- it is \
+         true only because the replay recomputed against the state the other writer left, \
+         and an accumulating axis reads its own last bit. Drop the `state.lit or` and \
+         whoever observes second eats a drift signal nobody will ever see again"
+    );
+}
+
+#[tokio::test]
+async fn two_opens_of_one_key_cannot_both_land() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let second = w.elsewhere();
+    second.write(r#"{"x":1}"#);
+    let err = second
+        .runtime
+        .open(request(second.dir.path(), watching("x")))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, gmr_runtime::RuntimeError::AlreadyOpen { .. }),
+        "got {err:?}"
+    );
+    assert_eq!(
+        w.runtime.log().entries(&key(), 0).await.unwrap().len(),
+        1,
+        "a second Open replaces the fold outright, so it does not add a duplicate entry -- \
+         it silently discards every observation and every accumulated bit since the first one"
     );
 }

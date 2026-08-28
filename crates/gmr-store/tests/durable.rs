@@ -437,3 +437,63 @@ async fn two_processes_on_one_journal_lose_nothing_and_leave_the_chain_whole() {
          deployments -- a server with a pool, and the CLI running beside it"
     );
 }
+
+#[tokio::test]
+async fn two_writers_folding_from_one_head_cannot_both_land() {
+    use gmr_store::{Expected, Fence, Journal};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("m.db");
+    let key = gmr_core::AnchorKey::new("contended");
+
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    let head = store
+        .journal()
+        .append(&key, &attempt(0), Fence::Unleased, Expected::Any)
+        .await
+        .unwrap();
+    store.close().await;
+
+    let racing: Vec<_> = (0..2u32)
+        .map(|who| {
+            let path = path.clone();
+            let key = key.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
+                    let store = gmr_store::sqlite::open(&path).await.unwrap();
+                    let landed = store
+                        .journal()
+                        .append(&key, &attempt(who + 1), Fence::Unleased, Expected::Head(head))
+                        .await;
+                    store.close().await;
+                    landed
+                })
+            })
+        })
+        .collect();
+
+    let outcomes: Vec<_> = racing.into_iter().map(|w| w.join().unwrap()).collect();
+    let landed = outcomes.iter().filter(|r| r.is_ok()).count();
+    assert_eq!(
+        landed, 1,
+        "both writers folded from {head}, so exactly one of them is still computing from a \
+         state that holds. Contention on a journal is a wait, but agreement about what the \
+         entry was computed from is not something waiting can supply"
+    );
+    for refused in outcomes.iter().filter_map(|r| r.as_ref().err()) {
+        assert_eq!(refused.code, gmr_store::ErrorCode::HeadMoved);
+    }
+
+    let store = gmr_store::sqlite::open(&path).await.unwrap();
+    assert_eq!(store.journal().entries(&key, 0).await.unwrap().len(), 2);
+    assert_eq!(
+        gmr_store::Chained::chain_break(&store.journal())
+            .await
+            .unwrap(),
+        None
+    );
+}
