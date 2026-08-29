@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 12;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -22,8 +22,8 @@ CREATE INDEX IF NOT EXISTS journal_by_anchor ON journal(anchor, seq);
 
 CREATE TABLE IF NOT EXISTS bindings (
     seq             INTEGER PRIMARY KEY AUTOINCREMENT,
-    reference       TEXT NOT NULL,     -- canonical Ref
-    body            TEXT NOT NULL,     -- the Binding relation itself (reference + anchors)
+    reference       TEXT NOT NULL,     -- canonical Claim; a stored one spells itself as its Ref
+    body            TEXT NOT NULL,     -- the Binding relation itself (claim + anchors)
     bound_version   TEXT,              -- content version this assertion cited; NULL until a
                                        -- fetch has answered for the record even once
     bound_at_seq    INTEGER,           -- the journal's position at bind time; seq is global
@@ -31,8 +31,10 @@ CREATE TABLE IF NOT EXISTS bindings (
                                        -- any number of them. NULL only predates this column
     source          TEXT NOT NULL,     -- how this assertion came to be; the domain's word
     asserted_at     TEXT,              -- RFC3339; NULL predates this column
-    baseline_at_seq INTEGER            -- the bindings row whose fetch established bound_version;
+    baseline_at_seq INTEGER,           -- the bindings row whose fetch established bound_version;
                                        -- NULL while it has never been verified
+    saw             TEXT               -- the fact address this assertion was made in front of;
+                                       -- NULL when the asserter was shown nothing
 );
 CREATE INDEX IF NOT EXISTS bindings_by_reference ON bindings(reference, seq);
 
@@ -268,4 +270,8 @@ CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+"#;
+
+pub const V11_TO_V12: &str = r#"
+ALTER TABLE bindings ADD COLUMN saw TEXT;
 "#;

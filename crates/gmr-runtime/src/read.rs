@@ -6,9 +6,9 @@ use futures_util::{StreamExt, TryStreamExt, future::try_join};
 use gmr_budget::Budget;
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, AnchorState, Derivation, Entry, FactAddress, Facts, FailureCode, Faltering,
-    Link, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State, StatusId,
-    Verifiability, Version,
+    Anchor, AnchorKey, AnchorState, Claim, Derivation, Entry, FactAddress, Facts, FailureCode,
+    Faltering, Link, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State,
+    StatusId, Verifiability, Version,
 };
 use gmr_store::Seen;
 use serde::{Deserialize, Serialize};
@@ -99,6 +99,34 @@ pub struct AnchorView {
     pub fact_address: Option<FactAddress>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub facts: Option<Facts>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Reading {
+    pub key: AnchorKey,
+    pub sighting: Sighting,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facts: Option<Facts>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fact_address: Option<FactAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub derivation: Option<Derivation>,
+    pub at: Option<DateTime<Utc>>,
+    pub knowledge: Knowledge,
+}
+
+impl From<AnchorView> for Reading {
+    fn from(view: AnchorView) -> Self {
+        Self {
+            knowledge: knowledge_of(&view),
+            key: view.key,
+            sighting: view.sighting,
+            facts: view.facts,
+            fact_address: view.fact_address,
+            derivation: view.derivation,
+            at: view.last_sighting,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -209,6 +237,24 @@ pub struct Evidence {
     pub bound_at: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub moved_at: Option<Seq>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saw: Option<FactAddress>,
+    #[serde(flatten)]
+    pub shown: Shown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "shown", rename_all = "snake_case")]
+pub enum Shown {
+    Seen { at: Seq },
+    Unseen,
+    NotSaid,
+}
+
+impl Shown {
+    pub fn is_seen(&self) -> bool {
+        matches!(self, Self::Seen { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -241,8 +287,9 @@ impl Anchored {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Standing {
-    pub reference: Ref,
-    pub record: Grounding,
+    pub claim: Claim,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record: Option<Grounding>,
     pub on: Vec<Anchored>,
 }
 
@@ -402,6 +449,18 @@ impl Runtime {
         Ok(out)
     }
 
+    pub async fn sample(
+        &self,
+        key: &AnchorKey,
+        how: &Instructions,
+    ) -> Result<Reading, RuntimeError> {
+        self.refresh(key, how).await?;
+        Ok(stand(&self.log, key, &self.scheduler.seen(key).await?)
+            .await?
+            .0
+            .into())
+    }
+
     pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
         self.grounded_within(key, &Instructions::default()).await
     }
@@ -450,14 +509,14 @@ impl Runtime {
 
     pub async fn ground(
         &self,
-        refs: &[Ref],
+        claims: &[Claim],
         how: &Instructions,
     ) -> Result<Vec<Standing>, RuntimeError> {
         let policy = self.scheduler.policy();
 
-        let mut bound = Vec::with_capacity(refs.len());
-        for reference in refs {
-            bound.push(self.memory.binding_of(reference).await?);
+        let mut bound = Vec::with_capacity(claims.len());
+        for claim in claims {
+            bound.push(self.memory.binding_of(claim).await?);
         }
         let keys: Vec<AnchorKey> = bound
             .iter()
@@ -475,18 +534,18 @@ impl Runtime {
 
         let (stood, records) = try_join(
             self.stood_all(&keys, how, &probing),
-            self.records_of(refs, &bound, &reading, policy.content_call()),
+            self.records_of(claims, &bound, &reading, policy.content_call()),
         )
         .await?;
 
-        let mut out = Vec::with_capacity(refs.len());
-        for ((reference, held), record) in refs.iter().zip(&bound).zip(records) {
+        let mut out = Vec::with_capacity(claims.len());
+        for ((claim, held), record) in claims.iter().zip(&bound).zip(records) {
             let mut on = Vec::with_capacity(held.anchors().len());
             for key in held.anchors() {
                 on.push(anchored(&self.log, key, held, stood.get(key)).await?);
             }
             out.push(Standing {
-                reference: reference.clone(),
+                claim: claim.clone(),
                 record,
                 on,
             });
@@ -543,24 +602,27 @@ impl Runtime {
 
     async fn records_of(
         &self,
-        refs: &[Ref],
+        claims: &[Claim],
         bound: &[crate::memory::Bound],
         total: &Budget,
         call: Duration,
-    ) -> Result<Vec<Grounding>, RuntimeError> {
-        let mut out = Vec::with_capacity(refs.len());
-        for (reference, held) in refs.iter().zip(bound) {
-            out.push(
-                self.memory
-                    .grounding_of(reference, held.bound_version(), &total.narrowed(call))
-                    .await,
-            );
+    ) -> Result<Vec<Option<Grounding>>, RuntimeError> {
+        let mut out = Vec::with_capacity(claims.len());
+        for (claim, held) in claims.iter().zip(bound) {
+            out.push(match claim.stored() {
+                None => None,
+                Some(reference) => Some(
+                    self.memory
+                        .grounding_of(reference, held.bound_version(), &total.narrowed(call))
+                        .await,
+                ),
+            });
         }
         Ok(out)
     }
 
-    pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
-        cobound(&self.log, &self.memory, reference).await
+    pub async fn cobound(&self, claim: &Claim) -> Result<Vec<Claim>, RuntimeError> {
+        cobound(&self.log, &self.memory, claim).await
     }
 
     pub async fn grounded_all(&self) -> Result<Vec<Grounded>, RuntimeError> {
@@ -599,6 +661,8 @@ async fn anchored(
         return Ok(Anchored::Unopened { key: key.clone() });
     };
     let bound_at = held.dating().and_then(|r| r.bound_at_seq);
+    let saw = held.saw().cloned();
+    let shown = shown_at(log, key, saw.as_ref()).await?;
     Ok(Anchored::On {
         key: key.clone(),
         warrant: warranted(log, key, bound_at, view, *moved_at).await?,
@@ -607,8 +671,34 @@ async fn anchored(
             instrument: view.derivation.as_ref().map(|d| d.version.clone()),
             bound_at,
             moved_at: *moved_at,
+            saw,
+            shown,
         },
     })
+}
+
+async fn shown_at(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    saw: Option<&FactAddress>,
+) -> Result<Shown, RuntimeError> {
+    let Some(saw) = saw else {
+        return Ok(Shown::NotSaid);
+    };
+    Ok(recorded_at(&log.entries(key, 0).await?, saw))
+}
+
+fn recorded_at(entries: &[(Seq, Entry)], saw: &FactAddress) -> Shown {
+    let looked = entries.iter().find_map(|(seq, entry)| match entry {
+        Entry::Open { observation, .. } | Entry::Transition { observation, .. } => {
+            (&observation.fact_address == saw).then_some(*seq)
+        }
+        _ => None,
+    });
+    match looked {
+        Some(at) => Shown::Seen { at },
+        None => Shown::Unseen,
+    }
 }
 
 fn span_of(policy: &crate::Policy, how: &Instructions) -> Duration {
@@ -834,6 +924,9 @@ async fn ground(
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
+        if asserted.stored().is_none() {
+            continue;
+        }
         let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
         held.warrant = Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
         memories.push(held);
@@ -845,21 +938,20 @@ async fn ground(
 async fn cobound(
     log: &AnchorLog,
     memory: &MemoryLens,
-    reference: &Ref,
-) -> Result<Vec<Ref>, RuntimeError> {
-    let bound = memory.binding_of(reference).await?;
-    let mut out: Vec<Ref> = Vec::new();
+    claim: &Claim,
+) -> Result<Vec<Claim>, RuntimeError> {
+    let bound = memory.binding_of(claim).await?;
+    let mut out: Vec<Claim> = Vec::new();
     for anchor in bound.anchors() {
         for other in memory.bindings_on(log, anchor).await? {
-            let Some(other_reference) = other.standing().map(|r| r.binding.reference.clone())
-            else {
+            let Some(beside) = other.claim().cloned() else {
                 continue;
             };
-            if &other_reference != reference && !out.contains(&other_reference) {
-                out.push(other_reference);
+            if !beside.same(claim) && !out.iter().any(|held| held.same(&beside)) {
+                out.push(beside);
             }
         }
     }
-    out.sort();
+    out.sort_by_key(Claim::to_string);
     Ok(out)
 }

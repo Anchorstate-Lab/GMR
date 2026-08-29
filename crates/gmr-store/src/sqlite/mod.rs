@@ -10,7 +10,7 @@ pub mod sightings;
 use std::path::Path;
 
 use crate::{ErrorCode, ErrorKind, StoreError};
-use gmr_core::{Ref, canonicalize};
+use gmr_core::{Claim, Ref, canonicalize};
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
@@ -20,8 +20,16 @@ pub use portable::{EXPORT_SCHEMA, PortableSummary};
 pub use queue::SqliteQueue;
 
 pub(crate) fn ref_key(r: &Ref) -> String {
-    let bytes = canonicalize(&serde_json::to_value(r).expect("a Ref always serialises"))
-        .expect("a Ref never exceeds canonicalization limits");
+    keyed(&serde_json::to_value(r).expect("a Ref always serialises"))
+}
+
+pub(crate) fn claim_key(c: &Claim) -> String {
+    keyed(&c.identity())
+}
+
+fn keyed(value: &serde_json::Value) -> String {
+    let bytes =
+        canonicalize(value).expect("a reference never exceeds canonicalization limits");
     String::from_utf8(bytes).expect("canonical JSON is always UTF-8")
 }
 
@@ -117,6 +125,7 @@ pub(crate) const LADDER: &[(i64, Rung)] = &[
     (8, Rung::Sql(schema::V8_TO_V9)),
     (9, Rung::Sql(schema::V9_TO_V10)),
     (10, Rung::Chain),
+    (11, Rung::Sql(schema::V11_TO_V12)),
 ];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {

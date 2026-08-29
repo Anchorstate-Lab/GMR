@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gmr::{AnchorKey, Instructions, Policy, ProbeName, Ref, Runtime, Source, StatusId, Version};
+use gmr::{
+    AnchorKey, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source,
+    StatusId, Version,
+};
 use gmr_transport::recipes::Recipes;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -107,14 +110,19 @@ async fn opened(asked: Opening) -> Result<Gmr> {
 #[napi]
 impl Gmr {
     #[napi]
-    pub async fn ground(&self, refs: Vec<String>, how: Option<Value>) -> Result<Value> {
+    pub async fn ground(&self, claims: Vec<String>, how: Option<Value>) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        let refs = refs.into_iter().map(named).collect::<Result<Vec<_>>>()?;
-        let how: Instructions = match how {
-            Some(stated) => said(stated)?,
-            None => Instructions::default(),
-        };
-        spawned(async move { answered(rt.ground(&refs, &how).await) }).await
+        let claims = claims.into_iter().map(named).collect::<Result<Vec<_>>>()?;
+        let how = asked(how)?;
+        spawned(async move { answered(rt.ground(&claims, &how).await) }).await
+    }
+
+    #[napi]
+    pub async fn sample(&self, anchor: String, how: Option<Value>) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let key = AnchorKey::new(anchor);
+        let how = asked(how)?;
+        spawned(async move { answered(rt.sample(&key, &how).await) }).await
     }
 
     #[napi]
@@ -132,26 +140,31 @@ impl Gmr {
     #[napi]
     pub async fn bind(
         &self,
-        reference: String,
+        claim: String,
         anchors: Vec<String>,
         source: String,
         bound_version: Option<String>,
+        saw: Option<String>,
+        asserts: Option<Value>,
     ) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        let reference = named(reference)?;
+        let claim = asserting(named(claim)?, asserts)?;
         let anchors = anchors.into_iter().map(AnchorKey::new).collect();
         let source = attested(&source)?;
         let bound_version = bound_version.map(Version::new);
-        spawned(async move { answered(rt.bind(reference, anchors, bound_version, source).await) })
-            .await
+        let saw = saw.map(looked).transpose()?;
+        spawned(async move {
+            answered(rt.bind(claim, anchors, bound_version, saw, source).await)
+        })
+        .await
     }
 
     #[napi]
-    pub async fn revoke(&self, reference: String, source: String) -> Result<Value> {
+    pub async fn revoke(&self, claim: String, source: String) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        let reference = named(reference)?;
+        let claim = named(claim)?;
         let source = attested(&source)?;
-        spawned(async move { answered(rt.revoke(&reference, source).await) }).await
+        spawned(async move { answered(rt.revoke(&claim, source).await) }).await
     }
 
     #[napi]
@@ -194,11 +207,39 @@ fn answered<T: serde::Serialize, E: std::fmt::Display>(
     serde_json::to_value(held).map_err(|e| failed(e.to_string()))
 }
 
-fn named(reference: String) -> Result<Ref> {
-    Ref::parse(&reference).ok_or_else(|| {
+fn asked(how: Option<Value>) -> Result<Instructions> {
+    match how {
+        Some(stated) => said(stated),
+        None => Ok(Instructions::default()),
+    }
+}
+
+fn named(address: String) -> Result<Claim> {
+    Claim::parse(&address).ok_or_else(|| {
         failed(format!(
-            "`{reference}` is not an address. A memory is named `<provider>:<id>` -- which \
-             store to ask, and what to ask it for"
+            "`{address}` names nothing. A stored record is `<provider>:<id>` -- which store \
+             to ask, and what to ask it for. Something an agent said is `said:<id>`, and it \
+             is not stored anywhere: the utterance is the claim"
+        ))
+    })
+}
+
+fn asserting(claim: Claim, asserts: Option<Value>) -> Result<Claim> {
+    match (claim, asserts) {
+        (claim, None) => Ok(claim),
+        (Claim::Said { id, .. }, asserts) => Ok(Claim::Said { id, asserts }),
+        (Claim::Stored(reference), Some(_)) => Err(failed(format!(
+            "`{reference}` is a record that lives in a store, so what it asserts is its own \
+             content -- reading it off the caller instead would be a second copy of the \
+             same sentence, and nothing would notice the day they disagreed"
+        ))),
+    }
+}
+
+fn looked(address: String) -> Result<FactAddress> {
+    FactAddress::try_new(&address).map_err(|e| {
+        failed(format!(
+            "`saw` is the address of a reading, as `sample` handed it back: {e}"
         ))
     })
 }

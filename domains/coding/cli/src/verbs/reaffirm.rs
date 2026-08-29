@@ -17,7 +17,7 @@ pub async fn run(
         ))
     })?;
 
-    rt.reaffirm(&reference, Some(version.clone())).await?;
+    rt.reaffirm(&reference.clone().into(), Some(version.clone())).await?;
     let version = version.into_inner();
 
     if json {

@@ -32,7 +32,8 @@ pub use pass::Passed;
 pub use policy::Policy;
 pub use read::{
     AnchorView, Anchored, Before, Blind, Evidence, Footing, Grounded, Grounding, Holding,
-    HoldingKind, Instructions, Knowledge, KnowledgeKind, MemoryView, Sighting, Standing, Warrant,
+    HoldingKind, Instructions, Knowledge, KnowledgeKind, MemoryView, Reading, Shown, Sighting,
+    Standing, Warrant,
 };
 pub use revise::Revised;
 pub use scheduler::Scheduler;

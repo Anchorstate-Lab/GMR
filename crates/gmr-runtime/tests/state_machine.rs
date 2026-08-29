@@ -749,9 +749,10 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
     let reference = Ref::new("git", "memories/m.md");
     let landed =
         w.rt.bind(
-            reference.clone(),
+            reference.clone().into(),
             vec![key()],
             Some(Version::new("v1")),
+            None,
             Source::SelfAttested,
         )
         .await
@@ -773,7 +774,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
     );
     assert_eq!(
         w.rt.memory()
-            .binding_of(&reference)
+            .binding_of(&reference.clone().into())
             .await
             .unwrap()
             .anchors(),
@@ -785,10 +786,11 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
         .bind(
             w.rt.log(),
             &gmr_core::Binding {
-                reference: carried.clone(),
+                claim: carried.clone().into(),
                 anchors: vec![key()],
             },
             Some(&Version::new("v1")),
+            None,
             Source::Adjudicated,
             chrono::Utc::now(),
         )

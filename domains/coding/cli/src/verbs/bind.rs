@@ -16,7 +16,7 @@ pub async fn run(
     if detach {
         let path = names.of(&reference);
         let address = crate::memories::addressed(&reference);
-        let cleared = rt.revoke(&reference, Source::Adjudicated).await?;
+        let cleared = rt.revoke(&reference.clone().into(), Source::Adjudicated).await?;
         return detached(&path, &address, &cleared, json);
     }
     asserted(rt, names, reference, anchors, Source::Adjudicated, json).await
@@ -39,7 +39,9 @@ pub async fn assert_on(
     source: Source,
 ) -> Result<(Option<gmr::Version>, gmr::Landed), CliError> {
     let version = rt.current_version(&reference).await.unwrap_or(None);
-    let landed = rt.bind(reference, anchors, version.clone(), source).await?;
+    let landed = rt
+        .bind(reference.into(), anchors, version.clone(), None, source)
+        .await?;
     Ok((version, landed))
 }
 

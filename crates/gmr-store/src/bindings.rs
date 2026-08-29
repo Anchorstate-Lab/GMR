@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use gmr_core::{AnchorKey, Binding, Ref, Seq, Source, Version};
+use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Seq, Source, Version};
 
 use crate::error::StoreError;
 
@@ -10,6 +10,7 @@ pub struct BindingRecord {
     pub binding: Binding,
     pub bound_version: Option<Version>,
     pub bound_at_seq: Option<Seq>,
+    pub saw: Option<FactAddress>,
     pub source: Source,
     pub asserted_at: Option<DateTime<Utc>>,
 }
@@ -22,7 +23,7 @@ pub struct Tag {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Revocation {
-    pub reference: Ref,
+    pub claim: Claim,
     pub at: AnchorKey,
     pub tags: Vec<Tag>,
     pub source: Source,
@@ -34,6 +35,7 @@ pub struct Asserted {
     pub binding: Binding,
     pub bound_version: Option<Version>,
     pub bound_at_seq: Option<Seq>,
+    pub saw: Option<FactAddress>,
     pub source: Source,
     pub at: DateTime<Utc>,
 }
@@ -46,7 +48,7 @@ pub trait BindingStore: Send + Sync {
 
     async fn bindings_on(&self, anchors: &[AnchorKey]) -> Result<Vec<BindingRecord>, StoreError>;
 
-    async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, StoreError>;
+    async fn binding_of(&self, claim: &Claim) -> Result<Vec<BindingRecord>, StoreError>;
 
     async fn all(&self) -> Result<Vec<BindingRecord>, StoreError>;
 }

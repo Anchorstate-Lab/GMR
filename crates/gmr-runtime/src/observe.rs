@@ -51,7 +51,7 @@ impl Runtime {
         self.observer.resolve(probe)
     }
 
-    pub async fn sample(
+    pub async fn probed(
         &self,
         probe: &gmr_core::ProbeRef,
         position: &serde_json::Value,

@@ -1,4 +1,4 @@
-use gmr_core::{AnchorKey, ProviderId, Ref};
+use gmr_core::{AnchorKey, Claim, ProviderId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
@@ -12,8 +12,8 @@ pub enum RuntimeError {
     )]
     NoProvider { provider: ProviderId },
 
-    #[error("`{reference:?}` is not bound to anything — nothing to reaffirm; bind it first")]
-    NotBound { reference: Ref },
+    #[error("`{claim}` is not bound to anything — nothing to reaffirm; bind it first")]
+    NotBound { claim: Claim },
 
     #[error("anchor `{key}` is already open — change it with revise, which leaves a sealed record")]
     AlreadyOpen { key: AnchorKey },

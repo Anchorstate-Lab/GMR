@@ -102,11 +102,12 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
         .bindings()
         .bind(&Asserted {
             binding: Binding {
-                reference: Ref::new("git", "memories/one.md"),
+                claim: Ref::new("git", "memories/one.md").into(),
                 anchors: vec![key.clone()],
             },
             bound_version: Some(Version::new("v1")),
             bound_at_seq: Some(open_seq),
+            saw: None,
             source: gmr_core::Source::Adjudicated,
             at: chrono::Utc::now(),
         })

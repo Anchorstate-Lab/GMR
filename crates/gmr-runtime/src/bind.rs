@@ -1,5 +1,5 @@
 use chrono::Utc;
-use gmr_core::{AnchorKey, Binding, Ref, Source, Version};
+use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Source, Version};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -10,9 +10,10 @@ use crate::memory::MemoryLens;
 impl Runtime {
     pub async fn bind(
         &self,
-        reference: Ref,
+        claim: Claim,
         anchors: Vec<AnchorKey>,
         bound_version: Option<Version>,
+        saw: Option<FactAddress>,
         source: Source,
     ) -> Result<Landed, RuntimeError> {
         let mut landed = Landed::default();
@@ -25,8 +26,8 @@ impl Runtime {
                 landed.anchors.push(living);
             }
         }
-        let bound = self.memory.binding_of(&reference).await?;
-        if bound.says(&landed.anchors, bound_version.as_ref(), source) {
+        let bound = self.memory.binding_of(&claim).await?;
+        if bound.says(&landed.anchors, bound_version.as_ref(), saw.as_ref(), source) {
             return Ok(landed);
         }
         landed.recorded = true;
@@ -34,10 +35,11 @@ impl Runtime {
             .bind(
                 &self.log,
                 &Binding {
-                    reference,
+                    claim,
                     anchors: landed.anchors.clone(),
                 },
                 bound_version.as_ref(),
+                saw.as_ref(),
                 source,
                 Utc::now(),
             )
@@ -82,13 +84,13 @@ impl Runtime {
 
     pub async fn revoke(
         &self,
-        reference: &Ref,
+        claim: &Claim,
         source: Source,
     ) -> Result<Vec<AnchorKey>, RuntimeError> {
-        let bound = self.memory.binding_of(reference).await?;
+        let bound = self.memory.binding_of(claim).await?;
         if bound.is_empty() {
             return Err(RuntimeError::NotBound {
-                reference: reference.clone(),
+                claim: claim.clone(),
             });
         }
         let when = Utc::now();
@@ -96,7 +98,7 @@ impl Runtime {
         for anchor in bound.anchors() {
             self.memory
                 .revoke(&gmr_store::Revocation {
-                    reference: reference.clone(),
+                    claim: claim.clone(),
                     at: anchor.clone(),
                     tags: bound.tags_on(anchor),
                     source,
@@ -110,11 +112,11 @@ impl Runtime {
 
     pub async fn revoke_on(
         &self,
-        reference: &Ref,
+        claim: &Claim,
         anchors: &[AnchorKey],
         source: Source,
     ) -> Result<(), RuntimeError> {
-        let bound = self.memory.binding_of(reference).await?;
+        let bound = self.memory.binding_of(claim).await?;
         let when = Utc::now();
         for anchor in anchors {
             let tags = bound.tags_on(anchor);
@@ -123,7 +125,7 @@ impl Runtime {
             }
             self.memory
                 .revoke(&gmr_store::Revocation {
-                    reference: reference.clone(),
+                    claim: claim.clone(),
                     at: anchor.clone(),
                     tags,
                     source,
@@ -143,27 +145,28 @@ impl Runtime {
 
     pub async fn reaffirm(
         &self,
-        reference: &Ref,
+        claim: &Claim,
         bound_version: Option<Version>,
     ) -> Result<(), RuntimeError> {
-        reaffirm(&self.log, &self.memory, reference, bound_version).await
+        reaffirm(&self.log, &self.memory, claim, bound_version).await
     }
 }
 
 async fn reaffirm(
     log: &AnchorLog,
     memory: &MemoryLens,
-    reference: &Ref,
+    claim: &Claim,
     bound_version: Option<Version>,
 ) -> Result<(), RuntimeError> {
-    let bound = memory.binding_of(reference).await?;
+    let bound = memory.binding_of(claim).await?;
     if bound.is_empty() {
         return Err(RuntimeError::NotBound {
-            reference: reference.clone(),
+            claim: claim.clone(),
         });
     }
+    let saw = bound.saw().cloned();
     let binding = Binding {
-        reference: reference.clone(),
+        claim: claim.clone(),
         anchors: bound.anchors().to_vec(),
     };
     memory
@@ -171,6 +174,7 @@ async fn reaffirm(
             log,
             &binding,
             bound_version.as_ref(),
+            saw.as_ref(),
             Source::Adjudicated,
             Utc::now(),
         )

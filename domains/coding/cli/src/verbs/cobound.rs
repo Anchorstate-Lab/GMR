@@ -9,7 +9,12 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let path = names.of(&reference);
-    let others = rt.cobound(&reference).await?;
+    let others: Vec<Ref> = rt
+        .cobound(&reference.clone().into())
+        .await?
+        .into_iter()
+        .filter_map(gmr::Claim::into_stored)
+        .collect();
 
     if json {
         println!(

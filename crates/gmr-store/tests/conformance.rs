@@ -220,6 +220,7 @@ fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq
         binding: binding.clone(),
         bound_version: Some(Version::new(version)),
         bound_at_seq,
+        saw: None,
         source: gmr_core::Source::Adjudicated,
         at: chrono::Utc::now(),
     }
@@ -227,7 +228,7 @@ fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq
 
 async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     let binding = Binding {
-        reference: Ref::new("git", "memories/core-modules.md"),
+        claim: Ref::new("git", "memories/core-modules.md").into(),
         anchors: vec![AnchorKey::new("core::modules")],
     };
     let bound_version = Version::new("blob-v1");
@@ -246,21 +247,59 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     assert_eq!(on[0].source, gmr_core::Source::Adjudicated);
 
     assert_eq!(
-        b.binding_of(&binding.reference).await.unwrap().len(),
+        b.binding_of(&binding.claim).await.unwrap().len(),
         1,
         "the reverse direction answers about the same one assertion"
     );
 }
 
+async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: BindingStore>(b: &B) {
+    let saw = gmr_core::FactAddress::try_new("a".repeat(64)).unwrap();
+    let claim = gmr_core::Claim::Said {
+        id: gmr_core::SaidId::new("turn-7"),
+        asserts: Some(serde_json::json!({ "price_cents": 420 })),
+    };
+    let binding = Binding {
+        claim: claim.clone(),
+        anchors: vec![AnchorKey::new("dish::icejelly")],
+    };
+    b.bind(&Asserted {
+        binding,
+        bound_version: None,
+        bound_at_seq: Some(3),
+        saw: Some(saw.clone()),
+        source: gmr_core::Source::SelfAttested,
+        at: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
+
+    let found = b.binding_of(&claim).await.unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].saw.as_ref(),
+        Some(&saw),
+        "an assertion that cites no reading and one that cites a reading nobody took are \
+         the same row without this column, and only the second is a defect"
+    );
+    assert_eq!(found[0].binding.claim, claim);
+    assert_eq!(
+        b.binding_of(&gmr_core::Claim::said("turn-7")).await.unwrap().len(),
+        1,
+        "one utterance is one claim: what it asserts rides along, it does not file a \
+         separate row"
+    );
+}
+
 async fn a_binding_stamped_with_no_seq_reads_back_as_none<B: BindingStore>(b: &B) {
     let binding = Binding {
-        reference: Ref::new("git", "memories/many.md"),
+        claim: Ref::new("git", "memories/many.md").into(),
         anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
     };
     b.bind(&asserted(&binding, "v", None)).await.unwrap();
 
     assert_eq!(
-        b.binding_of(&binding.reference).await.unwrap()[0].bound_at_seq,
+        b.binding_of(&binding.claim).await.unwrap()[0].bound_at_seq,
         None,
         "every row written before this column existed has no seq and never will -- the \
          table is append-only. A store that invented one would date a binding to a moment \
@@ -274,7 +313,7 @@ async fn asserting_a_second_anchor_does_not_take_the_first_away<B: BindingStore>
     for anchor in ["from", "to"] {
         b.bind(&asserted(
             &Binding {
-                reference: reference.clone(),
+                claim: reference.clone().into(),
                 anchors: vec![AnchorKey::new(anchor)],
             },
             "v",
@@ -307,7 +346,7 @@ async fn asserting_the_same_anchor_twice_still_delivers_it_once<B: BindingStore>
     for v in ["v1", "v2"] {
         b.bind(&asserted(
             &Binding {
-                reference: reference.clone(),
+                claim: reference.clone().into(),
                 anchors: vec![AnchorKey::new("same")],
             },
             v,
@@ -334,7 +373,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
     let at = AnchorKey::new("g");
     b.bind(&asserted(
         &Binding {
-            reference: reference.clone(),
+            claim: reference.clone().into(),
             anchors: vec![at.clone()],
         },
         "v1",
@@ -345,7 +384,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
 
     let first = b.bindings_on(std::slice::from_ref(&at)).await.unwrap();
     b.revoke(&gmr_store::Revocation {
-        reference: reference.clone(),
+        claim: reference.clone().into(),
         at: at.clone(),
         tags: vec![gmr_store::Tag {
             binding: first[0].seq,
@@ -366,7 +405,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
 
     b.bind(&asserted(
         &Binding {
-            reference: reference.clone(),
+            claim: reference.clone().into(),
             anchors: vec![at.clone()],
         },
         "v2",
@@ -393,7 +432,7 @@ async fn a_revocation_does_not_reach_a_generation_it_was_not_made_at<B: BindingS
     let heir = AnchorKey::new("heir");
     b.bind(&asserted(
         &Binding {
-            reference: reference.clone(),
+            claim: reference.clone().into(),
             anchors: vec![older.clone()],
         },
         "v1",
@@ -404,7 +443,7 @@ async fn a_revocation_does_not_reach_a_generation_it_was_not_made_at<B: BindingS
     let seq = b.bindings_on(std::slice::from_ref(&older)).await.unwrap()[0].seq;
 
     b.revoke(&gmr_store::Revocation {
-        reference: reference.clone(),
+        claim: reference.clone().into(),
         at: heir.clone(),
         tags: vec![gmr_store::Tag {
             binding: seq,
@@ -529,6 +568,7 @@ journal_conformance!(
 
 bindings_conformance!(
     bindings_record_the_version_they_bound,
+    what_the_asserter_was_looking_at_is_kept_beside_the_assertion,
     a_binding_stamped_with_no_seq_reads_back_as_none,
     asserting_a_second_anchor_does_not_take_the_first_away,
     asserting_the_same_anchor_twice_still_delivers_it_once,

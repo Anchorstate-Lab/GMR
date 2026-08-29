@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq,
+    AnchorKey, Binding, Claim, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq,
     content_hash_of_bytes,
 };
 
@@ -120,7 +120,7 @@ impl MemoryBindings {
                 }
                 Some(BindingRecord {
                     binding: Binding {
-                        reference: r.binding.reference.clone(),
+                        claim: r.binding.claim.clone(),
                         anchors,
                     },
                     ..r.clone()
@@ -140,6 +140,7 @@ impl BindingStore for MemoryBindings {
             binding: asserted.binding.clone(),
             bound_version: asserted.bound_version.clone(),
             bound_at_seq: asserted.bound_at_seq,
+            saw: asserted.saw.clone(),
             source: asserted.source,
             asserted_at: Some(asserted.at),
         });
@@ -159,11 +160,11 @@ impl BindingStore for MemoryBindings {
         Ok(self.live(Some(anchors)))
     }
 
-    async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, StoreError> {
+    async fn binding_of(&self, claim: &Claim) -> Result<Vec<BindingRecord>, StoreError> {
         Ok(self
             .live(None)
             .into_iter()
-            .filter(|r| &r.binding.reference == reference)
+            .filter(|r| r.binding.claim.same(claim))
             .collect())
     }
 

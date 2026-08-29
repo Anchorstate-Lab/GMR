@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version};
+use gmr_core::{
+    AnchorKey, Binding, Claim, ContentHash, FactAddress, Link, LinkKind, Ref, Source, Version,
+};
 use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Revocation, Sealer};
 use serde::Serialize;
 
@@ -50,6 +52,7 @@ impl MemoryLens {
         log: &AnchorLog,
         binding: &Binding,
         bound_version: Option<&Version>,
+        saw: Option<&FactAddress>,
         source: Source,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
@@ -60,6 +63,7 @@ impl MemoryLens {
                 binding: binding.clone(),
                 bound_version: bound_version.cloned(),
                 bound_at_seq,
+                saw: saw.cloned(),
                 source,
                 at,
             })
@@ -72,11 +76,11 @@ impl MemoryLens {
         anchor: &AnchorKey,
     ) -> Result<Vec<Bound>, RuntimeError> {
         let chain = chain_from(log, anchor).await?;
-        Ok(by_reference(self.bindings.bindings_on(&chain).await?))
+        Ok(by_claim(self.bindings.bindings_on(&chain).await?))
     }
 
-    pub async fn binding_of(&self, reference: &Ref) -> Result<Bound, RuntimeError> {
-        Ok(Bound::fold(self.bindings.binding_of(reference).await?))
+    pub async fn binding_of(&self, claim: &Claim) -> Result<Bound, RuntimeError> {
+        Ok(Bound::fold(self.bindings.binding_of(claim).await?))
     }
 
     pub async fn revoke(&self, revocation: &Revocation) -> Result<(), RuntimeError> {
@@ -136,7 +140,11 @@ impl MemoryLens {
         let baseline = bound
             .dating()
             .expect("a view is only assembled from at least one assertion");
-        let reference = standing.binding.reference.clone();
+        let reference = standing
+            .binding
+            .stored()
+            .expect("a memory view is only assembled from a claim that is stored somewhere")
+            .clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
         let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
@@ -237,7 +245,7 @@ impl MemoryLens {
             if memories.iter().any(|m| m.reference == reference) {
                 continue;
             }
-            let bound = self.binding_of(&reference).await?;
+            let bound = self.binding_of(&Claim::Stored(reference.clone())).await?;
             if bound.is_empty() {
                 continue;
             }
@@ -280,10 +288,10 @@ pub(crate) async fn chain_from(
     Ok(out)
 }
 
-pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Bound> {
-    let mut out: std::collections::BTreeMap<Ref, Vec<BindingRecord>> = Default::default();
+pub fn by_claim(records: Vec<BindingRecord>) -> Vec<Bound> {
+    let mut out: std::collections::BTreeMap<String, Vec<BindingRecord>> = Default::default();
     for record in records {
-        out.entry(record.binding.reference.clone())
+        out.entry(record.binding.claim.to_string())
             .or_default()
             .push(record);
     }
@@ -338,6 +346,18 @@ impl Bound {
         self.baseline().and_then(|r| r.bound_version.as_ref())
     }
 
+    pub fn claim(&self) -> Option<&Claim> {
+        self.standing().map(|r| &r.binding.claim)
+    }
+
+    pub fn stored(&self) -> Option<&Ref> {
+        self.standing().and_then(|r| r.binding.stored())
+    }
+
+    pub fn saw(&self) -> Option<&FactAddress> {
+        self.standing().and_then(|r| r.saw.as_ref())
+    }
+
     pub fn sources(&self) -> std::collections::BTreeSet<Source> {
         self.asserted.iter().map(|r| r.source).collect()
     }
@@ -357,11 +377,18 @@ impl Bound {
             .collect()
     }
 
-    pub fn says(&self, anchors: &[AnchorKey], version: Option<&Version>, source: Source) -> bool {
+    pub fn says(
+        &self,
+        anchors: &[AnchorKey],
+        version: Option<&Version>,
+        saw: Option<&FactAddress>,
+        source: Source,
+    ) -> bool {
         !self.asserted.is_empty()
             && anchors.iter().all(|a| self.anchors.contains(a))
             && self.sources().contains(&source)
             && self.bound_version() == version
+            && self.saw() == saw
             && self.dating().is_some_and(|r| r.bound_at_seq.is_some())
     }
 }
