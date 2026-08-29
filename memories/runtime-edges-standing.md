@@ -43,6 +43,27 @@ terminal: it prints edges and standing conditions in separate sections
 and prints a distinct message when `out.raised` is `None` versus an
 empty `Some`, exactly preserving the distinction this memory describes.
 
+## `since` only reports what has landed, and landing needs somebody looking
+
+The cursor reads the journal. A transition reaches the journal only when
+somebody **observes**, so a deployment that only ever calls `since` sees
+nothing move, forever, and looks entirely healthy — there is no failure signal
+on this path at all, which makes it the easiest thing here to get wrong.
+
+Two doors, and a deployment must open one:
+
+- `ground(refs, { max_staleness_ms })` observes the anchors it touches on the
+  read path. Anchors nobody reads never update.
+- a periodic `pass` observes on a cadence, and needs a process actually running
+  it.
+
+[[node-sdk]] exposes `since` and deliberately not `pass`: scheduling belongs to
+whichever process runs the loop, and one per caller is contention over leases
+plus duplicated probe calls. The cost of that choice is that whoever assembles
+has to answer "who is observing", and the interface never asks. `docs/GMR.md`
+§7 says the same thing where a deployment is being planned rather than read
+about.
+
 ## When this changes, ask
 
 Does the new condition come from the log at a specific `seq`, or from
