@@ -63,6 +63,23 @@ test("five lines get a sentence's grounding", async () => {
       "the address",
   );
   assert.equal(standing.on[0].evidence.value, undefined);
+
+  const declared = ["current", "unverified", "rewritten", "gone", "no_provider", "unreachable"];
+  assert.ok(
+    declared.includes(standing.record.grounding),
+    "index.d.ts is hand-written, because the alternative is declaring every " +
+      "contract type a second time in Rust. So the discriminants it names have " +
+      "to be walked by something: " + JSON.stringify(standing.record),
+  );
+  assert.ok(
+    ["holds", "moved", "incomparable", "absent", "never_established", "undated"]
+      .includes(standing.on[0].warrant.holding.holding),
+    JSON.stringify(standing.on[0].warrant),
+  );
+  assert.ok(
+    ["seen", "blind"].includes(standing.on[0].warrant.knowledge.knowledge),
+    JSON.stringify(standing.on[0].warrant),
+  );
 });
 
 test("what changed since a cursor comes back as edges", async () => {

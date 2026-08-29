@@ -5,6 +5,7 @@ about:
   - domains/node/src/lib.rs#Opening
   - domains/node/src/lib.rs#answered
   - domains/node/test/verbs.mjs#five_lines_get_a_sentences_grounding
+  - tools/gate.py#check_typed_surface_names_the_contract
 watch: [sig, logic]
 ---
 
@@ -45,10 +46,18 @@ path that nothing checks.
 The contract types already serialise, and `contract::SHAPE` is an earned hash
 over their declarations: change a field and `tools/gate.py` fails until somebody
 records the new digest, and moving `CONTRACT` is what promises callers they may
-match on it. So JSON crosses, and the guard that already exists guards it. What
-the SDK still owes is a TypeScript declaration file pinned to that same
-`CONTRACT` string — until then the generated types say `any`, which is honest
-about what has been written down rather than pretending otherwise.
+match on it. So JSON crosses, and the guard that already exists guards it.
+
+`dist/npm/index.d.ts` is that declaration, hand-written and pinned. Two checks
+hold it honest and neither is enough alone: `check_contract_shape_is_earned`
+refuses a contract type that changes shape while `CONTRACT` stands still, and
+`check_typed_surface_names_the_contract` refuses a `.d.ts` naming a version the
+runtime does not. So a shape cannot move without `CONTRACT` moving, and
+`CONTRACT` cannot move without somebody editing this file — at which moment
+they are looking at the declarations that have to move with it. The JS test
+walks the discriminants (`grounding`, `holding`, `knowledge`, `anchored`)
+against real output, because a rename passes both checks and breaks every
+caller.
 
 ## Why input is deserialised rather than taken as a napi object
 

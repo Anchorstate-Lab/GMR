@@ -434,6 +434,48 @@ def check_contract_shape_is_earned():
     return []
 
 
+TYPED_SURFACES = [
+    ROOT / "dist" / "npm" / "index.d.ts",
+    ROOT / "dist" / "npm" / "index.js",
+]
+
+
+def check_typed_surface_names_the_contract():
+    """The published TypeScript says which contract it describes, and means it.
+
+    The addon hands JSON across, so nothing in Rust declares the shapes a
+    TypeScript caller matches on -- `index.d.ts` does, by hand, because a
+    second declaration of every contract type in Rust would be the drift path
+    the binding exists to avoid. That leaves one thing to check mechanically:
+    that the file names the version whose shapes it is describing.
+
+    `check_contract_shape_is_earned` already refuses a shape that moves while
+    `CONTRACT` stands still. Together the two are the whole guard: a contract
+    type cannot change without `CONTRACT` moving, and `CONTRACT` cannot move
+    without this file being edited to say so -- at which moment whoever edits
+    it is looking at the declarations that have to move with it.
+    """
+    if not CONTRACT_MODULE.exists():
+        return []
+    version, _ = recorded(CONTRACT_MODULE.read_text())
+    if version is None:
+        return []
+    out = []
+    for path in TYPED_SURFACES:
+        where = path.relative_to(ROOT)
+        if not path.exists():
+            out.append(f"{where} is gone -- it is the published surface's only type declaration")
+            continue
+        named = set(re.findall(r'"(gmr\.contract\.v\d+)"', path.read_text()))
+        if named != {version}:
+            out.append(
+                f"{where} names {sorted(named) or 'no contract'} and the runtime is "
+                f"`{version}` -- a caller pins that string to know which shapes they "
+                "may match on"
+            )
+    return out
+
+
 TRAIT_ROSTERS = {"gmr-store": "crates/gmr-store", "gmr-content": "crates/gmr-content"}
 
 
@@ -614,6 +656,7 @@ CHECKS = [
     ("facade: only re-exports", check_facade_only_reexports),
     ("every trait a rostered crate defines is named in CLAUDE.md", check_trait_roster),
     ("the contract's shape is the one its version claims", check_contract_shape_is_earned),
+("the published types name the contract they describe", check_typed_surface_names_the_contract),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),

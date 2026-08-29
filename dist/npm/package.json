@@ -4,7 +4,9 @@
   "description": "Attach judgment to recomputable observations",
   "license": "MIT",
   "bin": { "gmr": "bin/gmr.js" },
-  "files": ["bin/gmr.js"],
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": ["bin/gmr.js", "index.js", "index.d.ts"],
   "optionalDependencies": {
     "@anchorstate-lab/gmr-darwin-arm64": "0.1.0",
     "@anchorstate-lab/gmr-darwin-x64": "0.1.0",
