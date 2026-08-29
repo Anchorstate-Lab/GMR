@@ -11,17 +11,45 @@ use gmr_core::{
     Verifiability, Version,
 };
 use gmr_store::Seen;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Instructions {
+    #[serde(
+        rename = "max_staleness_ms",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "millis"
+    )]
     pub max_staleness: Option<Duration>,
+    #[serde(
+        rename = "budget_ms",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "millis"
+    )]
     pub budget: Option<Duration>,
+}
+
+mod millis {
+    use std::time::Duration;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(held: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+        held.map(|span| u64::try_from(span.as_millis()).unwrap_or(u64::MAX))
+            .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+        Ok(Option::<u64>::deserialize(d)?.map(Duration::from_millis))
+    }
 }
 
 impl Instructions {

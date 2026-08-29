@@ -7,4 +7,4 @@ pub use crate::read::{
 
 pub const CONTRACT: &str = "gmr.contract.v2";
 
-pub const SHAPE: &str = "sha256:e591d8d4ec80c2446a450b2368d25ba387d086e7f414e1c1ac5a4374ba01a860";
+pub const SHAPE: &str = "sha256:30e8ff0c9699dd36538d4ce9fbfe2193b5a67879b270532d67637fbb49c75e63";
