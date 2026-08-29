@@ -251,3 +251,47 @@ obs = { schema = "gmr.probe.v1", facts = ["v"] }
         );
     }
 }
+
+#[tokio::test]
+async fn a_coordinate_that_carries_a_credential_writes_nothing_at_all() {
+    let dir = a_repository();
+    let root = dir.path();
+
+    let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
+    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let rt = gmr::Runtime::builder()
+        .journal(std::sync::Arc::new(store.journal()))
+        .bindings(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
+        .links(std::sync::Arc::new(store.links()))
+        .queue(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
+        .build();
+
+    let err = coding_anchor::verbs::anchor::run(
+        &rt,
+        root,
+        &stores,
+        coding_anchor::verbs::anchor::Asked {
+            coordinate: Some("https://svc:hunter2@api.internal/v1/keys#$.rotated_at".to_owned()),
+            named: Some("key-rotation".to_owned()),
+            memory: None,
+            record: None,
+        },
+        true,
+    )
+    .await
+    .expect_err("a password in a coordinate is a declaration to fix, not one to write down");
+
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "the refusal itself must not repeat it: {err}"
+    );
+    assert!(
+        !root.join(".anchor/probes.toml").exists(),
+        "and nothing is written. The refusal has to come before the write, or the password \
+         is already in a file the person is about to commit and push -- at which point \
+         deleting the line is not enough and the credential has to be rotated"
+    );
+}

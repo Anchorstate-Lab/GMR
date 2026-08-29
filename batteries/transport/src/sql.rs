@@ -28,7 +28,10 @@ pub enum Source {
 impl Source {
     fn resolve(&self) -> Result<String, ProbeError> {
         match self {
-            Self::Given(url) => Ok(url.clone()),
+            Self::Given(url) => {
+                crate::given::without_credentials(url)?;
+                Ok(url.clone())
+            }
             Self::FromEnv(var) => std::env::var(var).map_err(|_| {
                 ProbeError::with_code(
                     ReasonClass::Unusable,
@@ -46,6 +49,17 @@ impl Source {
         match self {
             Self::Given(url) => ("given", url.as_str()),
             Self::FromEnv(var) => ("from-env", var.as_str()),
+        }
+    }
+
+    fn tellable(&self, e: impl std::fmt::Display) -> String {
+        match self {
+            Self::Given(_) => e.to_string(),
+            Self::FromEnv(var) => format!(
+                "the reason is not repeated here, because it can quote the connection \
+                 string. `{var}` is read at the moment of the call so that what it holds \
+                 never reaches anything that keeps it"
+            ),
         }
     }
 }
@@ -214,14 +228,14 @@ impl Transport for Sql {
             .remaining()
             .ok_or_else(|| ProbeError::spent(Spent::Deadline, call.budget))?;
 
-        let url = ask.source.resolve()?;
+        let url = ask.source.resolve().map_err(|e| e.about(name))?;
         if !sqlite_url(&url) {
             return Err(ProbeError::with_code(
                 ReasonClass::Unusable,
                 ProbeErrorCode::ArtifactInvalid,
                 format!(
-                    "this build speaks sqlite, and the declared database names the `{}` \
-                     scheme. Another backend is a feature this binary was not built with, \
+                    "this build speaks sqlite, and the database `{name}` names is a `{}` \
+                     one. Another backend is a feature this binary was not built with, \
                      which is a declaration to fix and never an outage to retry",
                     url.split_once("://").map(|(s, _)| s).unwrap_or("(none)")
                 ),
@@ -232,7 +246,10 @@ impl Transport for Sql {
                 ProbeError::with_code(
                     ReasonClass::Unusable,
                     ProbeErrorCode::ArtifactInvalid,
-                    format!("the declared database is not a usable sqlite url: {e}"),
+                    format!(
+                        "the database `{name}` names is not a usable sqlite url: {}",
+                        ask.source.tellable(e)
+                    ),
                 )
             })?
             .read_only(true)
@@ -243,12 +260,21 @@ impl Transport for Sql {
             .acquire_timeout(left)
             .connect_with(options)
             .await
-            .map_err(|e| ProbeError::unreachable(format!("cannot open the database: {e}")))?;
+            .map_err(|e| {
+                ProbeError::unreachable(format!(
+                    "cannot open the database `{name}` names: {}",
+                    ask.source.tellable(e)
+                ))
+            })?;
 
         let rows = tokio::time::timeout(left, sqlx::query(&ask.query).fetch_all(&pool))
             .await
             .map_err(|_| ProbeError::spent(Spent::Deadline, call.budget))?
-            .map_err(|e| ProbeError::unusable(format!("the database refused the query: {e}")))?;
+            .map_err(|e| {
+                ProbeError::unusable(format!(
+                    "the database `{name}` names refused the query: {e}"
+                ))
+            })?;
         pool.close().await;
 
         match rows.len() {
@@ -262,7 +288,7 @@ impl Transport for Sql {
                 Ok(crate::select::held(value))
             }
             many => Err(ProbeError::unusable(format!(
-                "the query answered with {many} rows; a probe reports one fact, so say which \
+                "`{name}` answered with {many} rows; a probe reports one fact, so say which \
                  one the declaration means"
             ))),
         }

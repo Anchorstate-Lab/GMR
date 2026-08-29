@@ -275,3 +275,65 @@ fn the_declared_path_is_read_the_way_people_write_it() {
         "RFC 6901 escapes, because the pointer is serde_json's and not one we invented"
     );
 }
+
+#[tokio::test]
+async fn what_the_endpoint_does_is_reported_by_probe_name_and_never_by_url() {
+    const URL: &str = "https://api.internal/v1/tenants/acme/keys?token=abcdef";
+
+    for (status, why) in [
+        (403u16, "a refusal names our request"),
+        (500, "an outage names the endpoint"),
+        (418, "and so does an answer that is neither"),
+    ] {
+        let err = ask_with(Ask::at(URL), Answers::new(status, ""))
+            .await
+            .expect_err(why);
+        assert!(
+            !err.to_string().contains(URL) && !err.to_string().contains("token=abcdef"),
+            "a probe error is written to the journal verbatim and stays there. A url is a \
+             place somebody chose to look, and it carries query strings, tenant names and \
+             sometimes a credential; the probe's name says the same thing to a reader and \
+             says nothing to anyone else: {err}"
+        );
+        assert!(
+            err.to_string().contains("quote"),
+            "and the name has to be in it, or the message tells a reader nothing about \
+             which of their probes this was: {err}"
+        );
+    }
+
+    let unparsed = ask_with(Ask::at(URL), Answers::new(200, "not json"))
+        .await
+        .expect_err("a body that is not JSON is unusable");
+    assert!(
+        !unparsed.to_string().contains(URL) && unparsed.to_string().contains("quote"),
+        "including the one message that quotes what came back: {unparsed}"
+    );
+}
+
+#[tokio::test]
+async fn a_url_that_carries_a_credential_is_refused_before_it_is_fetched() {
+    let seen = Answers::new(200, "{}");
+    let err = ask_with(
+        Ask::at("https://svc:hunter2@api.internal/v1/keys"),
+        seen.clone(),
+    )
+    .await
+    .expect_err("a password written into a declaration is a declaration to fix");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "it is not an outage to retry and not the world's answer -- it is ours to correct: \
+         {err}"
+    );
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "and saying it back is the leak this refusal exists to prevent: {err}"
+    );
+    assert!(
+        seen.seen.lock().unwrap().is_empty(),
+        "nothing was sent: the refusal is before the request, so the credential does not \
+         reach a wire, a proxy log or an access log on the way to being rejected"
+    );
+}

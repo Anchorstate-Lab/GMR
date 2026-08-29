@@ -225,6 +225,9 @@ fn fetch_declared(
     where_: &Reached,
     select: Option<&str>,
 ) -> Result<bool, CliError> {
+    if let Reached::Over(url) | Reached::Through(url) = where_ {
+        gmr_transport::given::without_credentials(url).map_err(|e| CliError(e.to_string()))?;
+    }
     match where_ {
         Reached::Over(url) => match catalog.https().find(|(n, _)| *n == name) {
             Some((_, held)) if held.url == *url && held.select.as_deref() == select => Ok(false),

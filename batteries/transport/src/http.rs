@@ -171,7 +171,13 @@ impl Transport for Http {
             )
         })?;
 
-        let reply = self.fetch.get(&ask.url, &ask.sent()?, call.budget).await?;
+        crate::given::without_credentials(&ask.url)?;
+        let sent = ask.sent().map_err(|e| e.about(name))?;
+        let reply = self
+            .fetch
+            .get(&ask.url, &sent, call.budget)
+            .await
+            .map_err(|e| e.about(name))?;
         let ask = &ask;
 
         match reply.status {
@@ -182,22 +188,24 @@ impl Transport for Http {
                     ReasonClass::Unusable,
                     ProbeErrorCode::ArtifactInvalid,
                     format!(
-                        "{} refused this request ({}); that is something about our request \
-                         -- a credential, or a header it requires -- and not its answer",
-                        ask.url, reply.status
+                        "the endpoint `{name}` reads refused this request ({}); that is \
+                         something about our request -- a credential, or a header it \
+                         requires -- and not its answer",
+                        reply.status
                     ),
                 ));
             }
             500..=599 => {
                 return Err(ProbeError::unreachable(format!(
-                    "{} answered {}; the fact is not established either way",
-                    ask.url, reply.status
+                    "the endpoint `{name}` reads answered {}; the fact is not established \
+                     either way",
+                    reply.status
                 )));
             }
             other => {
                 return Err(ProbeError::unusable(format!(
-                    "{} answered {other}, which is neither an answer nor an outage",
-                    ask.url
+                    "the endpoint `{name}` reads answered {other}, which is neither an \
+                     answer nor an outage"
                 )));
             }
         }
@@ -214,8 +222,8 @@ impl Transport for Http {
                 ReasonClass::Unusable,
                 ProbeErrorCode::InvalidJson,
                 format!(
-                    "{} did not answer with JSON ({e}); received prefix: {}",
-                    ask.url,
+                    "the endpoint `{name}` reads did not answer with JSON ({e}); received \
+                     prefix: {}",
                     reply.body.chars().take(120).collect::<String>()
                 ),
             )
@@ -262,13 +270,17 @@ impl Fetch for Reqwest {
         }
         let response = request.send().await.map_err(|e| match e.is_timeout() {
             true => ProbeError::spent(Spent::Deadline, budget),
-            false => ProbeError::unreachable(format!("cannot reach {url}: {e}")),
+            false => {
+                ProbeError::unreachable(format!("cannot reach the endpoint: {}", e.without_url()))
+            }
         })?;
         let status = response.status().as_u16();
-        let body = response
-            .text()
-            .await
-            .map_err(|e| ProbeError::unreachable(format!("cannot read {url}'s answer: {e}")))?;
+        let body = response.text().await.map_err(|e| {
+            ProbeError::unreachable(format!(
+                "cannot read the endpoint's answer: {}",
+                e.without_url()
+            ))
+        })?;
         Ok(Reply { status, body })
     }
 }

@@ -2,6 +2,7 @@
 about:
   - batteries/transport/src/sql.rs#Ask
   - batteries/transport/src/sql.rs#Source
+  - batteries/transport/src/sql.rs#tellable
   - batteries/transport/src/sql.rs#version
   - batteries/transport/src/sql.rs#cell
   - batteries/transport/src/sql.rs#shaped
@@ -52,9 +53,16 @@ retries forever, for something that can never work. `sqlite_url` checks the sche
 first and refuses anything else as a declaration to fix.
 
 The audit that found it also checked the thing that would have been worse: sqlx's
-connect error does **not** quote the url back, so a password in a connection
-string does not reach the journal through that path. The refusal above names only
-the scheme.
+**sqlite** connect error does not quote the url back, so a password in a
+connection string does not reach the journal through that path today. The refusal
+above names only the scheme.
+
+"Today" and "sqlite" are both load-bearing, which is why G1.5 stopped relying on
+them. `Source::tellable` passes the driver's own words through only when the url
+was `Given` — reviewed, and refused outright if it carries userinfo — and for a
+`FromEnv` url says the variable's name and that the reason is not being repeated.
+The next driver to arrive is not audited yet and does not have to be: see
+[[transport-given]].
 
 ## A local database is not a remote system
 

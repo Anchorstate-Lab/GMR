@@ -328,3 +328,56 @@ fn a_local_database_is_not_a_remote_system() {
          direction, it is a wrong answer that a reader has no way to check"
     );
 }
+
+#[tokio::test]
+async fn a_connection_url_that_carries_a_credential_is_refused_rather_than_opened() {
+    let err = run(Ask::on(
+        Source::Given("postgres://svc:hunter2@db.internal/app".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("a password written into a declaration is a declaration to fix");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "not an outage to retry: nothing about the database decides this: {err}"
+    );
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "and saying it back is the leak this refusal exists to prevent: {err}"
+    );
+    assert!(
+        err.to_string().contains("environment variable"),
+        "the refusal has to say what to do instead, or it is a wall: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_database_reached_by_reference_does_not_have_its_url_quoted_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = format!("sqlite://{}", dir.path().join("no-such.db").display());
+    unsafe { std::env::set_var("GMR_TEST_ABSENT_DB", &missing) };
+
+    let err = run(Ask::on(
+        Source::FromEnv("GMR_TEST_ABSENT_DB".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("a database that is not there cannot be opened");
+
+    unsafe { std::env::remove_var("GMR_TEST_ABSENT_DB") };
+
+    assert!(
+        !err.to_string().contains(&missing),
+        "the driver quotes the connection string it was handed, and for a url held by \
+         reference that string is whatever the variable holds -- a password included. \
+         What reaches the journal must be the variable's name and the fact that it \
+         failed: {err}"
+    );
+    assert!(
+        err.to_string().contains("GMR_TEST_ABSENT_DB") && err.to_string().contains("db"),
+        "and both names a reader needs are safe to say: which probe, and which \
+         variable: {err}"
+    );
+}

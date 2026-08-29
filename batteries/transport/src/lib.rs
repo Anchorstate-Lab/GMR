@@ -2,6 +2,8 @@
 pub mod closure;
 #[cfg(feature = "file")]
 pub mod file;
+#[cfg(any(feature = "http", feature = "sql"))]
+pub mod given;
 #[cfg(feature = "http")]
 pub mod http;
 #[cfg(feature = "inproc")]

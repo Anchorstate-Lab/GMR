@@ -41,6 +41,12 @@ in an error string is a secret committed to an append-only log that nothing can
 delete. A test sends a credential, forces a failure, and greps the error for it.
 What the error may say is the variable's *name*, which is the useful half.
 
+The url got the same treatment in G1.5, and later than it should have: every
+status branch below used to interpolate `ask.url`, which carries query strings,
+tenant names and sometimes a credential of its own. They name the probe now, and
+a url with userinfo in it is refused rather than fetched. See
+[[transport-given]].
+
 ## Four HTTP statuses, three different people's problem
 
 This is constraint 4 — never let unreachable read as an answer — at the only
