@@ -19,7 +19,7 @@ pub fn declaring(root: &Path) -> crate::notes::Notes {
 pub const RESOLVED_THROUGH: &str = "git";
 
 pub fn addressed(reference: &Ref) -> String {
-    format!("{}:{}", reference.provider, reference.external_id)
+    reference.to_string()
 }
 
 fn addressed_to(provider: &str, external_id: &str) -> Result<Ref, CliError> {

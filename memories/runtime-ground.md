@@ -94,6 +94,14 @@ just not by us. Failing the call would be a request going red because a
 scheduler was running, and the honest answer is already in hand:
 `Knowledge::Seen { at }` says exactly how old the reading is.
 
+## Phase one walks an owned list
+
+`stream::iter` is handed `keys.to_vec()`, not `&keys`. A borrowed slice iterator
+inside a `buffered` stream lives across every await in the batch, and that is
+enough to make the whole `ground` future not `Send` — which no test noticed until
+a host tried to spawn it. The clone is a handful of short keys, once per call,
+and it has a semantics: the stream owns the list it walks. See [[hosts-spawn]].
+
 ## When this changes, ask
 
 Does something start deciding, ranking, or folding these two axes into one

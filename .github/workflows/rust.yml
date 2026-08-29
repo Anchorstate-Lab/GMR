@@ -43,6 +43,19 @@ jobs:
         grep -q 'ACCEPTANCE COMPLETE steps=4' /tmp/acceptance.out \
           || { echo "acceptance.sh did not run every step it declares"; exit 1; }
 
+  # The addon is a cdylib, so `cargo test` never loads it and never learns
+  # whether Node can. This job builds it and drives the six verbs from
+  # JavaScript -- the only place the binding's own translation is exercised.
+  node:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: The six verbs, from JavaScript
+      run: sh domains/node/test.sh
+
   # Layer 3 of the gate: land a known break in the product and insist the
   # promises notice. A promise no mutation can break is a promise nothing is
   # really checking, and that is how a suite spends years green while testing

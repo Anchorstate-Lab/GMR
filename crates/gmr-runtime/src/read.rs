@@ -504,11 +504,11 @@ impl Runtime {
         let seen = self.scheduler.all_seen().await?;
         let now = Utc::now();
 
-        let each = futures_util::stream::iter(keys)
+        let each = futures_util::stream::iter(keys.to_vec())
             .map(|key| {
-                let looks = seen.get(key).copied().unwrap_or_default();
+                let looks = seen.get(&key).copied().unwrap_or_default();
                 async move {
-                    let Some((view, moved_at)) = standing_at(&self.log, key, &looks).await? else {
+                    let Some((view, moved_at)) = standing_at(&self.log, &key, &looks).await? else {
                         return Ok::<_, RuntimeError>(None);
                     };
                     if view.closed || !how.stale(view.last_sighting, now) {
@@ -518,7 +518,7 @@ impl Runtime {
                         &self.log,
                         &self.observer,
                         &self.scheduler,
-                        key,
+                        &key,
                         budget,
                     )
                     .await
@@ -526,7 +526,7 @@ impl Runtime {
                         Ok(_) | Err(RuntimeError::Leased { .. }) => {}
                         Err(e) => return Err(e),
                     }
-                    standing_at(&self.log, key, &self.scheduler.seen(key).await?).await
+                    standing_at(&self.log, &key, &self.scheduler.seen(&key).await?).await
                 }
             })
             .buffered(at_once)

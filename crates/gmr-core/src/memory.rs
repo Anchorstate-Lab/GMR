@@ -52,6 +52,20 @@ impl Ref {
             external_id: ExternalId::new(external_id),
         }
     }
+
+    pub fn parse(address: &str) -> Option<Self> {
+        let (named, rest) = address.split_once(':')?;
+        Some(Self {
+            provider: ProviderId::try_new(named).ok()?,
+            external_id: ExternalId::try_new(rest).ok()?,
+        })
+    }
+}
+
+impl std::fmt::Display for Ref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.provider, self.external_id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

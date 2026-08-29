@@ -59,6 +59,24 @@ the store refuses the second one whatever the check saw. The check stays
 because it is what turns the refusal into a sentence naming the anchor,
 rather than a head that moved.
 
+## What an open request may say, and what it may not
+
+`OpenRequest` deserialises, because [[node-sdk]] takes one over a wire. Two
+fields are not taken at face value:
+
+- **`transitions`** arrive as `{ when, to }` strings and go through
+  `Expr::text` here. `Expr` carries the hash earned from its source, and a
+  caller who could hand one in could hand in a hash that does not match the
+  text — after which every later reading is compared against a declaration hash
+  that describes nothing.
+- **`supersedes.rationale`** arrives as text and is stored as bytes. The sealer
+  hashes bytes; asking a JSON caller for an array of byte values would be asking
+  them to do the encoding.
+
+Everything else is `#[serde(default)]` and `deny_unknown_fields`: an anchor
+opened with a misspelled field is an anchor watching something other than what
+was asked for, and it looks healthy.
+
 ## When this changes, ask
 
 Does a failure after the `Entry::Open` append ever propagate as an `Err`

@@ -55,6 +55,7 @@ CLEAN_ZONES = [
     "batteries/transport",
     "domains/coding/extract",
     "domains/coding/cli",
+    "domains/node",
 ]
 EXEMPT_FILES = ["domains/coding/cli/src/cli.rs"]
 

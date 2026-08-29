@@ -1,0 +1,254 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use gmr::{AnchorKey, Instructions, Policy, ProbeName, Ref, Runtime, Source, StatusId, Version};
+use gmr_transport::recipes::Recipes;
+use napi::bindgen_prelude::*;
+use napi_derive::napi;
+use serde::Deserialize;
+use serde_json::Value;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Opening {
+    root: String,
+    #[serde(default)]
+    db: Option<String>,
+    #[serde(default)]
+    recipes: Recipes,
+    #[serde(default)]
+    scripts: BTreeMap<ProbeName, PathBuf>,
+    #[serde(default)]
+    providers: Providers,
+    #[serde(default)]
+    policy: Policy,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Providers {
+    #[serde(default)]
+    git: bool,
+    #[serde(default)]
+    claude_code: bool,
+    #[serde(default)]
+    mem0: bool,
+}
+
+#[napi]
+pub struct Gmr {
+    rt: Arc<Runtime>,
+}
+
+#[napi]
+pub async fn open(options: Value) -> Result<Gmr> {
+    let asked: Opening = said(options)?;
+    let work: Assembling = Box::pin(opened(asked));
+    spawned(work).await
+}
+
+type Assembling = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Gmr>> + Send>>;
+
+async fn opened(asked: Opening) -> Result<Gmr> {
+    let root = PathBuf::from(&asked.root);
+    let db = match asked.db {
+        Some(at) => PathBuf::from(at),
+        None => root.join(".anchor").join("state").join("memory.db"),
+    };
+    if let Some(parent) = db.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| failed(format!("cannot make room for the store at {parent:?}: {e}")))?;
+    }
+
+    let store = gmr::sqlite::open(db.clone())
+        .await
+        .map_err(|e| failed(format!("cannot open the store at {}: {e}", db.display())))?;
+
+    let recipes = Arc::new(asked.recipes);
+    let probes = root.join(".anchor").join("probes");
+    let mut builder = Runtime::builder()
+        .policy(asked.policy)
+        .journal(Arc::new(store.journal()))
+        .bindings(Arc::new(store.bindings()))
+        .sealer(Arc::new(store.sealer()))
+        .links(Arc::new(store.links()))
+        .queue(Arc::new(store.queue()))
+        .settings(Arc::new(store.settings()))
+        .sightings(Arc::new(store.sightings()))
+        .transport(Arc::new(gmr_transport::shell::Shell::new(&root, probes)))
+        .transport(Arc::new(gmr_transport::script::Script::new(
+            &root,
+            asked.scripts,
+        )))
+        .transport(Arc::new(
+            gmr_transport::http::Http::new(Arc::clone(&recipes))
+                .map_err(|e| failed(format!("cannot build the http transport: {e}")))?,
+        ))
+        .transport(Arc::new(gmr_transport::file::Files::new(
+            &root,
+            Arc::clone(&recipes),
+        )))
+        .transport(Arc::new(gmr_transport::sql::Sql::new(Arc::clone(&recipes))));
+
+    for (name, made) in stores(&root, &asked.providers) {
+        match made {
+            Ok(store) => builder = builder.provider(store.content()),
+            Err(e) => builder = builder.provider_warning(name, e.to_string()),
+        }
+    }
+
+    let rt = builder
+        .try_build()
+        .map_err(|e| failed(format!("cannot assemble a runtime: {e}")))?;
+    Ok(Gmr { rt: Arc::new(rt) })
+}
+
+#[napi]
+impl Gmr {
+    #[napi]
+    pub async fn ground(&self, refs: Vec<String>, how: Option<Value>) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let refs = refs.into_iter().map(named).collect::<Result<Vec<_>>>()?;
+        let how: Instructions = match how {
+            Some(stated) => said(stated)?,
+            None => Instructions::default(),
+        };
+        spawned(async move { answered(rt.ground(&refs, &how).await) }).await
+    }
+
+    #[napi]
+    pub async fn since(&self, cursor: i64, status: Option<String>) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let cursor = u64::try_from(cursor).map_err(|_| {
+            failed(format!(
+                "a cursor is a journal sequence and {cursor} is behind zero"
+            ))
+        })?;
+        let status = status.map(StatusId::new);
+        spawned(async move { answered(rt.changed_since(cursor, status.as_ref()).await) }).await
+    }
+
+    #[napi]
+    pub async fn bind(
+        &self,
+        reference: String,
+        anchors: Vec<String>,
+        source: String,
+        bound_version: Option<String>,
+    ) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let reference = named(reference)?;
+        let anchors = anchors.into_iter().map(AnchorKey::new).collect();
+        let source = attested(&source)?;
+        let bound_version = bound_version.map(Version::new);
+        spawned(async move { answered(rt.bind(reference, anchors, bound_version, source).await) })
+            .await
+    }
+
+    #[napi]
+    pub async fn revoke(&self, reference: String, source: String) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let reference = named(reference)?;
+        let source = attested(&source)?;
+        spawned(async move { answered(rt.revoke(&reference, source).await) }).await
+    }
+
+    #[napi]
+    pub async fn open(&self, request: Value) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let request = said(request)?;
+        spawned(async move { answered(rt.open(request).await) }).await
+    }
+
+    #[napi]
+    pub async fn close(&self, key: String, why: String) -> Result<()> {
+        let rt = Arc::clone(&self.rt);
+        let key = AnchorKey::new(key);
+        spawned(async move {
+            rt.close(&key, why.as_bytes())
+                .await
+                .map_err(|e| failed(e.to_string()))
+        })
+        .await
+    }
+}
+
+async fn spawned<T: Send + 'static>(
+    work: impl std::future::Future<Output = Result<T>> + Send + 'static,
+) -> Result<T> {
+    match napi::tokio::spawn(work).await {
+        Ok(done) => done,
+        Err(e) => Err(failed(format!("the call did not finish: {e}"))),
+    }
+}
+
+fn said<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
+    serde_json::from_value(value).map_err(|e| failed(e.to_string()))
+}
+
+fn answered<T: serde::Serialize, E: std::fmt::Display>(
+    outcome: std::result::Result<T, E>,
+) -> Result<Value> {
+    let held = outcome.map_err(|e| failed(e.to_string()))?;
+    serde_json::to_value(held).map_err(|e| failed(e.to_string()))
+}
+
+fn named(reference: String) -> Result<Ref> {
+    Ref::parse(&reference).ok_or_else(|| {
+        failed(format!(
+            "`{reference}` is not an address. A memory is named `<provider>:<id>` -- which \
+             store to ask, and what to ask it for"
+        ))
+    })
+}
+
+fn attested(source: &str) -> Result<Source> {
+    Source::parse(source).ok_or_else(|| {
+        failed(format!(
+            "`{source}` is not a provenance. A binding says where it came from: derived, \
+             self_attested, adjudicated, configured, or unknown -- and `unknown` is how you \
+             say you do not know, which is why silence is not offered"
+        ))
+    })
+}
+
+fn failed(message: String) -> napi::Error {
+    napi::Error::from_reason(message)
+}
+
+type Made = (
+    &'static str,
+    std::result::Result<gmr::MemoryStore, gmr::ContentError>,
+);
+
+fn stores(root: &std::path::Path, asked: &Providers) -> Vec<Made> {
+    let mut out = Vec::new();
+    if asked.git {
+        out.push(("git", Ok(gmr_provider::git::store(root))));
+    }
+    if asked.claude_code {
+        out.push(("claude-code", gmr_provider::claude_code::store(root)));
+    }
+    if asked.mem0 {
+        out.push(("mem0", mem0().map(gmr_provider::mem0::Mem0::store)));
+    }
+    out
+}
+
+fn mem0() -> std::result::Result<gmr_provider::mem0::Mem0, gmr::ContentError> {
+    let held = |key: &str| std::env::var(key).ok().filter(|v| !v.is_empty());
+    let scope = gmr_provider::mem0::Scope {
+        user_id: held("MEM0_USER_ID"),
+        agent_id: held("MEM0_AGENT_ID"),
+        app_id: held("MEM0_APP_ID"),
+    };
+    match (held("MEM0_BASE_URL"), held("MEM0_API_KEY")) {
+        (Some(base), key) => gmr_provider::mem0::Mem0::self_hosted(base, key, scope),
+        (None, Some(key)) => gmr_provider::mem0::Mem0::platform(key, scope),
+        (None, None) => Err(gmr::ContentError::new(
+            "mem0 is asked for and neither MEM0_BASE_URL nor MEM0_API_KEY is set; a store \
+             configured by environment cannot be configured by silence",
+        )),
+    }
+}

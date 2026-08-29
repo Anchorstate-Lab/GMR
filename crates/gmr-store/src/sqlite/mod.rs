@@ -105,6 +105,7 @@ async fn connect(
     Ok(SqliteStore { pool })
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum Rung {
     Sql(&'static str),
     Chain,
@@ -177,12 +178,12 @@ async fn rung(pool: &SqlitePool, to: i64, ladder: &[(i64, Rung)]) -> Result<Clim
 }
 
 async fn under_the_write_lock(
-    held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
+    held: &mut sqlx::SqliteConnection,
     to: i64,
     ladder: &[(i64, Rung)],
 ) -> Result<Climbed, StoreError> {
     let at: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(&mut **held)
+        .fetch_one(&mut *held)
         .await
         .map_err(db_err)?;
 
@@ -194,13 +195,13 @@ async fn under_the_write_lock(
     }
 
     let (next, step) = match at {
-        0 => (to, &Rung::Sql(schema::SCHEMA)),
+        0 => (to, Rung::Sql(schema::SCHEMA)),
         _ => (
             at + 1,
             ladder
                 .iter()
                 .find(|(rung, _)| *rung == at)
-                .map(|(_, step)| step)
+                .map(|(_, step)| *step)
                 .ok_or_else(|| {
                     StoreError::with_code(
                         ErrorKind::Constraint,
@@ -216,16 +217,11 @@ async fn under_the_write_lock(
     };
 
     match step {
-        Rung::Sql(sql) => {
-            sqlx::raw_sql(sql)
-                .execute(&mut **held)
-                .await
-                .map_err(db_err)?;
-        }
-        Rung::Chain => chain_the_journal(held).await?,
+        Rung::Sql(sql) => statements(&mut *held, sql).await?,
+        Rung::Chain => chain_the_journal(&mut *held).await?,
     }
     sqlx::query(&format!("PRAGMA user_version = {next}"))
-        .execute(&mut **held)
+        .execute(&mut *held)
         .await
         .map_err(db_err)?;
 
@@ -235,18 +231,19 @@ async fn under_the_write_lock(
     })
 }
 
-async fn chain_the_journal(
-    held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
-) -> Result<(), StoreError> {
+async fn statements(held: &mut sqlx::SqliteConnection, sql: &str) -> Result<(), StoreError> {
+    use sqlx::Executor;
+    held.execute(sqlx::raw_sql(sql)).await.map_err(db_err)?;
+    Ok(())
+}
+
+async fn chain_the_journal(held: &mut sqlx::SqliteConnection) -> Result<(), StoreError> {
     use sqlx::Row;
 
-    sqlx::raw_sql(schema::V10_TO_V11_OPEN)
-        .execute(&mut **held)
-        .await
-        .map_err(db_err)?;
+    statements(&mut *held, schema::V10_TO_V11_OPEN).await?;
 
     let rows = sqlx::query("SELECT seq, anchor, fence, body FROM journal ORDER BY seq")
-        .fetch_all(&mut **held)
+        .fetch_all(&mut *held)
         .await
         .map_err(db_err)?;
 
@@ -264,16 +261,13 @@ async fn chain_the_journal(
             .bind(prev.as_deref())
             .bind(hash.as_str())
             .bind(r.get::<i64, _>("seq"))
-            .execute(&mut **held)
+            .execute(&mut *held)
             .await
             .map_err(db_err)?;
         prev = Some(hash.into_inner());
     }
 
-    sqlx::raw_sql(schema::V10_TO_V11_CLOSE)
-        .execute(&mut **held)
-        .await
-        .map_err(db_err)?;
+    statements(&mut *held, schema::V10_TO_V11_CLOSE).await?;
     Ok(())
 }
 

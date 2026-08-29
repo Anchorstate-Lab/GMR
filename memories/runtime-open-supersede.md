@@ -47,6 +47,13 @@ self-bind would arrive on a dead ancestor and reach the present only by
 being carried, and a superseded generation would stay writable, letting a
 tag added there slip past a revocation made on the heir.
 
+## The rationale is text on the wire and bytes here
+
+`Supersede` deserialises so that [[node-sdk]] can send one, and its `rationale`
+arrives as a string. The sealer hashes bytes; asking a JSON caller for an array
+of byte values would be asking them to do the encoding, and the reason a
+generation was superseded is prose somebody has to read later.
+
 ## When this changes, ask
 
 Does the new path let `supersedes` point at an anchor that is still open?

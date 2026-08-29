@@ -1,5 +1,6 @@
 use chrono::Utc;
 use gmr_core::{AnchorKey, Binding, Ref, Source, Version};
+use serde::Serialize;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -176,7 +177,7 @@ async fn reaffirm(
         .await
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Landed {
     pub anchors: Vec<AnchorKey>,
     pub moved: Vec<(AnchorKey, AnchorKey)>,

@@ -5,6 +5,7 @@ use gmr_core::{
     Anchor, AnchorKey, Entry, ProbeRef, RunSettings, State, StatusId, Superseded, Transitions,
 };
 use gmr_store::{Expected, Fence};
+use serde::{Deserialize, Serialize};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -14,7 +15,7 @@ use crate::observer::Observer;
 use crate::scheduler::Scheduler;
 use crate::translate::{Transitioned, bind_warnings, transition};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Opened {
     pub key: AnchorKey,
     pub state: State,
@@ -22,19 +23,56 @@ pub struct Opened {
     pub supersedes: Option<AnchorKey>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Supersede {
     pub key: AnchorKey,
+    #[serde(with = "written")]
     pub rationale: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenRequest {
     pub key: AnchorKey,
     pub probe: ProbeRef,
+    #[serde(default, deserialize_with = "authored")]
     pub transitions: Transitions,
+    #[serde(default)]
     pub terminal: BTreeSet<StatusId>,
+    #[serde(default)]
     pub initial: Option<State>,
+    #[serde(default)]
     pub settings: RunSettings,
+    #[serde(default)]
     pub supersedes: Option<Supersede>,
+}
+
+mod written {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        Ok(String::deserialize(d)?.into_bytes())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Written {
+    when: String,
+    to: String,
+}
+
+fn authored<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Transitions, D::Error> {
+    Ok(Transitions(
+        Vec::<Written>::deserialize(d)?
+            .into_iter()
+            .map(|rule| gmr_core::Rule {
+                when: gmr_core::Expr::text(rule.when),
+                to: gmr_core::Expr::text(rule.to),
+            })
+            .collect(),
+    ))
 }
 
 impl Runtime {
