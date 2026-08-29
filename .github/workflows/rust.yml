@@ -56,6 +56,31 @@ jobs:
     - name: The six verbs, from JavaScript
       run: sh domains/node/test.sh
 
+  # The postgres branch cannot be exercised without a postgres, so the tests
+  # that reach one are #[ignore]d and this job is where they run. Without it
+  # the second backend is checked only by the assertions that never connect.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: gmr
+          POSTGRES_DB: gmr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+    - uses: actions/checkout@v4
+    - name: A second backend, against a real one
+      env:
+        GMR_TEST_POSTGRES_URL: postgres://postgres:gmr@127.0.0.1:5432/gmr
+      run: cargo test -p gmr-transport --test sql -- --ignored
+
   # Layer 3 of the gate: land a known break in the product and insist the
   # promises notice. A promise no mutation can break is a promise nothing is
   # really checking, and that is how a suite spends years green while testing

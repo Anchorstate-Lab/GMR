@@ -6,7 +6,8 @@ about:
   - batteries/transport/src/sql.rs#version
   - batteries/transport/src/sql.rs#cell
   - batteries/transport/src/sql.rs#shaped
-  - batteries/transport/src/sql.rs#sqlite_url
+  - batteries/transport/src/sql.rs#spoken
+  - batteries/transport/src/sql.rs#postgres
 watch: [sig, logic]
 ---
 
@@ -45,13 +46,24 @@ responsible thing. A test rotates the secret and asserts the version does not mo
 The timeout stays out for D-11's reason: it decides whether there is an answer,
 not what the answer is.
 
-## A backend this build cannot speak is a declaration to fix
+## Which backend a url names is one decision, made in one place
 
 `SqliteConnectOptions::from_str` accepts **any** string and treats it as a
-filename, so `postgres://user:pw@host/db` becomes a file by that name and failing
-to open it came back `Unreachable` — a transient outage an anchor backs off and
-retries forever, for something that can never work. `sqlite_url` checks the scheme
-first and refuses anything else as a declaration to fix.
+filename, so `postgres://host/db` becomes a file by that name and failing to open
+it came back `Unreachable` — a transient outage an anchor backs off and retries
+forever, for something that can never work. The scheme is read first, and a url
+nothing here speaks is refused as a declaration to fix.
+
+That check used to be `sqlite_url(&str) -> bool`, and a boolean can only ever
+answer "sqlite or not": adding postgres to it would have meant a second boolean
+beside the first, and a third backend a third — which is the accumulation the
+rules forbid. `spoken` returns **which** dialect, `None` for one nothing knows,
+and `invoke` branches on it. G3 added a backend by adding an arm, not by
+routing around the decision.
+
+`Spoken::local` is what decides `Verifiability`: sqlite is a file and reads
+`Closed`, postgres is across a network and reads `Open{Network, Clock}`. A second
+backend does not get to be quieter about that than the first.
 
 The audit that found it also checked the thing that would have been worse: sqlx's
 **sqlite** connect error does not quote the url back, so a password in a
@@ -113,6 +125,32 @@ by value: a number that arrives as `"1700000000"` never equals one that arrives 
 `1700000000`, and an anchor would report a change every time the driver's mood
 shifted. BLOBs come back `Null` — bytes are not a fact anyone can read in a diff.
 
+## Postgres: read-only is the server's word, and the credential is not in the file
+
+sqlite gets `read_only(true)` from the driver and postgres has no such flag, so
+the session says `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY` on
+connect and **the server** refuses a write. That is the same kind of enforcement
+and not a promise this crate makes to itself; a test drives an `UPDATE` through a
+real postgres and asserts both the refusal and that the row did not move. It is
+said as a statement rather than passed as `options=` in the startup packet
+because a pooler in front of the database may reject the latter and would have to
+be trusted to relay it.
+
+**A postgres url in a declaration may not carry userinfo at all** — not even a
+bare username, see [[transport-given]]. That looks strict until you notice what
+it buys: a coordinate typed at a terminal cannot say `from_env`, and
+`gmr anchor 'sql://postgres://host:5432/db#SELECT …'` still works in one step,
+because `PgConnectOptions` starts from `PGUSER`/`PGPASSWORD` and the url only
+overrides what it names. So the file carries host, port and database — none of
+them a secret — and postgres's own environment carries the rest. That is its
+answer to this question, not a syntax invented here.
+
+A column type this build has no reading for is an **error naming the column and
+asking for a cast**, not a `Null`. sqlite returns `Null` for a BLOB, which is
+defensible for one type nobody anchors; postgres has dozens, and quietly
+reporting `null` for a `timestamptz` would be this transport saying something the
+database did not.
+
 ## Why the path is not confined the way `file`'s is
 
 [[transport-file]] refuses any path leaving the tree. This does not, and the
@@ -129,6 +167,6 @@ and no anchor downstream of it means anything.
 Does a missing database start reading as `NotFound`? That is absence claimed by
 somebody who never got to look.
 
-Does a second backend arrive? The url is already a reference, so the credential
-story holds — but check that its driver has a read-only mode that is actually
-enforced, rather than a flag it accepts and ignores.
+Does a **third** backend arrive? Answer the same two questions postgres had to.
+Does its driver have a read-only mode that is really enforced rather than a flag
+it accepts and ignores? And does its url form let a credential be left out?

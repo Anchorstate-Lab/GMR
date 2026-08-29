@@ -53,6 +53,11 @@ and a position may not change.
 position is a different instrument from one that does not. What the field
 *holds* is not, because that is the position.
 
+`bound` is generic over the database rather than written once per backend: the
+value-to-parameter mapping — string, integer, float, bool, null, and a refusal
+for a list or an object — is the same decision whichever driver carries it, and
+two copies of it would be free to disagree about what a position may hold.
+
 ## A name the position cannot fill is ours, not the world's
 
 `ArtifactInvalid`, and nothing is asked. `NotFound` would say the endpoint
