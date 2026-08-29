@@ -18,5 +18,7 @@ pub mod select;
 pub mod shell;
 #[cfg(feature = "sql")]
 pub mod sql;
+#[cfg(any(feature = "http", feature = "file"))]
+pub mod template;
 
 pub use gmr_probe::{PARAMS_ENV, POSITION_ENV};

@@ -17,6 +17,14 @@ fn world(files: &[(&str, &str)]) -> tempfile::TempDir {
 }
 
 async fn ask_in(root: &std::path::Path, ask: Ask) -> Result<Outcome, ProbeError> {
+    ask_at(root, ask, serde_json::Value::Null).await
+}
+
+async fn ask_at(
+    root: &std::path::Path,
+    ask: Ask,
+    position: serde_json::Value,
+) -> Result<Outcome, ProbeError> {
     let mut asks = BTreeMap::new();
     asks.insert(ProbeName::new("cfg"), ask);
     let files = Files::new(root, asks);
@@ -29,7 +37,7 @@ async fn ask_in(root: &std::path::Path, ask: Ask) -> Result<Outcome, ProbeError>
     files
         .invoke(&ProbeCall {
             probe: &probe,
-            position: &serde_json::Value::Null,
+            position: &position,
             budget: &budget,
         })
         .await
@@ -240,5 +248,57 @@ async fn a_spent_budget_is_not_something_to_read_a_file_through_anyway() {
          read is usually quick, but `Budget` is the one thing a caller can say to bound a \
          whole round, and a family that ignores it silently makes `pass` overrun the bound \
          it was given by however many file probes are in the batch"
+    );
+}
+
+#[tokio::test]
+async fn one_declaration_reads_the_file_the_position_names() {
+    let dir = world(&[
+        ("envs/staging.yaml", "service:\n  replicas: 2\n"),
+        ("envs/prod.yaml", "service:\n  replicas: 9\n"),
+    ]);
+    let ask = Ask::at("envs/{env}.yaml").selecting("$.service.replicas");
+
+    for (env, replicas) in [("staging", 2), ("prod", 9)] {
+        let found = ask_at(dir.path(), ask.clone(), serde_json::json!({ "env": env }))
+            .await
+            .unwrap();
+        assert_eq!(
+            found,
+            Outcome::Found {
+                facts: gmr_core::Facts::new(serde_json::json!({ "value": replicas })),
+            },
+            "two anchors on two environments are one declaration, and one instrument"
+        );
+    }
+
+    assert_eq!(
+        ask.version(),
+        Ask::at("envs/{env}.yaml")
+            .selecting("$.service.replicas")
+            .version(),
+        "the version is the template's, not an expansion's -- and `shaped` is read off the \
+         template too, so which parser runs is a thing the declaration decides and a \
+         position cannot change"
+    );
+}
+
+#[tokio::test]
+async fn a_position_cannot_walk_the_probe_out_of_the_repository() {
+    let dir = world(&[("envs/prod.yaml", "service:\n  replicas: 9\n")]);
+    let err = ask_at(
+        dir.path(),
+        Ask::at("envs/{env}.yaml").selecting("$.service.replicas"),
+        serde_json::json!({ "env": "../../../../etc/passwd" }),
+    )
+    .await
+    .expect_err("a path assembled from a position is still a path that has to stay inside");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "the containment check runs on what was assembled, not on what was declared -- a \
+         template reviewed once and filled in per call is exactly where that distinction \
+         starts to matter: {err}"
     );
 }

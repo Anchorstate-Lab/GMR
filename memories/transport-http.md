@@ -17,8 +17,9 @@ the declaration, not asserted by the thing being measured.
 
 ## What the version is earned from, and what it is deliberately blind to
 
-`Ask::version` hashes the url, the selector, and each header's **name plus where
-its value comes from**. Rule 5 wants everything that can change the output; the
+`Ask::version` hashes the url — the **template**, since G1.5, never an expansion
+of it; see [[transport-template]] — the selector, and each header's **name plus
+where its value comes from**. Rule 5 wants everything that can change the output; the
 selector decides what the output *is*, so it is in.
 
 Two things are out, and both are D-11's line:

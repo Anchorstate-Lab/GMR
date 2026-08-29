@@ -266,6 +266,7 @@ fn fetch_declared(
                         source: gmr_transport::sql::Source::Given(db.clone()),
                         query: query.to_owned(),
                         column: None,
+                        binds: Vec::new(),
                     },
                 )?;
                 Ok(true)

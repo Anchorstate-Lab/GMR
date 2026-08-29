@@ -32,7 +32,8 @@ ever `SELECT` is not the same thing.
 
 ## What is earned, and the one thing that must never be
 
-The version covers the query, the column, and **which reference** the connection
+The version covers the query, the column, which fields the query **binds** from
+the position (see [[transport-template]]), and **which reference** the connection
 comes from — `Given(url)` hashes the url, `FromEnv(var)` hashes the variable's
 name and never reads it.
 

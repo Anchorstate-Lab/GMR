@@ -171,11 +171,12 @@ impl Transport for Http {
             )
         })?;
 
-        crate::given::without_credentials(&ask.url)?;
+        let url = crate::template::url(&ask.url, call.position)?;
+        crate::given::without_credentials(&url)?;
         let sent = ask.sent().map_err(|e| e.about(name))?;
         let reply = self
             .fetch
-            .get(&ask.url, &sent, call.budget)
+            .get(&url, &sent, call.budget)
             .await
             .map_err(|e| e.about(name))?;
         let ask = &ask;

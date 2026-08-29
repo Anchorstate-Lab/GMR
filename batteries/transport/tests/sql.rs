@@ -30,6 +30,10 @@ async fn a_database(dir: &std::path::Path) -> String {
 }
 
 async fn run(ask: Ask) -> Result<Outcome, ProbeError> {
+    at(ask, serde_json::Value::Null).await
+}
+
+async fn at(ask: Ask, position: serde_json::Value) -> Result<Outcome, ProbeError> {
     let mut asks = BTreeMap::new();
     asks.insert(ProbeName::new("db"), ask);
     let sql = Sql::new(asks);
@@ -41,7 +45,7 @@ async fn run(ask: Ask) -> Result<Outcome, ProbeError> {
     );
     sql.invoke(&ProbeCall {
         probe: &probe,
-        position: &serde_json::Value::Null,
+        position: &position,
         budget: &budget,
     })
     .await
@@ -379,5 +383,101 @@ async fn a_database_reached_by_reference_does_not_have_its_url_quoted_back() {
         err.to_string().contains("GMR_TEST_ABSENT_DB") && err.to_string().contains("db"),
         "and both names a reader needs are safe to say: which probe, and which \
          variable: {err}"
+    );
+}
+
+#[tokio::test]
+async fn the_position_reaches_the_query_as_a_bound_value_and_never_as_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let ask = Ask::on(
+        Source::Given(url.clone()),
+        "SELECT applied_at FROM migrations WHERE version = ?1",
+    )
+    .binding("version");
+
+    assert_eq!(
+        at(
+            ask.clone(),
+            serde_json::json!({ "version": "0042_add_index" })
+        )
+        .await
+        .unwrap(),
+        value(serde_json::json!(1700000000)),
+        "one declaration answers for every migration somebody anchors"
+    );
+    assert_eq!(
+        at(ask.clone(), serde_json::json!({ "version": "0001_init" }))
+            .await
+            .unwrap(),
+        Outcome::NotFound,
+        "and a row that is not there is the database answering, not a broken probe"
+    );
+
+    assert_eq!(
+        at(
+            ask.clone(),
+            serde_json::json!({ "version": "x' OR 1=1 --" }),
+        )
+        .await
+        .unwrap(),
+        Outcome::NotFound,
+        "a position is data all the way down. Pasted into the text this would return every \
+         row and the probe would then refuse the answer for having too many -- looking, from \
+         the outside, exactly like a fact that had moved"
+    );
+}
+
+#[tokio::test]
+async fn what_a_query_binds_is_part_of_the_instrument_and_what_fills_it_is_not() {
+    let base = || {
+        Ask::on(
+            Source::Given("sqlite://app.db".to_owned()),
+            "SELECT v FROM t WHERE k = ?1",
+        )
+    };
+    assert_ne!(
+        base().version(),
+        base().binding("k").version(),
+        "a query that reads its parameter from the position is a different instrument from \
+         one that does not, even with the same text"
+    );
+    assert_ne!(
+        base().binding("k").version(),
+        base().binding("other").version(),
+        "and so is one that reads a different field"
+    );
+    assert_eq!(
+        base().binding("k").version(),
+        base().binding("k").version(),
+        "what the field holds at any moment is the position, which is where the probe is \
+         pointed and never what the probe is"
+    );
+}
+
+#[tokio::test]
+async fn a_bound_name_the_position_cannot_fill_is_ours_to_fix_and_not_an_absence() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let err = at(
+        Ask::on(
+            Source::Given(url),
+            "SELECT applied_at FROM migrations WHERE version = ?1",
+        )
+        .binding("version"),
+        serde_json::json!({ "release": "0042_add_index" }),
+    )
+    .await
+    .expect_err("the declaration and the position disagree about what is watched");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "NotFound would say the database answered and there is no such row; nothing was \
+         asked at all: {err}"
+    );
+    assert!(
+        err.to_string().contains("version") && err.to_string().contains("release"),
+        "the message has to show both halves of the disagreement: {err}"
     );
 }

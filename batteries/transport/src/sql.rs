@@ -11,8 +11,9 @@ use gmr_core::{
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
-use sqlx::{Column, Row, TypeInfo, ValueRef};
+use sqlx::query::Query;
+use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
+use sqlx::{Column, Row, Sqlite, TypeInfo, ValueRef};
 
 pub use crate::select::VALUE;
 
@@ -75,6 +76,8 @@ pub struct Ask {
     pub query: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<String>,
 }
 
 impl Ask {
@@ -83,11 +86,17 @@ impl Ask {
             source,
             query: query.into(),
             column: None,
+            binds: Vec::new(),
         }
     }
 
     pub fn taking(mut self, column: impl Into<String>) -> Self {
         self.column = Some(column.into());
+        self
+    }
+
+    pub fn binding(mut self, name: impl Into<String>) -> Self {
+        self.binds.push(name.into());
         self
     }
 
@@ -101,6 +110,10 @@ impl Ask {
         acc.extend_from_slice(self.query.as_bytes());
         acc.push(0);
         acc.extend_from_slice(self.column.as_deref().unwrap_or("").as_bytes());
+        for bound in &self.binds {
+            acc.push(0);
+            acc.extend_from_slice(bound.as_bytes());
+        }
         ProbeVersion::of(content_hash_of_bytes(&acc))
     }
 }
@@ -159,6 +172,44 @@ pub fn cell(row: &SqliteRow, at: usize) -> Value {
             .try_get::<String, _>(at)
             .map(Value::from)
             .unwrap_or(Value::Null),
+    }
+}
+
+fn bound<'q>(
+    query: Query<'q, Sqlite, SqliteArguments<'q>>,
+    name: &str,
+    position: &Value,
+    ask: &Ask,
+) -> Result<Query<'q, Sqlite, SqliteArguments<'q>>, ProbeError> {
+    let refuse = |what: String| {
+        ProbeError::with_code(
+            ReasonClass::Unusable,
+            ProbeErrorCode::ArtifactInvalid,
+            format!(
+                "the query binds `{name}`, and the position {what}: {position}. A bound name \
+                 is how the query says which part of a coordinate it is asking about, so one \
+                 the position cannot fill means the declaration and the anchor disagree about \
+                 what is being watched"
+            ),
+        )
+    };
+    let Some(held) = position.get(name) else {
+        return Err(refuse(format!("carries no such field for `{}`", ask.query)));
+    };
+    match held {
+        Value::String(s) => Ok(query.bind(s.clone())),
+        Value::Bool(b) => Ok(query.bind(*b)),
+        Value::Null => Ok(query.bind(None::<String>)),
+        Value::Number(n) => match (n.as_i64(), n.as_f64()) {
+            (Some(i), _) => Ok(query.bind(i)),
+            (None, Some(f)) => Ok(query.bind(f)),
+            (None, None) => Err(refuse(
+                "holds a number no database column can hold".to_owned(),
+            )),
+        },
+        _ => Err(refuse(
+            "holds a list or an object there, and a bound value is one value".to_owned(),
+        )),
     }
 }
 
@@ -267,7 +318,12 @@ impl Transport for Sql {
                 ))
             })?;
 
-        let rows = tokio::time::timeout(left, sqlx::query(&ask.query).fetch_all(&pool))
+        let mut asked = sqlx::query(&ask.query);
+        for name in &ask.binds {
+            asked = bound(asked, name, call.position, &ask)?;
+        }
+
+        let rows = tokio::time::timeout(left, asked.fetch_all(&pool))
             .await
             .map_err(|_| ProbeError::spent(Spent::Deadline, call.budget))?
             .map_err(|e| {

@@ -3,6 +3,7 @@ about:
   - batteries/transport/src/file.rs#Ask
   - batteries/transport/src/file.rs#version
   - batteries/transport/src/file.rs#inside
+  - batteries/transport/src/file.rs#reading
   - batteries/transport/src/file.rs#Shaped
   - batteries/transport/src/select.rs#pick
 watch: [sig, logic]
