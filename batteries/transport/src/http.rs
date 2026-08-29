@@ -8,22 +8,26 @@ use gmr_core::{
     content_hash_of_bytes,
 };
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use crate::select::VALUE;
 
 pub const SCHEMA: &str = "gmr.probe-http.v1";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Header {
     Given(String),
     FromEnv(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ask {
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, Header>,
 }
 
@@ -115,6 +119,12 @@ pub trait Asks: Send + Sync {
 impl Asks for BTreeMap<ProbeName, Ask> {
     fn ask(&self, name: &ProbeName) -> Option<Ask> {
         self.get(name).cloned()
+    }
+}
+
+impl<T: Asks + ?Sized> Asks for Arc<T> {
+    fn ask(&self, name: &ProbeName) -> Option<Ask> {
+        (**self).ask(name)
     }
 }
 

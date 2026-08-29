@@ -6,6 +6,8 @@ pub mod file;
 pub mod http;
 #[cfg(feature = "inproc")]
 pub mod inproc;
+#[cfg(any(feature = "http", feature = "file", feature = "sql"))]
+pub mod recipes;
 #[cfg(feature = "script")]
 pub mod script;
 #[cfg(any(feature = "http", feature = "file", feature = "sql"))]

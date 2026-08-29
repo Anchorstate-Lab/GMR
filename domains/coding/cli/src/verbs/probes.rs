@@ -111,38 +111,38 @@ fn built(root: &Path) -> Result<Vec<Row>, CliError> {
             ),
         });
     }
-    for (name, decl) in catalog.https() {
+    for (name, ask) in catalog.https() {
         let obs = crate::probes::http_obs();
         rows.push(Row {
             probe: name.to_owned(),
             kind: "http",
-            version: Some(decl.ask().version()),
+            version: Some(ask.version()),
             address: None,
-            run: Some(decl.url.clone()),
+            run: Some(ask.url.clone()),
             handles: serde_json::json!([]),
             obs: ObsRow::of(&obs.schema, &obs.at, &obs.identity, &obs.facts),
         });
     }
-    for (name, decl) in catalog.files() {
+    for (name, ask) in catalog.files() {
         let obs = crate::probes::file_obs();
         rows.push(Row {
             probe: name.to_owned(),
             kind: "file",
-            version: Some(decl.ask().version()),
+            version: Some(ask.version()),
             address: None,
-            run: Some(decl.path.clone()),
+            run: Some(ask.path.clone()),
             handles: serde_json::json!([]),
             obs: ObsRow::of(&obs.schema, &obs.at, &obs.identity, &obs.facts),
         });
     }
-    for (name, decl) in catalog.sqls() {
+    for (name, ask) in catalog.sqls() {
         let obs = crate::probes::sql_obs();
         rows.push(Row {
             probe: name.to_owned(),
             kind: "sql",
-            version: decl.ask().map(|a| a.version()),
+            version: Some(ask.version()),
             address: None,
-            run: Some(decl.query.clone()),
+            run: Some(ask.query.clone()),
             handles: serde_json::json!([]),
             obs: ObsRow::of(&obs.schema, &obs.at, &obs.identity, &obs.facts),
         });

@@ -5,7 +5,6 @@ about:
   - domains/coding/cli/src/verbs/anchor.rs#slug
   - domains/coding/cli/src/verbs/anchor.rs#fetch_declared
   - domains/coding/cli/tests/fetched.rs#a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_memory
-  - domains/coding/cli/src/probes.rs#HttpDecl
   - domains/coding/cli/src/probes.rs#Declared
   - domains/coding/cli/src/probes.rs#declare_http
 watch: [sig, logic]
@@ -76,7 +75,7 @@ it: three anchors opened, `status` said `roster`/`absent`, and nothing errored.
 A test drives `anchor::run` with a URL and a memory and asserts the declaration
 exists, because the failure is silent and looks healthy.
 
-## Why the transport reads the repository instead of being handed a map
+## Why a map handed over at assembly is not enough
 
 `Http` is built once, when the process assembles its `Runtime`. `gmr anchor` then
 writes a new probe and immediately opens an anchor with it — so a map captured at
@@ -84,11 +83,17 @@ assembly time is stale by exactly the probe the user just asked for, and the fir
 attempt fails with "no `http` probe named ...". That is not a race; it is the
 ordinary path.
 
-So the battery takes an `Asks` lookup rather than a `BTreeMap`, and this domain
-implements it by reading `.anchor/probes.toml`. The declarations have one home and
-it is the file — nothing caches a second copy that can be older than it. The cost is
-a small TOML read per resolve, which is paid only by http probes and only when one
-is used.
+So the battery takes an `Asks` lookup rather than a `BTreeMap`. `Declared` holds
+[[transport-recipes]] in memory and answers from it, and goes back to
+`.anchor/probes.toml` **only for a name it has never seen** — which is the one case
+where the file can hold something it does not. Re-routing an existing name is a
+criteria change and goes through `revise`/`accept --criteria`, i.e. through another
+run, so within one run the only thing that can appear is an addition. The file stays
+the one home; the copy can never answer a question the file would answer differently.
+
+It read the file on **every** resolve until G1.5. That is a disk read and a TOML
+parse per observation, which a one-shot command can afford and a process serving
+requests cannot — and a `Recipes` handed in over a wire has no file to read at all.
 
 ## `obs` is not in the declaration, because it is not a choice
 

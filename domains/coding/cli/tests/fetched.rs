@@ -28,7 +28,8 @@ async fn a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_m
         .settings(std::sync::Arc::new(store.settings()))
         .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(
-            gmr_transport::http::Http::new(coding_anchor::probes::Declared::at(root)).unwrap(),
+            gmr_transport::http::Http::new(coding_anchor::probes::Declared::at(root).unwrap())
+                .unwrap(),
         ))
         .build();
     let stores = coding_anchor::stores::assembled(root).unwrap();
@@ -123,7 +124,7 @@ async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
         .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
             root,
-            coding_anchor::probes::Declared::at(root),
+            coding_anchor::probes::Declared::at(root).unwrap(),
         )));
     for built in &stores.built {
         builder = builder.provider(built.content());
@@ -206,7 +207,7 @@ path = "deploy.yaml"
 select = "$.a"
 
 [sql.a-sql]
-url = "sqlite://app.db"
+source = { given = "sqlite://app.db" }
 query = "SELECT 1"
 
 [script.a-script]

@@ -103,6 +103,7 @@ pub async fn served(
     }
 
     let catalog = probes::Catalog::load(&root)?;
+    let declared = Arc::new(probes::Declared::at(&root)?);
     let linked = coding_extract::registry(&root, &state).await;
     if let Some(fault) = &linked.cache_fault {
         eprintln!("gmr: {fault}");
@@ -118,16 +119,16 @@ pub async fn served(
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .transport(Arc::new(
-            gmr_transport::http::Http::new(crate::probes::Declared::at(&root))
+            gmr_transport::http::Http::new(Arc::clone(&declared))
                 .map_err(|e| CliError(format!("cannot build the http transport: {e}")))?,
         ))
         .transport(Arc::new(gmr_transport::file::Files::new(
             &root,
-            crate::probes::Declared::at(&root),
+            Arc::clone(&declared),
         )))
-        .transport(Arc::new(gmr_transport::sql::Sql::new(
-            crate::probes::Declared::at(&root),
-        )))
+        .transport(Arc::new(gmr_transport::sql::Sql::new(Arc::clone(
+            &declared,
+        ))))
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.settings()))
         .sightings(Arc::new(store.sightings()))
