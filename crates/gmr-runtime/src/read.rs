@@ -760,6 +760,20 @@ fn differing(
                 }
             }
         }
+        (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+            for at in 0..a.len().max(b.len()) {
+                let next = match path.is_empty() {
+                    true => at.to_string(),
+                    false => format!("{path}.{at}"),
+                };
+                match (a.get(at), b.get(at)) {
+                    (Some(x), Some(y)) => differing(x, y, &next, out),
+                    (None, Some(_)) => out.push((next, Divergence::Added)),
+                    (Some(_), None) => out.push((next, Divergence::Removed)),
+                    (None, None) => {}
+                }
+            }
+        }
         _ if before != now => out.push((path.to_owned(), Divergence::Differing)),
         _ => {}
     }

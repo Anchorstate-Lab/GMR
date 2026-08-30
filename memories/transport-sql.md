@@ -159,6 +159,31 @@ databases legitimately do not. What is reviewed here is the **query**, which is 
 artifact that decides what comes back — and it cannot read an arbitrary file the
 way an unconstrained path can.
 
+## A query that recomputes what the product computes is two facts, not one
+
+The declaration decides what comes back, and that is exactly what makes this
+family the easiest place in GMR to install a second copy of somebody else's
+business logic. A read-only `SELECT` that rebuilds "the price a guest is quoted"
+out of the tables the product stores is not observing the product: it is a
+second implementation of it, running beside the thing it claims to watch.
+
+It happened, in a product built on this crate. The query reassembled a menu
+price from `product` and `price_promotion`; the application's own Python also
+checked the promotion's days of week, its local start and end times, and which
+channels it applied to. The query did not. The product told a guest 4.20 and the
+anchor held 3.36, both entirely self-consistent, for as long as anybody cared to
+look — and every claim resting on the anchor still came back `Holds`, because
+each side was right about its own computation and neither could see the other.
+
+**Read what the product has already computed and stored.** Its own output
+endpoint, its own materialised column, its own view. If the only way to observe
+a fact is to recompute it, that is worth saying out loud before writing the
+query, because the anchor is then watching an implementation nobody deploys.
+
+`Unseen` ([[runtime-ground]]) is what catches this now, and only because the
+answer and the anchor are made to share one reading. It does not make a
+recomputing probe correct; it makes it visible.
+
 ## When this changes, ask
 
 Does `read_only` come off for any reason? Then a probe can move what it reports,

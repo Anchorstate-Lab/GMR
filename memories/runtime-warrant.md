@@ -6,6 +6,8 @@ about:
   - crates/gmr-runtime/src/read.rs#warranted
   - crates/gmr-runtime/src/read.rs#holding
   - crates/gmr-runtime/src/read.rs#folded
+  - crates/gmr-runtime/src/read.rs#differing
+  - crates/gmr-runtime/tests/grounding.rs#a_list_that_moved_says_which_element_and_which_field
 watch: [sig, logic]
 ---
 
@@ -213,6 +215,18 @@ inside rule 4's "no fixed state vocabulary".
 the base is allowed to know without interpreting (rules 2 and 3): `position` is
 where we looked rather than what we found, and `status` is the summary the rule
 table already wrote from the rest.
+
+`differing` walks arrays as well as objects, by index. It stopped at arrays
+once, and a reading that is a *list* of things — a menu, a roster, a price table
+— then reported as the single path `value`: `Moved` could say the list changed
+and never which row. The cost of walking is that inserting at the front reports
+every element after it; that is honest, and it is what happened, while "the
+whole list" was the same claim with less of the answer in it.
+
+A path into an array is an index, and an index is only a name while the order
+holds. That is the probe's business, not the base's: a reading whose order is
+not stable is a reading whose diff nobody can read, in exactly the way a `SELECT`
+whose columns get reordered is (see [[transport-sql]]).
 
 ## When this changes, ask
 

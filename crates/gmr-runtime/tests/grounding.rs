@@ -1456,3 +1456,64 @@ async fn a_sentence_that_cited_no_reading_is_not_reported_as_having_missed_one()
     );
     assert!(matches!(out[0].record, Some(Grounding::Current { .. })));
 }
+
+#[tokio::test]
+async fn a_list_that_moved_says_which_element_and_which_field() {
+    let w = World::new(true);
+    std::fs::write(
+        w.dir.path().join("world.json"),
+        r#"{"x":[{"name":"a","price":100},{"name":"b","price":200}]}"#,
+    )
+    .unwrap();
+    w.open("a").await;
+
+    let claim = gmr_core::Claim::said("turn-3");
+    let saw = w
+        .runtime
+        .sample(&AnchorKey::new("a"), &gmr_runtime::Instructions::default())
+        .await
+        .unwrap()
+        .fact_address
+        .unwrap();
+    w.runtime
+        .bind(
+            claim.clone(),
+            vec![AnchorKey::new("a")],
+            None,
+            Some(saw),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    std::fs::write(
+        w.dir.path().join("world.json"),
+        r#"{"x":[{"name":"a","price":100},{"name":"b","price":690}]}"#,
+    )
+    .unwrap();
+    w.runtime.observe(&AnchorKey::new("a")).await.unwrap();
+
+    let out = w
+        .runtime
+        .ground(
+            std::slice::from_ref(&claim),
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    let gmr_runtime::Anchored::On { warrant, .. } = &out[0].on[0] else {
+        panic!("{:?}", out[0].on)
+    };
+    let gmr_runtime::Holding::Moved { axes, .. } = &warrant.holding else {
+        panic!("{:?}", warrant.holding)
+    };
+    assert_eq!(
+        axes,
+        &vec!["x.1.price".to_owned()],
+        "a reading that is a list of things -- a menu, a roster, a price table -- used to \
+         report as one axis called `x`, because the diff walked objects and stopped at \
+         arrays. `Moved` then said the whole list moved and could not say which row, which \
+         is the difference between a claim about one dish being expired and every claim \
+         about that menu being expired at once"
+    );
+}

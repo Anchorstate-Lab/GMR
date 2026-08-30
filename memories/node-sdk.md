@@ -9,19 +9,35 @@ about:
 watch: [sig, logic]
 ---
 
-# Six verbs, one recipe entrance, and nothing that decides anything
+# Seven verbs, one recipe entrance, and nothing that decides anything
 
-`Runtime` has sixty-one `pub async fn`. The binding exposes six of them, plus
+`Runtime` has sixty-odd `pub async fn`. The binding exposes seven of them, plus
 one way to say what a probe is:
 
 ```
-ground(refs, how)      do these sentences still stand
+sample(anchor, how)    read an anchor, and get the address of that reading
+ground(claims, how)    do these sentences still stand
 since(cursor, status)  what changed after this point in the journal
-bind(ref, anchors, source, version)   this sentence is about these anchors
-revoke(ref, source)    it is not any more
+bind(claim, anchors, source, version, saw, asserts)
+                       this sentence is about these anchors, and this is what
+                       it was looking at when it said so
+revoke(claim, source)  it is not any more
 open(request)          open an anchor
 close(key, why)        retire one, irreversibly
 ```
+
+`sample` is the seventh, and it is the one that makes the other six worth
+anything to a product that talks. Grounding answers whether the fact still
+stands; it cannot answer whether the sentence was built from that fact at all,
+and a caller that reads the world itself and binds afterwards is two readings
+pretending to be one. `sample` hands the reading **and its address** to whoever
+is composing the answer, `bind` takes that address back as `saw`, and `ground`
+reports `shown` — see [[runtime-ground]]. One look at the world, cited.
+
+It is not `observe` returning through a side door. `observe` writes and answers
+what happened to the state; `sample` answers with the reading, which is what a
+delivery path has to put in front of a model. `max_staleness` still decides
+whether it goes and looks ([[runtime-instructions]]).
 
 Deliberately absent, and not to be added back: `observe`/`look` (`max_staleness`
 already says whether to go and look — see [[runtime-instructions]]), `pass`
@@ -104,8 +120,10 @@ is what that would take.
 
 ## When this changes, ask
 
-Does a seventh verb arrive? Ask which of the four exclusions above it belongs
-to, and if it belongs to none, why the six were the six.
+Does an eighth verb arrive? Ask which of the four exclusions above it belongs
+to, and if it belongs to none, why the seven were the seven. `sample` is the
+precedent and it is a narrow one: it was added because there was a question
+none of the six could answer, not because a caller found one of them awkward.
 
 Does the binding start reading a field to decide something — a retry, a
 threshold, a fallback? That is judgement, and the whole point of the boundary is
