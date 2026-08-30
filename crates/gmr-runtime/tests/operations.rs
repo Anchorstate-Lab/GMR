@@ -2218,7 +2218,7 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
     let early: gmr_core::Claim = Ref::new("git", "early.md").into();
     w.runtime
         .bind(
-            early.clone().into(),
+            early.clone(),
             vec![key()],
             Some(Version::new("v1")),
             None,
@@ -2235,7 +2235,7 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
     let late: gmr_core::Claim = Ref::new("git", "late.md").into();
     w.runtime
         .bind(
-            late.clone().into(),
+            late.clone(),
             vec![key()],
             Some(Version::new("v1")),
             None,

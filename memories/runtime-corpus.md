@@ -33,9 +33,16 @@ disagree.
 
 **Every record-level list names a reference once**, however many assertions
 stand behind it. `all()` answers per assertion, so `corpus_health` groups it
-through `by_reference` before counting anything — one [[runtime-bound]] per
-reference, which makes the property structural rather than a dedup each list
-has to remember.
+through `by_claim` before counting anything — one [[runtime-bound]] per claim,
+which makes the property structural rather than a dedup each list has to
+remember.
+
+The lists themselves stay `Ref`-shaped, and drop any claim that is not stored.
+Every question here is about a corpus of records — is it delivered, is it
+rewritten, is it gone — and an utterance has no answer to any of them: nothing
+holds it, so nothing can have moved it. Counting them would make `unsupervised`
+grow with every sentence an agent ever said, which is the number this list exists
+to keep small.
 
 **The counts read that same delivered set.** `per_anchor`, `barren` and
 `unsupervised` all come from `grounded`, never from scanning `all()` for

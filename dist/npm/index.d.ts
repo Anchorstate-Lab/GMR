@@ -1,13 +1,18 @@
 /**
- * @anchorstate-lab/gmr — the six verbs.
+ * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v2`. That string is what a caller
+ * These declarations describe `gmr.contract.v3`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v2";
+export const CONTRACT: "gmr.contract.v3";
 
+/**
+ * What a binding is about. `<provider>:<id>` names a record that lives in a
+ * store; `said:<id>` names something an agent said, which lives nowhere —
+ * the utterance is the claim.
+ */
 export type Address = string;
 export type Seq = number;
 export type Version = string;
@@ -19,6 +24,12 @@ export interface Ref {
   provider: string;
   external_id: string;
 }
+
+/**
+ * A stored record spells itself exactly as its `Ref` did before claims
+ * existed, which is why every binding already written still reads.
+ */
+export type Claim = Ref | { said: string; asserts?: unknown };
 
 export type Openness =
   | "host_env" | "interpreter" | "network" | "clock" | "implementation" | "unknown";
@@ -73,22 +84,46 @@ export interface Warrant {
   knowledge: Knowledge;
 }
 
+/**
+ * Was the asserter looking at this anchor's reading, or at a second
+ * computation of the same fact running beside it? `saw` is what it cited;
+ * `shown` is whether this anchor's journal actually holds that reading.
+ */
+export type Shown =
+  | { shown: "seen"; at: Seq }
+  | { shown: "unseen" }
+  | { shown: "not_said" };
+
 /** Addresses and versions, never values: follow them to audit the judgement. */
-export interface Evidence {
+export type Evidence = {
   reading?: FactAddress;
   instrument?: ProbeVersion;
   bound_at?: Seq;
   moved_at?: Seq;
-}
+  saw?: FactAddress;
+} & Shown;
 
 export type Anchored =
   | { anchored: "on"; key: string; warrant: Warrant; evidence: Evidence }
   | { anchored: "unopened"; key: string };
 
 export interface Standing {
-  reference: Ref;
-  record: Grounding;
+  claim: Claim;
+  /** Absent for `said:` — an utterance is stored nowhere, so nothing to fetch. */
+  record?: Grounding;
   on: Anchored[];
+}
+
+/** One reading of an anchor, and the address an answer built from it must cite. */
+export interface Reading {
+  key: string;
+  sighting: "found" | "absent";
+  facts?: unknown;
+  fact_address?: FactAddress;
+  derivation?: { kind: string; name: string; version: ProbeVersion;
+                 verifiability: Verifiability };
+  at: Timestamp | null;
+  knowledge: Knowledge;
 }
 
 export type Edge =
@@ -214,15 +249,23 @@ export interface Opening {
 }
 
 export class Gmr {
-  /** Do these sentences still stand? One answer per reference, in order. */
-  ground(refs: Address[], how?: Instructions): Promise<Standing[]>;
+  /** Do these sentences still stand? One answer per claim, in order. */
+  ground(claims: Address[], how?: Instructions): Promise<Standing[]>;
+  /**
+   * Read an anchor and hand back what it sees, with the address of that
+   * reading. Build the answer from `facts`, then cite `fact_address` as
+   * `saw` when binding it — that is what makes the answer and the anchor
+   * the same look at the world rather than two.
+   */
+  sample(anchor: string, how?: Instructions): Promise<Reading>;
   /** What changed after this point in the journal. */
   since(cursor: Seq, status?: string): Promise<Edges>;
   /** This sentence is about these anchors. */
-  bind(reference: Address, anchors: string[], source: Source,
-       boundVersion?: Version): Promise<Landed>;
+  bind(claim: Address, anchors: string[], source: Source,
+       boundVersion?: Version, saw?: FactAddress,
+       asserts?: unknown): Promise<Landed>;
   /** It is not any more. Answers with the anchors it was cleared from. */
-  revoke(reference: Address, source: Source): Promise<string[]>;
+  revoke(claim: Address, source: Source): Promise<string[]>;
   /** Open an anchor. */
   open(request: OpenRequest): Promise<Opened>;
   /** Retire one. Closure is irreversible. */

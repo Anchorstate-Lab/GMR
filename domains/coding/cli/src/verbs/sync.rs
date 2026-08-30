@@ -297,8 +297,14 @@ pub async fn synced(
                         rt.revoke_on(&reference.clone().into(), &dropped, gmr::Source::Derived)
                             .await?;
                     }
-                    rt.bind(reference.into(), anchors, Some(version), None, gmr::Source::Derived)
-                        .await?;
+                    rt.bind(
+                        reference.into(),
+                        anchors,
+                        Some(version),
+                        None,
+                        gmr::Source::Derived,
+                    )
+                    .await?;
                 }
             }
         }
@@ -495,7 +501,8 @@ async fn align_bindings(
                 reference.provider
             ))
         })?;
-        let settled = had == want && current.says(&want, Some(&version), None, gmr::Source::Derived);
+        let settled =
+            had == want && current.says(&want, Some(&version), None, gmr::Source::Derived);
         if settled {
             continue;
         }
@@ -736,7 +743,11 @@ mod tests {
              reader learns to distrust both"
         );
         assert!(
-            rt.memory().binding_of(&reference.clone().into()).await.unwrap().is_empty(),
+            rt.memory()
+                .binding_of(&reference.clone().into())
+                .await
+                .unwrap()
+                .is_empty(),
             "resolution has to finish before the first write, because the journal is \
              append-only and there is no rollback. Writing as it went is how a sync that \
              failed on the last note left 346 anchors open with nothing bound to them — a \
@@ -744,12 +755,22 @@ mod tests {
         );
 
         for (reference, anchors, version, _) in plan {
-            rt.bind(reference.into(), anchors, Some(version), None, gmr::Source::Derived)
-                .await
-                .unwrap();
+            rt.bind(
+                reference.into(),
+                anchors,
+                Some(version),
+                None,
+                gmr::Source::Derived,
+            )
+            .await
+            .unwrap();
         }
         assert!(
-            !rt.memory().binding_of(&reference.clone().into()).await.unwrap().is_empty(),
+            !rt.memory()
+                .binding_of(&reference.clone().into())
+                .await
+                .unwrap()
+                .is_empty(),
             "and the plan really does bind when applied — without this the assertion above \
              would pass just as well against a fixture that could never bind at all"
         );
@@ -788,9 +809,15 @@ mod tests {
              owes the record one"
         );
         for (reference, anchors, version, _) in plan {
-            rt.bind(reference.into(), anchors, Some(version), None, gmr::Source::Derived)
-                .await
-                .unwrap();
+            rt.bind(
+                reference.into(),
+                anchors,
+                Some(version),
+                None,
+                gmr::Source::Derived,
+            )
+            .await
+            .unwrap();
         }
 
         let (plan, _, _) = align_bindings(&rt, &notes, &names).await.unwrap();

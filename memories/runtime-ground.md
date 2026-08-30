@@ -7,6 +7,14 @@ about:
   - crates/gmr-runtime/src/read.rs#stood_all
   - crates/gmr-runtime/src/read.rs#records_of
   - crates/gmr-runtime/src/read.rs#anchored
+  - crates/gmr-runtime/src/read.rs#Shown
+  - crates/gmr-runtime/src/read.rs#shown_at
+  - crates/gmr-runtime/src/read.rs#recorded_at
+  - crates/gmr-runtime/src/read.rs#Reading
+  - crates/gmr-runtime/src/read.rs#sample
+  - crates/gmr-runtime/tests/grounding.rs#a_sentence_bound_to_the_reading_it_was_shown_says_which_one
+  - crates/gmr-runtime/tests/grounding.rs#a_sentence_citing_a_reading_this_anchor_never_took_is_not_grounded_by_it
+  - crates/gmr-runtime/tests/grounding.rs#a_sentence_that_cited_no_reading_is_not_reported_as_having_missed_one
   - crates/gmr-runtime/tests/grounding.rs#one_sentence_on_four_anchors_comes_back_with_four_warrants
   - crates/gmr-runtime/tests/grounding.rs#both_phases_of_one_call_run_against_one_deadline
   - crates/gmr-runtime/tests/operations.rs#grounding_reads_the_whole_log_only_when_the_binding_predates_the_move
@@ -15,15 +23,20 @@ watch: [sig, logic]
 
 # Two answers with different cardinalities, so they cannot live in one struct
 
-`ground(refs, how)` is keyed by reference because that is what a caller has:
-a sentence it is about to say. Everything else here is keyed by anchor, and
-the difference is not cosmetic — the two things a caller asked for are
-counted differently:
+`ground(claims, how)` is keyed by claim because that is what a caller has: a
+sentence it is about to say, or one it just said. Everything else here is keyed
+by anchor, and the difference is not cosmetic — the two things a caller asked
+for are counted differently:
 
 ```
-Grounding   is the text still there, still the same     one per reference     IO
-Warrant     what is this anchor's observation state     one per (reference, anchor)   pure
+Grounding   is the text still there, still the same     one per claim     IO
+Warrant     what is this anchor's observation state     one per (claim, anchor)   pure
 ```
+
+`Standing.record` is `Option<Grounding>` and the `None` is not a failure: a
+`Claim::Said` is stored nowhere ([[memory-Binding]]), so there is no document to
+fetch and no version to compare. Reporting a grounding there would be answering
+about a file nobody wrote.
 
 `MemoryView.warrant` is one `Option<Warrant>`, and it is *correct* for the
 question `grounded(key)` asks — how does this record stand **with respect to
@@ -78,12 +91,44 @@ to describe our own bookkeeping.
 
 ## `Evidence` names what to go and check, never the value
 
-`fact_address`, `ProbeVersion`, `bound_at`, `moved_at`. Enough to recompute,
-to compare, to walk back to the entry — and structurally incapable of being
-used as a data source, because the reading itself is not in it. GMR neither
-caches business data nor promises its freshness; handing it back would make
-it a bad database, and a field named `evidence` full of values would get
+`reading`, `ProbeVersion`, `bound_at`, `moved_at`, `saw`, `shown`. Enough to
+recompute, to compare, to walk back to the entry — and structurally incapable of
+being used as a data source, because the reading itself is not in it. GMR
+neither caches business data nor promises its freshness; handing it back would
+make it a bad database, and a field named `evidence` full of values would get
 used as one whatever it was called.
+
+`Anchored::On` boxes its warrant and its evidence. `Unopened` carries a key and
+nothing else, and the gap was wide enough that a `Vec<Anchored>` was mostly
+padding.
+
+## `shown` asks whether the answer and the anchor looked at the same thing
+
+`saw` is the fact address the asserter cited ([[store-binding-record]]);
+`anchored` matches it against the anchor's own `Open` and `Transition` entries
+and reports one of three things:
+
+```
+Seen { at }   this anchor recorded that exact reading, at that seq
+Unseen        it cited a reading this anchor never took
+NotSaid       it cited none, which is what a note a person wrote does
+```
+
+`Unseen` is the shape of a **second computation of the same fact**, running
+beside the anchor instead of through it. That is not hypothetical: a probe
+rewriting a product's pricing rules in SQL agreed with the product until it did
+not, within hours, and every answer built on it still came back holding. The
+`sample` verb exists so the delivery path and the anchor are one look at the
+world rather than two — read the anchor, build the answer from what it returned,
+cite the address it came with.
+
+**`Holding` is deliberately untouched by this.** It answers whether what the
+anchor established has moved; `shown` answers whether this claim was built from
+what the anchor established. Folding the second into the first would leave a
+reader unable to tell a fact that changed from an answer assembled somewhere
+else, and those want opposite responses — re-ask the world, versus fix the
+delivery path. A test asserts `Unseen` and `Holds` together for exactly that
+reason.
 
 ## A lease held elsewhere is not this call's problem
 
@@ -111,3 +156,7 @@ shipped from here.
 
 Does a phase start depending on the other's output? Then the parallel is
 gone and the budget question comes back, and it still has no good answer.
+
+Does a caller start reading the world itself and citing a `saw` it computed
+rather than one `sample` handed back? Then `Unseen` is what it will get, which
+is the correct answer and not a bug to route around.

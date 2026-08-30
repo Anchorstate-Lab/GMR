@@ -51,6 +51,20 @@ several facts.
 existed have no seq and never will, because this table is append-only.
 Inventing one would date a binding to a moment nobody recorded.
 
+## `saw` is what the asserter was looking at
+
+`Option<FactAddress>`: the reading the claim was made in front of. It is not
+the reading the anchor is on *now* — that is asked at read time — but the one
+whose facts the asserter had in hand when it said what it said.
+
+`None` says the assertion cited none, which is what a note a person wrote does.
+It is deliberately not the same as citing a reading nobody took: the runtime
+reports those as `NotSaid` and `Unseen`, and only the second is a defect. See
+[[runtime-ground]].
+
+An assertion citing a different reading is a different assertion, not a repeat,
+so `Bound::says` compares it — a rebind that changes only `saw` writes a row.
+
 ## The clock is the caller's
 
 `Asserted` takes `at` rather than reading `Utc::now()` where the row is

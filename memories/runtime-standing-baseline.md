@@ -9,15 +9,18 @@ watch: [sig, logic]
 
 # The newest assertion is not the baseline; the newest one that took a reading is
 
-A reference can hold several live assertions ([[store-orset-projection]]),
-and since an assertion may be made while the store cannot answer for the
-record, some of them carry no `bound_version` at all.
+A claim can hold several live assertions ([[store-orset-projection]]), and
+since an assertion may be made while the store cannot answer for the record,
+some of them carry no `bound_version` at all — and a `Claim::Said` never has
+one, because an utterance is stored nowhere to have a version of.
 
 Two different questions are answered from that set, and `Bound` keeps them
 apart so that every reader gets the same two answers ([[runtime-bound]]):
 
 - **`standing`** — the newest assertion, whatever it says. It names the
-  reference the view is about.
+  claim the view is about, and it is where `saw` is read from: the reading
+  this answer was built in front of is the newest asserter's, not the oldest
+  one's ([[runtime-ground]]).
 - **`baseline`** — the newest assertion that actually cited a version. It
   supplies `bound_version`, `bound_at_seq` and `baseline_at`, which is why
   those three can never name different rows.

@@ -52,7 +52,10 @@ pub async fn run(
             }
         };
         for record in held {
-            let bound = rt.memory().binding_of(&record.reference.clone().into()).await?;
+            let bound = rt
+                .memory()
+                .binding_of(&record.reference.clone().into())
+                .await?;
             let anchors = (!bound.is_empty()).then(|| {
                 bound
                     .anchors()

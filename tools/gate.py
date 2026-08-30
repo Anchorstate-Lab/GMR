@@ -292,7 +292,7 @@ def with_attributes(source, start):
     return kept
 
 
-def declaration_of(source, name):
+def declaration_of(source, name, beside=""):
     m = re.search(rf"^pub (?:struct|enum) {name}\b", source, re.M)
     if m is not None:
         brace = source.index("{", m.start())
@@ -302,17 +302,18 @@ def declaration_of(source, name):
         head = source[m.start() : brace]
         return with_attributes(source, m.start()) + (head + body).splitlines()
 
-    m = re.search(rf"^\s*admitted {name},(.+)$", source, re.M)
+    m = re.search(rf"^\s*(?:admitted|minted) {name},(.+)$", source, re.M)
     if m is None:
         return None
-    validator = m.group(1).strip()
+    validator = m.group(1).strip().rsplit("::", 1)[-1]
     lines = [m.group(0).strip()]
-    v = re.search(rf"^fn {re.escape(validator)}\b", source, re.M)
+    where = source if f"fn {validator}" in source else beside
+    v = re.search(rf"^(?:pub )?fn {re.escape(validator)}\b", where, re.M)
     if v is not None:
-        brace = source.index("{", v.start())
-        body = block_from(source, brace)
+        brace = where.index("{", v.start())
+        body = block_from(where, brace)
         if body is not None:
-            lines += (source[v.start() : brace] + body).splitlines()
+            lines += (where[v.start() : brace] + body).splitlines()
     return lines
 
 
@@ -323,8 +324,10 @@ def contract_types(module):
     trait roster check exists to stop, one directory over.
     """
     out, unresolved = [], []
-    for path, names in re.findall(r"pub use ([\w:]+)::\{([^}]*)\}", module):
-        wanted = [n.strip() for n in names.split(",") if n.strip()]
+    for path, braced, bare in re.findall(
+        r"pub use ([\w:]+)::(?:\{([^}]*)\}|(\w+));", module
+    ):
+        wanted = [n.strip() for n in (braced or bare).split(",") if n.strip()]
         if path.startswith("crate::"):
             files = [ROOT / "crates/gmr-runtime/src" / f"{path.split('::')[1]}.rs"]
         elif path in CONTRACT_CRATES:
@@ -332,12 +335,13 @@ def contract_types(module):
         else:
             unresolved += [f"{n} (via `{path}`)" for n in wanted]
             continue
+        beside = "\n".join(f.read_text() for f in files if f.exists())
         for name in wanted:
             hit = next(
                 (
-                    (f, declaration_of(f.read_text(), name))
+                    (f, declaration_of(f.read_text(), name, beside))
                     for f in files
-                    if f.exists() and declaration_of(f.read_text(), name)
+                    if f.exists() and declaration_of(f.read_text(), name, beside)
                 ),
                 None,
             )

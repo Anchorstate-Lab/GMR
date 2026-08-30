@@ -6,7 +6,8 @@ watch: [sig, logic]
 # Grounding does not propagate along links, and a link is only followed one hop
 
 `carry_linked` pulls in memories linked from an already-fetched one and not
-themselves delivered under this anchor, and marks every one `grounded:
+themselves delivered under this anchor — links run between stored records, so
+it asks the binding table for `Claim::Stored` and nothing else — and marks every one `grounded:
 false`. The test for pulling one in is that it has any assertion at all —
 "known to GMR", not "currently on an anchor" — so a record whose every tag
 has been revoked is still carried and still marked ungrounded, which is

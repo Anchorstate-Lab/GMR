@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use gmr::{
-    AnchorKey, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source,
-    StatusId, Version,
+    AnchorKey, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source, StatusId,
+    Version,
 };
 use gmr_transport::recipes::Recipes;
 use napi::bindgen_prelude::*;
@@ -153,10 +153,8 @@ impl Gmr {
         let source = attested(&source)?;
         let bound_version = bound_version.map(Version::new);
         let saw = saw.map(looked).transpose()?;
-        spawned(async move {
-            answered(rt.bind(claim, anchors, bound_version, saw, source).await)
-        })
-        .await
+        spawned(async move { answered(rt.bind(claim, anchors, bound_version, saw, source).await) })
+            .await
     }
 
     #[napi]

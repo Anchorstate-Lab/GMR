@@ -291,7 +291,7 @@ pub(crate) async fn chain_from(
 pub fn by_claim(records: Vec<BindingRecord>) -> Vec<Bound> {
     let mut out: std::collections::BTreeMap<String, Vec<BindingRecord>> = Default::default();
     for record in records {
-        out.entry(record.binding.claim.to_string())
+        out.entry(record.binding.claim.identity().to_string())
             .or_default()
             .push(record);
     }

@@ -28,8 +28,7 @@ pub(crate) fn claim_key(c: &Claim) -> String {
 }
 
 fn keyed(value: &serde_json::Value) -> String {
-    let bytes =
-        canonicalize(value).expect("a reference never exceeds canonicalization limits");
+    let bytes = canonicalize(value).expect("a reference never exceeds canonicalization limits");
     String::from_utf8(bytes).expect("canonical JSON is always UTF-8")
 }
 

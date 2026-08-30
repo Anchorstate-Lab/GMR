@@ -27,7 +27,12 @@ impl Runtime {
             }
         }
         let bound = self.memory.binding_of(&claim).await?;
-        if bound.says(&landed.anchors, bound_version.as_ref(), saw.as_ref(), source) {
+        if bound.says(
+            &landed.anchors,
+            bound_version.as_ref(),
+            saw.as_ref(),
+            source,
+        ) {
             return Ok(landed);
         }
         landed.recorded = true;

@@ -262,8 +262,8 @@ impl Shown {
 pub enum Anchored {
     On {
         key: AnchorKey,
-        warrant: Warrant,
-        evidence: Evidence,
+        warrant: Box<Warrant>,
+        evidence: Box<Evidence>,
     },
     Unopened {
         key: AnchorKey,
@@ -280,6 +280,13 @@ impl Anchored {
     pub fn warrant(&self) -> Option<&Warrant> {
         match self {
             Self::On { warrant, .. } => Some(warrant),
+            Self::Unopened { .. } => None,
+        }
+    }
+
+    pub fn evidence(&self) -> Option<&Evidence> {
+        match self {
+            Self::On { evidence, .. } => Some(evidence),
             Self::Unopened { .. } => None,
         }
     }
@@ -665,15 +672,15 @@ async fn anchored(
     let shown = shown_at(log, key, saw.as_ref()).await?;
     Ok(Anchored::On {
         key: key.clone(),
-        warrant: warranted(log, key, bound_at, view, *moved_at).await?,
-        evidence: Evidence {
+        warrant: Box::new(warranted(log, key, bound_at, view, *moved_at).await?),
+        evidence: Box::new(Evidence {
             reading: view.fact_address.clone(),
             instrument: view.derivation.as_ref().map(|d| d.version.clone()),
             bound_at,
             moved_at: *moved_at,
             saw,
             shown,
-        },
+        }),
     })
 }
 

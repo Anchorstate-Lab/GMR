@@ -16,7 +16,9 @@ pub async fn run(
     if detach {
         let path = names.of(&reference);
         let address = crate::memories::addressed(&reference);
-        let cleared = rt.revoke(&reference.clone().into(), Source::Adjudicated).await?;
+        let cleared = rt
+            .revoke(&reference.clone().into(), Source::Adjudicated)
+            .await?;
         return detached(&path, &address, &cleared, json);
     }
     asserted(rt, names, reference, anchors, Source::Adjudicated, json).await

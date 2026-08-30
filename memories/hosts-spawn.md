@@ -47,7 +47,8 @@ future, invisible until somebody demands `Send`.
 
 Does a new `pub async fn` join the surface a host calls? Add it to
 [[node-sdk]]'s verbs and to the runtime assertion in the same commit, or it is
-`Send` by luck until the day it is not.
+`Send` by luck until the day it is not. `sample` arrived that way and went into
+both.
 
 Does a query start being written `query.execute(conn)` again in the store? It
 compiles, it passes every test, and it takes the whole crate off the list of

@@ -41,7 +41,7 @@ strict is free:
   as `&s[..12]` at each print site, where it is a panic waiting for the day
   something invalid gets in.
 
-## admitted: `AnchorKey` · `StatusId` · `Kind` · `ProbeName` · `ProviderId` · `ExternalId` · `Version`
+## admitted: `AnchorKey` · `StatusId` · `Kind` · `ProbeName` · `ProviderId` · `ExternalId` · `Version` · `SaidId`
 
 These arrive from a person or from a provider, and their checks are *admission*
 rules — a length ceiling, a character set. `Deserialize` stays permissive, on
@@ -74,11 +74,17 @@ door — a literal in this repository's own source is not admitted from anywhere
 ## `ProviderId` carries a grammar, and that is what makes an address readable
 
 `check_provider_id` is narrower than the other names here: lowercase, digits
-and `-`, never leading with one. It is not tidiness. `<prefix>:<rest>` has to
-be decidable as *an address* or *an id that happens to contain a colon* from
-the text alone, and the only alternative is asking which stores this run
-registered — which makes one string name two different records in two runs
-(see [[cli-address-resolution]]).
+and `-`, never leading with one, and never the word `said`. It is not tidiness.
+`<prefix>:<rest>` has to be decidable as *an address* or *an id that happens to
+contain a colon* from the text alone, and the only alternative is asking which
+stores this run registered — which makes one string name two different records in
+two runs (see [[cli-address-resolution]]).
+
+`said` is refused for the same reason one step further out. `said:t7` names an
+utterance ([[memory-Binding]]), and with `said` available as a provider name it
+would *also* name a record in a store called `said` — the same ambiguity, one
+level up from the colon, and resolved the same way: by the text, not by what this
+run happens to have registered.
 
 Being `admitted` is what makes tightening it safe: `Deserialize` is
 transparent and `new` does not check, so every `Ref` already in a journal

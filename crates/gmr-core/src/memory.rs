@@ -13,8 +13,15 @@ fn check_nonempty_128(s: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub const SAID: &str = "said";
+
 fn check_provider_id(s: &str) -> Result<(), String> {
     check_nonempty_128(s)?;
+    if s == SAID {
+        return Err(format!(
+            "`{SAID}` is how an address names something an agent said rather than a store"
+        ));
+    }
     let shaped = s
         .bytes()
         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
@@ -129,7 +136,7 @@ impl Claim {
             Self::Stored(reference) => {
                 serde_json::to_value(reference).expect("a Ref always serialises")
             }
-            Self::Said { id, .. } => serde_json::json!({ "said": id }),
+            Self::Said { id, .. } => serde_json::json!({ SAID: id }),
         }
     }
 
@@ -139,7 +146,7 @@ impl Claim {
 
     pub fn parse(address: &str) -> Option<Self> {
         match address.split_once(':') {
-            Some(("said", id)) => Some(Self::Said {
+            Some((SAID, id)) => Some(Self::Said {
                 id: SaidId::try_new(id).ok()?,
                 asserts: None,
             }),
@@ -177,7 +184,7 @@ impl std::fmt::Display for Claim {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Stored(reference) => reference.fmt(f),
-            Self::Said { id, .. } => write!(f, "said:{id}"),
+            Self::Said { id, .. } => write!(f, "{SAID}:{id}"),
         }
     }
 }
@@ -253,7 +260,15 @@ mod tests {
         for good in ["git", "mem0", "claude-code", "desk2"] {
             assert!(ProviderId::try_new(good).is_ok(), "{good}");
         }
-        for bad in ["memories/a", "My Store", "Mem0", "notes.md", "-leading", ""] {
+        for bad in [
+            "memories/a",
+            "My Store",
+            "Mem0",
+            "notes.md",
+            "-leading",
+            "",
+            "said",
+        ] {
             assert!(
                 ProviderId::try_new(bad).is_err(),
                 "`{bad}` must not pass: whether `{bad}:rest` is an address or an id that \
@@ -356,6 +371,19 @@ mod tests {
                 anchors: vec![AnchorKey::new("a")],
             },
             "590 rows in this repository carry that shape in an append-only table"
+        );
+    }
+
+    #[test]
+    fn no_store_may_be_called_said_because_one_address_may_mean_one_thing() {
+        assert!(ProviderId::try_new("said").is_err());
+        assert_eq!(
+            Claim::parse("said:t7"),
+            Some(Claim::said("t7")),
+            "with `said` available as a provider name, `said:t7` would name both an \
+             utterance and a record in a store called `said`, and which one it meant would \
+             depend on which providers this run registered -- the exact ambiguity \
+             `check_provider_id` already exists to keep out of the address space"
         );
     }
 

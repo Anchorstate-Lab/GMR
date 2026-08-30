@@ -284,7 +284,10 @@ async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: Bindin
     );
     assert_eq!(found[0].binding.claim, claim);
     assert_eq!(
-        b.binding_of(&gmr_core::Claim::said("turn-7")).await.unwrap().len(),
+        b.binding_of(&gmr_core::Claim::said("turn-7"))
+            .await
+            .unwrap()
+            .len(),
         1,
         "one utterance is one claim: what it asserts rides along, it does not file a \
          separate row"

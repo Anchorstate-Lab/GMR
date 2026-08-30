@@ -51,7 +51,7 @@ without anyone checking.
 ## Two directions, two questions
 
 `bindings_on(chain)` is delivery: read an anchor, hand the memories over.
-`binding_of(reference)` is reconciliation: hold a memory, ask where it
+`binding_of(claim)` is reconciliation: hold a claim, ask where it
 stands. The second takes no chain — it is asked with no generation in hand —
 so every revocation counts. Different questions, not one question with two
 answers.

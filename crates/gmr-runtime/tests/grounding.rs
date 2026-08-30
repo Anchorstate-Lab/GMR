@@ -364,7 +364,8 @@ async fn reaffirming_an_unbound_reference_is_refused() {
     let w = World::new(true);
     let err = w
         .runtime
-        .reaffirm(&Ref::new("git", "memories/never-bound.md").into(),
+        .reaffirm(
+            &Ref::new("git", "memories/never-bound.md").into(),
             Some(Version::new("v")),
         )
         .await
@@ -432,7 +433,10 @@ async fn cobound_is_derived_from_binds_not_stored() {
         .cobound(&Ref::new("git", "memories/a.md").into())
         .await
         .unwrap();
-    assert_eq!(same, vec![gmr_core::Claim::from(Ref::new("git", "memories/b.md"))]);
+    assert_eq!(
+        same,
+        vec![gmr_core::Claim::from(Ref::new("git", "memories/b.md"))]
+    );
 
     assert!(
         w.runtime
@@ -443,7 +447,8 @@ async fn cobound_is_derived_from_binds_not_stored() {
     );
 
     w.runtime
-        .revoke(&Ref::new("git", "memories/b.md").into(),
+        .revoke(
+            &Ref::new("git", "memories/b.md").into(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -612,7 +617,12 @@ async fn a_revoked_record_is_no_longer_listed_under_the_anchor() {
     w.bind("a.md", &["a"]).await;
 
     let reference = Ref::new("git", "memories/a.md");
-    let bound = w.runtime.memory().binding_of(&reference.clone().into()).await.unwrap();
+    let bound = w
+        .runtime
+        .memory()
+        .binding_of(&reference.clone().into())
+        .await
+        .unwrap();
     assert!(!bound.anchors().is_empty());
 
     let cleared = w
@@ -944,7 +954,12 @@ async fn a_second_kind_of_assertion_on_the_same_link_is_not_a_repeat() {
         .await
         .unwrap();
 
-    let bound = w.runtime.memory().binding_of(&reference.clone().into()).await.unwrap();
+    let bound = w
+        .runtime
+        .memory()
+        .binding_of(&reference.clone().into())
+        .await
+        .unwrap();
     assert_eq!(
         bound.assertions().len(),
         2,
@@ -978,7 +993,10 @@ async fn reaffirm_records_a_reading_and_a_reading_is_never_a_repeat() {
         .unwrap()
         .bound_version()
         .cloned();
-    w.runtime.reaffirm(&reference.clone().into(), version).await.unwrap();
+    w.runtime
+        .reaffirm(&reference.clone().into(), version)
+        .await
+        .unwrap();
 
     assert_eq!(
         w.runtime
