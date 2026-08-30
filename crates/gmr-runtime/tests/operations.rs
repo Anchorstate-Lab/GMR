@@ -5,8 +5,8 @@ use gmr_core::{
     Transitions, Version,
 };
 use gmr_runtime::{
-    Blind, Edge, Holding, HoldingKind, Knowledge, KnowledgeKind, Looked, Observed, OpenRequest,
-    Policy, Runtime,
+    Asked, Blind, Edge, Holding, HoldingKind, Knowledge, KnowledgeKind, Looked, Observed,
+    OpenRequest, Policy, Runtime,
 };
 use gmr_store::BindingStore;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
@@ -2226,7 +2226,7 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
 
     w.journal.reset();
     w.runtime
-        .ground(std::slice::from_ref(&late), &how)
+        .ground(&[Asked::about(late.clone())], &how)
         .await
         .unwrap();
     assert_eq!(
@@ -2239,7 +2239,7 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
     w.journal.reset();
     let held = w
         .runtime
-        .ground(std::slice::from_ref(&early), &how)
+        .ground(&[Asked::about(early.clone())], &how)
         .await
         .unwrap();
     assert!(
@@ -2257,7 +2257,10 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
 
     let cold = w.elsewhere();
     cold.journal.reset();
-    cold.runtime.ground(&[late], &how).await.unwrap();
+    cold.runtime
+        .ground(&[Asked::about(late.clone())], &how)
+        .await
+        .unwrap();
     assert!(
         cold.journal.rows() >= 9,
         "a runtime that has never folded this log has no checkpoint to stand on, which is \
@@ -2266,7 +2269,10 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
     );
 
     w.journal.reset();
-    w.runtime.ground(&[early], &how).await.unwrap();
+    w.runtime
+        .ground(&[Asked::about(early.clone())], &how)
+        .await
+        .unwrap();
     assert!(
         w.journal.rows() >= 9,
         "and the fold-back is not cached either"

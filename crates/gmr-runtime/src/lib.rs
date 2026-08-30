@@ -32,9 +32,9 @@ pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;
 pub use read::{
-    AnchorView, Anchored, Before, Blind, Depends, Evidence, Footing, Grounded, Grounding, Holding,
-    HoldingKind, Instructions, Knowledge, KnowledgeKind, MemoryView, Reading, Shown, Sighting,
-    Standing, Warrant,
+    AnchorView, Anchored, Asked, Before, Blind, Depends, Evidence, Footing, Grounded, Grounding,
+    Holding, HoldingKind, Instructions, Knowledge, KnowledgeKind, MemoryView, Reading, Shown,
+    Sighting, Standing, Warrant,
 };
 pub use revise::Revised;
 pub use scheduler::Scheduler;

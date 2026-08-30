@@ -9,7 +9,7 @@ use gmr_content::{ContentError, ContentProvider, Fetched, History};
 use gmr_core::{
     AnchorKey, Expr, ExternalId, ProviderId, Ref, Retain, Rule, RunSettings, Transitions, Version,
 };
-use gmr_runtime::{Before, Grounding, OpenRequest, Raised, Runtime};
+use gmr_runtime::{Asked, Before, Grounding, OpenRequest, Raised, Runtime};
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
 use gmr_transport::shell::Shell;
 
@@ -1152,7 +1152,10 @@ async fn one_sentence_on_four_anchors_comes_back_with_four_warrants() {
     w.memory("m.md", "one sentence about four things");
     w.bind("m.md", &["a", "b", "c", "d"]).await;
 
-    let refs = [gmr_core::Claim::from(Ref::new("git", "memories/m.md"))];
+    let refs = [Asked::about(gmr_core::Claim::from(Ref::new(
+        "git",
+        "memories/m.md",
+    )))];
     let out = w
         .runtime
         .ground(&refs, &gmr_runtime::Instructions::default())
@@ -1187,9 +1190,9 @@ async fn the_answers_come_back_in_the_order_they_were_asked_for() {
         w.bind(name, &["a"]).await;
     }
 
-    let refs: Vec<gmr_core::Claim> = ["z.md", "m.md", "a.md"]
+    let refs: Vec<Asked> = ["z.md", "m.md", "a.md"]
         .iter()
-        .map(|n| Ref::new("git", format!("memories/{n}")).into())
+        .map(|n| Asked::about(Ref::new("git", format!("memories/{n}")).into()))
         .collect();
     let out = w
         .runtime
@@ -1199,7 +1202,7 @@ async fn the_answers_come_back_in_the_order_they_were_asked_for() {
 
     assert_eq!(
         out.iter().map(|s| &s.claim).collect::<Vec<_>>(),
-        refs.iter().collect::<Vec<_>>(),
+        refs.iter().map(|a| &a.claim).collect::<Vec<_>>(),
         "a caller zips these against what it asked for. Reordering does not lose an answer, \
          it attributes one sentence's drift to another, silently, and worse the more \
          sentences there are"
@@ -1216,9 +1219,9 @@ async fn one_reference_nobody_can_answer_for_does_not_take_the_batch_with_it() {
     w.bind("dangling.md", &["never-opened"]).await;
     w.memory("loose.md", "bound to nothing at all");
 
-    let refs: Vec<gmr_core::Claim> = ["bound.md", "dangling.md", "loose.md"]
+    let refs: Vec<Asked> = ["bound.md", "dangling.md", "loose.md"]
         .iter()
-        .map(|n| Ref::new("git", format!("memories/{n}")).into())
+        .map(|n| Asked::about(Ref::new("git", format!("memories/{n}")).into()))
         .collect();
     let out = w
         .runtime
@@ -1258,7 +1261,10 @@ async fn evidence_carries_addresses_and_versions_and_no_values() {
     w.memory("m.md", "a sentence");
     w.bind("m.md", &["a"]).await;
 
-    let refs = [gmr_core::Claim::from(Ref::new("git", "memories/m.md"))];
+    let refs = [Asked::about(gmr_core::Claim::from(Ref::new(
+        "git",
+        "memories/m.md",
+    )))];
     let out = w
         .runtime
         .ground(&refs, &gmr_runtime::Instructions::default())
@@ -1291,7 +1297,10 @@ async fn both_phases_of_one_call_run_against_one_deadline() {
     probed.lock().unwrap().clear();
     fetched.lock().unwrap().clear();
 
-    let refs = [gmr_core::Claim::from(Ref::new("git", "memories/m.md"))];
+    let refs = [Asked::about(gmr_core::Claim::from(Ref::new(
+        "git",
+        "memories/m.md",
+    )))];
     w.runtime
         .ground(
             &refs,
@@ -1356,7 +1365,7 @@ async fn a_sentence_bound_to_the_reading_it_was_shown_says_which_one() {
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(&claim),
+            &[Asked::about(claim.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await
@@ -1402,7 +1411,7 @@ async fn a_sentence_citing_a_reading_this_anchor_never_took_is_not_grounded_by_i
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(&claim),
+            &[Asked::about(claim.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await
@@ -1440,7 +1449,7 @@ async fn a_sentence_that_cited_no_reading_is_not_reported_as_having_missed_one()
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(&claim),
+            &[Asked::about(claim.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await
@@ -1495,7 +1504,7 @@ async fn a_list_that_moved_says_which_element_and_which_field() {
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(&claim),
+            &[Asked::about(claim.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await
@@ -1539,7 +1548,7 @@ async fn stands(w: &World, claim: &gmr_core::Claim) -> gmr_runtime::Depends {
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(claim),
+            &[Asked::about(claim.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await
@@ -1605,6 +1614,101 @@ async fn a_claim_that_stated_no_invariant_is_not_reported_as_keeping_one() {
         gmr_runtime::Depends::Unstated,
         "`Holds` over an invariant nobody wrote is a green light earned by saying nothing, \
          which is the one answer a reader must never get from this field"
+    );
+}
+
+#[tokio::test]
+async fn an_invariant_the_world_cannot_reach_is_not_reported_as_holding() {
+    let w = World::new(true);
+    w.open("a").await;
+
+    for wrote in ["true", "1 == 1", "all(anchors, true)"] {
+        let claim = depending(&w, &format!("turn-{}", wrote.len()), &["a"], wrote).await;
+        assert_eq!(
+            stands(&w, &claim).await,
+            gmr_runtime::Depends::Vacuous {
+                wrote: wrote.to_owned()
+            },
+            "`{wrote}` answers the same thing forever. Reporting that as `Holds` would put \
+             it beside an invariant the world could have broken and did not, and no reader \
+             could tell them apart"
+        );
+    }
+}
+
+#[tokio::test]
+async fn what_the_vacuous_asserter_wrote_travels_with_the_answer() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = depending(&w, "turn-v", &["a"], "count(anchors, true) >= 0").await;
+
+    let gmr_runtime::Depends::Vacuous { wrote } = stands(&w, &claim).await else {
+        panic!("an invariant with no channel to the world is vacuous")
+    };
+    assert_eq!(
+        wrote, "count(anchors, true) >= 0",
+        "the audit record is the serialised answer, so an auditor asking whether the \
+         asserter learned to write empty conditions has to see the condition here rather \
+         than go back to the store for it"
+    );
+}
+
+#[tokio::test]
+async fn a_turn_can_be_grounded_without_being_stored_first() {
+    let w = World::new(true);
+    w.open("a").await;
+
+    let out = w
+        .runtime
+        .ground(
+            &[Asked::about(gmr_core::Claim::said("turn-inline"))
+                .on([AnchorKey::new("a")])
+                .depending("all(anchors, state.x == 1)")],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        out[0].depends,
+        gmr_runtime::Depends::Holds,
+        "a one-shot conclusion is not a long-lived constraint, so requiring it to be \
+         written down before it can be checked would make every passing answer a stored \
+         assertion nobody reviewed"
+    );
+    assert_eq!(out[0].on.len(), 1, "it rests on the anchor it named");
+
+    let after = stands(&w, &gmr_core::Claim::said("turn-inline")).await;
+    assert_eq!(
+        after,
+        gmr_runtime::Depends::Unstated,
+        "and asking left nothing behind: the same claim asked bare knows of no invariant, \
+         which is what makes this a read and not a write"
+    );
+}
+
+#[tokio::test]
+async fn an_asserted_claim_refuses_to_be_asked_about_inline() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = depending(&w, "turn-both", &["a"], "all(anchors, state.x == 1)").await;
+
+    let wrong = w
+        .runtime
+        .ground(
+            &[Asked::about(claim.clone()).depending("all(anchors, state.x == 99)")],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await;
+
+    assert!(
+        matches!(
+            wrong,
+            Err(gmr_runtime::RuntimeError::AlreadyAsserted { .. })
+        ),
+        "letting the inline value win would answer against something nobody recorded, and \
+         letting the stored one win would silently ignore what the caller passed. Either \
+         way two callers get different answers about one claim and nothing reports it"
     );
 }
 
@@ -1684,7 +1788,7 @@ async fn reached(
     let claim: gmr_core::Claim = Ref::new("git", format!("memories/{name}")).into();
     let out = w
         .runtime
-        .ground(std::slice::from_ref(&claim), how)
+        .ground(&[Asked::about(claim.clone())], how)
         .await
         .unwrap();
     out[0].reached.clone()
@@ -1789,7 +1893,7 @@ async fn an_utterance_reaches_nothing_because_links_run_between_records() {
         .unwrap();
     let out = w
         .runtime
-        .ground(std::slice::from_ref(&claim), &reaching(3))
+        .ground(&[Asked::about(claim.clone())], &reaching(3))
         .await
         .unwrap();
     assert!(
@@ -1868,7 +1972,7 @@ async fn a_claim_on_several_anchors_looked_at_several_readings() {
 
     let out = w
         .runtime
-        .ground(std::slice::from_ref(&claim), &how)
+        .ground(&[Asked::about(claim.clone())], &how)
         .await
         .unwrap();
     for anchored in &out[0].on {
@@ -1908,7 +2012,7 @@ async fn what_a_claim_asserted_comes_back_with_it() {
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(&asked),
+            &[Asked::about(asked.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await
@@ -1924,7 +2028,7 @@ async fn what_a_claim_asserted_comes_back_with_it() {
     let out = w
         .runtime
         .ground(
-            std::slice::from_ref(&unbound),
+            &[Asked::about(unbound.clone())],
             &gmr_runtime::Instructions::default(),
         )
         .await

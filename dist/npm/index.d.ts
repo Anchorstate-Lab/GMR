@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v7`. That string is what a caller
+ * These declarations describe `gmr.contract.v8`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v7";
+export const CONTRACT: "gmr.contract.v8";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -45,6 +45,8 @@ export type Invariant = string;
 export type Depends =
   | { depends: "holds" }
   | { depends: "broken" }
+  /** Reads no anchor, so no state of the world could break it. */
+  | { depends: "vacuous"; wrote: Invariant }
   | { depends: "unevaluable"; why: string }
   | { depends: "unstated" };
 
@@ -168,6 +170,16 @@ export type Evidence = {
 export type Anchored =
   | { anchored: "on"; key: string; warrant: Warrant; evidence: Evidence }
   | { anchored: "unopened"; key: string };
+
+/** A turn asked about without being stored. `claim` is normally `said:<id>`. */
+export interface Asked {
+  claim: Address;
+  anchors?: string[];
+  /** Addresses of the readings it cited, as `sample` handed them back. */
+  saw?: string[];
+  asserts?: unknown;
+  depends?: Invariant;
+}
 
 export type Standing = {
   claim: Claim;
@@ -336,8 +348,12 @@ export interface Opening {
 }
 
 export class Gmr {
-  /** Do these sentences still stand? One answer per claim, in order. */
-  ground(claims: Address[], how?: Instructions): Promise<Standing[]>;
+  /**
+   * Do these sentences still stand? One answer per ask, in order. An address
+   * asks about what the store holds; an object asks about a turn nobody stored,
+   * and writes nothing. A claim that was asserted refuses the object form.
+   */
+  ground(claims: (Address | Asked)[], how?: Instructions): Promise<Standing[]>;
   /**
    * Read an anchor and hand back what it sees, with the address of that
    * reading. Build the answer from `facts`, then cite `fact_address` as

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use gmr::{
-    AnchorKey, Binding, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source,
-    StatusId, Version,
+    AnchorKey, Asked, Binding, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime,
+    Source, StatusId, Version,
 };
 use gmr_transport::recipes::Recipes;
 use napi::bindgen_prelude::*;
@@ -123,9 +123,9 @@ async fn opened(asked: Opening) -> Result<Gmr> {
 #[napi]
 impl Gmr {
     #[napi]
-    pub async fn ground(&self, claims: Vec<String>, how: Option<Value>) -> Result<Value> {
+    pub async fn ground(&self, claims: Vec<Value>, how: Option<Value>) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        let claims = claims.into_iter().map(named).collect::<Result<Vec<_>>>()?;
+        let claims = claims.into_iter().map(asking).collect::<Result<Vec<_>>>()?;
         let how = asked(how)?;
         spawned(async move { answered(rt.ground(&claims, &how).await) }).await
     }
@@ -251,6 +251,46 @@ fn asserting(claim: Claim, asserts: Option<Value>) -> Result<Claim> {
              same sentence, and nothing would notice the day they disagreed"
         ))),
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Inline {
+    claim: String,
+    #[serde(default)]
+    anchors: Vec<String>,
+    #[serde(default)]
+    saw: Vec<String>,
+    #[serde(default)]
+    asserts: Option<Value>,
+    #[serde(default)]
+    depends: Option<String>,
+}
+
+fn asking(one: Value) -> Result<Asked> {
+    let Value::String(address) = one else {
+        let stated: Inline = serde_json::from_value(one).map_err(|e| {
+            failed(format!(
+                "an ask is either an address, or an object naming the claim and what this \
+                 turn rested on: {e}"
+            ))
+        })?;
+        let claim = asserting(named(stated.claim)?, stated.asserts)?;
+        let saw = stated
+            .saw
+            .into_iter()
+            .map(looked)
+            .collect::<Result<Vec<_>>>()?;
+        let mut ask = Asked::about(claim)
+            .on(stated.anchors.into_iter().map(AnchorKey::new))
+            .saw(saw);
+        if let Some(source) = stated.depends {
+            invariant(&source)?;
+            ask = ask.depending(source);
+        }
+        return Ok(ask);
+    };
+    Ok(Asked::about(named(address)?))
 }
 
 fn invariant(source: &str) -> Result<()> {

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use gmr::{AnchorKey, Binding, Claim, FactAddress, Runtime, SaidId, Source};
+use gmr::{AnchorKey, Asked, Binding, Claim, FactAddress, Runtime, SaidId, Source};
 
 use crate::error::CliError;
 
@@ -56,7 +56,10 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
         .await?;
 
     let stood = rt
-        .ground(std::slice::from_ref(&claim), &gmr::Instructions::default())
+        .ground(
+            &[Asked::about(claim.clone())],
+            &gmr::Instructions::default(),
+        )
         .await?;
     let unseen: Vec<String> = stood
         .first()

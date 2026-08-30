@@ -36,7 +36,14 @@ pub async fn run(
     let stood: Vec<Standing> = match claims.is_empty() {
         true => Vec::new(),
         false => rt
-            .ground(&claims, &gmr::Instructions::default())
+            .ground(
+                &claims
+                    .iter()
+                    .cloned()
+                    .map(gmr::Asked::about)
+                    .collect::<Vec<_>>(),
+                &gmr::Instructions::default(),
+            )
             .await?
             .into_iter()
             .filter(|s| !s.on.is_empty())
@@ -72,6 +79,9 @@ pub async fn run(
         match &one.depends {
             Depends::Holds => println!("    depends: still holds"),
             Depends::Broken => println!("    depends: no longer holds"),
+            Depends::Vacuous { wrote } => {
+                println!("    depends: `{wrote}` reads no anchor, so nothing could ever break it")
+            }
             Depends::Unevaluable { why } => println!("    depends: cannot be settled — {why}"),
             Depends::Unstated if moved(one) => {
                 println!("    depends: nothing was stated, and the ground moved — re-read this one")
@@ -112,7 +122,7 @@ fn moved(one: &Standing) -> bool {
 
 fn unsettled(one: &Standing) -> bool {
     match &one.depends {
-        Depends::Broken | Depends::Unevaluable { .. } => true,
+        Depends::Broken | Depends::Unevaluable { .. } | Depends::Vacuous { .. } => true,
         Depends::Holds => false,
         Depends::Unstated => moved(one),
     }

@@ -272,7 +272,9 @@ mod tests {
     #[test]
     fn a_body_that_reads_the_bound_state_is_what_makes_the_channel() {
         assert!(reaches_the_world("all(anchors, state.v.sig)"));
-        assert!(reaches_the_world("any(anchors, state.status == \"stable\")"));
+        assert!(reaches_the_world(
+            "any(anchors, state.status == \"stable\")"
+        ));
         assert!(reaches_the_world("count(anchors, state.v.sig) > 0"));
     }
 

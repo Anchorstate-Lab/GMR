@@ -294,6 +294,98 @@ impl Anchored {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asked {
+    pub claim: Claim,
+    pub anchors: Vec<AnchorKey>,
+    pub saw: BTreeSet<FactAddress>,
+    pub depends: Option<gmr_core::Expr>,
+}
+
+impl Asked {
+    pub fn about(claim: Claim) -> Self {
+        Self {
+            claim,
+            anchors: Vec::new(),
+            saw: BTreeSet::new(),
+            depends: None,
+        }
+    }
+
+    pub fn on(mut self, anchors: impl IntoIterator<Item = AnchorKey>) -> Self {
+        self.anchors = anchors.into_iter().collect();
+        self
+    }
+
+    pub fn saw(mut self, addresses: impl IntoIterator<Item = FactAddress>) -> Self {
+        self.saw = addresses.into_iter().collect();
+        self
+    }
+
+    pub fn depending(mut self, source: impl Into<String>) -> Self {
+        self.depends = Some(gmr_core::Expr::text(source));
+        self
+    }
+
+    pub fn inline(&self) -> bool {
+        !self.anchors.is_empty() || !self.saw.is_empty() || self.depends.is_some()
+    }
+}
+
+enum Rests<'a> {
+    Stored(&'a crate::memory::Bound),
+    Inline(&'a Asked),
+}
+
+impl Rests<'_> {
+    fn anchors(&self) -> &[AnchorKey] {
+        match self {
+            Self::Stored(bound) => bound.anchors(),
+            Self::Inline(asked) => &asked.anchors,
+        }
+    }
+
+    fn saw(&self) -> &BTreeSet<FactAddress> {
+        static NONE: std::sync::LazyLock<BTreeSet<FactAddress>> =
+            std::sync::LazyLock::new(BTreeSet::new);
+        match self {
+            Self::Stored(bound) => bound.saw(),
+            Self::Inline(asked) => match asked.saw.is_empty() {
+                true => &NONE,
+                false => &asked.saw,
+            },
+        }
+    }
+
+    fn depends(&self) -> Option<&gmr_core::Expr> {
+        match self {
+            Self::Stored(bound) => bound.depends(),
+            Self::Inline(asked) => asked.depends.as_ref(),
+        }
+    }
+
+    fn bound_at(&self) -> Option<Seq> {
+        match self {
+            Self::Stored(bound) => bound.dating().and_then(|r| r.bound_at_seq),
+            Self::Inline(_) => None,
+        }
+    }
+
+    fn bound_version(&self) -> Option<&Version> {
+        match self {
+            Self::Stored(bound) => bound.bound_version(),
+            Self::Inline(_) => None,
+        }
+    }
+
+    fn claim<'c>(&'c self, asked: &'c Claim) -> &'c Claim {
+        match self {
+            Self::Stored(bound) => bound.claim().unwrap_or(asked),
+            Self::Inline(_) => asked,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Standing {
     pub claim: Claim,
@@ -311,6 +403,7 @@ pub struct Standing {
 pub enum Depends {
     Holds,
     Broken,
+    Vacuous { wrote: String },
     Unevaluable { why: String },
     Unstated,
 }
@@ -537,18 +630,32 @@ impl Runtime {
 
     pub async fn ground(
         &self,
-        claims: &[Claim],
+        asked: &[Asked],
         how: &Instructions,
     ) -> Result<Vec<Standing>, RuntimeError> {
         let policy = self.scheduler.policy();
 
-        let mut bound = Vec::with_capacity(claims.len());
-        for claim in claims {
-            bound.push(self.memory.binding_of(claim).await?);
+        let mut bound = Vec::with_capacity(asked.len());
+        for one in asked {
+            let held = self.memory.binding_of(&one.claim).await?;
+            if one.inline() && !held.is_empty() {
+                return Err(RuntimeError::AlreadyAsserted {
+                    claim: one.claim.clone(),
+                });
+            }
+            bound.push(held);
         }
-        let keys: Vec<AnchorKey> = bound
+        let rests: Vec<Rests<'_>> = asked
             .iter()
-            .flat_map(|b| b.anchors().iter().cloned())
+            .zip(&bound)
+            .map(|(one, held)| match held.is_empty() {
+                true => Rests::Inline(one),
+                false => Rests::Stored(held),
+            })
+            .collect();
+        let keys: Vec<AnchorKey> = rests
+            .iter()
+            .flat_map(|r| r.anchors().iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
@@ -562,12 +669,13 @@ impl Runtime {
 
         let (stood, records) = try_join(
             self.stood_all(&keys, how, &probing),
-            self.records_of(claims, &bound, &reading, policy.content_call()),
+            self.records_of(asked, &rests, &reading, policy.content_call()),
         )
         .await?;
 
-        let mut out = Vec::with_capacity(claims.len());
-        for ((claim, held), record) in claims.iter().zip(&bound).zip(records) {
+        let mut out = Vec::with_capacity(asked.len());
+        for ((one, held), record) in asked.iter().zip(&rests).zip(records) {
+            let claim = &one.claim;
             let mut on = Vec::with_capacity(held.anchors().len());
             for key in held.anchors() {
                 on.push(anchored(&self.log, key, held, stood.get(key)).await?);
@@ -586,7 +694,7 @@ impl Runtime {
                 _ => Vec::new(),
             };
             out.push(Standing {
-                claim: held.claim().unwrap_or(claim).clone(),
+                claim: held.claim(claim).clone(),
                 record,
                 depends: depends(held, &stood),
                 on,
@@ -645,14 +753,14 @@ impl Runtime {
 
     async fn records_of(
         &self,
-        claims: &[Claim],
-        bound: &[crate::memory::Bound],
+        asked: &[Asked],
+        rests: &[Rests<'_>],
         total: &Budget,
         call: Duration,
     ) -> Result<Vec<Option<Grounding>>, RuntimeError> {
-        let mut out = Vec::with_capacity(claims.len());
-        for (claim, held) in claims.iter().zip(bound) {
-            out.push(match claim.stored() {
+        let mut out = Vec::with_capacity(asked.len());
+        for (one, held) in asked.iter().zip(rests) {
+            out.push(match one.claim.stored() {
                 None => None,
                 Some(reference) => Some(
                     self.memory
@@ -697,13 +805,13 @@ impl Runtime {
 async fn anchored(
     log: &AnchorLog,
     key: &AnchorKey,
-    held: &crate::memory::Bound,
+    held: &Rests<'_>,
     stood: Option<&(AnchorView, Option<Seq>)>,
 ) -> Result<Anchored, RuntimeError> {
     let Some((view, moved_at)) = stood else {
         return Ok(Anchored::Unopened { key: key.clone() });
     };
-    let bound_at = held.dating().and_then(|r| r.bound_at_seq);
+    let bound_at = held.bound_at();
     let saw = held.saw().clone();
     let shown = shown_at(log, key, &saw).await?;
     Ok(Anchored::On {
@@ -720,10 +828,7 @@ async fn anchored(
     })
 }
 
-fn depends(
-    held: &crate::memory::Bound,
-    stood: &BTreeMap<AnchorKey, (AnchorView, Option<Seq>)>,
-) -> Depends {
+fn depends(held: &Rests<'_>, stood: &BTreeMap<AnchorKey, (AnchorView, Option<Seq>)>) -> Depends {
     let Some(source) = held.depends() else {
         return Depends::Unstated;
     };
@@ -735,6 +840,11 @@ fn depends(
             };
         }
     };
+    if !node.reads_anchors() {
+        return Depends::Vacuous {
+            wrote: source.source.clone(),
+        };
+    }
     let states: Vec<serde_json::Value> = held
         .anchors()
         .iter()

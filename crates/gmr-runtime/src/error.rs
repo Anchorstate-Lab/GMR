@@ -29,6 +29,13 @@ pub enum RuntimeError {
     NotClosedYet { key: AnchorKey },
 
     #[error(
+        "`{claim}` was asserted and the assertion is in the store, so asking with anchors, \
+         `saw` or `depends` inline would answer against something nobody recorded. \
+         Ask about it bare, or revise the assertion"
+    )]
+    AlreadyAsserted { claim: gmr_core::Claim },
+
+    #[error(
         "the probe would not run while opening: {message}. \
          An anchor may precede its target, but with no successful observation \
          there is no starting point to capture"
@@ -73,6 +80,7 @@ impl RuntimeError {
             Self::AlreadyOpen { .. } => "already_open",
             Self::AnchorClosed { .. } => "anchor_closed",
             Self::NotClosedYet { .. } => "not_closed_yet",
+            Self::AlreadyAsserted { .. } => "already_asserted",
             Self::CannotOpen { .. } => "cannot_open",
             Self::Undigested { .. } => "undigested",
             Self::NoQueue => "no_queue",
