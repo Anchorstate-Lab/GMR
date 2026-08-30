@@ -1798,3 +1798,37 @@ async fn an_utterance_reaches_nothing_because_links_run_between_records() {
          it rests on is its anchors and its `depends`, not a citation graph"
     );
 }
+
+#[tokio::test]
+async fn an_utterance_on_an_anchor_does_not_take_down_the_verb_that_walks_records() {
+    let w = World::new(true);
+    w.open("a").await;
+    w.memory("m.md", "a note, stored");
+    w.bind("m.md", &["a"]).await;
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(gmr_core::Claim::said("turn-12"), vec![AnchorKey::new("a")]),
+            None,
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let edges = w.runtime.changed_since(0, None).await.unwrap();
+    assert!(
+        edges.raised.is_some(),
+        "`since` walks every binding on every anchor looking for records that moved. An \
+         utterance is bound like anything else and is stored nowhere, so the walk met one \
+         and asked it for a record -- which panicked the worker thread, through the SDK, \
+         for any product that binds what its agent said"
+    );
+
+    let held = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        held.memories.len(),
+        1,
+        "and the record-shaped verbs still answer about the one record there is"
+    );
+    assert_eq!(held.memories[0].reference, Ref::new("git", "memories/m.md"));
+}

@@ -9,6 +9,18 @@ watch: [sig, logic]
 
 # The newest assertion is not the baseline; the newest one that took a reading is
 
+`fetch_memory` takes a `Held` — a `Bound` that has already produced the `Ref` it
+is about — rather than a bare `Bound`. It used to reach for `stored()` itself and
+`expect` a stored claim, which was true of the caller it was written for and not
+of the one added beside it: `changed_since` walks every binding on every anchor,
+met a `Claim::Said`, asked it for a record, and panicked a worker thread through
+the SDK for any product that binds what its agent said. A bench row found it.
+
+The fix is that a caller with no `Ref` cannot call the function. `Bound::held`
+returns `Option<Held>`, the two walks each `let ... else { continue }`, and the
+compiler named both sites the moment the signature changed — including the one
+that had been missed.
+
 A claim can hold several live assertions ([[store-orset-projection]]), and
 since an assertion may be made while the store cannot answer for the record,
 some of them carry no `bound_version` at all — and a `Claim::Said` never has

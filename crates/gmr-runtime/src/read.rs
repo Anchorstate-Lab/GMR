@@ -1019,10 +1019,10 @@ async fn ground(
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
-        if asserted.stored().is_none() {
+        let Some(stored) = asserted.held() else {
             continue;
-        }
-        let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
+        };
+        let mut held = memory.fetch_memory(stored, &total.narrowed(call)).await?;
         held.warrant = Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
         memories.push(held);
     }

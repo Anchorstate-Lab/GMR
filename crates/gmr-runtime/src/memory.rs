@@ -131,20 +131,13 @@ impl MemoryLens {
 
     pub(crate) async fn fetch_memory(
         &self,
-        bound: Bound,
+        held: Held,
         budget: &Budget,
     ) -> Result<MemoryView, RuntimeError> {
-        let standing = bound
-            .standing()
-            .expect("a view is only assembled from at least one assertion");
+        let Held { reference, bound } = held;
         let baseline = bound
             .dating()
             .expect("a view is only assembled from at least one assertion");
-        let reference = standing
-            .binding
-            .stored()
-            .expect("a memory view is only assembled from a claim that is stored somewhere")
-            .clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
         let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
@@ -245,11 +238,10 @@ impl MemoryLens {
             if memories.iter().any(|m| m.reference == reference) {
                 continue;
             }
-            let bound = self.binding_of(&Claim::Stored(reference.clone())).await?;
-            if bound.is_empty() {
+            let Some(held) = self.binding_of(&Claim::Stored(reference)).await?.held() else {
                 continue;
-            }
-            memories.push(self.fetch_memory(bound, &total.narrowed(call)).await?);
+            };
+            memories.push(self.fetch_memory(held, &total.narrowed(call)).await?);
         }
         Ok(())
     }
@@ -296,6 +288,12 @@ pub fn by_claim(records: Vec<BindingRecord>) -> Vec<Bound> {
             .push(record);
     }
     out.into_values().map(Bound::fold).collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    reference: Ref,
+    bound: Bound,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -352,6 +350,14 @@ impl Bound {
 
     pub fn stored(&self) -> Option<&Ref> {
         self.standing().and_then(|r| r.binding.stored())
+    }
+
+    pub fn held(self) -> Option<Held> {
+        let reference = self.stored()?.clone();
+        Some(Held {
+            reference,
+            bound: self,
+        })
     }
 
     pub fn saw(&self) -> Option<&FactAddress> {

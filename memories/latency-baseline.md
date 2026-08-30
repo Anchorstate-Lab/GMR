@@ -11,11 +11,15 @@ Measured through the addon, which is what a caller actually pays. One anchor,
 one sentence, one sqlite store, on a warm laptop:
 
 ```
-ground, no store wired (journal + fold only)   p50  0.18 ms
-ground, served from the record                 p50  6.37 ms
-ground, forced to look again                   p50  6.08 ms
-since(0), every anchor's record fetched        p50  6.31 ms
-since(0, status), no record fetched            p50  0.19 ms
+ground, no store wired (journal + fold only)   p50  0.21 ms
+ground, served from the record                 p50  6.90 ms
+ground, forced to look again                   p50  7.42 ms
+ground a said: claim (nothing to fetch)        p50  0.25 ms
+ground a said: claim, invariant + shown        p50  1.96 ms
+ground, following links 3 hops                 p50  7.32 ms
+sample one anchor, forced to look              p50  1.89 ms
+since(0), every anchor's record fetched        p50  7.23 ms
+since(0, status), no record fetched            p50  0.18 ms
 ```
 
 The numbers themselves are a laptop's and will not reproduce. **The shape will**,
@@ -23,7 +27,14 @@ and the shape is the finding: retrieving the memory record is roughly **thirty
 times** everything else put together, and the two rows that skip it land in the
 same fifth of a millisecond as each other.
 
-Everything GMR was careful about is in that 0.18 ms — the journal read, the
+**A claim that is stored nowhere costs the 0.18 ms row and not the 6.9 ms one.**
+`ground` on a `said:` claim is twenty-seven times cheaper than on a record,
+because there is no store to ask — and that is the same argument the memory
+layer was removed on, arriving as a number. The row beside it forces a fresh
+probe and lands at 1.96 ms: the invariant and the `shown` scan are free next to
+one look at the world.
+
+Everything GMR was careful about is in that 0.21 ms — the journal read, the
 incremental fold, both axes of the [[runtime-warrant]], the whole of
 [[runtime-ground]]'s five phases. Forcing an observation adds almost nothing
 here because the probe is a small local file; a network probe would move that

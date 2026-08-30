@@ -64,6 +64,14 @@ for (let i = 0; i < ANCHORS; i += 1) {
 const address = "git:memories/replicas.md";
 await gmr.bind(address, keys, "derived");
 
+const seen = await gmr.sample(keys[0], { max_staleness_ms: 0 });
+const said = "said:turn-1";
+await gmr.bind(said, keys, "self_attested", {
+  saw: seen.fact_address,
+  asserts: { answer: "three replicas" },
+  depends: "all(anchors, exists(state.v))",
+});
+
 const blind = await native.open({ root, providers: {} });
 
 console.log(`gmr node addon — ${ANCHORS} anchor(s) on one sentence, one sqlite store\n`);
@@ -73,5 +81,18 @@ say(
   "ground, forced to look again",
   await timed(LOOKS, () => gmr.ground([address], { max_staleness_ms: 0 })),
 );
+say(
+  "ground a said: claim (nothing to fetch)",
+  await timed(WARM, () => gmr.ground([said])),
+);
+say(
+  "ground a said: claim, invariant + shown",
+  await timed(WARM, () => gmr.ground([said], { max_staleness_ms: 0 })),
+);
+say(
+  "ground, following links 3 hops",
+  await timed(WARM, () => gmr.ground([address], { reach: 3 })),
+);
+say("sample one anchor, forced to look", await timed(LOOKS, () => gmr.sample(keys[0], { max_staleness_ms: 0 })));
 say("since(0), every anchor's record fetched", await timed(WARM, () => gmr.since(0)));
 say("since(0, status), no record fetched", await timed(WARM, () => gmr.since(0, "any")));

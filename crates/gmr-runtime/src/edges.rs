@@ -163,7 +163,10 @@ async fn changed_since(
             }
 
             for asserted in memory.bindings_on(log, &key).await? {
-                let view = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
+                let Some(held) = asserted.held() else {
+                    continue;
+                };
+                let view = memory.fetch_memory(held, &total.narrowed(call)).await?;
                 raised.extend(Raised::of(key.clone(), view));
             }
         }
