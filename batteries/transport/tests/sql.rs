@@ -730,3 +730,145 @@ async fn a_declaration_names_where_and_the_environment_names_who() {
          the same question rather than a syntax invented here"
     );
 }
+
+#[tokio::test]
+async fn a_second_reading_of_the_same_database_does_not_open_it_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("m.db");
+    let url = format!("sqlite://{}", db.display());
+    {
+        let pool = sqlx::SqlitePool::connect(&format!("{url}?mode=rwc"))
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+    }
+
+    let asks = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("count"),
+        gmr_transport::sql::Ask {
+            source: gmr_transport::sql::Source::Given(url),
+            query: "SELECT n FROM t".to_owned(),
+            column: None,
+            binds: Vec::new(),
+        },
+    )]);
+    let sql = gmr_transport::sql::Sql::new(asks);
+    let probe = gmr_core::ProbeRef::new(
+        gmr_core::Kind::new("sql"),
+        gmr_core::ProbeName::new("count"),
+        serde_json::Value::Null,
+    );
+    let budget = gmr_budget::Budget::within(std::time::Duration::from_secs(10), usize::MAX);
+
+    let mut taken = Vec::new();
+    for _ in 0..6 {
+        let at = std::time::Instant::now();
+        let outcome = sql
+            .invoke(&gmr_probe::ProbeCall {
+                probe: &probe,
+                position: &serde_json::Value::Null,
+                budget: &budget,
+            })
+            .await
+            .unwrap();
+        taken.push(at.elapsed());
+        assert!(matches!(outcome, gmr_core::Outcome::Found { .. }));
+    }
+
+    let first = taken[0];
+    let rest = taken[1..].iter().sum::<std::time::Duration>() / (taken.len() - 1) as u32;
+    assert!(
+        rest <= first,
+        "every invoke used to build a pool and close it, so a connection handshake was \
+         paid per observation -- 42 ms of one against a local postgres, against 2.5 ms for \
+         the query. The endpoint is keyed by the hash of its resolved url, never by the \
+         url, so a credential never becomes a map key: first {first:?}, then {rest:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_database_that_goes_away_between_readings_is_still_an_outage() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let asks = BTreeMap::from([(
+        ProbeName::new("v"),
+        Ask::on(Source::Given(url), "SELECT version FROM migrations"),
+    )]);
+    let sql = Sql::new(asks);
+    let probe = ProbeRef::new(
+        Kind::new("sql"),
+        ProbeName::new("v"),
+        serde_json::Value::Null,
+    );
+    let budget = Budget::within(Duration::from_secs(5), usize::MAX);
+    let nothing = serde_json::Value::Null;
+    let asked = ProbeCall {
+        probe: &probe,
+        position: &nothing,
+        budget: &budget,
+    };
+
+    assert!(matches!(
+        sql.invoke(&asked).await.unwrap(),
+        Outcome::Found { .. }
+    ));
+    std::fs::remove_file(dir.path().join("app.db")).unwrap();
+
+    match sql.invoke(&asked).await {
+        Ok(_) => {}
+        Err(e) => assert_ne!(
+            e.code(),
+            "probe_unusable",
+            "the class used to be decided by which call site raised it -- connect meant an \
+             outage, query meant a bad declaration -- and that was only ever right because \
+             every invoke reconnected. With the pool kept, a database that goes away \
+             surfaces inside the query, and reading it as `unusable` would be the OCSP \
+             mistake: an outage reported as a declaration to fix: {e}"
+        ),
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs GMR_TEST_POSTGRES_URL"]
+async fn keeping_the_endpoint_costs_a_handshake_once_and_not_per_reading() {
+    let asks = BTreeMap::from([(
+        ProbeName::new("v"),
+        Ask::on(
+            Source::FromEnv("GMR_TEST_POSTGRES_URL".to_owned()),
+            "SELECT 1",
+        ),
+    )]);
+    let sql = Sql::new(asks);
+    let probe = ProbeRef::new(
+        Kind::new("sql"),
+        ProbeName::new("v"),
+        serde_json::Value::Null,
+    );
+    let budget = Budget::within(Duration::from_secs(10), usize::MAX);
+    let nothing = serde_json::Value::Null;
+    let asked = ProbeCall {
+        probe: &probe,
+        position: &nothing,
+        budget: &budget,
+    };
+
+    let mut taken = Vec::new();
+    for _ in 0..8 {
+        let at = std::time::Instant::now();
+        sql.invoke(&asked).await.unwrap();
+        taken.push(at.elapsed());
+    }
+    let first = taken[0];
+    let rest: Duration = taken[1..].iter().sum::<Duration>() / (taken.len() - 1) as u32;
+    println!("first {first:?}  then {rest:?}");
+    assert!(
+        rest * 4 < first,
+        "a connection handshake to a local postgres is around 42 ms and the query is 2.5. \
+         Every reading used to pay the handshake and throw it away: first {first:?}, \
+         then {rest:?}"
+    );
+}

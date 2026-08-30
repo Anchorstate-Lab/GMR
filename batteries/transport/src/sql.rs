@@ -153,9 +153,61 @@ impl<T: Asks + ?Sized> Asks for Arc<T> {
     }
 }
 
+pub const KEPT_AT_MOST: usize = 8;
+
+pub const IDLE_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+
+pub const LIVES_FOR: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+pub const AT_ONCE: u32 = 4;
+
+struct Kept<P> {
+    held: std::sync::Mutex<Vec<(gmr_core::ContentHash, P, std::time::Instant)>>,
+}
+
+impl<P> Default for Kept<P> {
+    fn default() -> Self {
+        Self {
+            held: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl<P: Clone> Kept<P> {
+    fn get(&self, key: &gmr_core::ContentHash) -> Option<P> {
+        let mut held = self.held.lock().ok()?;
+        let at = held.iter().position(|(k, _, _)| k == key)?;
+        held[at].2 = std::time::Instant::now();
+        Some(held[at].1.clone())
+    }
+
+    fn put(&self, key: gmr_core::ContentHash, pool: P) {
+        let Ok(mut held) = self.held.lock() else {
+            return;
+        };
+        if held.len() >= KEPT_AT_MOST
+            && let Some(oldest) = held
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, (_, _, at))| *at)
+                .map(|(i, _)| i)
+        {
+            held.swap_remove(oldest);
+        }
+        held.push((key, pool, std::time::Instant::now()));
+    }
+}
+
+fn endpoint(url: &str) -> gmr_core::ContentHash {
+    content_hash_of_bytes(url.as_bytes())
+}
+
 pub struct Sql {
     kind: Kind,
     asks: Arc<dyn Asks>,
+    sqlite: Kept<sqlx::SqlitePool>,
+    #[cfg(feature = "postgres")]
+    postgres: Kept<sqlx::PgPool>,
 }
 
 impl Sql {
@@ -163,6 +215,9 @@ impl Sql {
         Self {
             kind: Kind::new("sql"),
             asks: Arc::new(asks),
+            sqlite: Kept::default(),
+            #[cfg(feature = "postgres")]
+            postgres: Kept::default(),
         }
     }
 }
@@ -325,8 +380,8 @@ impl Transport for Sql {
 
         let url = ask.source.resolve().map_err(|e| e.about(name))?;
         let rows = match spoken(&url) {
-            Some(Spoken::Sqlite) => sqlite(&ask, &url, name, call, left).await?,
-            Some(Spoken::Postgres) => postgres(&ask, &url, name, call, left).await?,
+            Some(Spoken::Sqlite) => sqlite(self, &ask, &url, name, call, left).await?,
+            Some(Spoken::Postgres) => postgres(self, &ask, &url, name, call, left).await?,
             None => {
                 return Err(ProbeError::with_code(
                     ReasonClass::Unusable,
@@ -360,37 +415,47 @@ impl Transport for Sql {
 }
 
 async fn sqlite(
+    sql: &Sql,
     ask: &Ask,
     url: &str,
     name: &ProbeName,
     call: &ProbeCall<'_>,
     left: std::time::Duration,
 ) -> Result<Vec<Value>, ProbeError> {
-    let options = SqliteConnectOptions::from_str(url)
-        .map_err(|e| {
-            ProbeError::with_code(
-                ReasonClass::Unusable,
-                ProbeErrorCode::ArtifactInvalid,
-                format!(
-                    "the database `{name}` names is not a usable sqlite url: {}",
-                    ask.source.tellable(e)
-                ),
-            )
-        })?
-        .read_only(true)
-        .create_if_missing(false);
-
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .acquire_timeout(left)
-        .connect_with(options)
-        .await
-        .map_err(|e| {
-            ProbeError::unreachable(format!(
-                "cannot open the database `{name}` names: {}",
-                ask.source.tellable(e)
-            ))
-        })?;
+    let key = endpoint(url);
+    let pool = match sql.sqlite.get(&key) {
+        Some(pool) => pool,
+        None => {
+            let options = SqliteConnectOptions::from_str(url)
+                .map_err(|e| {
+                    ProbeError::with_code(
+                        ReasonClass::Unusable,
+                        ProbeErrorCode::ArtifactInvalid,
+                        format!(
+                            "the database `{name}` names is not a usable sqlite url: {}",
+                            ask.source.tellable(e)
+                        ),
+                    )
+                })?
+                .read_only(true)
+                .create_if_missing(false);
+            let made = SqlitePoolOptions::new()
+                .max_connections(AT_ONCE)
+                .acquire_timeout(left)
+                .idle_timeout(IDLE_FOR)
+                .max_lifetime(LIVES_FOR)
+                .connect_with(options)
+                .await
+                .map_err(|e| {
+                    ProbeError::unreachable(format!(
+                        "cannot open the database `{name}` names: {}",
+                        ask.source.tellable(e)
+                    ))
+                })?;
+            sql.sqlite.put(key, made.clone());
+            made
+        }
+    };
 
     let mut asked = sqlx::query(&ask.query);
     for bind in &ask.binds {
@@ -399,20 +464,42 @@ async fn sqlite(
     let rows = tokio::time::timeout(left, asked.fetch_all(&pool))
         .await
         .map_err(|_| ProbeError::spent(Spent::Deadline, call.budget))?
-        .map_err(|e| {
-            ProbeError::unusable(format!(
-                "the database `{name}` names refused the query: {e}"
-            ))
-        })?;
-    pool.close().await;
+        .map_err(|e| told(name, ask, e, sqlite_outage))?;
 
     rows.iter()
         .map(|row| shaped(row, ask.column.as_deref(), from_sqlite))
         .collect()
 }
 
+fn told(name: &ProbeName, ask: &Ask, e: sqlx::Error, outage: fn(&str) -> bool) -> ProbeError {
+    let refused = match &e {
+        sqlx::Error::Database(db) => !db.code().is_some_and(|code| outage(&code)),
+        _ => false,
+    };
+    match refused {
+        true => ProbeError::unusable(format!(
+            "the database `{name}` names refused the query: {e}"
+        )),
+        false => ProbeError::unreachable(format!(
+            "cannot reach the database `{name}` names: {}",
+            ask.source.tellable(e)
+        )),
+    }
+}
+
+fn sqlite_outage(code: &str) -> bool {
+    let primary = code.parse::<i64>().map(|n| n & 0xFF).unwrap_or(-1);
+    matches!(primary, 14 | 10 | 11)
+}
+
+#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
+fn postgres_outage(code: &str) -> bool {
+    code.starts_with("08") || code.starts_with("53") || code == "57P03"
+}
+
 #[cfg(not(feature = "postgres"))]
 async fn postgres(
+    _sql: &Sql,
     _ask: &Ask,
     _url: &str,
     name: &ProbeName,
@@ -431,44 +518,54 @@ async fn postgres(
 
 #[cfg(feature = "postgres")]
 async fn postgres(
+    sql: &Sql,
     ask: &Ask,
     url: &str,
     name: &ProbeName,
     call: &ProbeCall<'_>,
     left: std::time::Duration,
 ) -> Result<Vec<Value>, ProbeError> {
-    let options = sqlx::postgres::PgConnectOptions::from_str(url).map_err(|e| {
-        ProbeError::with_code(
-            ReasonClass::Unusable,
-            ProbeErrorCode::ArtifactInvalid,
-            format!(
-                "the database `{name}` names is not a usable postgres url: {}",
-                ask.source.tellable(e)
-            ),
-        )
-    })?;
-
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(1)
-        .acquire_timeout(left)
-        .after_connect(|conn, _| {
-            Box::pin(async move {
-                use sqlx::Executor;
-                conn.execute(sqlx::raw_sql(
-                    "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
-                ))
-                .await?;
-                Ok(())
-            })
-        })
-        .connect_with(options)
-        .await
-        .map_err(|e| {
-            ProbeError::unreachable(format!(
-                "cannot reach the database `{name}` names: {}",
-                ask.source.tellable(e)
-            ))
-        })?;
+    let key = endpoint(url);
+    let pool = match sql.postgres.get(&key) {
+        Some(pool) => pool,
+        None => {
+            let options = sqlx::postgres::PgConnectOptions::from_str(url).map_err(|e| {
+                ProbeError::with_code(
+                    ReasonClass::Unusable,
+                    ProbeErrorCode::ArtifactInvalid,
+                    format!(
+                        "the database `{name}` names is not a usable postgres url: {}",
+                        ask.source.tellable(e)
+                    ),
+                )
+            })?;
+            let made = sqlx::postgres::PgPoolOptions::new()
+                .max_connections(AT_ONCE)
+                .acquire_timeout(left)
+                .idle_timeout(IDLE_FOR)
+                .max_lifetime(LIVES_FOR)
+                .after_connect(|conn, _| {
+                    Box::pin(async move {
+                        use sqlx::Executor;
+                        conn.execute(sqlx::raw_sql(
+                            "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
+                        ))
+                        .await?;
+                        Ok(())
+                    })
+                })
+                .connect_with(options)
+                .await
+                .map_err(|e| {
+                    ProbeError::unreachable(format!(
+                        "cannot reach the database `{name}` names: {}",
+                        ask.source.tellable(e)
+                    ))
+                })?;
+            sql.postgres.put(key, made.clone());
+            made
+        }
+    };
 
     let mut asked = sqlx::query(&ask.query);
     for bind in &ask.binds {
@@ -477,12 +574,7 @@ async fn postgres(
     let rows = tokio::time::timeout(left, asked.fetch_all(&pool))
         .await
         .map_err(|_| ProbeError::spent(Spent::Deadline, call.budget))?
-        .map_err(|e| {
-            ProbeError::unusable(format!(
-                "the database `{name}` names refused the query: {e}"
-            ))
-        })?;
-    pool.close().await;
+        .map_err(|e| told(name, ask, e, postgres_outage))?;
 
     rows.iter()
         .map(|row| shaped(row, ask.column.as_deref(), from_postgres))

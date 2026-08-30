@@ -8,6 +8,10 @@ about:
   - batteries/transport/src/sql.rs#shaped
   - batteries/transport/src/sql.rs#spoken
   - batteries/transport/src/sql.rs#postgres
+  - batteries/transport/src/sql.rs#Kept
+  - batteries/transport/src/sql.rs#told
+  - batteries/transport/src/sql.rs#sqlite_outage
+  - batteries/transport/src/sql.rs#endpoint
 watch: [sig, logic]
 ---
 
@@ -88,6 +92,55 @@ not the safe direction; it is a wrong answer a reader has no way to check.
 A `FromEnv` source is treated as remote, because what it resolves to is not known
 while deciding what the instrument is, and guessing optimistically there is the
 wrong way to be wrong.
+
+## The endpoint is kept, and the credential never becomes a key
+
+Every `invoke` used to build a pool, run one query, and close it. Against a local
+postgres in Docker that is a 42 ms handshake for a 2.5 ms query — measured
+through the transport at **579 ms for the first reading and 24 ms for every one
+after**, once the pool is kept.
+
+`Kept` holds at most eight, evicting the least recently used, with an idle
+timeout and a max lifetime so a pool whose credential has been rotated away
+drains rather than holding connections open on a revoked one forever.
+
+The key is the **hash** of the resolved url, never the url. A rotated credential
+hashes differently and gets its own pool, which is the correctness the cache
+needs; and the thing sitting in a long-lived map is not a password. That is the
+same rule as [[transport-given]] one layer in: a credential is held by reference,
+never by value, and never anywhere it could be printed.
+
+## Which side a failure blames is decided by the error, not by where it was raised
+
+Connect meant an outage and query meant a bad declaration, and that was only ever
+right because every reading reconnected. With the pool kept, a database that goes
+away surfaces **inside the query** — and reading that as `Unusable` is the OCSP
+mistake constraint 4 names, an outage reported as a declaration to fix.
+
+So the class comes from the error. A non-database error is always an outage. A
+database error is a refusal **unless its code says otherwise**, and which codes
+those are is each backend's own vocabulary:
+
+```
+sqlite     primary code 14 CANTOPEN · 10 IOERR · 11 CORRUPT
+postgres   SQLSTATE 08* connection exception · 53* insufficient resources · 57P03
+```
+
+The sqlite list is not defensive. A test deletes the file between two readings
+and asserts the second is not `Unusable` — sqlite reports "unable to open
+database file" as a database error with code 14, so kind alone gets it wrong, and
+this was found by writing that test rather than by reasoning about it.
+
+`acquire_timeout` carries the budget, and there is deliberately no
+`tokio::time::timeout` wrapped around the connect. One was added and had to come
+out: with both set to the same span the outer one wins the race, sqlx never gets
+to return `PoolTimedOut`, and a port nothing is listening on comes back as a
+spent budget instead of an outage. The bound belongs to the layer that can also
+name the reason.
+
+It is taken from the call that **creates** the pool, and later readings acquire
+under whatever that first call allowed. That is the wart the cache buys with, and
+it is bounded: acquiring from a live pool does not block.
 
 ## Three answers, and a missing database is not the same as a missing file
 
