@@ -80,18 +80,24 @@ fn quantified(how: Quant, over: Over, body: &Node, ctx: Ctx<'_>) -> Evaluated {
     let each = match over {
         Over::Anchors => ctx.anchors,
     };
-    let mut held = 0usize;
+    let (mut held, mut answered) = (0usize, 0usize);
     for state in each {
         match eval(body, ctx.each(state)) {
-            Evaluated::Value(Value::Bool(true)) => held += 1,
-            Evaluated::Value(Value::Bool(false)) | Evaluated::Absent => {}
+            Evaluated::Value(Value::Bool(yes)) => {
+                answered += 1;
+                held += usize::from(yes);
+            }
+            Evaluated::Absent => {}
             Evaluated::Value(_) => return Evaluated::Fault(Fault::NotComparable),
             fault @ Evaluated::Fault(_) => return fault,
         }
     }
+    if answered == 0 && !each.is_empty() {
+        return Evaluated::Absent;
+    }
     match how {
         Quant::Any => Evaluated::bool(held > 0),
-        Quant::All => Evaluated::bool(held == each.len()),
+        Quant::All => Evaluated::bool(held == answered),
         Quant::Count => Evaluated::Value(Value::from(held)),
     }
 }
@@ -679,21 +685,6 @@ mod quantifier_tests {
             Evaluated::Fault(Fault::NotComparable),
             "counting a non-boolean as false would let `all(...)` come back true over \
              a body that never answered the question"
-        );
-    }
-
-    #[test]
-    fn an_anchor_missing_the_field_does_not_settle_the_question_for_the_others() {
-        let each = [json!({ "position": {} }), moved(true, false)];
-        assert_eq!(
-            over("any(anchors, state.v.sig)", &each),
-            Evaluated::bool(true),
-            "state reads lenient: a missing field is absent, not a fault, and an absent \
-             answer is one anchor abstaining rather than the whole invariant going dark"
-        );
-        assert_eq!(
-            over("all(anchors, state.v.sig)", &each),
-            Evaluated::bool(false)
         );
     }
 

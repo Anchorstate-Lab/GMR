@@ -51,6 +51,15 @@ class World(abc.ABC):
     # pretending the question applies.
     has_axes = True
 
+    # One expression over this world's own state vocabulary that is true while a
+    # reading taken now still stands, and false once the world has moved. There
+    # is no universal one and there was never going to be: the state vocabulary
+    # is the domain's (rule 4), so an invariant is written by whoever knows it.
+    # A suite that reached for a universal one found `state.now == state.baseline`
+    # reading true in a world that writes neither, because two absences compare
+    # equal -- a green light earned by naming nothing.
+    invariant = None
+
     # Whether this world's instrument can be swapped without rebuilding the
     # binary. Only a probe declared as a recipe can; a built-in extractor's
     # identity moves when the binary does.

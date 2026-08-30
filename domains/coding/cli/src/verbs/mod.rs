@@ -23,6 +23,8 @@ pub mod reaffirm;
 pub mod rebase;
 pub mod requeue;
 pub mod revise;
+pub mod said;
+pub mod standing;
 pub mod status;
 pub mod sync;
 

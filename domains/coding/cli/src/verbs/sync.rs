@@ -300,7 +300,7 @@ pub async fn synced(
                     rt.bind(
                         gmr::Binding::on(reference, anchors),
                         Some(version),
-                        None,
+                        Default::default(),
                         gmr::Source::Derived,
                     )
                     .await?;
@@ -501,8 +501,13 @@ async fn align_bindings(
             ))
         })?;
         let asking = gmr::Binding::on(reference.clone(), want.clone());
-        let settled =
-            had == want && current.says(&asking, Some(&version), None, gmr::Source::Derived);
+        let settled = had == want
+            && current.says(
+                &asking,
+                Some(&version),
+                &Default::default(),
+                gmr::Source::Derived,
+            );
         if settled {
             continue;
         }
@@ -758,7 +763,7 @@ mod tests {
             rt.bind(
                 gmr::Binding::on(reference, anchors),
                 Some(version),
-                None,
+                Default::default(),
                 gmr::Source::Derived,
             )
             .await
@@ -793,7 +798,7 @@ mod tests {
         rt.bind(
             gmr::Binding::on(reference.clone(), keys(&["some::key"])),
             Some(Version::new("v1")),
-            None,
+            Default::default(),
             gmr::Source::Unknown,
         )
         .await
@@ -810,7 +815,7 @@ mod tests {
             rt.bind(
                 gmr::Binding::on(reference, anchors),
                 Some(version),
-                None,
+                Default::default(),
                 gmr::Source::Derived,
             )
             .await

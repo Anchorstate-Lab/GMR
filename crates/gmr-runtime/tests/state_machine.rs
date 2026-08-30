@@ -752,7 +752,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
         w.rt.bind(
             gmr_core::Binding::on(reference.clone(), vec![key()]),
             Some(Version::new("v1")),
-            None,
+            Default::default(),
             Source::SelfAttested,
         )
         .await
@@ -787,7 +787,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
             w.rt.log(),
             &gmr_core::Binding::on(carried.clone(), vec![key()]),
             Some(&Version::new("v1")),
-            None,
+            &Default::default(),
             Source::Adjudicated,
             chrono::Utc::now(),
         )

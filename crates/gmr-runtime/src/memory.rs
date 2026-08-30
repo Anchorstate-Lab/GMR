@@ -52,7 +52,7 @@ impl MemoryLens {
         log: &AnchorLog,
         binding: &Binding,
         bound_version: Option<&Version>,
-        saw: Option<&FactAddress>,
+        saw: &std::collections::BTreeSet<FactAddress>,
         source: Source,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
@@ -63,7 +63,7 @@ impl MemoryLens {
                 binding: binding.clone(),
                 bound_version: bound_version.cloned(),
                 bound_at_seq,
-                saw: saw.cloned(),
+                saw: saw.clone(),
                 source,
                 at,
             })
@@ -360,8 +360,10 @@ impl Bound {
         })
     }
 
-    pub fn saw(&self) -> Option<&FactAddress> {
-        self.standing().and_then(|r| r.saw.as_ref())
+    pub fn saw(&self) -> &std::collections::BTreeSet<FactAddress> {
+        static NOTHING: std::sync::LazyLock<std::collections::BTreeSet<FactAddress>> =
+            std::sync::LazyLock::new(Default::default);
+        self.standing().map_or(&NOTHING, |r| &r.saw)
     }
 
     pub fn depends(&self) -> Option<&gmr_core::Expr> {
@@ -391,7 +393,7 @@ impl Bound {
         &self,
         asking: &Binding,
         version: Option<&Version>,
-        saw: Option<&FactAddress>,
+        saw: &std::collections::BTreeSet<FactAddress>,
         source: Source,
     ) -> bool {
         !self.asserted.is_empty()

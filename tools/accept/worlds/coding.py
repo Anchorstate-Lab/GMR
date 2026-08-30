@@ -28,6 +28,7 @@ class World(base.World):
     derives_from_source = True
     matched_by_coordinate = True
     expresses = base.UNIVERSAL + base.SHAPED
+    invariant = "all(anchors, state.now == state.baseline)"
 
     @property
     def coordinate(self):

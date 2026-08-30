@@ -221,7 +221,7 @@ fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq
         binding: binding.clone(),
         bound_version: Some(Version::new(version)),
         bound_at_seq,
-        saw: None,
+        saw: Default::default(),
         source: gmr_core::Source::Adjudicated,
         at: chrono::Utc::now(),
     }
@@ -265,7 +265,7 @@ async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: Bindin
         binding,
         bound_version: None,
         bound_at_seq: Some(3),
-        saw: Some(saw.clone()),
+        saw: std::collections::BTreeSet::from([saw.clone()]),
         source: gmr_core::Source::SelfAttested,
         at: chrono::Utc::now(),
     })
@@ -275,8 +275,8 @@ async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: Bindin
     let found = b.binding_of(&claim).await.unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(
-        found[0].saw.as_ref(),
-        Some(&saw),
+        found[0].saw.iter().collect::<Vec<_>>(),
+        vec![&saw],
         "an assertion that cites no reading and one that cites a reading nobody took are \
          the same row without this column, and only the second is a defect"
     );

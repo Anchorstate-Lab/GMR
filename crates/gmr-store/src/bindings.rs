@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use std::collections::BTreeSet;
+
 use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Seq, Source, Version};
 
 use crate::error::StoreError;
@@ -10,7 +12,7 @@ pub struct BindingRecord {
     pub binding: Binding,
     pub bound_version: Option<Version>,
     pub bound_at_seq: Option<Seq>,
-    pub saw: Option<FactAddress>,
+    pub saw: BTreeSet<FactAddress>,
     pub source: Source,
     pub asserted_at: Option<DateTime<Utc>>,
 }
@@ -35,7 +37,7 @@ pub struct Asserted {
     pub binding: Binding,
     pub bound_version: Option<Version>,
     pub bound_at_seq: Option<Seq>,
-    pub saw: Option<FactAddress>,
+    pub saw: BTreeSet<FactAddress>,
     pub source: Source,
     pub at: DateTime<Utc>,
 }

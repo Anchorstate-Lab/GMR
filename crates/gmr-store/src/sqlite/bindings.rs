@@ -36,7 +36,7 @@ impl BindingStore for SqliteBindings {
         .bind(asserted.bound_at_seq.map(|s| s as i64))
         .bind(asserted.source.as_str())
         .bind(asserted.at.to_rfc3339())
-        .bind(asserted.saw.as_ref().map(FactAddress::as_str))
+        .bind(looked(&asserted.saw))
         .fetch_one(&mut *tx)
         .await
         .map_err(db_err)?;
@@ -177,6 +177,35 @@ impl Sealer for SqliteBindings {
     }
 }
 
+fn looked(saw: &std::collections::BTreeSet<FactAddress>) -> Option<String> {
+    match saw.len() {
+        0 => None,
+        1 => saw.iter().next().map(|a| a.as_str().to_owned()),
+        _ => serde_json::to_string(saw).ok(),
+    }
+}
+
+fn seen(held: Option<&str>) -> Result<std::collections::BTreeSet<FactAddress>, StoreError> {
+    let Some(text) = held else {
+        return Ok(Default::default());
+    };
+    let spelled: Vec<String> = match text.starts_with('[') {
+        true => serde_json::from_str(text).map_err(decode_err)?,
+        false => vec![text.to_owned()],
+    };
+    spelled
+        .into_iter()
+        .map(FactAddress::try_new)
+        .collect::<Result<_, _>>()
+        .map_err(|e| {
+            StoreError::other(format!(
+                "`saw` holds something that is not a fact address: {e}. It is what says which \
+                 reading the asserter was actually looking at, and a value nothing can match \
+                 is worse than none"
+            ))
+        })
+}
+
 fn placeholders(n: usize, from: usize) -> String {
     (from..from + n)
         .map(|i| format!("?{i}"))
@@ -223,17 +252,7 @@ fn decode_one(seq: Seq, row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, S
         binding,
         bound_version,
         bound_at_seq: row.get::<Option<i64>, _>("bound_at_seq").map(|s| s as Seq),
-        saw: row
-            .get::<Option<String>, _>("saw")
-            .map(FactAddress::try_new)
-            .transpose()
-            .map_err(|e| {
-                StoreError::other(format!(
-                    "`saw` holds something that is not a fact address: {e}. It is what says \
-                     which reading the asserter was actually looking at, and a value nothing \
-                     can match is worse than none"
-                ))
-            })?,
+        saw: seen(row.get::<Option<String>, _>("saw").as_deref())?,
         source,
         asserted_at: row
             .get::<Option<String>, _>("asserted_at")

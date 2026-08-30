@@ -12,6 +12,6 @@ pub use crate::read::{
     Knowledge, Reading, Shown, Standing, Warrant,
 };
 
-pub const CONTRACT: &str = "gmr.contract.v6";
+pub const CONTRACT: &str = "gmr.contract.v7";
 
-pub const SHAPE: &str = "sha256:93e40401cfd453b976c912407c0b79df45784634a477f0e514883e65344d065c";
+pub const SHAPE: &str = "sha256:b068c63d8945791f59c9482ac872705fba92a44592abf696ec77fa44fda3caf4";

@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v6`. That string is what a caller
+ * These declarations describe `gmr.contract.v7`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v6";
+export const CONTRACT: "gmr.contract.v7";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -157,7 +157,12 @@ export type Evidence = {
   instrument?: ProbeVersion;
   bound_at?: Seq;
   moved_at?: Seq;
-  saw?: FactAddress;
+  /**
+   * The readings the asserter was looking at — one per anchor it read, not
+   * one per claim. Each anchor's `shown` asks whether any of them is a
+   * reading it took.
+   */
+  saw?: FactAddress[];
 } & Shown;
 
 export type Anchored =
@@ -245,8 +250,11 @@ export type Source = "derived" | "self_attested" | "adjudicated" | "configured" 
 export interface Asserting {
   /** The content version this assertion cites. Meaningless for `said:`. */
   bound_version?: Version;
-  /** The reading the asserter was looking at, as `sample` handed it back. */
-  saw?: FactAddress;
+  /**
+   * The readings the asserter was looking at, as `sample` handed them back.
+   * One per anchor read: a claim on four anchors looked at four readings.
+   */
+  saw?: FactAddress[];
   /** What a `said:` claim asserted. Recorded, never interpreted. */
   asserts?: unknown;
   /** True while the claim still stands. */

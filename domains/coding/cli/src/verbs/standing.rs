@@ -1,0 +1,137 @@
+use gmr::{Claim, Depends, Runtime, Shown, Standing};
+
+use crate::error::CliError;
+
+pub async fn run(
+    rt: &Runtime,
+    id: Option<String>,
+    retire: bool,
+    json: bool,
+) -> Result<i32, CliError> {
+    let claims: Vec<Claim> = match &id {
+        Some(named) => vec![Claim::said(named.trim_start_matches("said:"))],
+        None => rt
+            .claims()
+            .await?
+            .into_iter()
+            .filter(|c| c.stored().is_none())
+            .collect(),
+    };
+    if retire {
+        let Some(one) = claims.first() else {
+            return Err(CliError("name the conclusion to retire".into()));
+        };
+        let cleared = rt.revoke(one, gmr::Source::Adjudicated).await?;
+        println!(
+            "{one} retired on {}",
+            cleared
+                .iter()
+                .map(gmr::AnchorKey::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!("  what it said stays in the table; nothing asks about it any more");
+        return Ok(0);
+    }
+    let stood: Vec<Standing> = match claims.is_empty() {
+        true => Vec::new(),
+        false => rt
+            .ground(&claims, &gmr::Instructions::default())
+            .await?
+            .into_iter()
+            .filter(|s| !s.on.is_empty())
+            .collect(),
+    };
+
+    if json {
+        println!("{}", serde_json::to_string(&stood).map_err(render)?);
+        return Ok(exit_of(&stood));
+    }
+    if stood.is_empty() {
+        println!("nothing is being asked about here; `gmr said` records a conclusion");
+        return Ok(0);
+    }
+
+    for one in &stood {
+        let text = said_text(one);
+        println!("{}  {text}", one.claim);
+        for anchored in &one.on {
+            let Some(warrant) = anchored.warrant() else {
+                println!("    {}   never opened", anchored.key());
+                continue;
+            };
+            let shown = match anchored.evidence().map(|e| e.shown.clone()) {
+                Some(Shown::Seen { at }) => format!("saw its reading at {at}"),
+                Some(Shown::Unseen) => "cited a reading this anchor never took".to_owned(),
+                _ => "cited no reading".to_owned(),
+            };
+            let moved = crate::render::holding(&warrant.holding)
+                .unwrap_or_else(|| "the ground still holds".to_owned());
+            println!("    {}   {moved}   {shown}", anchored.key());
+        }
+        match &one.depends {
+            Depends::Holds => println!("    depends: still holds"),
+            Depends::Broken => println!("    depends: no longer holds"),
+            Depends::Unevaluable { why } => println!("    depends: cannot be settled — {why}"),
+            Depends::Unstated => {}
+        }
+    }
+
+    let (broken, unseen, bare) = counted(&stood);
+    println!();
+    println!(
+        "{} conclusion(s) · {broken} whose stated ground no longer holds · {unseen} built \
+         beside an anchor rather than through it · {bare} that cited no reading at all",
+        stood.len()
+    );
+    Ok(exit_of(&stood))
+}
+
+fn said_text(one: &Standing) -> String {
+    match &one.claim {
+        Claim::Said {
+            asserts: Some(v), ..
+        } => v
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        _ => String::new(),
+    }
+}
+
+fn counted(stood: &[Standing]) -> (usize, usize, usize) {
+    let broken = stood
+        .iter()
+        .filter(|s| s.depends == Depends::Broken)
+        .count();
+    let unseen = stood
+        .iter()
+        .filter(|s| {
+            s.on.iter()
+                .any(|a| a.evidence().is_some_and(|e| e.shown == Shown::Unseen))
+        })
+        .count();
+    let bare = stood
+        .iter()
+        .filter(|s| {
+            !s.on.is_empty()
+                && s.on
+                    .iter()
+                    .all(|a| a.evidence().is_some_and(|e| e.shown == Shown::NotSaid))
+        })
+        .count();
+    (broken, unseen, bare)
+}
+
+fn exit_of(stood: &[Standing]) -> i32 {
+    let (broken, unseen, _) = counted(stood);
+    match broken + unseen {
+        0 => 0,
+        _ => 1,
+    }
+}
+
+fn render(e: serde_json::Error) -> CliError {
+    CliError(e.to_string())
+}

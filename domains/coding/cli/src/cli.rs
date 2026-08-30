@@ -101,6 +101,41 @@ pub enum Command {
     #[command(display_order = 3)]
     Check { key: Option<String> },
 
+    /// Record what you concluded, and what you were looking at when you did.
+    /// A memory is a long-lived constraint someone reviewed; this is not that —
+    /// it is one analysis's finding, held to the readings it was built from.
+    #[command(display_order = 6)]
+    Said {
+        /// The conclusion, in your own words.
+        text: String,
+        /// The anchor it rests on. Repeat for several.
+        #[arg(long = "on", required = true)]
+        on: Vec<String>,
+        /// The `fact_address` you were shown, as `gmr read <key> --json` printed
+        /// it. Repeat for several. Leave it out and nothing records what you were
+        /// looking at — which `standing` reports rather than assumes.
+        #[arg(long = "saw")]
+        saw: Vec<String>,
+        /// One expression that is true while this conclusion still stands, over
+        /// the anchors it names: `all(anchors, not state.v.sig)`.
+        #[arg(long)]
+        depends: Option<String>,
+        /// Name it yourself. Default: a UTC timestamp.
+        #[arg(long)]
+        id: Option<String>,
+    },
+
+    /// Do the conclusions recorded here still stand? Exit 1 if any does not.
+    #[command(display_order = 7)]
+    Standing {
+        /// One conclusion, by the id `said` printed. Default: all of them.
+        id: Option<String>,
+        /// Stop asking about this one. What it said stays in the table — an
+        /// append-only record of what was believed — and nothing reads it again.
+        #[arg(long, requires = "id")]
+        retire: bool,
+    },
+
     /// Write every anchor, every memory and what binds them as one HTML page.
     #[command(display_order = 5)]
     Atlas {

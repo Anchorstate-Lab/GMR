@@ -103,7 +103,7 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
             vec![key.clone()],
         ),
         Some(Version::new("blob-at-bind-time")),
-        None,
+        Default::default(),
         gmr_core::Source::Adjudicated,
     )
     .await

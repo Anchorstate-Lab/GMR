@@ -125,6 +125,24 @@ class Gmr:
     def status(self, key=None):
         return self._run(["status"] + ([key] if key else []), json_out=True)
 
+    def said(self, text, on, saw=(), depends=None, ident=None):
+        argv = ["said", text]
+        for key in on:
+            argv += ["--on", key]
+        for address in saw:
+            argv += ["--saw", address]
+        if depends:
+            argv += ["--depends", depends]
+        if ident:
+            argv += ["--id", ident]
+        return self._run(argv, json_out=True)
+
+    def standing(self, ident=None, retire=False):
+        argv = ["standing"] + ([ident] if ident else [])
+        if retire:
+            argv.append("--retire")
+        return self._run(argv, json_out=not retire)
+
     def doctor(self, drop_env=()):
         return self._run(["doctor"], json_out=True, drop_env=drop_env)
 

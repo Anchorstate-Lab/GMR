@@ -239,8 +239,8 @@ pub struct Evidence {
     pub bound_at: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub moved_at: Option<Seq>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub saw: Option<FactAddress>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub saw: BTreeSet<FactAddress>,
     #[serde(flatten)]
     pub shown: Shown,
 }
@@ -586,7 +586,7 @@ impl Runtime {
                 _ => Vec::new(),
             };
             out.push(Standing {
-                claim: claim.clone(),
+                claim: held.claim().unwrap_or(claim).clone(),
                 record,
                 depends: depends(held, &stood),
                 on,
@@ -704,8 +704,8 @@ async fn anchored(
         return Ok(Anchored::Unopened { key: key.clone() });
     };
     let bound_at = held.dating().and_then(|r| r.bound_at_seq);
-    let saw = held.saw().cloned();
-    let shown = shown_at(log, key, saw.as_ref()).await?;
+    let saw = held.saw().clone();
+    let shown = shown_at(log, key, &saw).await?;
     Ok(Anchored::On {
         key: key.clone(),
         warrant: Box::new(warranted(log, key, bound_at, view, *moved_at).await?),
@@ -761,18 +761,18 @@ fn depends(
 async fn shown_at(
     log: &AnchorLog,
     key: &AnchorKey,
-    saw: Option<&FactAddress>,
+    saw: &BTreeSet<FactAddress>,
 ) -> Result<Shown, RuntimeError> {
-    let Some(saw) = saw else {
+    if saw.is_empty() {
         return Ok(Shown::NotSaid);
-    };
+    }
     Ok(recorded_at(&log.entries(key, 0).await?, saw))
 }
 
-fn recorded_at(entries: &[(Seq, Entry)], saw: &FactAddress) -> Shown {
+fn recorded_at(entries: &[(Seq, Entry)], saw: &BTreeSet<FactAddress>) -> Shown {
     let looked = entries.iter().find_map(|(seq, entry)| match entry {
         Entry::Open { observation, .. } | Entry::Transition { observation, .. } => {
-            (&observation.fact_address == saw).then_some(*seq)
+            saw.contains(&observation.fact_address).then_some(*seq)
         }
         _ => None,
     });

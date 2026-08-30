@@ -172,6 +172,27 @@ pub async fn served(
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,
+        Command::Said {
+            text,
+            on,
+            saw,
+            depends,
+            id,
+        } => {
+            verbs::said::run(
+                &rt,
+                verbs::said::Said {
+                    id,
+                    text,
+                    on,
+                    saw,
+                    depends,
+                },
+                json,
+            )
+            .await
+        }
+        Command::Standing { id, retire } => verbs::standing::run(&rt, id, retire, json).await,
         Command::Atlas { out } => verbs::atlas::run(&rt, &root, names, out, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),

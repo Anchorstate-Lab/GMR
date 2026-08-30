@@ -46,6 +46,50 @@ def scenario(guarantee, question, varies=("world", "store"), needs=()):
 # ── G1 取得出 ───────────────────────────────────────────────────────────────
 
 
+@scenario(
+    "G1",
+    "a conclusion says what it rested on: does it come back when that moves?",
+    needs=("invariant",),
+)
+def a_conclusion_comes_back_when_the_ground_it_named_moves(c):
+    c.settle()
+    seen = c.reading()
+    c.gmr.said(
+        "what this run concluded",
+        on=[c.world.signal],
+        saw=[seen],
+        depends=c.world.invariant,
+        ident="one",
+    )
+    p.a_conclusion_stands(c.gmr, c.gmr.standing())
+
+    c.happen("reading_changed")
+    c.gmr.observe()
+    p.a_conclusion_no_longer_stands(c.gmr, c.gmr.standing())
+
+
+@scenario("G1", "a conclusion nobody looked before making: is it told apart from one that did?")
+def a_conclusion_built_beside_the_anchor_is_not_mistaken_for_one_built_through_it(c):
+    c.settle()
+    seen = c.reading()
+    c.gmr.said("looked first", on=[c.world.signal], saw=[seen], ident="looked")
+    c.gmr.said("guessed", on=[c.world.signal], saw=["a" * 64], ident="guessed")
+    c.gmr.said("cited nothing", on=[c.world.signal], ident="bare")
+
+    p.told_apart_by_what_they_looked_at(
+        c.gmr, c.gmr.standing(), seen={"looked"}, unseen={"guessed"}, silent={"bare"}
+    )
+
+
+@scenario("G1", "a conclusion retired: does it stop being asked about?")
+def a_retired_conclusion_stops_being_asked_about(c):
+    c.settle()
+    c.gmr.said("a finding that has served its purpose", on=[c.world.signal], ident="done")
+    p.a_conclusion_stands(c.gmr, c.gmr.standing())
+    c.gmr.standing("said:done", retire=True)
+    p.nothing_is_still_being_asked_about(c.gmr, c.gmr.standing())
+
+
 @scenario("G1", "the signal moved: does the memory itself come back?")
 def the_memory_comes_back_when_its_signal_moves(c):
     address, text = c.put("why.md")

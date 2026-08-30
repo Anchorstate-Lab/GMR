@@ -34,7 +34,7 @@ struct Asserting {
     #[serde(default)]
     bound_version: Option<String>,
     #[serde(default)]
-    saw: Option<String>,
+    saw: Vec<String>,
     #[serde(default)]
     asserts: Option<Value>,
     #[serde(default)]
@@ -172,7 +172,7 @@ impl Gmr {
         }
         let source = attested(&source)?;
         let bound_version = how.bound_version.map(Version::new);
-        let saw = how.saw.map(looked).transpose()?;
+        let saw = how.saw.into_iter().map(looked).collect::<Result<_>>()?;
         spawned(async move { answered(rt.bind(binding, bound_version, saw, source).await) }).await
     }
 

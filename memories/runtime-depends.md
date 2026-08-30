@@ -76,8 +76,21 @@ nothing has to mean: a claim bound to no anchor has nothing that could have
 broken it, and reporting `Broken` would file every unbound claim beside the ones
 whose ground moved.
 
-An anchor missing the field abstains rather than faulting, because state reads
-lenient — one anchor with nothing to say does not take the whole invariant dark.
+An anchor that cannot answer **abstains**, out of the numerator and the
+denominator both. State reads lenient, so an anchor of a different shape has no
+`v.sig` and was never asked the question; counting that as a no breaks every
+invariant written across two shapes, permanently. The acceptance suite found this
+by running one invariant over three worlds, which is what running a suite over
+worlds is for.
+
+If **no** anchor could answer, the quantifier is `Absent` and the runtime reports
+`Unevaluable`. Skipping every one of them would hand back a green light earned by
+asking nothing — a misspelled axis reads absent everywhere — and that is the same
+thing `Unstated` refuses one field over.
+
+A vacuous `all` over an **empty** anchor set is still true: nothing to check is
+not the same as something to check that nothing could answer, and the two are
+reported differently.
 
 ## What it cannot express, and why that was not fixed
 
@@ -89,10 +102,13 @@ index is only a name while the order holds.
 
 That is a real limit and it decided a real case: the restaurant channel built on
 this SDK writes no `depends` at all, because `saw` and `Holding` already answer
-its question and the only invariant it would have wanted is index-shaped. The
-shape `depends` fits is the one the coding domain has — booleans at named paths.
-Reaching for a lambda before there are two callers that need one would be
-abstraction ahead of evidence.
+its question and the only invariant it would have wanted is index-shaped.
+
+The coding domain does write one, and there it earns its place for a reason the
+restaurant had no use for: `Holding` compares the **whole** state, while
+`depends` lets an author say which part the conclusion rested on. A finding about
+a signature survives an edit to the body — `Holding` reports moved, `depends`
+holds. See [[cli-said-standing]].
 
 ## `depends` is part of what an assertion says
 

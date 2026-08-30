@@ -45,7 +45,7 @@ pub async fn assert_on(
         .bind(
             gmr::Binding::on(reference, anchors),
             version.clone(),
-            None,
+            Default::default(),
             source,
         )
         .await?;

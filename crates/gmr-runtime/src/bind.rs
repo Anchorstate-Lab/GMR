@@ -1,4 +1,6 @@
 use chrono::Utc;
+use std::collections::BTreeSet;
+
 use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Source, Version};
 use serde::Serialize;
 
@@ -12,7 +14,7 @@ impl Runtime {
         &self,
         binding: Binding,
         bound_version: Option<Version>,
-        saw: Option<FactAddress>,
+        saw: BTreeSet<FactAddress>,
         source: Source,
     ) -> Result<Landed, RuntimeError> {
         let Binding {
@@ -36,7 +38,7 @@ impl Runtime {
             anchors: landed.anchors.clone(),
             depends,
         };
-        if bound.says(&asking, bound_version.as_ref(), saw.as_ref(), source) {
+        if bound.says(&asking, bound_version.as_ref(), &saw, source) {
             return Ok(landed);
         }
         landed.recorded = true;
@@ -45,7 +47,7 @@ impl Runtime {
                 &self.log,
                 &asking,
                 bound_version.as_ref(),
-                saw.as_ref(),
+                &saw,
                 source,
                 Utc::now(),
             )
@@ -142,6 +144,13 @@ impl Runtime {
         Ok(())
     }
 
+    pub async fn claims(&self) -> Result<Vec<Claim>, RuntimeError> {
+        Ok(crate::memory::by_claim(self.memory.all().await?)
+            .into_iter()
+            .filter_map(|held| held.claim().cloned())
+            .collect())
+    }
+
     pub async fn bindings_on(
         &self,
         anchor: &AnchorKey,
@@ -170,7 +179,7 @@ async fn reaffirm(
             claim: claim.clone(),
         });
     }
-    let saw = bound.saw().cloned();
+    let saw = bound.saw().clone();
     let binding = Binding {
         claim: claim.clone(),
         anchors: bound.anchors().to_vec(),
@@ -181,7 +190,7 @@ async fn reaffirm(
             log,
             &binding,
             bound_version.as_ref(),
-            saw.as_ref(),
+            &saw,
             Source::Adjudicated,
             Utc::now(),
         )

@@ -34,3 +34,21 @@ Does a new declaration form (a third way to specify transitions, beyond
 funnel through `to_transitions` before `check_contract` inspects the
 result? A separate path could let a new declaration form skip this check
 entirely.
+
+## This check now has a twin, and they read two different sources
+
+`Runtime::open` refuses an anchor whose rules read a field the probe declares it
+never reports, from `Derivation.observes` ([[probe-Derivation]]). This one asks
+the same question of `.anchor/probes.toml`'s hand-written `obs` — the second copy
+that `observes` was added to delete, and which was only deleted for the four
+built-in extractors. For a shell probe, that hand-written list is still the CLI's
+authority, and nothing compares it against what the program prints.
+
+Two implementations of one check, on two sources that can disagree. It is
+recorded as a live conclusion here rather than only in prose:
+`gmr standing said:two-unmet-implementations` names both functions and comes back
+when either moves.
+
+The fix is for a shell recipe to carry its `obs` into the transport as
+`Observes::Named`, at which point this function asks the runtime instead of the
+recipe file. Until then, the declaration is reviewed and the program is not.

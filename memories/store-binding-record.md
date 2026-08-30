@@ -53,17 +53,30 @@ Inventing one would date a binding to a moment nobody recorded.
 
 ## `saw` is what the asserter was looking at
 
-`Option<FactAddress>`: the reading the claim was made in front of. It is not
-the reading the anchor is on *now* — that is asked at read time — but the one
+A **set** of `FactAddress`: the readings the claim was made in front of. Not the
+readings the anchors are on *now* — that is asked at read time — but the ones
 whose facts the asserter had in hand when it said what it said.
 
-`None` says the assertion cited none, which is what a note a person wrote does.
+A set and not one address, because an asserter reading four anchors looked at
+four readings. It held one for a while, and the shape of the defect was this:
+whichever anchor that address belonged to reported `seen` and every other one
+reported `unseen` — a delivery-path failure invented by the record itself, on
+every multi-anchor claim. Each anchor now asks whether **any** address in the set
+is a reading it took, and a content hash from one anchor does not appear in
+another's log unless they genuinely read the same thing.
+
+Empty says the assertion cited none, which is what a note a person wrote does.
 It is deliberately not the same as citing a reading nobody took: the runtime
 reports those as `NotSaid` and `Unseen`, and only the second is a defect. See
 [[runtime-ground]].
 
-An assertion citing a different reading is a different assertion, not a repeat,
-so `Bound::says` compares it — a rebind that changes only `saw` writes a row.
+An assertion citing different readings is a different assertion, not a repeat, so
+`Bound::says` compares the set — a rebind that changes only `saw` writes a row.
+
+The column is one `TEXT` and holds both spellings: a bare 64-hex string for one
+address, a JSON array for several. The table is append-only, so a migration that
+rewrote the single-address rows was never available; reading both is not
+politeness to old data, it is the only option there was.
 
 ## The clock is the caller's
 
