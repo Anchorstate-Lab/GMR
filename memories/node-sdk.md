@@ -4,7 +4,6 @@ about:
   - domains/node/src/lib.rs#Gmr
   - domains/node/src/lib.rs#Opening
   - domains/node/src/lib.rs#answered
-  - domains/node/test/verbs.mjs#five_lines_get_a_sentences_grounding
   - tools/gate.py#check_typed_surface_names_the_contract
 watch: [sig, logic]
 ---

@@ -3,7 +3,7 @@ about:
   - crates/gmr-core/src/probe.rs#Derivation
   - crates/gmr-core/src/probe.rs#Observes
   - crates/gmr-core/src/probe.rs#a_probe_that_says_what_it_emits_covers_every_path_below_a_named_field
-  - crates/gmr-core/src/probe.rs#a_probe_that_cannot_say_what_it_reports_covers_everything_rather_than_nothing
+  - crates/gmr-core/src/probe.rs#a_probe_that_cannot_say_covers_everything_rather_than_nothing
   - crates/gmr-core/src/probe.rs#an_entry_written_before_a_probe_could_say_reads_back_as_unknown
   - crates/gmr-core/src/probe.rs#undeclared
   - crates/gmr-core/src/probe.rs#a_field_the_program_prints_and_the_declaration_never_mentions_is_named
