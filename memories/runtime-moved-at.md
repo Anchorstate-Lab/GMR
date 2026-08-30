@@ -9,22 +9,27 @@ watch: [sig, logic]
 
 # The head is every entry; the move is only the ones that changed the state
 
-`moved_at` is the seq of the latest entry that changed the state, and it used to
-be compared against `bound_at_seq` to answer "did the ground move under this
-memory". It no longer answers that — see [[runtime-warrant]]: a recapture
-changes the state too, so the seq alone reported a move where the diff showed
-none. What `moved_at` does now is **gate** that question cheaply: at or before
-it, no state change has happened since the bind, so nothing needs folding -- and
-since [[runtime-warrant]]'s `holding` reads the journal only past this gate,
-what the gate saves is not arithmetic but a whole-log read.
+`moved_at` is the seq of the latest entry that changed the state, and it
+**gates** the question "did the ground move under this memory" rather than
+answering it: at or before `moved_at`, no state change has happened since the
+bind, so nothing needs folding — and since [[runtime-warrant]]'s `holding` reads
+the journal only past this gate, what the gate saves is not arithmetic but a
+whole-log read.
 
-It used to be compared against `head`.
+It cannot answer alone. A recapture changes the state too, so a seq comparison
+reports a move where the diff shows none; the diff is what settles it, and that
+is [[runtime-warrant]]'s job.
 
-`head` advances on **every** entry. `Attempt` is an entry — it records that we
-could not observe at all. So one failed look marked every memory on that anchor
-as standing on ground that shifted, when what actually happened is that nobody
-could go and look. That is [[layers]]'s line — the world's answer versus our
-failure — crossed at the one place a reader acts on it.
+`head` cannot do the gating either, because `head` advances on **every** entry.
+`Attempt` is an entry — it records that we could not observe at all — so a gate
+on `head` marks every memory on that anchor as standing on ground that shifted
+when what happened is that nobody could go and look. That is [[layers]]'s line,
+the world's answer against our failure, crossed at the one place a reader acts
+on it.
+
+The gate needs both seqs. A claim asked about inline ([[runtime-ground]]) has no
+`bound_at_seq`, and `holding` answers `Undated`: nothing dated it, because
+nothing was stored to date.
 
 `moved_at` is set in exactly the branches that set `entered_at`: `Open`, a
 `Transition` whose state differs, and a `Restate` whose state differs. The two

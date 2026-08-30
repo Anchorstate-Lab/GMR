@@ -22,6 +22,12 @@ the same code. `publish_script` plays the publisher's role honestly too:
 else to earn one from, it hashes the script body itself and passes that —
 the smallest true closure available to a test, not a placeholder.
 
+`observes` is the other thing a publisher states, and the testkit states
+nothing: a test script's output shape is not declared anywhere, so an empty
+`Observes` is the true answer. [[probe-Derivation]] is why that reads as
+"covers everything" rather than "covers nothing" — a transport that cannot
+say what it reports must not be taken to have promised anything narrow.
+
 Downstream integration tests follow the same rule: `gmr-runtime`'s
 `cat_probe` (in `tests/chain.rs`) calls `install_script` rather than
 constructing a `ProbeRef` by hand, for the same reason — every layer of

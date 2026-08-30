@@ -12,7 +12,7 @@ that nothing has installed a name for cannot be resolved by
 be inert bytes sitting in the content-addressed store — so a publish step
 with no naming step would leave the user with something not yet usable.
 
-`--env` entries get folded into the manifest via `publish`'s `env`
+`--env` entries get folded into the manifest via `Declared.env`
 parameter, which is exactly what enters the hashed manifest and therefore
 the derivation closure (see [[transport-manifest-address]],
 [[transport-shell-derivation]]) — declaring an env var here is a real

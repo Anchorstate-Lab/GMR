@@ -91,9 +91,9 @@ criteria change and goes through `revise`/`accept --criteria`, i.e. through anot
 run, so within one run the only thing that can appear is an addition. The file stays
 the one home; the copy can never answer a question the file would answer differently.
 
-It read the file on **every** resolve until G1.5. That is a disk read and a TOML
-parse per observation, which a one-shot command can afford and a process serving
-requests cannot — and a `Recipes` handed in over a wire has no file to read at all.
+Reading the file on **every** resolve would be a disk read and a TOML parse per
+observation, which a one-shot command can afford and a process serving requests
+cannot — and a `Recipes` handed in over a wire has no file to read at all.
 
 ## `obs` is not in the declaration, because it is not a choice
 

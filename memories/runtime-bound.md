@@ -51,8 +51,9 @@ reconciliation and `doctor` end up answering the same question three ways.
 
 ## `says` is where write-idempotence lives, because the table is append-only
 
-`says(anchors, version, saw, source)` asks whether the projection already holds
-what a caller is about to assert. `Runtime::bind` asks it and returns
+`says(asking, version, saw, source)` asks whether the projection already holds
+what a caller is about to assert. `asking` is the whole `Binding` — claim,
+anchors and invariant — because all three are part of the assertion. `Runtime::bind` asks it and returns
 `Landed { recorded: false }` without writing when the answer is yes.
 
 Nothing can be taken back from an append-only table, so a writer that
@@ -72,6 +73,11 @@ run after it is not.
 So does `saw`. The same sentence asserted twice in front of two different
 readings is two assertions, and collapsing them would throw away the only record
 of which reading each answer was actually built from.
+
+So does `depends`. The same sentence on the same anchors under two different
+invariants is two assertions, and the second is the one that says what its
+author thought it rested on. Collapsing them would leave the projection holding
+a condition nobody restated.
 
 ## `reaffirm` is deliberately outside this
 

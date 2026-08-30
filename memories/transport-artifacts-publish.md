@@ -5,13 +5,19 @@ watch: [sig, logic]
 
 # The derivation is the publisher's claim; `publish` cannot compute it
 
-`publish` takes `derivation: ProbeVersion` as a parameter rather than
-deriving it from the files being published, because only the publisher —
-the build that produced these bytes — has access to the sources the
-derivation was earned from (source files, dependency closure, whatever
-`derivation` is supposed to summarize). The artifact's *address* (the
-manifest hash) is computed here from the published bytes; the *derivation*
-it stands for is always handed in, never recomputed.
+`publish` takes `derivation` in `Declared` rather than deriving it from the
+files being published, because only the publisher — the build that produced
+these bytes — has access to the sources the derivation was earned from
+(source files, dependency closure, whatever `derivation` is supposed to
+summarize). The artifact's *address* (the manifest hash) is computed here
+from the published bytes; the *derivation* it stands for is always handed
+in, never recomputed.
+
+`observes` rides in the same struct for the same reason. What a probe
+reports is a property of the program, not of the bytes on disk, and the
+manifest records what the publisher stated rather than anything `publish`
+worked out. Everything in `Declared` is a claim; nothing in it is a
+measurement.
 
 ## When this changes, ask
 

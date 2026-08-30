@@ -18,6 +18,10 @@ oversight to fix by pointing one verb's callers at the other.
 that anchor, let alone whether a subscription's `watch:` cared about the axis that
 moved.
 
+`Observed::Contended` prints and does not count. Another writer recorded first and
+nothing was written, so there is no transition to report and no reason to fail a
+run: the anchor is exactly as observed or unobserved as it was before.
+
 `check.rs#run` exits 1 for `handed` (a memory was actually delivered) or `unclaimed`
 (something moved with no memory bound at all) or one of the criteria/instrument
 diagnoses ([[check-drift]]) — but explicitly *not* for `quiet`: an anchor that moved on

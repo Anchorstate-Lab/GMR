@@ -7,19 +7,26 @@ watch: [sig, logic]
 # `reaffirm` exists to separate "I've seen new bytes" from "I mean something new"
 
 `bind` takes `anchors` because that is where a caller states what a
-reference is about. `reaffirm` does not take them at all: it re-stamps
-`bound_version` over the union of the reference's live tags. That split
+claim is about. `reaffirm` does not take them at all: it re-stamps
+`bound_version` over the union of the claim's live tags. That split
 matters because the two situations are not the same event: content moving (a wording fix, a rebase) is "I've just seen
 new bytes for something I already told you about," while changing
-`anchors` is "I'm changing what this reference is about." If `reaffirm`
+`anchors` is "I'm changing what this claim is about." If `reaffirm`
 required `anchors` as an argument, every caller doing the first thing would
 have to re-supply the second thing too, and a caller that got it slightly
-wrong would silently rebind the reference to different anchors while
+wrong would silently rebind the claim to different anchors while
 believing it was just refreshing a version stamp.
 
 The union, not one row's copy: [[store-orset-projection]] can leave several
-live assertions on a reference, and re-stamping one of them would drop the
+live assertions on a claim, and re-stamping one of them would drop the
 rest.
+
+A `said:` claim is stored nowhere, so it has no version to re-stamp and
+`bound_version` is `None`. What the write still does is date the assertion
+again, which is the half [[runtime-warrant]] needs: an anchor read by a
+different instrument than the one a record is dated against is
+`Incomparable` until somebody takes a fresh reading, and nothing in
+`accept --baseline` moves `bound_at_seq`.
 
 Stating no aboutness is also why `reaffirm` writes through
 `MemoryLens::bind` rather than `Runtime::bind`: it is not held to
