@@ -35,6 +35,8 @@ pub struct Instructions {
         with = "millis"
     )]
     pub budget: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reach: Option<usize>,
 }
 
 mod millis {
@@ -300,6 +302,8 @@ pub struct Standing {
     #[serde(flatten)]
     pub depends: Depends,
     pub on: Vec<Anchored>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reached: Vec<crate::link::Reached>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -568,11 +572,25 @@ impl Runtime {
             for key in held.anchors() {
                 on.push(anchored(&self.log, key, held, stood.get(key)).await?);
             }
+            let reached = match (how.reach, claim.stored()) {
+                (Some(depth), Some(from)) => {
+                    crate::link::reaching(
+                        &self.memory,
+                        from,
+                        depth,
+                        &reading,
+                        policy.content_call(),
+                    )
+                    .await?
+                }
+                _ => Vec::new(),
+            };
             out.push(Standing {
                 claim: claim.clone(),
                 record,
                 depends: depends(held, &stood),
                 on,
+                reached,
             });
         }
         Ok(out)

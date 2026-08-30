@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v5`. That string is what a caller
+ * These declarations describe `gmr.contract.v6`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v5";
+export const CONTRACT: "gmr.contract.v6";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -90,6 +90,26 @@ export type Grounding =
   | { grounding: "no_provider"; provider: string }
   | { grounding: "unreachable"; code: ContentErrorCode; why: string };
 
+/**
+ * What a record is doing, in one word — the classifier `doctor` prints a line
+ * for. `current` is the only one that needs nothing done about it.
+ */
+export type Footing =
+  | "current" | "unverified" | "rewritten" | "no_before"
+  | "gone" | "no_provider" | "unreachable" | "never_asked";
+
+/**
+ * A record this claim reaches by following links, that is not `current`.
+ * `via` is the kinds traversed in order, so a reader can see which of this
+ * memory's own citations led to the thing that moved.
+ */
+export interface Reached {
+  reference: Ref;
+  via: string[];
+  depth: number;
+  footing: Footing;
+}
+
 export type Before =
   | { before: "retrieved"; content: string }
   | { before: "not_retained" }
@@ -149,6 +169,8 @@ export type Standing = {
   /** Absent for `said:` — an utterance is stored nowhere, so nothing to fetch. */
   record?: Grounding;
   on: Anchored[];
+  /** Empty unless `reach` was asked for; only what is not `current`. */
+  reached?: Reached[];
 } & Depends;
 
 /** One reading of an anchor, and the address an answer built from it must cite. */
@@ -205,6 +227,12 @@ export interface Opened {
 export interface Instructions {
   max_staleness_ms?: number;
   budget_ms?: number;
+  /**
+   * How many link hops to follow from a stored claim, looking for records it
+   * rests on that have themselves moved. Absent means not at all: a walk
+   * nobody asked for is store reads nobody budgeted, on every call.
+   */
+  reach?: number;
 }
 
 /** Where a binding came from. `unknown` is how you say you do not know. */

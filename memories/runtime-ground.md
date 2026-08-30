@@ -38,6 +38,16 @@ Warrant     what is this anchor's observation state     one per (claim, anchor) 
 fetch and no version to compare. Reporting a grounding there would be answering
 about a file nobody wrote.
 
+`Standing.reached` is the fourth axis and the only optional one: what this claim
+rests on **through its own citations**, and which of those have moved. It is
+empty unless the caller asked, for the reason [[runtime-reaching]] gives, and it
+carries no verdict — a record that moved is reported with the path that led to
+it, and what that means for the claim is the reader's.
+
+`Standing.depends` is the third: the invariant the asserter wrote down, over all
+the anchors at once. `Holding` is per anchor and `depends` is per claim, which is
+why one is inside `on` and the other beside it.
+
 `MemoryView.warrant` is one `Option<Warrant>`, and it is *correct* for the
 question `grounded(key)` asks — how does this record stand **with respect to
 this anchor**. It cannot answer the reference-keyed question at all, because

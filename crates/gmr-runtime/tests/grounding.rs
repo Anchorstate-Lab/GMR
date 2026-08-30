@@ -1298,6 +1298,7 @@ async fn both_phases_of_one_call_run_against_one_deadline() {
             &gmr_runtime::Instructions {
                 max_staleness: Some(std::time::Duration::ZERO),
                 budget: Some(std::time::Duration::from_millis(40)),
+                reach: None,
             },
         )
         .await
@@ -1654,5 +1655,146 @@ async fn rebinding_with_a_different_invariant_is_a_new_assertion() {
         assert_with(&w, &claim, "all(anchors, state.x == 2)").await,
         "what a claim rests on is part of what it says. Treating a changed invariant as a \
          repeat would leave the table holding one sentence and the reader reading another"
+    );
+}
+
+async fn linked(w: &World, from: &str, to: &str, kind: &str) {
+    w.runtime
+        .link(
+            &Ref::new("git", format!("memories/{from}")),
+            &Ref::new("git", format!("memories/{to}")),
+            gmr_core::LinkKind(kind.to_owned()),
+        )
+        .await
+        .unwrap();
+}
+
+fn reaching(depth: usize) -> gmr_runtime::Instructions {
+    gmr_runtime::Instructions {
+        reach: Some(depth),
+        ..Default::default()
+    }
+}
+
+async fn reached(
+    w: &World,
+    name: &str,
+    how: &gmr_runtime::Instructions,
+) -> Vec<gmr_runtime::Reached> {
+    let claim: gmr_core::Claim = Ref::new("git", format!("memories/{name}")).into();
+    let out = w
+        .runtime
+        .ground(std::slice::from_ref(&claim), how)
+        .await
+        .unwrap();
+    out[0].reached.clone()
+}
+
+#[tokio::test]
+async fn what_a_memory_rests_on_is_followed_and_a_broken_link_comes_back_with_its_path() {
+    let w = World::new(true);
+    w.open("a").await;
+    for name in ["a.md", "b.md", "c.md"] {
+        w.memory(name, name);
+        w.bind(name, &["a"]).await;
+    }
+    linked(&w, "a.md", "b.md", "cites").await;
+    linked(&w, "b.md", "c.md", "cites").await;
+
+    assert!(
+        reached(&w, "a.md", &reaching(3)).await.is_empty(),
+        "nothing down the chain has moved, so there is nothing to report. A walk that \
+         listed every record it touched would bury the one that matters"
+    );
+
+    w.memory("c.md", "rewritten two hops away");
+    let found = reached(&w, "a.md", &reaching(3)).await;
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].reference, Ref::new("git", "memories/c.md"));
+    assert_eq!(found[0].depth, 2);
+    assert_eq!(
+        found[0].via,
+        vec![
+            gmr_core::LinkKind("cites".into()),
+            gmr_core::LinkKind("cites".into())
+        ],
+        "the path is what makes the report actionable: a reader has to see which of this \
+         memory's own citations led to the thing that moved, not merely that something did"
+    );
+    assert_eq!(found[0].footing, gmr_runtime::Footing::Rewritten);
+}
+
+#[tokio::test]
+async fn following_links_is_asked_for_and_bounded_by_the_caller() {
+    let w = World::new(true);
+    w.open("a").await;
+    for name in ["a.md", "b.md", "c.md"] {
+        w.memory(name, name);
+        w.bind(name, &["a"]).await;
+    }
+    linked(&w, "a.md", "b.md", "cites").await;
+    linked(&w, "b.md", "c.md", "cites").await;
+    w.memory("c.md", "rewritten two hops away");
+
+    assert!(
+        reached(&w, "a.md", &gmr_runtime::Instructions::default())
+            .await
+            .is_empty(),
+        "a walk nobody asked for is store reads nobody budgeted, on every call. The \
+         caller says how far, and silence says not at all"
+    );
+    assert!(
+        reached(&w, "a.md", &reaching(1)).await.is_empty(),
+        "one hop reaches b.md, which has not moved. The depth is a bound on the walk and \
+         not a hint"
+    );
+    assert_eq!(reached(&w, "a.md", &reaching(2)).await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_cycle_in_the_links_is_walked_once_and_not_forever() {
+    let w = World::new(true);
+    w.open("a").await;
+    for name in ["a.md", "b.md"] {
+        w.memory(name, name);
+        w.bind(name, &["a"]).await;
+    }
+    linked(&w, "a.md", "b.md", "cites").await;
+    linked(&w, "b.md", "a.md", "cites").await;
+    w.memory("b.md", "rewritten, and it links back");
+
+    let found = reached(&w, "a.md", &reaching(8)).await;
+    assert_eq!(
+        found.len(),
+        1,
+        "two memories citing each other is the ordinary shape of a corpus, not a defect. \
+         The walk visits each record once; without that this call does not return"
+    );
+    assert_eq!(found[0].reference, Ref::new("git", "memories/b.md"));
+}
+
+#[tokio::test]
+async fn an_utterance_reaches_nothing_because_links_run_between_records() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = gmr_core::Claim::said("turn-11");
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
+            None,
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+    let out = w
+        .runtime
+        .ground(std::slice::from_ref(&claim), &reaching(3))
+        .await
+        .unwrap();
+    assert!(
+        out[0].reached.is_empty(),
+        "a sentence an agent said is stored nowhere, so nothing links to or from it. What \
+         it rests on is its anchors and its `depends`, not a citation graph"
     );
 }

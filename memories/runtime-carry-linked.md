@@ -17,11 +17,18 @@ the near end is about, so a carried memory gets no guarantee, and hiding
 that would let an unanchored record masquerade as a grounded one just
 because something linked to it.
 
-The walk stops at one hop on purpose. Following further would require
-cycle handling, and — more importantly — deciding "is that distant memory
-still meaningfully about this anchor" is a judgment call about relevance
-that the substrate has no basis to make; it belongs to the domain, not to
-this function.
+The walk stops at one hop on purpose, and that has not changed. Deciding "is
+that distant memory still meaningfully about this anchor" is a judgment about
+**relevance**, and the substrate has no basis to make it; it belongs to the
+domain.
+
+`ground`'s `reach` does walk further, and it is not this question wearing a
+different name. Delivery asks *what should I hand this reader* — an answer that
+gets longer and vaguer with every hop. Propagation asks *has anything this rests
+on itself moved* — an answer that gets **shorter**, because only what is not
+`current` is reported and a corpus where nothing moved reports nothing. The
+first is relevance and stays here; the second is structure and lives in
+[[runtime-reaching]].
 
 Records carried in this way draw from the same operation-wide budget as the
 bound ones — `carry_linked` takes the total and narrows a slice per record
@@ -33,4 +40,6 @@ carried records are the half of the walk nobody explicitly asked for.
 
 Does the new code let `carry_linked` recurse into a second hop, or does it
 ever mark a linked-in record `grounded: true`? Either one hands the
-substrate a judgment it is not positioned to make correctly.
+substrate a judgment it is not positioned to make correctly. If what is
+wanted is "and what has moved further out", that is `reach`, and it answers a
+different question.
