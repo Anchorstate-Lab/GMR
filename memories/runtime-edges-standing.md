@@ -52,7 +52,7 @@ on this path at all, which makes it the easiest thing here to get wrong.
 
 Two doors, and a deployment must open one:
 
-- `ground(refs, { max_staleness_ms })` observes the anchors it touches on the
+- `ground(asked, { max_staleness_ms })` observes the anchors it touches on the
   read path. Anchors nobody reads never update.
 - a periodic `pass` observes on a cadence, and needs a process actually running
   it.

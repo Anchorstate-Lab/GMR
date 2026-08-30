@@ -23,7 +23,7 @@ watch: [sig, logic]
 
 # Two answers with different cardinalities, so they cannot live in one struct
 
-`ground(claims, how)` is keyed by claim because that is what a caller has: a
+`ground(asked, how)` is keyed by claim because that is what a caller has: a
 sentence it is about to say, or one it just said. Everything else here is keyed
 by anchor, and the difference is not cosmetic — the two things a caller asked
 for are counted differently:
@@ -98,6 +98,25 @@ Anchored::On { .. }          the warrant, and what to go and check it with
 costs the most: it tells a caller to wait for an observation that is never
 coming. Adding a `Blind` variant instead would have deformed a contract type
 to describe our own bookkeeping.
+
+## Where an ask gets its anchors, its readings and its invariant
+
+An `Asked` names a claim, and may name the anchors it rests on, the readings it
+cited and the invariant it asserts. A claim with an assertion in the store takes
+those three from the store; one with no assertion takes them from the ask, and
+the ask is not written anywhere. A sentence about to be said has nothing in the
+store yet, and it is exactly as answerable as one that does.
+
+That an inference is checkable without first becoming a record is
+[[three-layers]]: a memory is a long-lived constraint, written down and
+reviewed; an inference is one turn's conclusion and needs nobody. Storing every
+answered question would make each one an assertion no one reviewed.
+
+The two sources are mutually exclusive and **the data decides which**, not the
+caller: an asserted claim asked about inline is `AlreadyAsserted`. If the ask
+won, the answer would be about something nobody recorded; if the store won, what
+the caller passed would be silently ignored. Both leave two callers holding
+different answers about one claim with nothing reporting the disagreement.
 
 ## `Evidence` names what to go and check, never the value
 

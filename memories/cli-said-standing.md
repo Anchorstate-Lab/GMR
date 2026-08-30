@@ -64,10 +64,16 @@ set the exit code: citing nothing is an absence, not a defect.
 
 ```
 depends broken / unevaluable   due          its own stated condition failed
+depends vacuous                due          what was written could not have failed
 depends holds                  fine         the author said it survives this
 depends unstated + ground moved  due        nobody said it survives
 depends unstated + ground still  fine
 ```
+
+`vacuous` sits with `broken` rather than with `unstated`, and it does not wait
+on the ground having moved: an invariant the world cannot reach is a green light
+earned by saying nothing while appearing to say something, which is worse than
+saying nothing plainly.
 
 The third line is the one that had to be added. Counting only `Broken` meant a
 conclusion that vouched for nothing exited zero however far its ground had

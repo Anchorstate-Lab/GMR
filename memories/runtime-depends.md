@@ -23,7 +23,8 @@ down — a fold every caller reimplements, with the type unchanged either way, s
 nothing reports the disagreement.
 
 `Binding.depends` is one expression, written by the asserter, and `ground`
-answers it: `Holds` · `Broken` · `Unevaluable{why}` · `Unstated`.
+answers it: `Holds` · `Broken` · `Vacuous{wrote}` · `Unevaluable{why}` ·
+`Unstated`.
 
 ## The polarity is inverted from a subscription because the layer is different
 
@@ -50,7 +51,26 @@ nothing is the one answer this field must never give — it would make every cla
 that predates the column, and every claim whose author could not be bothered,
 indistinguishable from one whose invariant was checked and held.
 
-`Unevaluable{why}` is the third refusal to guess: a body that answers with a
+`Vacuous{wrote}` refuses that green light one step earlier. The asserter writes
+its own invariant, so it can write one the world cannot reach — `true`,
+`1 == 1`, `all(anchors, true)`. Reporting those as `Holds` would file them
+beside a condition the world could have broken and did not, and no reader could
+tell the two apart. It is a variant and not a flag on `Holds` for the same
+reason `Unstated` is: a flag is matched away by `Holds { .. } => allow`, and a
+reader who forgets it has the green light back. It carries what was written,
+because the audit record is the serialised answer and asking whether an asserter
+writes empty conditions means seeing the conditions.
+
+The test is `Node::reads_anchors`: is there a quantifier whose body reads the
+state it binds. `depends` evaluates with obs and state both null and the anchor
+states supplied to the quantifier, so that is the only channel from the world
+into the expression. It is not tautology detection —
+`count(anchors, state.x) >= 0` reads the world and is always true, and deciding
+that needs constant folding or a solver, and then an opinion about what counts
+as trivial. Whether a channel exists is decidable, O(AST), and has no false
+positives.
+
+`Unevaluable{why}` is the fourth refusal to guess: a body that answers with a
 number is not a yes or a no, and reading it as either puts a claim in a bucket
 its author never asked for.
 

@@ -67,7 +67,7 @@ await gmr.bind(address, keys, "derived");
 const seen = await gmr.sample(keys[0], { max_staleness_ms: 0 });
 const said = "said:turn-1";
 await gmr.bind(said, keys, "self_attested", {
-  saw: seen.fact_address,
+  saw: [seen.fact_address],
   asserts: { answer: "three replicas" },
   depends: "all(anchors, exists(state.v))",
 });

@@ -16,7 +16,9 @@ one way to say what a probe is:
 
 ```
 sample(anchor, how)    read an anchor, and get the address of that reading
-ground(claims, how)    do these sentences still stand
+ground(claims, how)    do these sentences still stand. An address asks about
+                       what the store holds; an object asks about a turn nobody
+                       stored, and writes nothing
 since(cursor, status)  what changed after this point in the journal
 bind(claim, anchors, source, version, saw, asserts)
                        this sentence is about these anchors, and this is what
