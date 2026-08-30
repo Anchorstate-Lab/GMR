@@ -25,12 +25,25 @@ nothing reports the disagreement.
 `Binding.depends` is one expression, written by the asserter, and `ground`
 answers it: `Holds` · `Broken` · `Unevaluable{why}` · `Unstated`.
 
-## The polarity is inverted from a subscription, on purpose
+## The polarity is inverted from a subscription because the layer is different
 
 The coding domain's `watch:` fires **when something moved**. `depends` is quiet
-when everything is fine. They look like the same predicate and they are not
-composable: "may I still say this" cannot be built out of "something happened",
-because the second is silent about everything it did not name.
+when everything is fine. That is not an inconsistency waiting to be tidied: they
+sit in two different layers ([[three-layers]]).
+
+`watch:` belongs to a **memory** — a long-lived constraint, authored and
+reviewed, whose failure mode is drift and whose processing is *a person re-reads
+it*. A memory whose axis moved is not false, it is due.
+
+`depends` belongs to an **inference** — one turn's conclusion, whose failure mode
+is losing its ground and whose processing needs nobody: the condition its own
+author wrote down stopped holding, and there is nothing to re-read.
+
+"Bring this back for judgement" and "this still holds" are not one predicate
+wearing two signs, and building either out of the other puts a memory's criteria
+in the append-only log or an inference's conclusion in a reviewed file. The first
+would have `check` comparing code against a copy of the memory rather than the
+memory.
 
 `Unstated` is a variant rather than a `Holds`. A green light earned by saying
 nothing is the one answer this field must never give — it would make every claim
