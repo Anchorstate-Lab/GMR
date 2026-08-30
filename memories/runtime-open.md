@@ -3,6 +3,8 @@ about:
   - crates/gmr-runtime/src/open.rs#OpenRequest
   - crates/gmr-runtime/src/open.rs#open
   - crates/gmr-runtime/src/open.rs#blind
+  - crates/gmr-runtime/src/open.rs#behind
+  - crates/gmr-runtime/tests/operations.rs#a_probe_reporting_more_than_it_declares_says_so_at_open
   - crates/gmr-runtime/tests/operations.rs#an_anchor_whose_rules_read_what_its_probe_never_reports_is_refused_at_open
   - crates/gmr-runtime/tests/operations.rs#a_probe_that_cannot_say_what_it_reports_does_not_refuse_anything
 watch: [sig, logic]
@@ -37,6 +39,15 @@ The refusal names both halves — what the rules read and what the probe reports
 because a refusal that only says no is a refusal somebody works around. And it
 happens **before** the append: an anchor that exists and can never move is worse
 than one that was never opened.
+
+The refusal reads a declaration, so `open` also checks the declaration itself,
+in the one direction anything can: after the first real observation it warns
+about fields the program **reported** and the declaration never mentions. That
+failure did not exist until a transport could say anything at all, and it is the
+expensive one — the declaration is what refuses rules, so a declaration the
+program has outgrown turns away a rule reading something the probe demonstrably
+reports. A warning and not a refusal: the reading is fine for every rule that
+reads a declared field.
 
 `bind_warnings` is not the same check and does not replace it. That one binds
 the rules against the first real observation, so a field the probe happens not

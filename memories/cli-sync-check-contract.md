@@ -35,20 +35,27 @@ funnel through `to_transitions` before `check_contract` inspects the
 result? A separate path could let a new declaration form skip this check
 entirely.
 
-## This check now has a twin, and they read two different sources
+## One predicate, one translation, and the answer travels with the artifact
 
 `Runtime::open` refuses an anchor whose rules read a field the probe declares it
-never reports, from `Derivation.observes` ([[probe-Derivation]]). This one asks
-the same question of `.anchor/probes.toml`'s hand-written `obs` — the second copy
-that `observes` was added to delete, and which was only deleted for the four
-built-in extractors. For a shell probe, that hand-written list is still the CLI's
-authority, and nothing compares it against what the program prints.
+never reports. This one asks the same question before opening, so a bad
+declaration is refused with the key named rather than as an `open` failure — and
+it is the *same* question now, not a second implementation of it.
 
-Two implementations of one check, on two sources that can disagree. It is
-recorded as a live conclusion here rather than only in prose:
-`gmr standing said:two-unmet-implementations` names both functions and comes back
-when either moves.
+`Obs::observes` is the one translation from this domain's `{schema, at, facts}`
+into the base's `Observes`; `Observes::covers` is the one predicate. `unmet` is a
+two-line adapter over both. `known` is gone — it reimplemented `covers` against
+a second reading of the same declaration.
 
-The fix is for a shell recipe to carry its `obs` into the transport as
-`Observes::Named`, at which point this function asks the runtime instead of the
-recipe file. Until then, the declaration is reviewed and the program is not.
+And the declaration reaches the transport now: `Obs::observes` goes into the
+shell `Manifest`, which is inside `Manifest::address`, so what the probe claims
+to report cannot change without the version it is addressed by changing. It used
+to sit in `.anchor/probes.toml` where the transport never saw it, which is why
+shell probes answered `Observes::Unknown` for exactly the probes where somebody
+had already written the answer down.
+
+What is still not checked is whether the declaration is **true** of the program.
+`open` warns when the first observation reports fields the declaration never
+mentions ([[probe-Derivation]]); the opposite direction — declaring a field the
+program never prints — surfaces as `NoSuchField` when a rule reads it, which is
+late but not silent.

@@ -32,11 +32,14 @@ pub fn run(
     let address = publish(
         &artifacts,
         &from,
-        Kind::new("shell"),
-        derivation.clone(),
-        &entrypoint,
-        args,
-        env,
+        gmr_transport::shell::Declared {
+            kind: Kind::new("shell"),
+            derivation: derivation.clone(),
+            entrypoint,
+            args,
+            env,
+            observes: Default::default(),
+        },
     )
     .map_err(|e| CliError(e.0))?;
     artifacts

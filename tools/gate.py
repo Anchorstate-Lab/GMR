@@ -578,40 +578,53 @@ def check_every_transport_says_what_it_observes():
     rules read a field the probe never reports -- an anchor that observes
     forever, never transitions, and reads as supervised the whole time.
 
-    `Observes::Unknown` is the honest answer for the three transports that run
-    somebody else's program: shell, script and the in-process closures a domain
-    registers. It is the wrong answer for the three whose whole reading comes
-    back through `select::pick`, which puts it under one key. Those know, and a
-    `Unknown` there is a check silently switched off for every anchor behind
-    that transport.
+    Three transports **know**: their whole reading comes back through
+    `select::pick`, which puts it under one key. Two **relay**: they run somebody
+    else's program but carry a declaration written by whoever installed it --
+    shell's is in the artifact manifest and inside the version it is addressed
+    by, the in-process one's is handed over with the closure. One **cannot**:
+    `script` runs an interpreter over a path with nothing describing it.
 
-    This is a roster on purpose, unlike the trait rosters two checks up: there
-    is nothing in the source that distinguishes "cannot say" from "did not
-    bother", so the distinction has to be recorded by a person and compared by
-    a machine.
+    Only that last one may write `Observes::Unknown` in its own `resolve`.
+    Anywhere else it is a check silently switched off for every anchor behind
+    that transport -- which is what shell did while the description sat in a
+    recipe file the transport never saw.
+
+    The rule reads the body of `Transport::resolve` rather than the whole file,
+    because every one of these has fixtures that construct an `Unknown` and a
+    fixture is not an answer. It matches the full signature and not `fn resolve`,
+    because `sql.rs` resolves a connection url under that name first and would
+    otherwise be checked against the wrong function. And it is a roster on purpose, unlike the trait rosters two
+    checks up: nothing in the source distinguishes "cannot say" from "did not
+    bother", so the distinction is recorded by a person and compared by a
+    machine.
     """
     families = ROOT / "batteries" / "transport" / "src"
-    knows = {"http.rs", "file.rs", "sql.rs"}
-    cannot = {"shell/mod.rs", "script.rs", "inproc.rs"}
+    speaks = {"http.rs", "file.rs", "sql.rs", "shell/mod.rs", "inproc.rs"}
+    cannot = {"script.rs"}
     errors = []
-    for name in sorted(knows | cannot):
+    for name in sorted(speaks | cannot):
         f = families / name
         if not f.exists():
             errors.append(f"the transport roster names {name}, which is not there")
             continue
         source = f.read_text()
-        if "fn resolve" not in source:
+        m = re.search(r"fn resolve\(&self, name: &ProbeName\)", source)
+        if m is None:
             errors.append(f"{name} is rostered as a transport and declares no `resolve`")
-        elif "observes:" not in source:
+            continue
+        brace = source.index("{", m.start())
+        body = block_from(source, brace) or ""
+        if "observes:" not in body:
             errors.append(
                 f"{name}'s `resolve` names no `observes`, so every anchor behind it opens "
                 "without the check that its rules read something the probe reports"
             )
-        elif name in knows and "Observes::Unknown" in source:
+        elif name in speaks and "Observes::Unknown" in body:
             errors.append(
-                f"{name} answers `Observes::Unknown`, but its whole reading comes back "
-                "through `select::pick` under one key -- it knows, and saying it does not "
-                "turns the open-time check off for everything behind it"
+                f"{name}'s `resolve` answers `Observes::Unknown`, and it is rostered as a "
+                "transport that either knows or is handed the answer. Saying it does not "
+                "know turns the open-time check off for everything behind it"
             )
     return errors
 

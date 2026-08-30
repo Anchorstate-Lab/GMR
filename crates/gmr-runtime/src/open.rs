@@ -130,9 +130,11 @@ async fn open(
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
     let at = Utc::now();
+    let observes = derivation.observes.clone();
     let observation =
         crate::observe::observe_into(&anchor, outcome, derivation, request.settings.facts)?;
     let mut warnings = bind_warnings(&anchor, &observation);
+    warnings.extend(behind(&anchor, &observes, &observation));
     warnings.extend(accumulator_warning(scheduler, &anchor));
 
     let state = match transition(&anchor, &observation, &initial, at, at) {
@@ -236,6 +238,30 @@ async fn seal_supersede(
         key: s.key,
         rationale: memory.seal(&s.rationale).await?,
     })
+}
+
+fn behind(
+    anchor: &Anchor,
+    observes: &gmr_core::Observes,
+    observation: &gmr_core::Observation,
+) -> Option<String> {
+    let facts = observation.facts()?;
+    let extra = observes.undeclared(facts.as_value());
+    if extra.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "`{}` reported {}, and `{}` declares none of it. The declaration is what an open \
+         refuses rules against, so a rule reading one of these would be turned away for \
+         reading something the probe demonstrably reports",
+        anchor.probe.name,
+        extra
+            .iter()
+            .map(|f| format!("obs.{f}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+        anchor.probe.name,
+    ))
 }
 
 fn accumulator_warning(scheduler: &Scheduler, anchor: &Anchor) -> Option<String> {

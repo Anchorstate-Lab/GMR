@@ -57,10 +57,12 @@ def a_conclusion_no_longer_stands(gmr, res):
     stated condition failed needs nobody to adjudicate it.
     """
     body = res.body or []
-    if not any(one.get("depends") == "broken" for one in body):
+    if res.code == 0:
         raise Broken(
             "G1",
-            "the ground a conclusion named moved and it still reads as standing: "
+            "the ground under a conclusion moved and nothing came back. An author who "
+            "stated an invariant is the authority on whether it survives; one who stated "
+            "none has said nothing, and saying nothing must not buy a green light: "
             f"{[(_named(o), o.get('depends')) for o in body]}",
         )
     if res.code != 1:

@@ -73,6 +73,9 @@ pub async fn run(
             Depends::Holds => println!("    depends: still holds"),
             Depends::Broken => println!("    depends: no longer holds"),
             Depends::Unevaluable { why } => println!("    depends: cannot be settled — {why}"),
+            Depends::Unstated if moved(one) => {
+                println!("    depends: nothing was stated, and the ground moved — re-read this one")
+            }
             Depends::Unstated => {}
         }
     }
@@ -80,8 +83,8 @@ pub async fn run(
     let (broken, unseen, bare) = counted(&stood);
     println!();
     println!(
-        "{} conclusion(s) · {broken} whose stated ground no longer holds · {unseen} built \
-         beside an anchor rather than through it · {bare} that cited no reading at all",
+        "{} conclusion(s) · {broken} the ground no longer settles · {unseen} built beside \
+         an anchor rather than through it · {bare} that cited no reading at all",
         stood.len()
     );
     Ok(exit_of(&stood))
@@ -100,11 +103,23 @@ fn said_text(one: &Standing) -> String {
     }
 }
 
+fn moved(one: &Standing) -> bool {
+    one.on.iter().any(|a| {
+        a.warrant()
+            .is_some_and(|w| !matches!(w.holding, gmr::Holding::Holds))
+    })
+}
+
+fn unsettled(one: &Standing) -> bool {
+    match &one.depends {
+        Depends::Broken | Depends::Unevaluable { .. } => true,
+        Depends::Holds => false,
+        Depends::Unstated => moved(one),
+    }
+}
+
 fn counted(stood: &[Standing]) -> (usize, usize, usize) {
-    let broken = stood
-        .iter()
-        .filter(|s| s.depends == Depends::Broken)
-        .count();
+    let broken = stood.iter().filter(|s| unsettled(s)).count();
     let unseen = stood
         .iter()
         .filter(|s| {

@@ -23,6 +23,21 @@ pub struct Obs {
     pub facts: Vec<String>,
 }
 
+impl Obs {
+    pub fn observes(&self) -> gmr::Observes {
+        let named: Vec<String> = match self.schema == crate::contract::COORD_SCHEMA {
+            true => crate::contract::REPORT
+                .iter()
+                .map(|k| (*k).to_owned())
+                .chain(self.at.iter().map(|k| format!("at.{k}")))
+                .chain(self.facts.iter().map(|k| format!("facts.{k}")))
+                .collect(),
+            false => self.at.iter().chain(&self.facts).cloned().collect(),
+        };
+        gmr::Observes::named(named)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Recipe {
     #[serde(default)]
@@ -282,11 +297,14 @@ pub fn build_one(
     let artifact = publish(
         artifacts,
         staging.path(),
-        gmr::Kind::new("shell"),
-        version.clone(),
-        &recipe.entrypoint,
-        recipe.args.clone(),
-        env,
+        gmr_transport::shell::Declared {
+            kind: gmr::Kind::new("shell"),
+            derivation: version.clone(),
+            entrypoint: recipe.entrypoint.clone(),
+            args: recipe.args.clone(),
+            env,
+            observes: recipe.obs.observes(),
+        },
     )
     .map_err(|e| CliError(format!("cannot publish `{name}`: {}", e.0)))?;
 

@@ -68,6 +68,18 @@ def a_conclusion_comes_back_when_the_ground_it_named_moves(c):
     p.a_conclusion_no_longer_stands(c.gmr, c.gmr.standing())
 
 
+@scenario("G1", "a conclusion that vouched for nothing: does a moved ground still reach it?")
+def a_conclusion_that_stated_no_invariant_is_not_green_by_saying_nothing(c):
+    c.settle()
+    seen = c.reading()
+    c.gmr.said("said nothing about what it rests on", on=[c.world.signal], saw=[seen], ident="mute")
+    p.a_conclusion_stands(c.gmr, c.gmr.standing())
+
+    c.happen("reading_changed")
+    c.gmr.observe()
+    p.a_conclusion_no_longer_stands(c.gmr, c.gmr.standing())
+
+
 @scenario("G1", "a conclusion nobody looked before making: is it told apart from one that did?")
 def a_conclusion_built_beside_the_anchor_is_not_mistaken_for_one_built_through_it(c):
     c.settle()

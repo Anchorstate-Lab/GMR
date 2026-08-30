@@ -2376,3 +2376,105 @@ async fn a_probe_that_cannot_say_what_it_reports_does_not_refuse_anything() {
          check on rules"
     );
 }
+
+#[tokio::test]
+async fn a_declaration_the_program_has_outgrown_is_said_at_open() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":0,"y":1}"#).unwrap();
+    let asks = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("world"),
+        gmr_transport::file::Ask::at("world.json"),
+    )]);
+    let rt = Runtime::builder()
+        .transport(Arc::new(gmr_transport::file::Files::new(dir.path(), asks)))
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(Arc::new(MemoryBindings::default()))
+        .sealer(Arc::new(MemoryBindings::default()))
+        .links(Arc::new(MemoryBindings::default()))
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+
+    let opened = rt
+        .open(gmr_runtime::OpenRequest {
+            key: gmr_core::AnchorKey::new("wide"),
+            probe: gmr_core::ProbeRef::new(
+                gmr_core::Kind::new("file"),
+                gmr_core::ProbeName::new("world"),
+                serde_json::Value::Null,
+            ),
+            transitions: gmr_core::Transitions(vec![gmr_core::Rule {
+                when: gmr_core::Expr::text("obs.value.x != state.x"),
+                to: gmr_core::Expr::text("{ x: obs.value.x }"),
+            }]),
+            terminal: Default::default(),
+            initial: None,
+            settings: Default::default(),
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+    assert!(
+        opened.warnings.is_empty(),
+        "a file probe declares `value` and puts everything under it, so nothing is behind: \
+         {:?}",
+        opened.warnings
+    );
+}
+
+#[tokio::test]
+async fn a_probe_reporting_more_than_it_declares_says_so_at_open() {
+    let registered = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("narrow"),
+        gmr_transport::inproc::Registered {
+            version: gmr_core::ProbeVersion::try_new("c".repeat(64)).unwrap(),
+            verifiability: gmr_core::Verifiability::Closed,
+            observes: gmr_core::Observes::named(["x"]),
+            extract: Arc::new(|_| Ok(serde_json::json!({ "x": 1, "y": 2 }))),
+        },
+    )]);
+    let rt = Runtime::builder()
+        .transport(Arc::new(gmr_transport::inproc::InProcess::new(
+            ".", registered,
+        )))
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(Arc::new(MemoryBindings::default()))
+        .sealer(Arc::new(MemoryBindings::default()))
+        .links(Arc::new(MemoryBindings::default()))
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+
+    let opened = rt
+        .open(gmr_runtime::OpenRequest {
+            key: gmr_core::AnchorKey::new("behind"),
+            probe: gmr_core::ProbeRef::new(
+                gmr_core::Kind::new("builtin"),
+                gmr_core::ProbeName::new("narrow"),
+                serde_json::Value::Null,
+            ),
+            transitions: gmr_core::Transitions(vec![gmr_core::Rule {
+                when: gmr_core::Expr::text("obs.x != state.x"),
+                to: gmr_core::Expr::text("{ x: obs.x }"),
+            }]),
+            terminal: Default::default(),
+            initial: None,
+            settings: Default::default(),
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        opened.warnings.iter().any(|w| w.contains("obs.y")),
+        "the declaration is now what `open` refuses rules against, so a declaration the \
+         program has outgrown turns away a rule reading something the probe demonstrably \
+         reports. The first real observation is the only moment anyone can notice, and it \
+         costs a set comparison on data already in hand: {:?}",
+        opened.warnings
+    );
+    assert!(
+        !opened.warnings.iter().any(|w| w.contains("obs.x")),
+        "what it did declare is not reported as a surprise"
+    );
+}

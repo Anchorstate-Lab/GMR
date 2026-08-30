@@ -55,10 +55,31 @@ reverting the change. You re-conclude; you do not un-conclude.
 
 ## Three counts, because they are three different things
 
-`standing` ends with how many conclusions no longer hold, how many were built
+`standing` ends with how many the ground no longer settles, how many were built
 beside an anchor rather than through it, and how many cited no reading at all.
 Collapsing the last two is what makes an anchor decorative. Only the first two
 set the exit code: citing nothing is an absence, not a defect.
+
+**Who decides whether a moved ground reaches a conclusion is the author.**
+
+```
+depends broken / unevaluable   due          its own stated condition failed
+depends holds                  fine         the author said it survives this
+depends unstated + ground moved  due        nobody said it survives
+depends unstated + ground still  fine
+```
+
+The third line is the one that had to be added. Counting only `Broken` meant a
+conclusion that vouched for nothing exited zero however far its ground had
+moved — a green light earned by saying nothing, which is the exact answer
+`Depends::Unstated` exists to refuse one field down, arriving again in the exit
+code.
+
+`Holds` beating a moved ground is not a hole in the same shape: the author
+*wrote something down*, and it said this move is survivable. Overruling them
+would make `depends` decoration. What GMR cannot know is whether the conclusion
+is still **true** once the thing it described is fixed — that is entailment, and
+retiring it is the job of whoever fixed it.
 
 ## Retiring, because an append-only log still needs a horizon
 

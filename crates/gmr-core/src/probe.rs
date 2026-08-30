@@ -175,6 +175,15 @@ impl Observes {
         matches!(self, Self::Unknown)
     }
 
+    pub fn undeclared(&self, reported: &Value) -> Vec<String> {
+        let Self::Named { fields } = self else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        walk(reported, "", fields, &mut out);
+        out
+    }
+
     pub fn covers(&self, read: &str) -> bool {
         match self {
             Self::Unknown => true,
@@ -183,6 +192,26 @@ impl Observes {
                 .map(|(at, _)| &read[..at])
                 .chain(std::iter::once(read))
                 .any(|prefix| fields.contains(prefix)),
+        }
+    }
+}
+
+fn walk(at: &Value, path: &str, fields: &BTreeSet<String>, out: &mut Vec<String>) {
+    let Value::Object(map) = at else {
+        return;
+    };
+    for (name, under) in map {
+        let here = match path.is_empty() {
+            true => name.clone(),
+            false => format!("{path}.{name}"),
+        };
+        if fields.contains(&here) {
+            continue;
+        }
+        let deeper = format!("{here}.");
+        match fields.iter().any(|f| f.starts_with(&deeper)) {
+            true => walk(under, &here, fields, out),
+            false => out.push(here),
         }
     }
 }
@@ -488,6 +517,50 @@ mod observes_tests {
             old,
             "the journal is hash-chained over the canonical form, so a derivation that \
              round-trips with an extra key rewrites the hash of every entry behind it"
+        );
+    }
+}
+
+#[cfg(test)]
+mod undeclared_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_field_the_program_prints_and_the_declaration_never_mentions_is_named() {
+        let says = Observes::named(["found", "at.name", "facts.body"]);
+        let printed = json!({
+            "found": true,
+            "at": { "name": "f", "line": 12 },
+            "facts": { "body": "x" },
+            "extractor": "ast-map",
+        });
+        assert_eq!(
+            says.undeclared(&printed),
+            vec!["at.line".to_owned(), "extractor".to_owned()],
+            "the declaration is what `open` refuses rules against, so a program that has \
+             grown a field nobody wrote down is a refusal waiting for whoever reads it next"
+        );
+    }
+
+    #[test]
+    fn a_declared_prefix_vouches_for_everything_under_it() {
+        let says = Observes::named(["value"]);
+        assert!(
+            says.undeclared(&json!({ "value": { "deep": { "deeper": 1 } } }))
+                .is_empty(),
+            "a probe that declares `value` has said something about every path below it, \
+             which is the same rule `covers` reads in the other direction"
+        );
+    }
+
+    #[test]
+    fn a_probe_that_cannot_say_reports_nothing_undeclared() {
+        assert!(
+            Observes::Unknown
+                .undeclared(&json!({ "anything": 1 }))
+                .is_empty(),
+            "there is no declaration to be behind"
         );
     }
 }

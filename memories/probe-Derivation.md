@@ -5,6 +5,8 @@ about:
   - crates/gmr-core/src/probe.rs#a_probe_that_says_what_it_emits_covers_every_path_below_a_named_field
   - crates/gmr-core/src/probe.rs#a_probe_that_cannot_say_what_it_reports_covers_everything_rather_than_nothing
   - crates/gmr-core/src/probe.rs#an_entry_written_before_a_probe_could_say_reads_back_as_unknown
+  - crates/gmr-core/src/probe.rs#undeclared
+  - crates/gmr-core/src/probe.rs#a_field_the_program_prints_and_the_declaration_never_mentions_is_named
 watch: [sig, logic]
 ---
 
@@ -55,17 +57,38 @@ to drift from the program it described, watched by nothing.
 path segment, so a probe reporting `value` has said something about
 `value.price_cents` and nothing about `valuey`.
 
-`Observes::Unknown` is not a gap to be filled in later. Three of the six
-transports run somebody else's program — shell, script, and the closures a
-domain registers in-process — and this build cannot read what those print.
-`covers` answers **true** for everything there: the check is on rules, not a ban
-on shell probes, and "we have no grounds to refuse this" is the only honest
-thing an unknown can say. `tools/gate.py` holds the roster of which family is
-which, because nothing in the source tells "cannot say" from "did not bother".
+`Observes::Unknown` is not a gap to be filled in later, but it turned out to be
+narrower than first drawn. Three transports **know**: the whole reading comes
+back through `select::pick`. Two **relay**: they run somebody else's program and
+carry a declaration written by whoever installed it — shell's rides in the
+artifact manifest and inside the version it is addressed by, the in-process
+one's is handed over with the closure. One **cannot**: `script` runs an
+interpreter over a path with nothing describing it, and `covers` answers **true**
+for everything there, because the check is on rules and not a ban on scripts.
+
+`tools/gate.py` holds that roster and reads the body of `Transport::resolve`,
+because nothing in the source tells "cannot say" from "did not bother", and every
+one of these has fixtures that construct an `Unknown`.
 
 The four built-in extractors already carried the list, as `Vocabulary.at` /
 `.facts` — `Vocabulary::observes` hands that same list to the transport instead
 of a second copy being written into a recipe file.
+
+## A declaration that travels raises the stakes on it being true
+
+`undeclared` is the other direction: what the program **reported** that the
+declaration never mentions. Nothing else can catch it. `covers` refuses a rule
+against the declaration, so a declaration the program has outgrown turns away a
+rule reading something the probe demonstrably reports — and until the transport
+could say anything at all, that failure did not exist.
+
+It is checked at `open`, against the first real observation, and it is a warning
+rather than a refusal: the reading is fine for every rule that reads a declared
+field, and the anchor is worth having. See [[runtime-open]].
+
+A declared field vouches for everything below it, which is `covers` read in the
+other direction: a probe that declares `value` has said something about
+`value.price_cents`, and a walk that reported it would flood on every reading.
 
 **It is skipped when unknown, and that is load-bearing.** `Derivation` rides
 inside every journal entry, the journal is hash-chained over the canonical form,
