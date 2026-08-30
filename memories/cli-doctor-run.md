@@ -37,12 +37,24 @@ and that the three classes are now printed apart: `Unreachable` is somebody
 else's service, `Unusable` is whoever writes the probe, `Unevaluable` is whoever
 wrote the rules. Three different people, three lines — [[render-warrant]].
 
-The fact-side lines beside them (`moved`, `incomparable`, `absent gnd`,
+The fact-side lines beside them (`moved`, `quiet`, `incomparable`, `absent gnd`,
 `no ground`, `undated`, from `CorpusHealth.holdings`) print counts and are on no
-`Verdict` field. Ground moving is `check`'s sentence and `check` already exits on
-it; two verbs going red for one fact is the drifting second copy in exit-code
-form. They print because until they did, `doctor` could name twelve records the
-store had lost and not one that stood on ground that had moved.
+`Verdict` field. Ground moving is `check`'s sentence and `check` exits on it; two
+verbs going red for one fact is the drifting second copy in exit-code form.
+Without them `doctor` could name the records the store had lost and not one that
+stood on ground that had moved.
+
+`moved` and `quiet` are the same split `check` makes and for the same reason
+([[cli-observe-vs-check]]): `Holding::Moved` says the ground moved, and the
+note's `watch:` says whether anyone asked. Only the first count is something
+`check` will hand back — pointing a reader at `check` for the second sends them
+to a verb built to stay silent about it. The split is `Subscriptions::delivers`,
+the one predicate that answers it, rather than a second reading of the axes here.
+
+`quiet` does not fall on its own. A record whose ground moved on an axis nobody
+watches stays counted until a fresh dated assertion re-dates it
+([[runtime-warrant]]), and re-dating it asserts somebody read it. So the number
+standing still is the corpus being honest, not a queue going unserviced.
 
 ## What a declared store can do is printed, and never weighed
 
