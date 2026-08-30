@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::anchor::AnchorKey;
+use crate::anchor::{AnchorKey, Expr};
 use crate::string_newtype;
 
 fn check_nonempty_128(s: &str) -> Result<(), String> {
@@ -200,9 +200,24 @@ pub struct Binding {
     #[serde(alias = "reference")]
     pub claim: Claim,
     pub anchors: Vec<AnchorKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depends: Option<Expr>,
 }
 
 impl Binding {
+    pub fn on(claim: impl Into<Claim>, anchors: Vec<AnchorKey>) -> Self {
+        Self {
+            claim: claim.into(),
+            anchors,
+            depends: None,
+        }
+    }
+
+    pub fn depending(mut self, source: impl Into<String>) -> Self {
+        self.depends = Some(Expr::text(source));
+        self
+    }
+
     pub fn stored(&self) -> Option<&Ref> {
         self.claim.stored()
     }
@@ -331,10 +346,8 @@ mod tests {
                 asserts: Some(serde_json::json!({"price_cents": 420})),
             },
         ] {
-            let b = Binding {
-                claim,
-                anchors: vec![AnchorKey::new("core::modules")],
-            };
+            let b = Binding::on(claim, vec![AnchorKey::new("core::modules")])
+                .depending("all(anchors, not state.v.sig)");
             let s = serde_json::to_string(&b).unwrap();
             assert_eq!(serde_json::from_str::<Binding>(&s).unwrap(), b);
         }
@@ -342,10 +355,10 @@ mod tests {
 
     #[test]
     fn a_record_may_bind_several_anchors() {
-        let b = Binding {
-            claim: Ref::new("git", "m.md").into(),
-            anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
-        };
+        let b = Binding::on(
+            Ref::new("git", "m.md"),
+            vec![AnchorKey::new("a"), AnchorKey::new("b")],
+        );
         assert_eq!(b.anchors.len(), 2);
     }
 
@@ -366,11 +379,9 @@ mod tests {
         let legacy = r#"{"reference":{"provider":"git","external_id":"m.md"},"anchors":["a"]}"#;
         assert_eq!(
             serde_json::from_str::<Binding>(legacy).unwrap(),
-            Binding {
-                claim: Ref::new("git", "m.md").into(),
-                anchors: vec![AnchorKey::new("a")],
-            },
-            "590 rows in this repository carry that shape in an append-only table"
+            Binding::on(Ref::new("git", "m.md"), vec![AnchorKey::new("a")]),
+            "590 rows in this repository carry that shape in an append-only table, and \
+             none of them says what it depends on"
         );
     }
 

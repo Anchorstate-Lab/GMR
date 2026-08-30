@@ -227,10 +227,10 @@ fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq
 }
 
 async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
-    let binding = Binding {
-        claim: Ref::new("git", "memories/core-modules.md").into(),
-        anchors: vec![AnchorKey::new("core::modules")],
-    };
+    let binding = Binding::on(
+        Ref::new("git", "memories/core-modules.md"),
+        vec![AnchorKey::new("core::modules")],
+    );
     let bound_version = Version::new("blob-v1");
     b.bind(&asserted(&binding, bound_version.as_str(), Some(7)))
         .await
@@ -259,10 +259,7 @@ async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: Bindin
         id: gmr_core::SaidId::new("turn-7"),
         asserts: Some(serde_json::json!({ "price_cents": 420 })),
     };
-    let binding = Binding {
-        claim: claim.clone(),
-        anchors: vec![AnchorKey::new("dish::icejelly")],
-    };
+    let binding = Binding::on(claim.clone(), vec![AnchorKey::new("dish::icejelly")]);
     b.bind(&Asserted {
         binding,
         bound_version: None,
@@ -295,10 +292,10 @@ async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: Bindin
 }
 
 async fn a_binding_stamped_with_no_seq_reads_back_as_none<B: BindingStore>(b: &B) {
-    let binding = Binding {
-        claim: Ref::new("git", "memories/many.md").into(),
-        anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
-    };
+    let binding = Binding::on(
+        Ref::new("git", "memories/many.md"),
+        vec![AnchorKey::new("a"), AnchorKey::new("b")],
+    );
     b.bind(&asserted(&binding, "v", None)).await.unwrap();
 
     assert_eq!(
@@ -315,10 +312,7 @@ async fn asserting_a_second_anchor_does_not_take_the_first_away<B: BindingStore>
     let reference = Ref::new("git", "memories/moved.md");
     for anchor in ["from", "to"] {
         b.bind(&asserted(
-            &Binding {
-                claim: reference.clone().into(),
-                anchors: vec![AnchorKey::new(anchor)],
-            },
+            &Binding::on(reference.clone(), vec![AnchorKey::new(anchor)]),
             "v",
             None,
         ))
@@ -348,10 +342,7 @@ async fn asserting_the_same_anchor_twice_still_delivers_it_once<B: BindingStore>
     let reference = Ref::new("git", "memories/twice.md");
     for v in ["v1", "v2"] {
         b.bind(&asserted(
-            &Binding {
-                claim: reference.clone().into(),
-                anchors: vec![AnchorKey::new("same")],
-            },
+            &Binding::on(reference.clone(), vec![AnchorKey::new("same")]),
             v,
             None,
         ))
@@ -375,10 +366,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/orset.md");
     let at = AnchorKey::new("g");
     b.bind(&asserted(
-        &Binding {
-            claim: reference.clone().into(),
-            anchors: vec![at.clone()],
-        },
+        &Binding::on(reference.clone(), vec![at.clone()]),
         "v1",
         None,
     ))
@@ -407,10 +395,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
     );
 
     b.bind(&asserted(
-        &Binding {
-            claim: reference.clone().into(),
-            anchors: vec![at.clone()],
-        },
+        &Binding::on(reference.clone(), vec![at.clone()]),
         "v2",
         None,
     ))
@@ -434,10 +419,7 @@ async fn a_revocation_does_not_reach_a_generation_it_was_not_made_at<B: BindingS
     let older = AnchorKey::new("older");
     let heir = AnchorKey::new("heir");
     b.bind(&asserted(
-        &Binding {
-            claim: reference.clone().into(),
-            anchors: vec![older.clone()],
-        },
+        &Binding::on(reference.clone(), vec![older.clone()]),
         "v1",
         None,
     ))

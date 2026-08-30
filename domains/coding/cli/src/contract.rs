@@ -102,6 +102,7 @@ fn walk_state(node: &gmr::expr::Node, out: &mut BTreeSet<String>) {
         }
         Node::Object(fields) => fields.iter().for_each(|(_, v)| walk_state(v, out)),
         Node::Array(items) => items.iter().for_each(|v| walk_state(v, out)),
+        Node::Quantified { body, .. } => walk_state(body, out),
     }
 }
 

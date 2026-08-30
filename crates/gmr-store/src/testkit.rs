@@ -122,6 +122,7 @@ impl MemoryBindings {
                     binding: Binding {
                         claim: r.binding.claim.clone(),
                         anchors,
+                        depends: r.binding.depends.clone(),
                     },
                     ..r.clone()
                 })

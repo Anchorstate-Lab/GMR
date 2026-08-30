@@ -101,10 +101,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
     store
         .bindings()
         .bind(&Asserted {
-            binding: Binding {
-                claim: Ref::new("git", "memories/one.md").into(),
-                anchors: vec![key.clone()],
-            },
+            binding: Binding::on(Ref::new("git", "memories/one.md"), vec![key.clone()]),
             bound_version: Some(Version::new("v1")),
             bound_at_seq: Some(open_seq),
             saw: None,

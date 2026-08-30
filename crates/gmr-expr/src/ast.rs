@@ -92,6 +92,38 @@ impl BinOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Quant {
+    Any,
+    All,
+    Count,
+}
+
+impl Quant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::All => "all",
+            Self::Count => "count",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Over {
+    Anchors,
+}
+
+impl Over {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Anchors => "anchors",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "node", rename_all = "snake_case")]
 pub enum Node {
@@ -108,6 +140,11 @@ pub enum Node {
     },
     Object(Vec<(String, Node)>),
     Array(Vec<Node>),
+    Quantified {
+        how: Quant,
+        over: Over,
+        body: Box<Node>,
+    },
 }
 
 impl Node {
@@ -119,6 +156,7 @@ impl Node {
             Self::Binary { lhs, rhs, .. } => lhs.reads_state() || rhs.reads_state(),
             Self::Object(fields) => fields.iter().any(|(_, v)| v.reads_state()),
             Self::Array(items) => items.iter().any(Node::reads_state),
+            Self::Quantified { .. } => false,
         }
     }
 
@@ -154,6 +192,7 @@ impl Node {
             }
             Self::Object(fields) => fields.iter().for_each(|(_, v)| v.collect_obs(out)),
             Self::Array(items) => items.iter().for_each(|v| v.collect_obs(out)),
+            Self::Quantified { .. } => {}
         }
     }
 
@@ -178,6 +217,9 @@ impl Node {
             Self::Array(items) => {
                 let body: Vec<String> = items.iter().map(Node::render).collect();
                 format!("[{}]", body.join(", "))
+            }
+            Self::Quantified { how, over, body } => {
+                format!("{}({}, {})", how.as_str(), over.as_str(), body.render())
             }
         }
     }

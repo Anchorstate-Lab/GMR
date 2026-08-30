@@ -298,8 +298,7 @@ pub async fn synced(
                             .await?;
                     }
                     rt.bind(
-                        reference.into(),
-                        anchors,
+                        gmr::Binding::on(reference, anchors),
                         Some(version),
                         None,
                         gmr::Source::Derived,
@@ -501,8 +500,9 @@ async fn align_bindings(
                 reference.provider
             ))
         })?;
+        let asking = gmr::Binding::on(reference.clone(), want.clone());
         let settled =
-            had == want && current.says(&want, Some(&version), None, gmr::Source::Derived);
+            had == want && current.says(&asking, Some(&version), None, gmr::Source::Derived);
         if settled {
             continue;
         }
@@ -756,8 +756,7 @@ mod tests {
 
         for (reference, anchors, version, _) in plan {
             rt.bind(
-                reference.into(),
-                anchors,
+                gmr::Binding::on(reference, anchors),
                 Some(version),
                 None,
                 gmr::Source::Derived,
@@ -792,8 +791,7 @@ mod tests {
         )]);
 
         rt.bind(
-            reference.clone().into(),
-            keys(&["some::key"]),
+            gmr::Binding::on(reference.clone(), keys(&["some::key"])),
             Some(Version::new("v1")),
             None,
             gmr::Source::Unknown,
@@ -810,8 +808,7 @@ mod tests {
         );
         for (reference, anchors, version, _) in plan {
             rt.bind(
-                reference.into(),
-                anchors,
+                gmr::Binding::on(reference, anchors),
                 Some(version),
                 None,
                 gmr::Source::Derived,

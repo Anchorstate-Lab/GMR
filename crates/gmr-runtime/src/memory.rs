@@ -358,6 +358,10 @@ impl Bound {
         self.standing().and_then(|r| r.saw.as_ref())
     }
 
+    pub fn depends(&self) -> Option<&gmr_core::Expr> {
+        self.standing().and_then(|r| r.binding.depends.as_ref())
+    }
+
     pub fn sources(&self) -> std::collections::BTreeSet<Source> {
         self.asserted.iter().map(|r| r.source).collect()
     }
@@ -379,16 +383,17 @@ impl Bound {
 
     pub fn says(
         &self,
-        anchors: &[AnchorKey],
+        asking: &Binding,
         version: Option<&Version>,
         saw: Option<&FactAddress>,
         source: Source,
     ) -> bool {
         !self.asserted.is_empty()
-            && anchors.iter().all(|a| self.anchors.contains(a))
+            && asking.anchors.iter().all(|a| self.anchors.contains(a))
             && self.sources().contains(&source)
             && self.bound_version() == version
             && self.saw() == saw
+            && self.depends() == asking.depends.as_ref()
             && self.dating().is_some_and(|r| r.bound_at_seq.is_some())
     }
 }

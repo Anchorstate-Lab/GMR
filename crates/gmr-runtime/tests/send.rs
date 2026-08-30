@@ -16,8 +16,7 @@ fn every_verb_a_host_can_call_is_a_future_a_host_can_spawn() {
         moved_between_threads(rt.sample(&key, &how));
         moved_between_threads(rt.changed_since(0, None));
         moved_between_threads(rt.bind(
-            refs[0].clone(),
-            vec![key.clone()],
+            gmr_core::Binding::on(refs[0].clone(), vec![key.clone()]),
             None,
             None,
             Source::Derived,

@@ -297,7 +297,24 @@ pub struct Standing {
     pub claim: Claim,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<Grounding>,
+    #[serde(flatten)]
+    pub depends: Depends,
     pub on: Vec<Anchored>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "depends", rename_all = "snake_case")]
+pub enum Depends {
+    Holds,
+    Broken,
+    Unevaluable { why: String },
+    Unstated,
+}
+
+impl Depends {
+    pub fn stated(&self) -> bool {
+        !matches!(self, Self::Unstated)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -554,6 +571,7 @@ impl Runtime {
             out.push(Standing {
                 claim: claim.clone(),
                 record,
+                depends: depends(held, &stood),
                 on,
             });
         }
@@ -682,6 +700,44 @@ async fn anchored(
             shown,
         }),
     })
+}
+
+fn depends(
+    held: &crate::memory::Bound,
+    stood: &BTreeMap<AnchorKey, (AnchorView, Option<Seq>)>,
+) -> Depends {
+    let Some(source) = held.depends() else {
+        return Depends::Unstated;
+    };
+    let node = match gmr_expr::parse(&source.source) {
+        Ok(node) => node,
+        Err(e) => {
+            return Depends::Unevaluable {
+                why: format!("`{}`: {e}", source.source),
+            };
+        }
+    };
+    let states: Vec<serde_json::Value> = held
+        .anchors()
+        .iter()
+        .filter_map(|key| stood.get(key))
+        .map(|(view, _)| view.state.as_value().clone())
+        .collect();
+    let nothing = serde_json::Value::Null;
+    let ctx = gmr_expr::Ctx::new(&nothing, &nothing).over(&states);
+    match gmr_expr::eval(&node, ctx) {
+        gmr_expr::Evaluated::Value(serde_json::Value::Bool(true)) => Depends::Holds,
+        gmr_expr::Evaluated::Value(serde_json::Value::Bool(false)) => Depends::Broken,
+        gmr_expr::Evaluated::Value(other) => Depends::Unevaluable {
+            why: format!("answered with {other}, which is not a yes or a no"),
+        },
+        gmr_expr::Evaluated::Absent => Depends::Unevaluable {
+            why: "answered with nothing at all".to_owned(),
+        },
+        gmr_expr::Evaluated::Fault(f) => Depends::Unevaluable {
+            why: format!("could not be settled: {}", f.class()),
+        },
+    }
 }
 
 async fn shown_at(

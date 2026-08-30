@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v3`. That string is what a caller
+ * These declarations describe `gmr.contract.v4`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v3";
+export const CONTRACT: "gmr.contract.v4";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -30,6 +30,23 @@ export interface Ref {
  * existed, which is why every binding already written still reads.
  */
 export type Claim = Ref | { said: string; asserts?: unknown };
+
+/**
+ * An invariant the asserter wrote down, in the expression language: true while
+ * the claim still stands. It reads every anchor the claim names at once —
+ * `all(anchors, …)`, `any(anchors, …)`, `count(anchors, …)` — and inside the
+ * quantifier `state` is the one anchor being asked about.
+ *
+ * Opposite polarity from a subscription: a subscription fires when something
+ * moved; this one goes quiet.
+ */
+export type Invariant = string;
+
+export type Depends =
+  | { depends: "holds" }
+  | { depends: "broken" }
+  | { depends: "unevaluable"; why: string }
+  | { depends: "unstated" };
 
 export type Openness =
   | "host_env" | "interpreter" | "network" | "clock" | "implementation" | "unknown";
@@ -107,12 +124,12 @@ export type Anchored =
   | { anchored: "on"; key: string; warrant: Warrant; evidence: Evidence }
   | { anchored: "unopened"; key: string };
 
-export interface Standing {
+export type Standing = {
   claim: Claim;
   /** Absent for `said:` — an utterance is stored nowhere, so nothing to fetch. */
   record?: Grounding;
   on: Anchored[];
-}
+} & Depends;
 
 /** One reading of an anchor, and the address an answer built from it must cite. */
 export interface Reading {
@@ -173,6 +190,21 @@ export interface Instructions {
 
 /** Where a binding came from. `unknown` is how you say you do not know. */
 export type Source = "derived" | "self_attested" | "adjudicated" | "configured" | "unknown";
+
+/**
+ * What an assertion carries besides "this claim is about these anchors". An
+ * unknown field is refused, not dropped.
+ */
+export interface Asserting {
+  /** The content version this assertion cites. Meaningless for `said:`. */
+  bound_version?: Version;
+  /** The reading the asserter was looking at, as `sample` handed it back. */
+  saw?: FactAddress;
+  /** What a `said:` claim asserted. Recorded, never interpreted. */
+  asserts?: unknown;
+  /** True while the claim still stands. */
+  depends?: Invariant;
+}
 
 export interface Rule {
   when: string;
@@ -262,8 +294,7 @@ export class Gmr {
   since(cursor: Seq, status?: string): Promise<Edges>;
   /** This sentence is about these anchors. */
   bind(claim: Address, anchors: string[], source: Source,
-       boundVersion?: Version, saw?: FactAddress,
-       asserts?: unknown): Promise<Landed>;
+       how?: Asserting): Promise<Landed>;
   /** It is not any more. Answers with the anchors it was cleared from. */
   revoke(claim: Address, source: Source): Promise<string[]>;
   /** Open an anchor. */

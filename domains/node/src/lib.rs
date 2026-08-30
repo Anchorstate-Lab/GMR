@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use gmr::{
-    AnchorKey, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source, StatusId,
-    Version,
+    AnchorKey, Binding, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source,
+    StatusId, Version,
 };
 use gmr_transport::recipes::Recipes;
 use napi::bindgen_prelude::*;
@@ -26,6 +26,19 @@ struct Opening {
     providers: Providers,
     #[serde(default)]
     policy: Policy,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Asserting {
+    #[serde(default)]
+    bound_version: Option<String>,
+    #[serde(default)]
+    saw: Option<String>,
+    #[serde(default)]
+    asserts: Option<Value>,
+    #[serde(default)]
+    depends: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -143,18 +156,24 @@ impl Gmr {
         claim: String,
         anchors: Vec<String>,
         source: String,
-        bound_version: Option<String>,
-        saw: Option<String>,
-        asserts: Option<Value>,
+        how: Option<Value>,
     ) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        let claim = asserting(named(claim)?, asserts)?;
+        let how: Asserting = match how {
+            Some(stated) => said(stated)?,
+            None => Asserting::default(),
+        };
+        let claim = asserting(named(claim)?, how.asserts)?;
         let anchors = anchors.into_iter().map(AnchorKey::new).collect();
+        let mut binding = Binding::on(claim, anchors);
+        if let Some(source) = how.depends {
+            invariant(&source)?;
+            binding = binding.depending(source);
+        }
         let source = attested(&source)?;
-        let bound_version = bound_version.map(Version::new);
-        let saw = saw.map(looked).transpose()?;
-        spawned(async move { answered(rt.bind(claim, anchors, bound_version, saw, source).await) })
-            .await
+        let bound_version = how.bound_version.map(Version::new);
+        let saw = how.saw.map(looked).transpose()?;
+        spawned(async move { answered(rt.bind(binding, bound_version, saw, source).await) }).await
     }
 
     #[napi]
@@ -232,6 +251,14 @@ fn asserting(claim: Claim, asserts: Option<Value>) -> Result<Claim> {
              same sentence, and nothing would notice the day they disagreed"
         ))),
     }
+}
+
+fn invariant(source: &str) -> Result<()> {
+    gmr::expr::parse(source).map(|_| ()).map_err(|e| {
+        failed(format!(
+            "`depends` is one expression that is true while the claim still stands: {e}"
+        ))
+    })
 }
 
 fn looked(address: String) -> Result<FactAddress> {

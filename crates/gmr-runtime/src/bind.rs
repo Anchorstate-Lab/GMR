@@ -10,12 +10,16 @@ use crate::memory::MemoryLens;
 impl Runtime {
     pub async fn bind(
         &self,
-        claim: Claim,
-        anchors: Vec<AnchorKey>,
+        binding: Binding,
         bound_version: Option<Version>,
         saw: Option<FactAddress>,
         source: Source,
     ) -> Result<Landed, RuntimeError> {
+        let Binding {
+            claim,
+            anchors,
+            depends,
+        } = binding;
         let mut landed = Landed::default();
         for named in anchors {
             let living = self.living(&named).await?;
@@ -27,22 +31,19 @@ impl Runtime {
             }
         }
         let bound = self.memory.binding_of(&claim).await?;
-        if bound.says(
-            &landed.anchors,
-            bound_version.as_ref(),
-            saw.as_ref(),
-            source,
-        ) {
+        let asking = Binding {
+            claim,
+            anchors: landed.anchors.clone(),
+            depends,
+        };
+        if bound.says(&asking, bound_version.as_ref(), saw.as_ref(), source) {
             return Ok(landed);
         }
         landed.recorded = true;
         self.memory
             .bind(
                 &self.log,
-                &Binding {
-                    claim,
-                    anchors: landed.anchors.clone(),
-                },
+                &asking,
                 bound_version.as_ref(),
                 saw.as_ref(),
                 source,
@@ -173,6 +174,7 @@ async fn reaffirm(
     let binding = Binding {
         claim: claim.clone(),
         anchors: bound.anchors().to_vec(),
+        depends: bound.depends().cloned(),
     };
     memory
         .bind(

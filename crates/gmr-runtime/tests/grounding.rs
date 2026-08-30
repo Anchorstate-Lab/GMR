@@ -250,8 +250,10 @@ impl World {
     async fn bind_at(&self, name: &str, anchors: &[&str], version: &str) {
         self.runtime
             .bind(
-                Ref::new("git", format!("memories/{name}")).into(),
-                anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
+                gmr_core::Binding::on(
+                    Ref::new("git", format!("memories/{name}")),
+                    anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
+                ),
                 Some(Version::new(version)),
                 None,
                 gmr_core::Source::Adjudicated,
@@ -266,8 +268,10 @@ impl World {
         let version = gmr_core::content_hash_of_bytes(&bytes).into_inner();
         self.runtime
             .bind(
-                reference.into(),
-                anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
+                gmr_core::Binding::on(
+                    reference,
+                    anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
+                ),
                 Some(Version::new(version)),
                 None,
                 gmr_core::Source::Adjudicated,
@@ -478,8 +482,10 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
 
     w.runtime
         .bind(
-            Ref::new("git", "memories/bound.md").into(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(
+                Ref::new("git", "memories/bound.md"),
+                vec![AnchorKey::new("a")],
+            ),
             Some(Version::new("v1")),
             None,
             gmr_core::Source::Adjudicated,
@@ -488,8 +494,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "memories/loose.md").into(),
-            vec![],
+            gmr_core::Binding::on(Ref::new("git", "memories/loose.md"), vec![]),
             Some(Version::new("v1")),
             None,
             gmr_core::Source::Adjudicated,
@@ -533,8 +538,7 @@ async fn an_assertion_made_when_the_store_could_not_answer_is_unverified_not_ref
     let reference = Ref::new("git", "memories/a.md");
     w.runtime
         .bind(
-            reference.clone().into(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(reference.clone(), vec![AnchorKey::new("a")]),
             None,
             None,
             gmr_core::Source::SelfAttested,
@@ -589,8 +593,7 @@ async fn a_later_assertion_that_verified_nothing_does_not_unverify_what_was_veri
 
     w.runtime
         .bind(
-            reference.clone().into(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(reference.clone(), vec![AnchorKey::new("a")]),
             None,
             None,
             gmr_core::Source::SelfAttested,
@@ -663,8 +666,7 @@ async fn asserting_an_empty_anchor_set_takes_nothing_away() {
 
     w.runtime
         .bind(
-            reference.clone().into(),
-            vec![],
+            gmr_core::Binding::on(reference.clone(), vec![]),
             Some(Version::new("v")),
             None,
             gmr_core::Source::Adjudicated,
@@ -945,8 +947,7 @@ async fn a_second_kind_of_assertion_on_the_same_link_is_not_a_repeat() {
         .cloned();
     w.runtime
         .bind(
-            reference.clone().into(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(reference.clone(), vec![AnchorKey::new("a")]),
             version,
             None,
             gmr_core::Source::SelfAttested,
@@ -1033,8 +1034,7 @@ async fn an_anchor_names_each_memory_once_however_many_assertions_stand_on_it() 
     for source in [gmr_core::Source::SelfAttested, gmr_core::Source::Configured] {
         w.runtime
             .bind(
-                reference.clone().into(),
-                vec![AnchorKey::new("a")],
+                gmr_core::Binding::on(reference.clone(), vec![AnchorKey::new("a")]),
                 version.clone(),
                 None,
                 source,
@@ -1343,8 +1343,7 @@ async fn a_sentence_bound_to_the_reading_it_was_shown_says_which_one() {
     };
     w.runtime
         .bind(
-            claim.clone(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
             None,
             Some(saw.clone()),
             gmr_core::Source::SelfAttested,
@@ -1390,8 +1389,7 @@ async fn a_sentence_citing_a_reading_this_anchor_never_took_is_not_grounded_by_i
     let claim = gmr_core::Claim::said("turn-2");
     w.runtime
         .bind(
-            claim.clone(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
             None,
             Some(elsewhere),
             gmr_core::Source::SelfAttested,
@@ -1477,8 +1475,7 @@ async fn a_list_that_moved_says_which_element_and_which_field() {
         .unwrap();
     w.runtime
         .bind(
-            claim.clone(),
-            vec![AnchorKey::new("a")],
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
             None,
             Some(saw),
             gmr_core::Source::SelfAttested,
@@ -1515,5 +1512,146 @@ async fn a_list_that_moved_says_which_element_and_which_field() {
          arrays. `Moved` then said the whole list moved and could not say which row, which \
          is the difference between a claim about one dish being expired and every claim \
          about that menu being expired at once"
+    );
+}
+
+async fn depending(w: &World, name: &str, anchors: &[&str], source: &str) -> gmr_core::Claim {
+    let claim = gmr_core::Claim::said(name);
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(
+                claim.clone(),
+                anchors.iter().map(|a| AnchorKey::new(*a)).collect(),
+            )
+            .depending(source),
+            None,
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+    claim
+}
+
+async fn stands(w: &World, claim: &gmr_core::Claim) -> gmr_runtime::Depends {
+    let out = w
+        .runtime
+        .ground(
+            std::slice::from_ref(claim),
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    out[0].depends.clone()
+}
+
+#[tokio::test]
+async fn an_invariant_reads_every_anchor_the_claim_names_as_one_question() {
+    let w = World::new(true);
+    w.open("a").await;
+    w.open("b").await;
+
+    let claim = depending(&w, "turn-4", &["a", "b"], "all(anchors, state.x == 1)").await;
+    assert_eq!(
+        stands(&w, &claim).await,
+        gmr_runtime::Depends::Holds,
+        "both anchors read the same world file, so both are at x == 1"
+    );
+
+    let broken = depending(&w, "turn-5", &["a", "b"], "any(anchors, state.x == 99)").await;
+    assert_eq!(
+        stands(&w, &broken).await,
+        gmr_runtime::Depends::Broken,
+        "`depends` is an invariant, so false means the claim no longer stands -- the \
+         opposite polarity from a subscription, which fires when something moved"
+    );
+}
+
+#[tokio::test]
+async fn an_invariant_breaks_when_the_thing_it_named_moves() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = depending(&w, "turn-6", &["a"], "all(anchors, state.x == 1)").await;
+    assert_eq!(stands(&w, &claim).await, gmr_runtime::Depends::Holds);
+
+    std::fs::write(w.dir.path().join("world.json"), r#"{"x":2}"#).unwrap();
+    w.runtime.observe(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        stands(&w, &claim).await,
+        gmr_runtime::Depends::Broken,
+        "the claim said what it rested on, and that stopped being true. `Holding` says the \
+         state moved; this says the move was one the claim could not survive"
+    );
+}
+
+#[tokio::test]
+async fn a_claim_that_stated_no_invariant_is_not_reported_as_keeping_one() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = gmr_core::Claim::said("turn-7");
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
+            None,
+            None,
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        stands(&w, &claim).await,
+        gmr_runtime::Depends::Unstated,
+        "`Holds` over an invariant nobody wrote is a green light earned by saying nothing, \
+         which is the one answer a reader must never get from this field"
+    );
+}
+
+#[tokio::test]
+async fn an_invariant_that_cannot_be_settled_says_so_rather_than_picking_a_side() {
+    let w = World::new(true);
+    w.open("a").await;
+
+    let nonsense = depending(&w, "turn-8", &["a"], "all(anchors, state.x)").await;
+    assert!(
+        matches!(
+            stands(&w, &nonsense).await,
+            gmr_runtime::Depends::Unevaluable { .. }
+        ),
+        "a body that answers with a number is not a yes or a no, and reading it as either \
+         would put a claim in a bucket its author never asked for"
+    );
+
+    let claim = depending(&w, "turn-9", &["a"], "all(anchors, state.x == 1)").await;
+    assert_eq!(stands(&w, &claim).await, gmr_runtime::Depends::Holds);
+}
+
+#[tokio::test]
+async fn rebinding_with_a_different_invariant_is_a_new_assertion() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = gmr_core::Claim::said("turn-10");
+
+    async fn assert_with(w: &World, claim: &gmr_core::Claim, source: &str) -> bool {
+        w.runtime
+            .bind(
+                gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]).depending(source),
+                None,
+                None,
+                gmr_core::Source::SelfAttested,
+            )
+            .await
+            .unwrap()
+            .recorded
+    }
+
+    assert!(assert_with(&w, &claim, "all(anchors, state.x == 1)").await);
+    assert!(
+        !assert_with(&w, &claim, "all(anchors, state.x == 1)").await,
+        "same claim, same invariant"
+    );
+    assert!(
+        assert_with(&w, &claim, "all(anchors, state.x == 2)").await,
+        "what a claim rests on is part of what it says. Treating a changed invariant as a \
+         repeat would leave the table holding one sentence and the reader reading another"
     );
 }

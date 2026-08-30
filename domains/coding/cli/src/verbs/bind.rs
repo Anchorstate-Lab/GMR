@@ -42,7 +42,12 @@ pub async fn assert_on(
 ) -> Result<(Option<gmr::Version>, gmr::Landed), CliError> {
     let version = rt.current_version(&reference).await.unwrap_or(None);
     let landed = rt
-        .bind(reference.into(), anchors, version.clone(), None, source)
+        .bind(
+            gmr::Binding::on(reference, anchors),
+            version.clone(),
+            None,
+            source,
+        )
         .await?;
     Ok((version, landed))
 }

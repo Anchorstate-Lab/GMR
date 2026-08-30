@@ -749,8 +749,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
     let reference = Ref::new("git", "memories/m.md");
     let landed =
         w.rt.bind(
-            reference.clone().into(),
-            vec![key()],
+            gmr_core::Binding::on(reference.clone(), vec![key()]),
             Some(Version::new("v1")),
             None,
             Source::SelfAttested,
@@ -785,10 +784,7 @@ async fn an_assertion_naming_a_superseded_generation_lands_on_the_living_one() {
     w.rt.memory()
         .bind(
             w.rt.log(),
-            &gmr_core::Binding {
-                claim: carried.clone().into(),
-                anchors: vec![key()],
-            },
+            &gmr_core::Binding::on(carried.clone(), vec![key()]),
             Some(&Version::new("v1")),
             None,
             Source::Adjudicated,

@@ -6,6 +6,7 @@ pub struct Ctx<'a> {
     pub state: &'a Value,
     pub taken_at: i64,
     pub entered_at: i64,
+    pub anchors: &'a [Value],
 }
 
 impl<'a> Ctx<'a> {
@@ -15,6 +16,7 @@ impl<'a> Ctx<'a> {
             state,
             taken_at: 0,
             entered_at: 0,
+            anchors: &[],
         }
     }
 
@@ -22,5 +24,14 @@ impl<'a> Ctx<'a> {
         self.taken_at = taken_at;
         self.entered_at = entered_at;
         self
+    }
+
+    pub fn over(mut self, anchors: &'a [Value]) -> Self {
+        self.anchors = anchors;
+        self
+    }
+
+    pub(crate) fn each(&self, state: &'a Value) -> Self {
+        Self { state, ..*self }
     }
 }
