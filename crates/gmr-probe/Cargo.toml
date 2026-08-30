@@ -1,6 +1,6 @@
 [package]
 name = "gmr-probe"
-description = "调用的契约：探针声明 → 输出。传输的实现是电池，不在这里。Budget 也暂住这里 —— 它是所有对外调用共用的预算词汇，gmr-content 是第二个使用者；出现第三个时搬走。"
+description = "调用的契约：探针声明 → 输出。传输的实现是电池，不在这里。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
