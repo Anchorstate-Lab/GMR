@@ -5,8 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use gmr_budget::Spent;
 use gmr_core::{
-    Derivation, Kind, Openness, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
-    content_hash_of_bytes,
+    Derivation, Kind, Observes, Openness, Outcome, ProbeName, ProbeVersion, ReasonClass,
+    Verifiability, content_hash_of_bytes,
 };
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 use serde::{Deserialize, Serialize};
@@ -300,6 +300,7 @@ impl Transport for Sql {
         };
         Some(Derivation {
             version: ask.version(),
+            observes: Observes::named([crate::select::VALUE]),
             verifiability: match local {
                 true => Verifiability::Closed,
                 false => Verifiability::open([Openness::Network, Openness::Clock]),

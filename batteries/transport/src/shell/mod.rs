@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Openness, Outcome, ProbeName, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Observes, Openness, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
@@ -47,6 +47,7 @@ impl Transport for Shell {
         let resolved = self.artifacts.resolve(name).ok()?;
         Some(Derivation {
             version: resolved.manifest.derivation.clone(),
+            observes: Observes::Unknown,
             verifiability: match resolved.manifest.env.is_empty() {
                 true => Verifiability::Closed,
                 false => Verifiability::open([Openness::HostEnv]),

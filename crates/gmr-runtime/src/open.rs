@@ -120,6 +120,10 @@ async fn open(
         .resolve(&anchor.probe)
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
+    if let Some(message) = blind(&anchor, &derivation.observes) {
+        return Err(RuntimeError::CannotOpen { message });
+    }
+
     let outcome = observer
         .invoke(&anchor, initial.position(), &scheduler.policy().budget())
         .await
@@ -175,6 +179,45 @@ async fn open(
         warnings,
         supersedes,
     })
+}
+
+fn blind(anchor: &Anchor, observes: &gmr_core::Observes) -> Option<String> {
+    let mut unmet: BTreeSet<String> = BTreeSet::new();
+    for rule in anchor.transitions.iter() {
+        for expr in [&rule.when, &rule.to] {
+            let Ok(node) = gmr_expr::parse(&expr.source) else {
+                continue;
+            };
+            unmet.extend(node.reads_obs().into_iter().filter(|r| !observes.covers(r)));
+        }
+    }
+    if unmet.is_empty() {
+        return None;
+    }
+    let gmr_core::Observes::Named { fields } = observes else {
+        return None;
+    };
+    Some(format!(
+        "`{}` reads {} from its probe, and `{}` never reports {}: it reports {}. \
+         An anchor opened this way observes forever and never transitions, and the \
+         first thing anyone would have to notice is that nothing ever happened",
+        anchor.key,
+        unmet
+            .iter()
+            .map(|r| format!("obs.{r}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+        anchor.probe.name,
+        match unmet.len() {
+            1 => "it",
+            _ => "them",
+        },
+        fields
+            .iter()
+            .map(|f| format!("obs.{f}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    ))
 }
 
 async fn seal_supersede(

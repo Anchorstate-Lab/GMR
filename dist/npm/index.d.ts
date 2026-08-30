@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v4`. That string is what a caller
+ * These declarations describe `gmr.contract.v5`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v4";
+export const CONTRACT: "gmr.contract.v5";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -52,6 +52,26 @@ export type Openness =
   | "host_env" | "interpreter" | "network" | "clock" | "implementation" | "unknown";
 
 export type Verifiability = "closed" | { open: { over: Openness[] } };
+
+/**
+ * What a probe reports. `named` lists the top-level fields it puts in `obs`;
+ * a rule may read any path below one of them. `unknown` is the honest answer
+ * for a probe that is somebody else's program.
+ *
+ * `open` refuses an anchor whose rules read a field a `named` probe never
+ * reports — such an anchor observes forever, never transitions, and reads as
+ * supervised the whole time.
+ */
+export type Observes =
+  | { observes: "named"; fields: string[] }
+  | { observes: "unknown" };
+
+/** How a reading was derived. `observes` is absent when unknown. */
+export interface Derivation {
+  version: ProbeVersion;
+  verifiability: Verifiability;
+  observes?: Observes;
+}
 
 export type FailureCode =
   | "unreachable" | "timed_out" | "process_failed" | "unusable" | "artifact_invalid"
@@ -137,8 +157,7 @@ export interface Reading {
   sighting: "found" | "absent";
   facts?: unknown;
   fact_address?: FactAddress;
-  derivation?: { kind: string; name: string; version: ProbeVersion;
-                 verifiability: Verifiability };
+  derivation?: Derivation;
   at: Timestamp | null;
   knowledge: Knowledge;
 }

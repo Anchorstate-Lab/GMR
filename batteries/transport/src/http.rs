@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use gmr_budget::{Budget, Spent};
 use gmr_core::{
-    Derivation, Kind, Openness, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
-    content_hash_of_bytes,
+    Derivation, Kind, Observes, Openness, Outcome, ProbeName, ProbeVersion, ReasonClass,
+    Verifiability, content_hash_of_bytes,
 };
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
 use serde::{Deserialize, Serialize};
@@ -157,6 +157,7 @@ impl Transport for Http {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: self.asks.ask(name)?.version(),
+            observes: Observes::named([crate::select::VALUE]),
             verifiability: Verifiability::open([Openness::Network, Openness::Clock]),
         })
     }

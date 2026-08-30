@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Outcome, ProbeName, ProbeVersion, Verifiability};
+use gmr_core::{
+    Derivation, Facts, Kind, Observes, Outcome, ProbeName, ProbeVersion, Verifiability,
+};
 use serde_json::Value;
 
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
@@ -39,6 +41,7 @@ pub type Extract = dyn Fn(&Reach) -> Result<Value, ExtractError> + Send + Sync;
 pub struct Registered {
     pub version: ProbeVersion,
     pub verifiability: Verifiability,
+    pub observes: Observes,
     pub extract: Arc<Extract>,
 }
 
@@ -72,6 +75,7 @@ impl Transport for InProcess {
         let registered = self.probes.get(name)?;
         Some(Derivation {
             version: registered.version.clone(),
+            observes: registered.observes.clone(),
             verifiability: registered.verifiability.clone(),
         })
     }
@@ -156,6 +160,7 @@ mod tests {
                 Registered {
                     version: version("a"),
                     verifiability: Verifiability::Closed,
+                    observes: Observes::Unknown,
                     extract,
                 },
             )]),
@@ -338,6 +343,7 @@ mod tests {
                 Registered {
                     version: version("a"),
                     verifiability: open.clone(),
+                    observes: Observes::Unknown,
                     extract: Arc::new(|_| Ok(json!({}))),
                 },
             )]),

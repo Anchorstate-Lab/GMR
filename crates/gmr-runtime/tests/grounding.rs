@@ -1100,6 +1100,7 @@ impl gmr_probe::Transport for Probing {
 
     fn resolve(&self, _name: &gmr_core::ProbeName) -> Option<gmr_core::Derivation> {
         Some(gmr_core::Derivation {
+            observes: Default::default(),
             version: gmr_core::ProbeVersion::of(gmr_core::content_hash_of_bytes(b"probing")),
             verifiability: gmr_core::Verifiability::Closed,
         })

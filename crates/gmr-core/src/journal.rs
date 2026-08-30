@@ -345,6 +345,7 @@ mod tests {
         Versions {
             declaration: ContentHash::new("d".repeat(64)),
             derivation: Derivation {
+                observes: Default::default(),
                 version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
                 verifiability: Verifiability::Closed,
             },

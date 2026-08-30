@@ -2272,3 +2272,107 @@ async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move()
         "and the fold-back is not cached either"
     );
 }
+
+fn reading_the_file(
+    dir: &std::path::Path,
+) -> (Arc<gmr_transport::file::Files>, gmr_core::ProbeRef) {
+    let asks = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("world"),
+        gmr_transport::file::Ask::at("world.json"),
+    )]);
+    (
+        Arc::new(gmr_transport::file::Files::new(dir, asks)),
+        gmr_core::ProbeRef::new(
+            gmr_core::Kind::new("file"),
+            gmr_core::ProbeName::new("world"),
+            serde_json::Value::Null,
+        ),
+    )
+}
+
+#[tokio::test]
+async fn an_anchor_whose_rules_read_what_its_probe_never_reports_is_refused_at_open() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":0}"#).unwrap();
+    let (files, probe) = reading_the_file(dir.path());
+    let rt = Runtime::builder()
+        .transport(files)
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(Arc::new(MemoryBindings::default()))
+        .sealer(Arc::new(MemoryBindings::default()))
+        .links(Arc::new(MemoryBindings::default()))
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+
+    let key = gmr_core::AnchorKey::new("blind");
+    let asked = |transitions| gmr_runtime::OpenRequest {
+        key: key.clone(),
+        probe: probe.clone(),
+        transitions,
+        terminal: Default::default(),
+        initial: None,
+        settings: Default::default(),
+        supersedes: None,
+    };
+
+    let refused = rt
+        .open(asked(gmr_core::Transitions(vec![gmr_core::Rule {
+            when: gmr_core::Expr::text("obs.price_cents != state.price"),
+            to: gmr_core::Expr::text("{ price: obs.price_cents }"),
+        }])))
+        .await;
+    let Err(gmr_runtime::RuntimeError::CannotOpen { message }) = refused else {
+        panic!("{refused:?}")
+    };
+    assert!(message.contains("obs.price_cents"), "{message}");
+    assert!(
+        message.contains("obs.value"),
+        "naming what the probe does report is what turns a refusal into a fix: {message}"
+    );
+
+    assert!(
+        rt.log().entries(&key, 0).await.unwrap().is_empty(),
+        "a refused open writes nothing. An anchor that exists and can never transition is \
+         worse than one that was never opened, because it reads as supervised"
+    );
+
+    assert!(
+        rt.open(asked(gmr_core::Transitions(vec![gmr_core::Rule {
+            when: gmr_core::Expr::text("obs.value.x != state.x"),
+            to: gmr_core::Expr::text("{ x: obs.value.x }"),
+        }])))
+        .await
+        .is_ok(),
+        "the same key opens once the rules read where the probe actually looks"
+    );
+}
+
+#[tokio::test]
+async fn a_probe_that_cannot_say_what_it_reports_does_not_refuse_anything() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    let script = gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "anything",
+        "cat world.json",
+    );
+    let asked = gmr_runtime::OpenRequest {
+        key: gmr_core::AnchorKey::new("shelled"),
+        probe: script,
+        transitions: gmr_core::Transitions(vec![gmr_core::Rule {
+            when: gmr_core::Expr::text("obs.whatever != state.whatever"),
+            to: gmr_core::Expr::text("{ whatever: obs.whatever }"),
+        }]),
+        terminal: Default::default(),
+        initial: None,
+        settings: Default::default(),
+        supersedes: None,
+    };
+    assert!(
+        w.runtime.open(asked).await.is_ok(),
+        "most probes are somebody else's program and this build cannot read what they \
+         print. Refusing there would make the check a ban on shell probes rather than a \
+         check on rules"
+    );
+}

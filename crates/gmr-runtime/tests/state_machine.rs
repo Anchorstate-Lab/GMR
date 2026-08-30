@@ -669,6 +669,7 @@ async fn a_terminal_transition_is_remembered_even_after_the_state_moves_on() {
         versions: Versions {
             declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
             derivation: gmr_core::Derivation {
+                observes: Default::default(),
                 version: gmr_core::ProbeVersion::try_new("a".repeat(64)).unwrap(),
                 verifiability: gmr_core::Verifiability::Closed,
             },

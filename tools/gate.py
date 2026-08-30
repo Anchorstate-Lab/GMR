@@ -571,6 +571,51 @@ def check_acceptance_intact():
     return errors
 
 
+def check_every_transport_says_what_it_observes():
+    """A transport that can say what it emits has to say it, or nothing checks.
+
+    `Derivation.observes` is what lets `Runtime::open` refuse an anchor whose
+    rules read a field the probe never reports -- an anchor that observes
+    forever, never transitions, and reads as supervised the whole time.
+
+    `Observes::Unknown` is the honest answer for the three transports that run
+    somebody else's program: shell, script and the in-process closures a domain
+    registers. It is the wrong answer for the three whose whole reading comes
+    back through `select::pick`, which puts it under one key. Those know, and a
+    `Unknown` there is a check silently switched off for every anchor behind
+    that transport.
+
+    This is a roster on purpose, unlike the trait rosters two checks up: there
+    is nothing in the source that distinguishes "cannot say" from "did not
+    bother", so the distinction has to be recorded by a person and compared by
+    a machine.
+    """
+    families = ROOT / "batteries" / "transport" / "src"
+    knows = {"http.rs", "file.rs", "sql.rs"}
+    cannot = {"shell/mod.rs", "script.rs", "inproc.rs"}
+    errors = []
+    for name in sorted(knows | cannot):
+        f = families / name
+        if not f.exists():
+            errors.append(f"the transport roster names {name}, which is not there")
+            continue
+        source = f.read_text()
+        if "fn resolve" not in source:
+            errors.append(f"{name} is rostered as a transport and declares no `resolve`")
+        elif "observes:" not in source:
+            errors.append(
+                f"{name}'s `resolve` names no `observes`, so every anchor behind it opens "
+                "without the check that its rules read something the probe reports"
+            )
+        elif name in knows and "Observes::Unknown" in source:
+            errors.append(
+                f"{name} answers `Observes::Unknown`, but its whole reading comes back "
+                "through `select::pick` under one key -- it knows, and saying it does not "
+                "turns the open-time check off for everything behind it"
+            )
+    return errors
+
+
 def check_criteria_inside_the_closure():
     """Anything that decides an extractor's answer is hashed with the extractor.
 
@@ -666,6 +711,7 @@ CHECKS = [
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
     ("every mutation sentinel still aims at code and at a promise", check_sentinels_still_aimed),
     ("what decides an extractor's answer is hashed with it", check_criteria_inside_the_closure),
+    ("every transport that can say what it observes does", check_every_transport_says_what_it_observes),
     ("Cargo.toml version, if touched, only claims a major.minor line — patch is CI's", check_version_bump),
 ]
 

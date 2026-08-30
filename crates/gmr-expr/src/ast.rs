@@ -192,7 +192,7 @@ impl Node {
             }
             Self::Object(fields) => fields.iter().for_each(|(_, v)| v.collect_obs(out)),
             Self::Array(items) => items.iter().for_each(|v| v.collect_obs(out)),
-            Self::Quantified { .. } => {}
+            Self::Quantified { body, .. } => body.collect_obs(out),
         }
     }
 
@@ -284,6 +284,23 @@ mod tests {
         assert!(!reads(r#"{ note: "state.n" }"#));
         assert!(!reads("{ n: obs.n }"));
         assert!(!reads(r#"changed("state")"#));
+    }
+
+    #[test]
+    fn a_quantifier_body_reads_the_same_obs_as_everything_around_it() {
+        assert_eq!(obs_of("any(anchors, obs.x == state.x)"), ["x"]);
+    }
+
+    #[test]
+    fn a_quantifier_body_does_not_read_the_state_the_accumulator_warning_is_about() {
+        assert!(
+            !reads("all(anchors, state.v.sig)"),
+            "inside a quantifier `state` is the anchor being asked about, not the previous \
+             state of the anchor this rule belongs to. The one caller asks whether a rule \
+             folds its own last answer forward, and this one does not -- warning about \
+             over-counting here would fire on every invariant ever written"
+        );
+        assert!(reads("state.n and all(anchors, state.v.sig)"));
     }
 
     #[test]

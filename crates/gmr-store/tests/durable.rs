@@ -28,6 +28,7 @@ fn entry(value: &str) -> Entry {
             versions: Versions {
                 declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
                 derivation: gmr_core::Derivation {
+                    observes: Default::default(),
                     version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
                     verifiability: gmr_core::Verifiability::Closed,
                 },

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use gmr_core::{Derivation, Facts, Kind, Openness, Outcome, ProbeName, Verifiability};
+use gmr_core::{Derivation, Facts, Kind, Observes, Openness, Outcome, ProbeName, Verifiability};
 use serde_json::Value;
 use tokio::process::Command;
 
@@ -41,6 +41,7 @@ impl Transport for Script {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: closure::of_path(&self.entry(name)?)?,
+            observes: Observes::Unknown,
             verifiability: Verifiability::open([Openness::Interpreter, Openness::HostEnv]),
         })
     }

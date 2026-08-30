@@ -154,10 +154,45 @@ impl<'de> Deserialize<'de> for Verifiability {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "observes", rename_all = "snake_case")]
+pub enum Observes {
+    Named {
+        fields: BTreeSet<String>,
+    },
+    #[default]
+    Unknown,
+}
+
+impl Observes {
+    pub fn named<S: Into<String>>(fields: impl IntoIterator<Item = S>) -> Self {
+        Self::Named {
+            fields: fields.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+
+    pub fn covers(&self, read: &str) -> bool {
+        match self {
+            Self::Unknown => true,
+            Self::Named { fields } => read
+                .match_indices('.')
+                .map(|(at, _)| &read[..at])
+                .chain(std::iter::once(read))
+                .any(|prefix| fields.contains(prefix)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Derivation {
     pub version: ProbeVersion,
     pub verifiability: Verifiability,
+    #[serde(default, skip_serializing_if = "Observes::is_unknown")]
+    pub observes: Observes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +445,49 @@ mod tests {
             "an empty surface would read as `Open` with nothing outside it, which is \
              `Closed` said badly. Refusing the empty set keeps the rule that there is \
              no `counts as closed really` spelling"
+        );
+    }
+}
+
+#[cfg(test)]
+mod observes_tests {
+    use super::*;
+
+    #[test]
+    fn a_probe_that_says_what_it_emits_covers_every_path_below_a_named_field() {
+        let says = Observes::named(["value", "at"]);
+        assert!(says.covers("value"));
+        assert!(says.covers("value.price_cents"));
+        assert!(says.covers("at.scope.name"));
+        assert!(
+            !says.covers("valuey"),
+            "prefix matching is by path segment, not by characters: a probe emitting \
+             `value` has said nothing about a field whose name merely starts the same way"
+        );
+        assert!(!says.covers("facts"));
+    }
+
+    #[test]
+    fn a_probe_that_cannot_say_covers_everything_rather_than_nothing() {
+        assert!(
+            Observes::Unknown.covers("anything.at.all"),
+            "an external program is what most probes are, and this build cannot read its \
+             source. Refusing every rule that reads from one would make the check a ban on \
+             shell probes; reporting them as covered is the honest `we have no grounds to \
+             refuse this`"
+        );
+    }
+
+    #[test]
+    fn an_entry_written_before_a_probe_could_say_reads_back_as_unknown() {
+        let old = r#"{"version":"aa","verifiability":"closed"}"#.replace("aa", &"a".repeat(64));
+        let d: Derivation = serde_json::from_str(&old).unwrap();
+        assert_eq!(d.observes, Observes::Unknown);
+        assert_eq!(
+            serde_json::to_string(&d).unwrap(),
+            old,
+            "the journal is hash-chained over the canonical form, so a derivation that \
+             round-trips with an extra key rewrites the hash of every entry behind it"
         );
     }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use gmr_budget::Spent;
 use gmr_core::{
-    Derivation, Kind, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
+    Derivation, Kind, Observes, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
     content_hash_of_bytes,
 };
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
@@ -157,6 +157,7 @@ impl Transport for Files {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: self.asks.ask(name)?.version(),
+            observes: Observes::named([crate::select::VALUE]),
             verifiability: Verifiability::Closed,
         })
     }

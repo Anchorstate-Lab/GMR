@@ -20,6 +20,6 @@ pub use memory::{
     Binding, Claim, ExternalId, Link, LinkKind, ProviderId, Ref, SaidId, Source, Version,
 };
 pub use probe::{
-    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Openness, Outcome, ProbeName, ProbeRef,
-    ProbeVersion, Verifiability,
+    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Observes, Openness, Outcome, ProbeName,
+    ProbeRef, ProbeVersion, Verifiability,
 };

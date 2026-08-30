@@ -19,9 +19,17 @@ out from a refusal, because the two become different `FailureCode`s in the
 journal and a cancelled scan recorded as an ordinary failure would be a lie.
 
 `Registered` pairs one such function with the hash of everything that can change
-what it returns, and with the sentence that hash cannot say. `InProcess` decides
-neither which probes exist, nor what each version closure covers, nor what it
-fails to close over: it carries the map assembly handed it.
+what it returns, with the sentence that hash cannot say, and with what the
+closure puts in `obs`. `InProcess` decides none of the four — not which probes
+exist, not what each version closure covers, not what it fails to close over,
+and not what it reports: it carries the map assembly handed it.
+
+`observes` is the registrant's for the same reason `verifiability` is. This
+transport links a closure it has never read, so `Observes::Unknown` is what it
+answers on its own behalf and what its own tests register. A domain that knows —
+the four built-in extractors do, in `Vocabulary.at` / `.facts` — hands that list
+in rather than writing it down a second time somewhere else, which is what a
+recipe file used to be. See [[probe-Derivation]] for what the field buys.
 
 Note what is deliberately *not* in `Reach`: nothing that changes the answer.
 Adding the budget did not move any extractor's version, and must not — a
