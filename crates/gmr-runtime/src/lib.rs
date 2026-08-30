@@ -23,7 +23,7 @@ pub use assembly::{AssemblyError, Part, Runtime, RuntimeBuilder};
 pub use bind::Landed;
 pub use edges::{Edge, Edges, Raised};
 pub use error::RuntimeError;
-pub use health::{AnchorHealth, Corpus, CorpusHealth};
+pub use health::{Aim, AnchorHealth, Corpus, CorpusHealth};
 pub use link::{REACHED_AT_MOST, Reached};
 pub use log::AnchorLog;
 pub use memory::{Bound, MemoryLens};

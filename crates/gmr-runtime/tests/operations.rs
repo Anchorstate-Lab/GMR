@@ -2478,3 +2478,73 @@ async fn a_probe_reporting_more_than_it_declares_says_so_at_open() {
         "what it did declare is not reported as a surprise"
     );
 }
+
+#[tokio::test]
+async fn an_anchor_reports_whether_its_firing_ever_changed_a_memory() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let m = |n: &str| gmr_core::Ref::new("git", n);
+    let bind = |name: &'static str, version: &'static str| {
+        w.runtime.bind(
+            gmr_core::Binding::on(m(name), vec![key()]),
+            Some(gmr_core::Version::new(version)),
+            Default::default(),
+            gmr_core::Source::Adjudicated,
+        )
+    };
+    bind("a.md", "v1").await.unwrap();
+
+    let aim = w.runtime.health(&key()).await.unwrap().aim;
+    assert_eq!(aim.answered, 0);
+    assert!(
+        aim.never_fired(),
+        "an anchor that has read the world and never handed anything back is either \
+         watching a direction nothing moves in, or watching a fact that fully determines \
+         the judgement -- which docs/GMR.md says not to anchor at all: {aim:?}"
+    );
+
+    w.write(r#"{"x":1}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    w.runtime
+        .revise(&key(), restate(), b"looked, still fine")
+        .await
+        .unwrap();
+
+    let aim = w.runtime.health(&key()).await.unwrap().aim;
+    assert_eq!(aim.answered, 1);
+    assert!(
+        aim.fired_and_changed_nothing(),
+        "the anchor fired, a person answered, and no memory on it moved. One of those is \
+         a verified memory; a run of them is an anchor pointed somewhere its notes do not \
+         care about, and nothing measured it before: {aim:?}"
+    );
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    bind("a.md", "v2").await.unwrap();
+    w.runtime
+        .revise(&key(), restate(), b"and this time I rewrote it")
+        .await
+        .unwrap();
+
+    let aim = w.runtime.health(&key()).await.unwrap().aim;
+    assert_eq!(
+        (aim.answered, aim.moved_a_memory),
+        (2, 1),
+        "precision, from data the journal and the binding table already hold: how often a \
+         hand-back was answered by rewriting what it handed back. No new storage, and no \
+         asking a person to grade it afterwards: {aim:?}"
+    );
+    assert!(!aim.fired_and_changed_nothing());
+}
+
+fn restate() -> gmr_core::Change {
+    gmr_core::Change::Restate {
+        state: gmr_core::State::new(serde_json::json!({ "x": 2 })),
+    }
+}
