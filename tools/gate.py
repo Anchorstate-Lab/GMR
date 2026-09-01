@@ -269,7 +269,11 @@ def check_version_bump():
 
 
 
-CONTRACT_CRATES = {"gmr_core": "crates/gmr-core", "gmr_budget": "crates/gmr-budget"}
+CONTRACT_CRATES = {
+    "gmr_core": "crates/gmr-core",
+    "gmr_budget": "crates/gmr-budget",
+    "gmr_content": "crates/gmr-content",
+}
 
 
 def block_from(source, open_at):

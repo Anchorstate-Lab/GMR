@@ -2081,7 +2081,10 @@ async fn a_record_bound_elsewhere_is_not_delivered_here_just_for_being_linked() 
             .map(|m| m.reference.external_id.as_str())
             .collect::<Vec<_>>()
     );
-    assert_eq!(view.memories[0].reference.external_id.as_str(), "memories/bound.md");
+    assert_eq!(
+        view.memories[0].reference.external_id.as_str(),
+        "memories/bound.md"
+    );
 }
 
 #[tokio::test]

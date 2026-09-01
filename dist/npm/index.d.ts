@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v8`. That string is what a caller
+ * These declarations describe `gmr.contract.v9`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v8";
+export const CONTRACT: "gmr.contract.v9";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -250,6 +250,13 @@ export interface Instructions {
    * nobody asked for is store reads nobody budgeted, on every call.
    */
   reach?: number;
+  /**
+   * Whether an anchor read also carries in records linked from its bound
+   * ones, one hop, each marked `grounded: false` — bound elsewhere is not
+   * about this anchor. Absent means only what is bound: same rule as
+   * `reach`, the caller says whether to walk.
+   */
+  carry?: boolean;
 }
 
 /** Where a binding came from. `unknown` is how you say you do not know. */

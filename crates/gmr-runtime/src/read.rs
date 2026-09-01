@@ -800,7 +800,16 @@ impl Runtime {
             let looks = seen.get(&key).copied().unwrap_or_default();
             let (view, moved_at) = stand(&self.log, &key, &looks).await?;
             out.push(
-                ground(&self.log, &self.memory, view, moved_at, &total, call, how.carry).await?,
+                ground(
+                    &self.log,
+                    &self.memory,
+                    view,
+                    moved_at,
+                    &total,
+                    call,
+                    how.carry,
+                )
+                .await?,
             );
         }
         Ok(out)
