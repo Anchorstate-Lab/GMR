@@ -14,9 +14,9 @@ SQL schema moving. Bump `EXPORT_SCHEMA` only when a `Line` variant's shape
 changes, never just because the SQL schema bumped.
 
 `Line` is tagged (`#[serde(tag = "table", ...)]`) so a single stream can
-carry the manifest plus all five tables (journal, bindings,
-binding_anchors, links, sealed) without needing a second file format or a
-multi-file bundle — each line says which table it belongs to.
+carry the manifest plus all six tables (journal, bindings,
+binding_anchors, links, link_revocations, sealed) without needing a second
+file format or a multi-file bundle — each line says which table it belongs to.
 
 ## When this changes, ask
 

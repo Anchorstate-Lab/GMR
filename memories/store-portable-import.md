@@ -5,7 +5,7 @@ watch: [sig, logic]
 
 # Import only ever replays into a store that is provably empty, and atomically
 
-`import_jsonl` counts every one of the five tables before touching
+`import_jsonl` counts every one of the six tables before touching
 anything, and refuses outright if any of them has existing rows. Replaying
 recreates history at the exact `seq` values the export recorded (see
 [[store-portable-expect-seq]]), and that only produces the right history
