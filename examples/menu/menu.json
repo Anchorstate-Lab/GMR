@@ -1,0 +1,20 @@
+{
+  "restaurant": "Golden Wok",
+  "items": [
+    {
+      "name": "Spring Rolls",
+      "price_cents": 650,
+      "ingredients": ["cabbage", "carrot", "rice paper", "sunflower oil"]
+    },
+    {
+      "name": "Mapo Tofu",
+      "price_cents": 1250,
+      "ingredients": ["tofu", "doubanjiang", "sichuan pepper", "soybean oil"]
+    },
+    {
+      "name": "Kung Pao Chicken",
+      "price_cents": 1450,
+      "ingredients": ["chicken", "dried chili", "scallion", "peanut oil", "peanuts"]
+    }
+  ]
+}

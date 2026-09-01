@@ -300,6 +300,24 @@ whole thing instead of a diff. A store that will **not answer** and a record
 that is **gone** are reported as different things and only the second turns a
 build red: nobody holding this repository can fix somebody else's outage.
 
+## Beyond code
+
+Nothing above is specific to source files. A coordinate can be any fact a
+probe can fetch, and `gmr anchor` already speaks three non-code families,
+writing the recipe into `.anchor/probes.toml` where you can read it:
+
+```sh
+gmr anchor 'file://menu.json#$.items.2.ingredients'  --as kung-pao-ingredients   # a file and a JSON pointer
+gmr anchor 'https://api.example.com/menu#$.price'    --as menu-price             # a live endpoint
+gmr anchor 'sql://inventory.db#SELECT count(*) FROM dishes' --as dish-count      # a query
+```
+
+Each watches one axis — `value` — and runs the same two loops as everything
+else: the bound memory comes back to a person when the value moves, and a
+recorded conclusion loses its standing the moment its ground changes.
+[examples/menu](examples/menu/) is the runnable proof: a menu, an allergen
+warning, and both loops end to end with no code in sight.
+
 ## Common commands
 
 The front door — the ten verbs `gmr --help` shows:
