@@ -3,6 +3,8 @@ about:
   - "docs/ARCHITECTURE.md#GMR > Abstract"
   - "docs/ARCHITECTURE.md#GMR > 2. The problem as a systems problem > 2.4 The correct unit of reliability"
 watch: [drift, missing]
+links:
+  rests-on: [three-layers, gmr-not-entailment]
 ---
 
 # What GMR sells is one relation, and everything else is sediment

@@ -54,15 +54,19 @@ This is a loop you run yourself as part of normal work — not a human-only ritu
 
 `gmr anchor` with no coordinate opens whatever the declarations and notes already ask for — that is what a fresh clone needs, since the journal does not travel with the repository.
 
-A note may pick its own shape and say which axes should wake it:
+A note may pick its own shape, say which axes should wake it, and declare typed edges to other records:
 
 ```
 ---
 about: src/auth.ts#createSession
 shape: contract
 watch: [logic]
+links:
+  rests-on: [session-lifetime, "mem0:9f8e21"]
 ---
 ```
+
+`links:` maps a kind you choose (open vocabulary — write what you mean) to targets: a bare name is a note in this repository (`session-lifetime` → `memories/session-lifetime.md`), a `provider:id` address reaches any registered store. `sync` reconciles declared edges the way it reconciles `about:` — a declaration that disappears revokes the edge it derived, and an identical edge you asserted yourself through `gmr link` or the SDK is never touched. `doctor` prints a census of edges by kind and source.
 
 ## The inference loop — your own conclusions
 
@@ -116,7 +120,7 @@ Apply this yourself, in context, the same way you'd decide whether a comment is 
 
 `gmr --help` shows ten. The rest still work and are reachable through `gmr help <name>`: `sync`, `open`, `observe`, `pass`, `read`, `doctor`, `health`, `edges`, `requeue`, `bind`, `attest`, `reaffirm`, `cobound`, `link`, `probes`, `publish`, `export`, `import`, and the five revise verbs. Reach for them to drive one part by hand, not for ordinary work.
 
-`gmr read` serves the stored reading whatever its age. `--fresher-than-secs <n>` looks again first if the last sighting is older than that.
+`gmr read` serves the stored reading whatever its age. `--fresher-than-secs <n>` looks again first if the last sighting is older than that. It also takes a position: `gmr read src/auth.ts:120` answers with the anchor whose symbol starts at or above that line in that file (the file's own anchor as fallback), and prints the matched key so a wrong guess is visible.
 
 `gmr health` reports, per anchor, whether it is pointed anywhere useful: how many times it was read, how many of those hand-backs a person answered, and how many of those answers involved rewriting a memory. An anchor that has never fired, or that fires and never changes a note, is watching a direction its notes do not care about — a `watch:` worth narrowing. It reports rates and never a verdict; where the line sits is the owner's call.
 

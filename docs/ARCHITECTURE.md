@@ -470,9 +470,11 @@ Reaffirmation appends a new binding record. It does not erase the older occasion
 
 ### 8.3 Links are not grounding
 
-A link connects one memory reference to another with an application-defined kind, such as elaboration or contradiction. It does not imply that either reference is bound to an Anchor. A bound memory may cause a linked memory to be carried into a read result, but grounding does not propagate across the link.
+A link connects one memory reference to another with an application-defined kind, such as elaboration or contradiction. It does not imply that either reference is bound to an Anchor. A bound memory may cause a linked memory to be carried into a read result — only when the caller asks, and marked as carrying no local guarantee — but grounding does not propagate across the link.
 
-This is a deliberate refusal to make a universal memory graph semantics. One application may want linked rationale to travel with a decision; another may want a contradiction to suppress retrieval. The Anchor remains the grounding authority, while link traversal remains an auxiliary query policy.
+Every link assertion records a `Source`, the same provenance axis a binding carries, and is revoked rather than deleted: a revocation names only the live rows it observed, so a concurrent re-assertion of the same edge survives. A declaration channel (in the coding domain, a note's `links:` frontmatter) reconciles exactly the edges it derived and never touches an identical edge an agent vouched for itself.
+
+This is a deliberate refusal to make a universal memory graph semantics. One application may want linked rationale to travel with a decision; another may want a contradiction to suppress retrieval. The Anchor remains the grounding authority, while link traversal remains an auxiliary query policy — asked for by the caller, priced by the caller's budget.
 
 ## 9. Historical integrity and change management
 
