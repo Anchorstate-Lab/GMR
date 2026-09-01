@@ -1,6 +1,6 @@
 ---
 about:
-  - "docs/GMR.md#GMR 架构 > 0. 是什么"
+  - "docs/ARCHITECTURE.md#GMR > 5. Why the Anchor is the central abstraction > 5.2 The Anchor is not a truth authority"
 ---
 
 # The line between structure and entailment is what makes this auditable

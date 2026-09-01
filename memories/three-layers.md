@@ -1,6 +1,6 @@
 ---
 about:
-  - "docs/GMR.md#GMR 架构 > 6. 记忆层"
+  - "docs/ARCHITECTURE.md#GMR > 3. Domain model > 3.10 Memory and inference are two layers over one mechanism"
 ---
 
 # Fact, memory and inference are three things, and the mechanism they share is not the layer

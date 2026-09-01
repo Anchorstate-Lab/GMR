@@ -1,6 +1,6 @@
 # GMR – Grounded Memory Runtime
 
-*Architecture SSOT: `GMR.md`*
+*Architecture SSOT: `docs/ARCHITECTURE.md`*
 
 ---
 

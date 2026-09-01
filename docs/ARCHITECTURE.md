@@ -1,4 +1,6 @@
-# GMR: A Grounding Architecture for Evolving Memory
+# GMR
+
+*A Grounding Architecture for Evolving Memory*
 
 ## Abstract
 

@@ -396,8 +396,7 @@ sh acceptance.sh
 
 ## Documentation
 
-- `docs/GMR.md` — architecture and design source of truth
-- `docs/ARCHITECTURE.md` — the design written out as one long argument
+- `docs/ARCHITECTURE.md` — architecture and design source of truth, written out as one long argument
 - `docs/architect.md` — repository layering and package responsibilities
 - `CLAUDE.md` — design decisions and repository norms
 - `memories/` — this repository's own notes, anchored to its own code
