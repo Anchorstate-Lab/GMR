@@ -37,7 +37,7 @@ jobs:
     - name: The menu walkthrough still holds
       run: |
         cargo build --release -p coding-anchor
-        PATH="$PWD/target/release:$PATH" sh examples/menu/walkthrough.sh --ci
+        PATH="$PWD/target/release:$PATH" bash examples/menu/walkthrough.sh --ci
 
   # Kept out of the gate on purpose. gate.sh only checks the substrate and the
   # batteries and never touches an anchor, because a red anchor is a signal for
