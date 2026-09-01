@@ -46,7 +46,7 @@ are answering the question they were built to answer.
 ## When this changes, ask
 
 Converging these into one exit-code meaning is a change to what counts as a
-reportable movement — GMR.md §7's "criteria: probe, rules, terminal, state revision
+reportable movement — CLAUDE.md §7's "criteria: probe, rules, terminal, state revision
 semantics" is exactly this kind of call, and it needs the owner's decision plus an
 announced breaking change (any script keyed to `observe`'s current "any transition"
 exit code silently starts seeing fewer failures, or `check` silently starts seeing

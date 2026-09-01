@@ -54,9 +54,9 @@ with `database is locked` until it did.
 ## `Chained` is its own trait
 
 Only some journals can answer this — the in-memory testkit has no file to
-protect and nothing to attest to. GMR.md's rule is that a capability some stores
-lack is expressed by not implementing a trait rather than by everyone returning
-"I have none", the way `History` sits beside `ContentProvider`.
+protect and nothing to attest to. CLAUDE.md §5's rule is that a capability some stores lack is expressed by not
+implementing a trait rather than by everyone returning "I have none", the way
+`History` sits beside `ContentProvider`.
 
 ## Where it runs
 

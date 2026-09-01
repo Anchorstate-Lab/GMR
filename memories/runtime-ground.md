@@ -179,8 +179,8 @@ and it has a semantics: the stream owns the list it walks. See [[hosts-spawn]].
 ## When this changes, ask
 
 Does something start deciding, ranking, or folding these two axes into one
-number? That is the caller's reduction and `docs/GMR.md`'s boundary puts it
-outside — [[runtime-warrant]] records what happened the last time one was
+number? That is the caller's reduction and the structure-not-entailment boundary
+(`docs/ARCHITECTURE.md` §1.4, [[gmr-not-entailment]]) puts it outside — [[runtime-warrant]] records what happened the last time one was
 shipped from here.
 
 Does a phase start depending on the other's output? Then the parallel is

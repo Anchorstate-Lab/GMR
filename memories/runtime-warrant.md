@@ -62,7 +62,7 @@ Read that rule again as a sentence about the caller. It says *when you may still
 rely on this*. `Moved > Blind` and `Holds + Blind -> Blind` are not facts about
 what was observed; they are one policy about what to do with two facts that are
 both true. GMR does not emit verdicts — that reduction is the caller's, and
-`docs/GMR.md`'s boundary puts it outside. The rule is not lost: it is written
+`docs/ARCHITECTURE.md` §1.4 puts it outside. The rule is not lost: it is written
 down as the **draft default policy for the warrant-to-verdict adapter**, which is
 where a named, optional, versioned reduction belongs.
 
@@ -156,11 +156,10 @@ told apart from here.
 This is not a hypothetical. This repository's own corpus had 74 memories
 reporting `Moved` on axes like `baseline.name` and `v.file` — keys the newer
 extractor started emitting — with every `body` hash identical on both sides.
-Nothing had moved. `docs/GMR.md`'s blast-radius clause asks exactly this of a
-consumer: the three identities are on every entry so that a batch of flips
-coming from a rules upgrade can be *identified*, and it says in as many words
-that recording the versions without that plan is fixing the record and not the
-explosion. `Incomparable` is that plan. It is also the memory-level twin of what
+Nothing had moved. `docs/ARCHITECTURE.md` §10.4 asks exactly this of a
+consumer: every observation records the three identities so a corpus-wide
+flip coming from a rules upgrade can be told from a world change — recording
+the versions without that plan would fix the record and not the explosion. `Incomparable` is that plan. It is also the memory-level twin of what
 the CLI already says one layer up when a probe version moves — that the stored
 baseline and what this build measures cannot be told apart — so it is the same
 idea at the layer that needed it, not a new one.

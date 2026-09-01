@@ -9,9 +9,9 @@ watch: [sig, logic]
 
 # Whether an anchor is pointed the right way, measured rather than assumed
 
-`docs/GMR.md` opens by naming its own first risk: the guarantee holds along the
-directions an author declared, and **whether they declared the right ones decides
-whether the system is worth anything**. Everything else here measured whether
+`docs/ARCHITECTURE.md` §1.3 closes on its own first risk: the guarantees are
+conditional on the declaration, and **whether the author declared the right
+directions decides whether the system is worth anything**. Everything else here measured whether
 memories drift. Nothing measured that.
 
 Two failure modes, and each has a number now:
@@ -19,7 +19,7 @@ Two failure modes, and each has a number now:
 ```
 never fired            readings > 0, answered = 0
                        a direction nothing moves in -- or a fact that settles the
-                       judgement by itself, which docs/GMR.md says not to anchor
+                       judgement by itself, which the anchoring heuristic says not to anchor
 fired, changed nothing answered > 0, moved_a_memory = 0
                        it comes back, a person re-reads, and the note never needs
                        a word changed

@@ -46,8 +46,8 @@ never ran.
 ## The check lives where an `Observation` is made, not where one is written
 
 `open` and `observe_with` both append an observation, and a guard on one of them
-is the same "mostly" that `docs/GMR.md` refuses for write tokens: a bypass makes
-the guarantee a habit. Both already funnel through `observe_into`, which is the
+is the same "mostly" that `docs/ARCHITECTURE.md` §11.4 refuses for the premise
+guard: a bypass makes the guarantee a habit. Both already funnel through `observe_into`, which is the
 only way an `Outcome` becomes an `Observation`, so that is where it went — a
 third write path cannot skip a question it has to pass an argument to.
 

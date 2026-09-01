@@ -27,13 +27,14 @@ to grant this provider an exception. It met the three load-bearing
 requirements, could not meet the fourth, and the author wrote a comment on
 `fetch_at` saying why. The "zero comments" rule then mechanically promoted
 that comment into an anchored memory — and an implementation note, once it
-has the same textual form as a section of `GMR.md`, reads like a design
-decision. Nothing could tell the two apart, because **`GMR.md` §6's four
-requirements had no mechanical check enforcing any of them.**
+has the same textual form as a section of the architecture document, reads
+like a design decision. Nothing could tell the two apart, because **the four
+provider requirements (now `docs/ARCHITECTURE.md` §12.2) had no mechanical
+check enforcing any of them.**
 
-So the fix was not to this file. §6 now grades the four requirements —
-three load-bearing, one a capability — and the capability's enforcement is
-this trait split, landed in the same commit as the prose. See
+So the fix was not to this file. The grading — three load-bearing, one a
+capability — is enforced by the trait split itself, landed in the same
+commit as the prose, and `docs/ARCHITECTURE.md` §12.2 carries the four. See
 [[provider-claude-memory]] for what this battery is otherwise allowed to do.
 
 ## When this changes, ask
