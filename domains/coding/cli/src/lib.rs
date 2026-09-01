@@ -77,6 +77,9 @@ pub async fn run(cli: Cli) -> Result<i32, CliError> {
     if let Command::Init { global } = cli.command {
         return verbs::init::run(&root, cli.json, global);
     }
+    if let Command::Adopt { paths, min_words } = cli.command {
+        return verbs::adopt::run(&root, paths, min_words, cli.json);
+    }
 
     let state = probes::state_dir(&root);
     stale_journal_guard(&root, &state)?;
@@ -197,6 +200,7 @@ pub async fn served(
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init { .. } => unreachable!("init was handled above"),
+        Command::Adopt { .. } => unreachable!("adopt was handled above"),
         Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, &root, names, key, json).await,
         Command::Accept {

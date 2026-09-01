@@ -59,6 +59,19 @@ pub enum Command {
         global: bool,
     },
 
+    /// Nominate what this repository already knows but never anchored:
+    /// comments that read like constraints, documents that name real files.
+    /// Prints one `gmr anchor` command per candidate and writes nothing —
+    /// each line is a judgment for you to run or delete.
+    #[command(display_order = 2)]
+    Adopt {
+        /// Files or directories to scan. Default: the whole repository.
+        paths: Vec<String>,
+        /// Skip comment blocks shorter than this many words.
+        #[arg(long, default_value = "4")]
+        min_words: usize,
+    },
+
     /// Watch a coordinate and write the memory that goes with it. With no
     /// coordinate, open everything the declarations and notes already ask for.
     #[command(display_order = 1)]

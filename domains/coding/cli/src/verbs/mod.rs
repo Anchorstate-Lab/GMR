@@ -1,4 +1,5 @@
 pub mod accept;
+pub mod adopt;
 pub mod anchor;
 pub mod atlas;
 pub mod bind;

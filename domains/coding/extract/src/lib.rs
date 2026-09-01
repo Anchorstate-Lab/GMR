@@ -1,5 +1,6 @@
 mod addr;
 mod ast;
+pub mod comments;
 mod lang;
 mod name;
 mod prose;
