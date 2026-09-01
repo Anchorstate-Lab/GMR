@@ -1,0 +1,35 @@
+#!/bin/sh
+# The push moment. Copy into .git/hooks/pre-push (chmod +x) or point
+# core.hooksPath at a directory holding it.
+#
+# Reports, never blocks: what moved on a watched axis is due for a person,
+# not an error. Set GMR_MOMENT_STRICT=1 to make a due memory stop the push.
+set -u
+
+command -v gmr >/dev/null 2>&1 || { echo "gmr: not installed; push proceeds unreported" >&2; exit 0; }
+root=$(git rev-parse --show-toplevel)
+[ -d "$root/.anchor" ] || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+gmr check --json >"$tmp/check.json" 2>"$tmp/check.err"
+check_code=$?
+if [ ! -s "$tmp/check.json" ]; then
+  echo "gmr: check produced nothing; push proceeds unreported" >&2
+  cat "$tmp/check.err" >&2
+  exit 0
+fi
+gmr standing --json >"$tmp/standing.json" 2>/dev/null || echo '[]' >"$tmp/standing.json"
+
+here=$(dirname "$(command -v gmr)")
+node "$(dirname "$0")/render.mjs" \
+  --check "$tmp/check.json" --standing "$tmp/standing.json" \
+  --gmr "$(command -v gmr)" 2>/dev/null || cat "$tmp/check.json"
+
+if [ "${GMR_MOMENT_STRICT:-0}" = "1" ] && [ "$check_code" -ne 0 ]; then
+  echo
+  echo "GMR_MOMENT_STRICT=1 and something is due — push stopped. Re-read, accept, push again."
+  exit 1
+fi
+exit 0

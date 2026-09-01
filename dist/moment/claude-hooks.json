@@ -1,0 +1,26 @@
+{
+  "$comment": "The agent moment: merge these hooks into .claude/settings.json of a repository with .anchor/. PostToolUse hands the agent, right after it edits a file, the axis state and bound notes of that file's anchors — before the answer's closure forms, which is the only time the information redirects instead of footnoting. SessionStart opens with one line saying whether anything is already due. Both are read-only (status), never check: check observes and writes the journal, which must not happen as a side effect of every edit.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); [ -n \"$f\" ] && [ -d .anchor ] && gmr status \"${f#$PWD/}\" --json 2>/dev/null | jq -c --arg f \"$f\" '{hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:(\"gmr: anchors under \\($f): \" + ([.anchors[]? | {key:.anchor,status,notes:[.memories[]?.note]}] | tojson))}}' || true"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -d .anchor ] && gmr status --json 2>/dev/null | jq -r '[.anchors[]|select(.status!=\"settled\")] | if length==0 then \"gmr: all anchors settled.\" else \"gmr: \\(length) anchor(s) not settled — run gmr check before trusting notes about the code you touch.\" end' || true"
+          }
+        ]
+      }
+    ]
+  }
+}

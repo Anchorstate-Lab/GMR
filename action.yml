@@ -1,0 +1,94 @@
+name: "gmr moment"
+description: >-
+  What does this change move? Rebuilds anchor baselines at the merge-base,
+  re-observes at the head, and comments the due memories — with their text —
+  on the pull request. Reports, never blocks, unless the repository owner
+  turns strict on.
+branding:
+  icon: anchor
+  color: gray-dark
+inputs:
+  github-token:
+    description: Token used to post the PR comment.
+    required: true
+  strict:
+    description: Exit nonzero when a memory is due. Default reports only.
+    required: false
+    default: "false"
+  source:
+    description: >-
+      Where gmr comes from — "npm" installs @anchorstate-lab/gmr, "cargo"
+      builds this checkout (for the GMR repository itself).
+    required: false
+    default: "npm"
+  version:
+    description: npm version of gmr when source is npm.
+    required: false
+    default: "latest"
+  comment:
+    description: Post a PR comment. "false" writes only the job summary.
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Install gmr
+      shell: bash
+      run: |
+        case "${{ inputs.source }}" in
+          npm)
+            npm install -g "@anchorstate-lab/gmr@${{ inputs.version }}"
+            echo "GMR_BIN=$(command -v gmr)" >> "$GITHUB_ENV"
+            ;;
+          cargo)
+            cargo build --release -p coding-anchor
+            echo "GMR_BIN=$PWD/target/release/gmr" >> "$GITHUB_ENV"
+            ;;
+          *) echo "source must be npm or cargo"; exit 1 ;;
+        esac
+    - name: Baseline at the merge-base, observe at the head
+      shell: bash
+      run: |
+        set -eu
+        head_ref=$(git rev-parse HEAD)
+        base_ref=$(git merge-base "origin/${{ github.base_ref }}" HEAD)
+        echo "baseline: $base_ref  head: $head_ref"
+        git checkout --quiet "$base_ref"
+        "$GMR_BIN" anchor >/dev/null
+        git checkout --quiet "$head_ref"
+        set +e
+        "$GMR_BIN" check --json > check.json
+        echo "GMR_CHECK_CODE=$?" >> "$GITHUB_ENV"
+        set -e
+        "$GMR_BIN" standing --json > standing.json 2>/dev/null || echo '[]' > standing.json
+    - name: Render the moment
+      shell: bash
+      run: |
+        node "${{ github.action_path }}/dist/moment/render.mjs" \
+          --check check.json --standing standing.json --gmr "$GMR_BIN" > moment.md
+        cat moment.md >> "$GITHUB_STEP_SUMMARY"
+    - name: Comment on the pull request
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        marker="<!-- gmr-moment -->"
+        printf '%s\n' "$marker" | cat - moment.md > comment.md
+        existing=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+        if [ -n "$existing" ]; then
+          gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" \
+            -F body=@comment.md >/dev/null
+        else
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -F body=@comment.md >/dev/null
+        fi
+    - name: Strict gate, if the owner asked for one
+      shell: bash
+      run: |
+        if [ "${{ inputs.strict }}" = "true" ] && [ "${GMR_CHECK_CODE:-0}" != "0" ]; then
+          echo "strict: something is due — failing as configured."
+          exit "$GMR_CHECK_CODE"
+        fi
+        exit 0
