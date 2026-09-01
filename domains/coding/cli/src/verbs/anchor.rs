@@ -456,6 +456,33 @@ pub async fn run(
     }
 
     let key = gmr::AnchorKey::new(coord.clone());
+    if !json
+        && routed.probe == "prose-map"
+        && matches!(
+            rt.read(&key).await,
+            Ok(view) if view
+                .state
+                .as_value()
+                .pointer("/v/missing")
+                .and_then(|m| m.as_bool())
+                .unwrap_or(false)
+        )
+        && let Some(file) = routed.position.get("file").and_then(|f| f.as_str())
+        && let Ok(body) = std::fs::read_to_string(root.join(file))
+    {
+        let crumbs = crate::prose::breadcrumbs(&body);
+        if !crumbs.is_empty() {
+            println!(
+                "absent    nothing in {file} answers to that heading today. Its sections are:"
+            );
+            for crumb in crumbs.iter().take(12) {
+                println!("            {file}#{crumb}");
+            }
+            if crumbs.len() > 12 {
+                println!("            ({} more)", crumbs.len() - 12);
+            }
+        }
+    }
     let mut attached = None;
     if let Some(reference) = named {
         let (version, landed) = crate::verbs::bind::assert_on(

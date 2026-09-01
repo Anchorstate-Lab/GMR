@@ -150,7 +150,9 @@ fn from_the_future(stamped: i64) -> StoreError {
         format!(
             "this database is stamped schema v{stamped}, and this build only knows v{}. \
              Refusing to open — misreading a database written by a later generation is \
-             far worse than not opening it. Upgrade gmr",
+             far worse than not opening it. Upgrade this binary: \
+             `npm i -g @anchorstate-lab/gmr@latest`, or \
+             `curl -fsSL https://raw.githubusercontent.com/Anchorstate-Lab/GMR/main/dist/install.sh | sh`",
             schema::SCHEMA_VERSION
         ),
     )
@@ -507,7 +509,10 @@ mod tests {
 
         let e = migrate(store.pool()).await.unwrap_err();
         assert_eq!(e.code, ErrorCode::SchemaVersionMismatch);
-        assert!(e.to_string().contains("Upgrade gmr"), "{e}");
+        assert!(
+            e.to_string().contains("Upgrade this binary"),
+            "the refusal has to carry the way out, not just the verdict: {e}"
+        );
     }
 
     #[tokio::test]

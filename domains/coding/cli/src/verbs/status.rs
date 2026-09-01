@@ -7,13 +7,7 @@ use crate::probes::Catalog;
 use crate::verbs::sync::{self, Audit, Context, DEFAULT_FILE, read_declared};
 
 fn axes_line(view: &AnchorView) -> Option<String> {
-    let v = view.state.as_value().get("v")?.as_object()?;
-    Some(
-        v.iter()
-            .map(|(k, on)| format!("{k} {}", u8::from(on.as_bool().unwrap_or(false))))
-            .collect::<Vec<_>>()
-            .join("  "),
-    )
+    crate::render::axes_line(&view.state)
 }
 
 fn unwritten(root: &Path, note: &str) -> bool {

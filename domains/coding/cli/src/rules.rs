@@ -6,10 +6,18 @@ use crate::error::CliError;
 
 pub fn key(text: &str) -> Result<AnchorKey, CliError> {
     AnchorKey::try_new(text).map_err(|e| {
+        let crumb = match text.len() > 128 && text.contains('#') {
+            true => {
+                "\nA heading breadcrumb this long almost always means a long document \
+                 title: every section inherits the H1, so shortening the title (or \
+                 anchoring one level higher) brings the whole document under the limit."
+            }
+            false => "",
+        };
         CliError(format!(
             "`{text}` cannot be an anchor key ({e}).\n\
              The journal is append-only, so a key is refused here or never: once one entry \
-             carries it, every later read has to accept it back."
+             carries it, every later read has to accept it back.{crumb}"
         ))
     })
 }
@@ -76,6 +84,22 @@ pub fn terminal(names: &[String]) -> Result<BTreeSet<StatusId>, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_overlong_breadcrumb_error_carries_the_way_out() {
+        let long = format!(
+            "docs/x.md#{} > Section",
+            "A very long document title ".repeat(6)
+        );
+        let e = key(&long).unwrap_err();
+        assert!(e.to_string().contains("shortening the title"), "{e}");
+    }
+
+    #[test]
+    fn an_overlong_plain_key_gets_no_prose_advice() {
+        let e = key(&"k".repeat(200)).unwrap_err();
+        assert!(!e.to_string().contains("shortening the title"), "{e}");
+    }
 
     #[test]
     fn a_rule_splits_on_the_arrow() {

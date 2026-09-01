@@ -114,6 +114,38 @@ pub fn to_html(markdown: &str, nodes: &Nodes) -> String {
     out
 }
 
+pub fn breadcrumbs(markdown: &str) -> Vec<String> {
+    use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+    let mut out = Vec::new();
+    let mut trail: Vec<(HeadingLevel, String)> = Vec::new();
+    let mut open: Option<(HeadingLevel, String)> = None;
+    for event in Parser::new_ext(markdown, options()) {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => open = Some((level, String::new())),
+            Event::Text(text) | Event::Code(text) => {
+                if let Some((_, buf)) = open.as_mut() {
+                    buf.push_str(&text);
+                }
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                if let Some((level, title)) = open.take() {
+                    trail.retain(|(held, _)| *held < level);
+                    trail.push((level, title));
+                    out.push(
+                        trail
+                            .iter()
+                            .map(|(_, t)| t.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" > "),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 pub fn wikilinks(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for piece in walk(markdown) {
@@ -130,6 +162,14 @@ pub fn wikilinks(markdown: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn breadcrumbs_carry_the_whole_ancestor_trail() {
+        assert_eq!(
+            breadcrumbs("# T\n\n## A\n\n### A1\n\n## B\n"),
+            vec!["T", "T > A", "T > A > A1", "T > B"]
+        );
+    }
 
     #[test]
     fn the_frontmatter_is_not_part_of_what_a_reader_sees() {
