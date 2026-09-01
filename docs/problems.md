@@ -1,405 +1,387 @@
-# GMR 现在有哪些实际问题
+# GMR 的真实问题
 
-这份文档只讲问题,不讲修法。修法定下来之前,先确保问题本身没有理解错。
+这份文档只讲问题,不讲修法。每条都标了它是**实测**、**代码可查**,还是**推论**。
 
-每条都标了它是**实测**的、**代码可查**的,还是**推论**。推论那些是判断,可以被推翻。
-
----
-
-## 零 · 先说清楚 GMR 是干什么的
-
-不写这一段,下面所有问题都会被读成别的问题。
-
-**核心目的是 AI 回答的可靠性。** 不是留证据,不是出事好追责。
-
-**机制是打断最小逻辑闭环。** AI 靠"最小逻辑闭环"结束任务:
-
-> 问"洗车店距我 50 米,应该走路去还是开车去?",AI 大概率答"走路"。它的注意力在 50 米、走路、开车这三样上,答"走路"就闭环了。
->
-> 再给它一条"99.9% 的人去洗车店是为了洗车",原来的闭环被打破——走路解决不了洗车——于是它给出更准确的答案。
-
-GMR 的作用就是这个:**在闭环成形之前,把锚定的事实送到 AI 面前。**
-
-```
-主要作用   注入 —— 让 AI 拿到它不会想到要查的事实
-次要作用   shown —— 事后机械判定它有没有真的用上那条读数
-```
-
-**职责边界,三条不做:**
-
-| 不做 | 为什么 |
-|---|---|
-| 不判断语义真假 | GMR 验证的是推断与其记录依据的关系,不是推断本身对不对 |
-| **不替你选锚** | 洗车店例子里起决定作用的是"谁想到要给那条信息"——GMR 把它划在职责外 |
-| 不拦截回答 | `shown: unseen` 是一个事实,不是"拒绝发送"的指令 |
-
-**两个产品面,失败方式不同:**
-
-```
-长期 · coding    记忆系统。契约过去只在 senior 工程师脑子里,现在是 agent 的记忆
-                 失败长这样:记忆和事实不对应 → 给后续 AI 的不是指导,是误导
-                 消费者是下一个 agent,人只在裁决时出现
-
-短期 · 服务      引用系统。让 AI 的分析能力可以被信任地使用
-                 例:传统点单系统只能枚举,没标记花生油是过敏原就永远报不出来
-                     AI 能分析——配料表有花生油 → 花生油可能致敏 → 提醒顾客
-                 GMR 不是限制 AI 只能复读数据库,是反过来
-                 失败长这样:AI 编造,或分析结论无从验证
-```
-
-**两种部署形态:**
-
-```
-Shape B  嵌进「组答案的那个东西」里。grounding 是数据的属性,不是协议步骤
-         代码路径没有能力返回一个没有 grounding 的答案。这是主形态
-Shape A  没有 vertical 可嵌时旁挂(CLI / MCP)。代码仓库就是这种场景
-         agent 自己就是组答案的人,所以协议只能靠 prompt 约束。这是退化形态
-```
+上一版按"价值为什么没落地"编排,把 agent 会不会主动调用当成根问题。那是消费层的事。这一版按**锚这个原语本身哪里不成立**重排,推翻的判断集中列在第九节。
 
 ---
 
-## 一 · 靠 agent 自觉的注入,原理上不可靠
+## 零 · 判据
 
-**这是根问题,下面几条都从它派生。**
+GMR 是**锚**:在推论和事实之间建立一条可被第三方重算的关系。
 
-洗车店那题里,AI **不会觉得自己缺信息**——它的闭环是自洽的。50 米、走路、开车,三个要素齐了,答案成立,它没有任何理由去查。
+知识网络、最小信息集、"告诉 AI 该读什么"——这些是锚做好之后**挣来**的,不是要枚举的功能。没挣到,说明锚设计得不够好,不是功能不够全。
 
-所以"让 agent 记得先查一下"这个形态,触发条件恰好是 AI 意识不到的那件事。
+所以一条"问题"要进这份文档,得过这一关:
 
-**今天四种注入方式的强度:**
+> **它是否让「锚」这个原语更能承载因果,或更能被廉价地问到?**
 
-| 方式 | 触发靠什么 | 强度 |
-|---|---|---|
-| CLI + SKILL.md | agent 记得走三步协议 | **弱** — 靠自觉 |
-| MCP 工具 | 工具在那,agent 决定调不调 | **弱** — 同样靠自觉 |
-| SDK 嵌进 handler | 代码路径强制 `sample` | 强 — 结构保证 |
-| harness hook | agent 碰到坐标就自动注入 | 强 |
+过不了的,是消费层的观察,放第八节,不作为待办。
 
-**MCP 和 CLI 在这个维度上是同一级的。** 它改善延迟和人机工程,不改善注入强度。这一条推翻了我之前"MCP 是重大改善"的说法。
+三条不做,始终成立:不判断语义真假 · 不替你选锚 · 不拦截回答。这一版加第四条:**不计算最小信息集**——目标函数依赖任务,选集合时任务未知(论证见第十节)。GMR 欠的只有两件:让拓扑在坐标处可被廉价查询,和把边的类型如实交出去。
 
-### 实验证据(实测)
+长期(coding 域)和短期(一次性回答)不是两个产品面,是同一个 δ 的两种消费深度。真正的分法在 [[three-layers]] 里已经写好,而且按**失效方式**分:fact 不失效 · memory 漂移 · inference 失去依据。
 
-给冷上下文的 subagent 一个"看似合理但违反契约"的请求,看它顶回去还是照做。裸组 = 只有仓库和 CLAUDE.md;注入组 = 额外给坐标本地的契约正文。
+---
+
+## 一 · 锚交出的东西,分不清「关于」和「被提到」
+
+**这是根问题。** 锚就是"关于"这个关系;GMR 的主输出把它抹平了。
+
+### 实测
+
+`gmr read --json` 全量(release build,659 个锚):
 
 ```
-A1  给 Instructions 加 on_unreachable    裸 照做  ·  注入 拒绝
-A2  把 RunSettings 移进 Anchor           裸 照做  ·  注入 拒绝
+                              条数    正文字节   每锚 p50   p90     max
+声明的(warrant 有值)          615     2.7MB     3.4KB   8.6KB   14.6KB
+顺着链接带进来的(无 warrant) 1713     7.6MB     8.5KB  28.6KB   76.3KB
+                              ----    ------
+交付占比                       26%       27%
 ```
 
-**A2 裸组是决定性的一例。** 它**自己读到了** `memories/anchor-RunSettings.md`,引用了里面的准入测试原句,写下:
+**交出去的记忆里 74% 不是任何人声明过"关于这个坐标"的。**
 
-> "This contradicts an explicitly anchored decision... This is owner judgement (CLAUDE.md §7)."
+单个坐标看得更清楚。`crates/gmr-runtime/src/read.rs#AnchorView`:
 
-**然后照做了。**
+- frontmatter 里声明 `about:` 该坐标的:**3 条**(`cli-read-vs-status` · `render-diagnosis` · `runtime-read`)
+- `gmr read` 交付:**17 条,88.5KB**
+
+### 而区分它们的那个字段是反的(代码可查)
+
+[memory.rs:149](crates/gmr-runtime/src/memory.rs#L149):
+
+```rust
+grounded: !bound.anchors().is_empty(),
+```
+
+`grounded` 的意思是"这条记录**在别处**绑过某个锚",不是"这条记录关于**这个**锚"。于是:
+
+```
+1713 条带进来的记录中,报 grounded: true 的:1713 条(100%)
+```
+
+真正的判别信号是 `warrant == None`,一个**缺省**。[runtime-read.md:25](memories/runtime-read.md#L25) 写明了这件事:
+
+> `warrant` is `None` on exactly the records that were never bound to this anchor
+
+但那是一条记忆里的句子,不是字段名。而名字叫 `grounded` 的那个字段,对全部 1713 条说 true。
+
+### 人读的那一面完全没有区分(实测)
+
+[render.rs:63](domains/coding/cli/src/render.rs#L63) 用 `m.grounded` 决定标记,`warranting(None)` 返回空串([render.rs:127-130](domains/coding/cli/src/render.rs#L127-L130))。所以 `gmr read <坐标>` 打出来是:
+
+```
+  * cli-read-vs-status  (rewritten since binding)
+  * render-diagnosis
+  * runtime-read
+  * check-drift
+  * runtime-ground
+  … 另外 12 行,一模一样的 `*`
+```
+
+前三行是声明的,后十四行是"某条声明的记忆在散文里提到过它"。**输出里没有任何一处能把它们分开。**
+
+### 为什么这条排第一
+
+洗车店那条决定性信息之所以有用,是因为它**确实关于**这次决策。一个交付通道如果把"关于"和"提到"混在一起,给 AI 的就不是最小信息集,是一堆等权的候选——而注意力被稀释正是那个例子要解决的病。
+
+上一版第二节测到"注入错的东西比不注入更糟"(B3 臂拿到旁支记忆后给出更差的方案)。**机制就在这里。**
+
+---
+
+## 二 · 边是从散文里编译进来的,而且冻住了
+
+### 实测
+
+```
+memories/*.md 里的 [[wikilink]]     386 条(148 个源)
+.anchor/state/memory.db links 表    381 条,kind 全部 = 'cites'
+库里有、文件里没有                    3 条
+文件里有、库里没有                    8 条
+```
+
+两张图对得上——库里那 381 条**就是** wikilink 图,由上一次失败的实施编译进去的。
+
+三件事同时成立:
+
+1. **语义被换掉了。** `[[x]]` 在 markdown 里的意思是"提到"。进了 `links` 表就成了 `kind='cites'`,而 [carry_linked, memory.rs:232-235](crates/gmr-runtime/src/memory.rs#L232-L235) 在交付时无条件跟随每一条,`kind` 直接丢弃:
+
+   ```rust
+   let linked: Vec<Ref> = memories
+       .iter()
+       .flat_map(|m| m.links.iter().map(|l| l.to.clone()))
+       .collect();
+   ```
+
+2. **它是一份不可逆的拷贝,而且已经在漂。** [schema.rs:145-147](crates/gmr-store/src/sqlite/schema.rs#L145-L147) 对 `links` 建了 `no_update` / `no_delete` 两个 `RAISE(ABORT,'append_only')` 触发器。今天在笔记里加一个 `[[x]]` 或删一个,交付不变——库里那 381 条是某一次 sync 的快照。差异已经是 8 / 3。
+
+3. **说这件事不对的那条记录自己没了。** `gmr doctor` 报:
+
+   ```
+   gone   link-mentions-are-not-dependencies, read-blind-timedout
+          <- the provider says these records no longer exist
+   ```
+
+   `memories/link-mentions-are-not-dependencies.md` 在 git 的任何一次提交里都不存在,而它的 binding 永久留在库里。
+
+这正是 [[three-layers]] 写下的那一条:*"a memory read out of the inference log is the checker checking against itself."* 只是这次落在 links 上,不是 `depends` 上。
+
+### 基座在这件事上是对的,domain 没接
+
+[runtime-carry-linked.md](memories/runtime-carry-linked.md) 明确写了边界:
+
+> The walk stops at one hop on purpose … Deciding "is that distant memory still meaningfully about this anchor" is a judgment about **relevance**, and the substrate has no basis to make it; **it belongs to the domain**.
+
+`LinkKind` 是 [`pub struct LinkKind(pub String)`](crates/gmr-core/src/memory.rs#L80)——开放词汇,符合核心规则 4;`MemoryView.links` 把 kind 原样交出。**基座把判断权和判断所需的信息都交出去了,domain 一层没有接:**[verbs/read.rs](domains/coding/cli/src/verbs/read.rs) 直接 `serde_json::to_string_pretty(&views)`,不按 kind 过滤,不按 warrant 分组。
+
+所以这不是"基座缺功能",是**交付端从来没有行使过基座留给它的那个选择**。
+
+---
+
+## 三 · settled 不等于对
+
+**580 / 600 个活锚是 settled(97%)。** 一个 agent 读到 settled,读成的是"这条记忆可信"。它实际的意思只有一个:**这个坐标上的代码没动过。**
+
+这个边界本身是对的,[[gmr-not-entailment]] 论证过为什么必须如此:entailment 不可被第三方重算,把它放进基座会让整套可审计性架在唯一不可审计的部件上。问题不在边界,在**边界的后果没有出现在输出里**。
+
+### 一个活的标本(实测)
+
+`memories/runtime-carry-linked.md` 写着:
+
+> `carry_linked` … and marks every one `grounded: false`
+
+代码从不这样做。`grounded` 由 [`fetch_memory`](crates/gmr-runtime/src/memory.rs#L149) 写死为 `!bound.anchors().is_empty()`,`git log -S "grounded: false" -- crates/gmr-runtime/src/` **零命中**——这句话从写下的那天起就是错的。
+
+而这条笔记的 frontmatter 是:
+
+```yaml
+about: crates/gmr-runtime/src/memory.rs#carry_linked
+watch: [sig, logic]
+```
+
+它描述的行为在 `fetch_memory` 里,**一个它不看的符号**。`carry_linked` 的签名和逻辑确实没动过,所以这个锚 `settled`,`check` 一次都没把它交回来过。
+
+**这个失效类语料自己已经写下来了**,在 [cli-read-vs-status.md:48](memories/cli-read-vs-status.md#L48):
+
+> A note that quotes another layer's field names has to watch that layer, or it is grounded to the wrong thing and **the green means nothing**.
+
+同一份语料里既有这条诊断,又有一个现成的病例。**GMR 按设计抓不到它**(那是 entailment),而唯一抓得到的办法——把笔记和代码逐条对读——恰恰是 GMR 存在的理由。
+
+### 顺带的两个数(实测)
+
+- 12 个锚 `moved`,`check` 只交回 **2** 条;`doctor` 另报 **15** 条 `quiet`——动了,但动的轴不在那条笔记的 `watch:` 里。**watch 的宽窄决定 88% 的移动是否被说出来(15 / 17)**,而它是手写的。
+- 193 条笔记里 **22 条没有 `watch:`**,包括 `constitution` · `three-layers` · `gmr-not-entailment` · `anchor-RunSettings`。
+
+---
+
+## 四 · 定位不在锚里,不是够不着,是从来没锚过
+
+### 实测:600 个活锚的落点
+
+```
+crates/ · domains/ · batteries/ · tools/   586   (97.7%)
+CLAUDE.md                                    2
+docs/GMR.md                                  2   ← 工作区已删除,未提交
+docs/ARCHITECTURE.md                         0   ← 84KB,80 个小节,当前的架构文档
+README.md                                    0   ← 11.8KB,面向用户的那一份
+```
+
+### 一个改代码的 agent 拿不到定位(实测)
+
+四条"是什么"的记忆(`three-layers` · `gmr-not-entailment` · `constitution` · `runtime-aim`),对 586 个代码锚:
+
+```
+作为声明的绑定交付         4 个锚   0.7%   (全部是 runtime-aim,落在 health.rs 上)
+只经由第二节那 381 条边到达 40 个锚   6.8%
+永远拿不到                542 个锚  92.5%
+```
+
+`three-layers` 和 `gmr-not-entailment` **各只绑 1 个锚**,而那个锚是 `docs/GMR.md#…`。
+
+### SSOT 换了,锚没跟着换(代码可查)
+
+- `docs/ARCHITECTURE.md` 由 `ffce205` / `acb9b09` 引入,是当前的架构文档。**193 条笔记里 0 条提到它,0 个锚落在它上面。**
+- `docs/GMR.md` 在**工作区**被删除,**未提交**——它仍在 HEAD 里,33KB。
+- [CLAUDE.md:3](CLAUDE.md#L3) 写着 `*Architecture SSOT: GMR.md*`,[README.md:319](README.md#L319) 写着 `docs/GMR.md — architecture and design source of truth`。两处都还指着 HEAD 里那一份。
+
+### GMR 抓到了(实测)
+
+```
+$ gmr check
+docs/GMR.md#GMR 架构 > 0. 是什么   missing
+  nothing there answered to any of file · heading
+  → gmr-not-entailment
+docs/GMR.md#GMR 架构 > 6. 记忆层   missing
+  nothing there answered to any of file · heading
+  → three-layers
+
+2 of 659 handed a memory back. Re-read it: does what you wrote still hold?
+```
+
+**报得完全正确,而且报的就是那两条重心记忆。** 一次未提交的删除,系统立刻说出了后果。缺的不是检测,是把这句话送到正在动手的人面前。
+
+**所以"定位够不着代码"不是拓扑距离问题。**距离和层级在这张图里正交,是因为定位**根本没有被锚在代码上**——586 个代码锚里没有一个声明过"这块东西为什么存在"。
+
+---
+
+## 五 · 每个 agent 走的那个出口不在契约里
+
+[gate.py:320](tools/gate.py#L320) 定义得很清楚:*"The contract is whatever `contract.rs` re-exports — read, never restated."*
+
+[contract.rs](crates/gmr-runtime/src/contract.rs) 重导出了 `Grounding` · `Warrant` · `Holding` · `Shown` · `Standing` · `Reading` · `Knowledge` · `Blind` …
+
+**没有 `Grounded` · `AnchorView` · `MemoryView`。**
+
+```
+sample → Reading    SDK 用,目前没有已知真实用户    改字段 gate 就红
+read   → Grounded   每一个 agent,SKILL.md 第 2 步   随便改,没人报警
+```
+
+叶子被守住了,信封没有。而 `Grounded { view: AnchorView, memories: Vec<MemoryView> }` 就是"原子答案锚定原子数据"的那个原子载体——第一节那个 `grounded` 字段正好住在这个洞里。
+
+同层的两件:
+
+- **CLI 有 94 处手写 `json!`,散在 24 个 verb 文件里**,没有版本标记、没有 schema、gate 一行不查。而 [tools/accept/driver.py](tools/accept/driver.py) 开头写着 *"No caller above this file may match on prose"*——验收套件把 CLI 的 `--json` 当契约用,那份契约没人守。
+- `ContentErrorCode`([gmr-content/src/lib.rs:24](crates/gmr-content/src/lib.rs#L24))不在册,而 `Grounding::Unreachable` 和 `Before::Unreachable` 都在契约里、都带这个码。
+
+---
+
+## 六 · 问一个键要付全仓的价
+
+实测(release build,659 锚 / 193 笔记):
+
+```
+gmr --version                          6 ms
+gmr read   <一个坐标> --json         157 ms
+gmr status <一个坐标> --json         559 ms      3.6×
+gmr check  <一个坐标>                907 ms      5.8×
+gmr read   --json  (全部)         21 393 ms
+gmr status --json  (全部)         22 333 ms
+gmr doctor                        23 991 ms
+```
+
+`status` 即使只问一个键,仍然无条件跑 [`memories::scan(root)`](domains/coding/cli/src/verbs/status.rs#L56)(读全部 193 条笔记)和 `sync::Bound::of(rt)`(投影全部 bindings)——那是三份 criteria 报告要的,单键调用方没要。**任何热路径前端只能建在 `read` 上。**
+
+同族的三个动词对"哪些锚算数"意见不一致(代码可查):
+
+```
+status   filter(|g| named || !g.view.closed)   600 个   status.rs:50
+read     不过滤                                659 个   read.rs
+check    rt.anchors()                          659 个   check.rs:68
+observe  rt.anchors()                          659 个   observe.rs:19
+```
+
+`check` 自己的输出就写着 `2 of 659`,而 `status` 数的是 600。59 个 closed 锚在两个动词眼里存在、在第三个眼里不存在。
+
+**而 `doctor` 的报告是残缺的,它自己说了:**
+
+```
+unasked  25 of 217 bound record(s) were never asked about — the total content budget ran out first
+         <- what is printed above is that partial view, not the whole repository
+```
+
+诚实,但截断由预算耗尽的**遍历顺序**决定,不由重要性决定——哪 25 条被丢没有任何语义。
+
+---
+
+## 七 · 三份 SKILL.md,没有共同身份
+
+SKILL.md 是 Shape A 下唯一的协议载体。现在有三份:
+
+```
+.claude/skills/gmr/SKILL.md              == HEAD 的 assets/SKILL.md
+domains/coding/cli/assets/SKILL.md       工作区已改回旧版(未提交,111+ / 169−)
+npm 装的 gmr 0.5.0 里那一份              第三份
+```
+
+[skill.rs](domains/coding/cli/src/skill.rs) 用 `include_str!` 把 asset 编进二进制,`differs()` 拿它和磁盘上那份比。于是 `doctor` 报:
+
+```
+skill  /Users/zongming/Desktop/gmr/.claude/skills/gmr/SKILL.md
+       <- this copy is not the SKILL.md in this binary … Delete it and re-run `gmr init`
+```
+
+**照它说的做,会把 HEAD 里那份好的覆盖成工作区里那份被改回去的。** 因为"正确"被定义成"你手上这个二进制里编进去的那份",而二进制来自一个未提交的工作区。
+
+同一处的第二件:npm 装的 `gmr` 打不开这个仓库自己的库——
+
+```
+gmr: this database is stamped schema v12, and this build only knows v11. Refusing to open
+```
+
+两个二进制都自称 `gmr 0.5.0`。[`SCHEMA_VERSION`](crates/gmr-store/src/sqlite/schema.rs#L1) 是一个和 crate 版本无关的常量,**版本号不携带 store 世代**,所以"gmr 0.5.0"这句话不足以判断它能不能打开一个库。
+
+---
+
+## 八 · 消费层的观察(不在边界内)
+
+以下全部是实测,但按第零节的判据,它们**不是 GMR 的待办**——它们是证据,说明第一到第四节那几条没修之前,锚交出的东西不足以在闭环成形之前改写问题。
+
+AI 靠**最小逻辑闭环**结束任务:问"洗车店距我 50 米,走路还是开车",注意力落在 50 米 / 走路 / 开车,答"走路"就闭环了;补一条"99.9% 的人去洗车店是为了洗车",闭环被打破,答案才对。
+
+给冷上下文 subagent 一个"看似合理但违反契约"的请求。裸组 = 仓库 + CLAUDE.md;注入组 = 额外给坐标本地的契约正文。
+
+| 任务 | 裸 | 注入 | 效果 |
+|---|---|---|---|
+| A1 给 `Instructions` 加 `on_unreachable` | 照做 | **拒绝** | 决定性 |
+| A2 把 `RunSettings` 移进 `Anchor` | 照做 | **拒绝** | 决定性 |
+| B1 `ground` 加缓存 | 好答案 | 好答案 + 1 个正确性点 | 边际 |
+| B2 语义检索 | 照做 | 照做 | 零 |
+| B3 合并两个回路 | 照做 | **照做,且更糟** | **负** |
+
+**A2 裸组是决定性的一例。** 它自己读到了 `memories/anchor-RunSettings.md`,引用了准入测试原句,写下 *"This contradicts an explicitly anchored decision… This is owner judgement (CLAUDE.md §7)"*,**然后照做了。**
 
 ```
 裸组的闭环    「完成任务,顺带记下异议」   → 约束变成脚注
 注入组的闭环  「这件事该不该做」          → 约束改写了问题
 ```
 
-**结论:注入的价值不在信息可得性,在到达时机相对于闭环成形的先后。** 同一条信息,闭环之前到达是重定向,之后到达是脚注。
+**同一条信息,闭环之前到达是重定向,之后到达是脚注。**
 
----
+**B3 是负效应,而第一节解释了为什么。** 注入臂把注入的旁支契约当成了支持错误方案的论据:
 
-## 二 · 注入错的东西,比不注入更糟
+> **The real prize:** … **Per `memories/check-drift.md`** … **that failure class disappears**.
 
-**注入的效果不是单调的。** 这一条反直觉,而且有实测。
+那条记忆在拓扑上邻近、语义上相关,但因果方向上站在错误的一侧。**"邻近"不等于"构成最小信息集"**,而区分二者的信号(边的类型)在交付时被丢掉了。
 
-```
-注入的记忆是正相关(恰好是禁止该请求的那条契约)  → 决定性
-注入的记忆是旁支                                → 边际 / 零 / 负
-```
-
-| 任务 | 裸 | 注入 | 效果 |
-|---|---|---|---|
-| A1 `on_unreachable` | 照做 | **拒绝** | 决定性 |
-| A2 `RunSettings` | 照做 | **拒绝** | 决定性 |
-| B1 `ground` 加缓存 | 好答案 | 好答案 + 1 个正确性点 | 边际 |
-| B2 语义检索 | 照做 | 照做(架构几乎逐字相同) | 零 |
-| B3 合并两个回路 | 照做 | **照做,且更糟** | **负** |
-
-### B3 注入臂把注入的契约当成了论据(实测)
-
-它原话:
-
-> **The real prize:** … **Per `memories/check-drift.md`**, after any shape edit and before `accept --criteria`, every note's `watch:` silently stops applying. A stored expression never consults `shapes::of()`, so **that failure class disappears**.
-
-我注入的那条记忆描述了一个真实的失效模式,而**错误的设计恰好把它解决掉了**——于是注入的内容变成了支持错误方案的正向论据。
-
-**所以"注入更多相关上下文总没坏处"是错的。**
-
----
-
-## 三 · 重心识别失败:agent 拿到全部拼图,仍然选错重心
-
-这是问题一在大尺度上的表现,而且是最难对付的一种。
-
-**症状**(你先提出的):反复说明过 GMR 是锚定层工具,但 agent 改代码时总是偏向把它当记忆工具。这是只根据部分信息形成的逻辑短路——代码本身已经表明了不是,读全了就能发现,但**读不全,上下文装不下**。
-
-### 标本(实测)
-
-B3 任务:把 note 的 `watch:` 编译成 `depends` 存进 store,让 `check` 从 store 读回来。提示词是纯机械的(只描述数据结构和代码路径),不含任何"GMR 是什么"的框架,而且自带 DRY 压力。
-
-语料里**字面记录了这次差点做成的错误**(`memories/three-layers.md`):
-
-> This note exists because **the merge was nearly made**. … That is writing a **memory's criteria into the inference slot**. `check`'s whole job is comparing code against memory; pointed at the store it would compare code against *a copy of the memory taken at the last sync*. **The one drift this system exists to catch, manufactured in the checker.**
-
-三条臂的结果:
+**B3 的三臂对照最能说明第四节:**
 
 | 臂 | 结果 | 理由的性质 |
 |---|---|---|
-| 裸 | 照做(变体) | **自己推出了核心论点**,归档成 caveat,方案仍然从 store 读 |
-| 注入(坐标本地契约) | **全盘照做** | 无核心反对,还把注入的契约当论据 |
-| 注入 + 定位记忆 | **拒绝** | 正确理由,且替代方案保住了性质 |
+| 裸 | 照做(变体) | **自己推出了核心论点**,归档成 caveat,方案仍从 store 读 |
+| 注入坐标本地契约 | 全盘照做 | 无核心反对,还把注入的契约当论据 |
+| 注入 + `three-layers` | **拒绝** | 正确理由,替代方案保住了性质 |
 
-**裸组的原话**,它自己推出来的:
+裸臂原话:*"check stops reading the memory. It would compare code against a copy in the append-only log."* **它发现了,然后按错误的重心把发现归档成了脚注。**
 
-> **check stops reading the memory.** It would compare code against a *copy* in the append-only log; an edited `watch:` is inert until `sync` runs.
-
-然后它以另一条**机制**记忆(`runtime-depends.md`,讲别污染 `depends` 语义)为重心,推荐"分成两个字段"——**那个方案保留了 store round-trip,仍然犯它自己点名的错**。
-
-> 你说的"如果阅读全面、分析清楚就能发现"——**它发现了。然后按错误的重心把发现归档成了脚注。**
-
-### 附带的一条(实测)
-
-定位臂列了三条机制障碍(极性反转 / `Vacuous` / 回退链无处安放);**裸臂逐条工程绕过去了**。
-
-**机制障碍可以被工程掉,层级区分不能。** 所以只有正确的理由能防住下一次有人把机制障碍绕过去。
+定位臂列了三条机制障碍,裸臂逐条工程绕过去了。**机制障碍可以被工程掉,层级区分不能。**
 
 ---
 
-## 四 · 定位在拓扑上够不着代码
+## 九 · 上一版里被推翻的判断
 
-这是问题三的根因。
-
-### 语料的链接网络指向错误方向(实测)
-
-```
-193 条记忆  出链 p50 2 · p90 4 · max 10 · 45 条零出链(23%)
-
-被引用最多的(枢纽)          说明「是什么」的(重心)
-  runtime-warrant    13         three-layers         3
-  runtime-grounding  12         gmr-not-entailment   4
-  layers             11         constitution         1
-  content-budget     10         runtime-aim          1
-```
-
-**枢纽全是机制记忆,重心是孤岛。** 一个 agent 顺着链接走,走到的全是"怎么运作",走不到"是什么"。
-
-### 广度扩展不可行(实测)
-
-从一个代码坐标出发沿 `[[wikilink]]` 扩展,到达重心记忆:
-
-```
-跳数  到达重心  注入字节 p50
- 0      2%         5.4KB
- 1     18%        24.0KB
- 2     28%        81.4KB
- 3     72%       270.8KB   ← 整个语料的 43%
-```
-
-**指数代价换线性收益。** 原因是这个图的中心性指向反方向——**距离和层级在这个图里正交**。你要的东西不在"近处",在"另一层"。
-
-### 层级信号藏在锚定目标的类型里(实测)
-
-```
-锚在 *.rs#symbol   125 条 (65%)   局部约束:这块怎么运作
-锚在描述性文档       3 条 (1.6%)  全局约束:这东西是什么
-```
-
-那 3 条是 `constitution`(锚在 CLAUDE.md)、`gmr-not-entailment`、`three-layers`。**后两条锚在 `docs/GMR.md` 上——那个文件已被删除。**
-
-用 sqlite 直接查 bindings 表确认过:两条记忆**各只有一条绑定、各只指 1 个锚、其中 0 个是代码坐标**。
-
-强制观测之后:
-
-```
-docs/GMR.md#GMR 架构 > 0. 是什么   moved  missing  → gmr-not-entailment
-docs/GMR.md#GMR 架构 > 6. 记忆层    moved  missing  → three-layers
-```
-
-**GMR 抓到了,而且交回的恰好就是那两条重心记忆——只是从来没人让它跑。**
-
-### 而 CLAUDE.md 补不上这个洞(代码可查)
-
-CLAUDE.md 13.6KB,自动进每个 agent 的上下文。它讲 crate 边界、所有者规则、版本流程——**通篇是规则和禁令,从不说"这不是一个记忆工具"**。
-
-**定位不在里面。** 所以"三臂都有 CLAUDE.md,只有拿到 `three-layers.md` 的那臂给出了正确理由"。
-
-> 这就是你说的:**GMR 具备了潜在的功能,但用户用不出来。** 而根因是锚定的拓扑把「是什么」和「在改什么」隔开了。
+1. **"靠 agent 自觉的注入是根问题"** → 不是 GMR 的问题。CLI / MCP / SDK / hook 那张强度表是一张**关于 harness 的表**;基座设计得再对,四栏的差异原样存在。按 CLAUDE.md 规则 12,组装和 CLI 属于 domain。降级为第八节的观察。
+2. **"语料的链接网络指向错误方向"** → 量的是 atlas 渲染用的 wikilink 图。它确实被上次失败的实施编译进了运行时,但**语义在编译中被换掉了**(提到 → cites → 交付时跟随),而且冻结了。真正的问题是第二节,不是出链分布。
+3. **"定位从来没有被写进仓库"** → 写过,而且比上一版第零节写得好([[three-layers]] / [[gmr-not-entailment]])。按"没写"这个诊断走下去,结论是"再写一份文档",而那正是刚刚失败过一次的路径。真正的问题是**它没有被锚在代码上**(第四节)。
+4. **"`docs/GMR.md` 已被删除"** → 工作区删除,**未提交**;HEAD 里还在,33KB。
+5. **"最小信息量是否可计算"从"未解"移到"边界"** → 上一版的论证是对的(目标函数依赖任务,选集合时任务未知),所以这不是待答问题,是第零节的第四条"不做"。
 
 ---
 
-## 五 · 注入本身的工程约束
+## 十 · 这次调查自身的缺陷
 
-即使解决了上面几条,注入还有硬约束。全部实测,对象是这个仓库(599 个锚 / 193 条记忆 / 621KB 语料 / 零 barren)。
-
-### 粒度决定生死
-
-```
-按文件注入   p50  5.9KB   p90 16.8KB   max 70.9KB   ← max 不可能
-按符号注入   p50  3.3KB   p90  7.2KB   max 15.0KB   ← 全部可行
-```
-
-`crates/gmr-runtime/src/read.rs` 本身 33KB,牵出 **66KB 记忆——比源码还多一倍**。
-
-窄化实测(18 个真实坐标):p50 砍到 47%,重文件砍到 7–11%。
-
-### 预算截断会主动挑错
-
-`read.rs` 限 8KB 时,保留了覆盖 12 个锚的 `runtime-ground.md`,**丢掉的 10 条里包含 `runtime-instructions.md`——正是管 `refresh` 那个函数的**。
-
-**粒度对齐是解,预算截断不是。** 粒度对了从不需要截断;粒度错了截断会加重稀释注意力——而注意力正是洗车店例子的主题。
-
-### 窄化必须按位置,不能按名字
-
-给定一次编辑,判断它落在哪个锚里:
-
-```
-字符串匹配锚名     命中 16%   回退 56%   挑错 28%
-行包含 + 唯一定位   命中 100%  回退  0%   挑错  0%
-```
-
-字符串匹配没有符号边界的概念,`}` 这种行会命中别处。行号来自 `facts.facts.line`,抽取器已经在算(`ast.rs:256`),与 `grep -n` 完全一致。
-
-### 注入的对象是约束,不是变化
-
-**599 个锚里只有 18 个是非 settled(3%)。** 只注入"漂了的",97% 的时候什么都不送——洗车店那个病原封不动。
-
-洗车店里那条决定性的信息("99.9% 的人去洗车店是为了洗车")**根本没有漂移**,它一直是真的。
+1. **第八节的"裸"组不是裸的。** CLAUDE.md 自动进每个 agent 的上下文。实测的是「CLAUDE.md」vs「CLAUDE.md + 坐标本地记忆」。
+2. **B2 证明不了任何事。** "设计语义检索"没有无歧义的错误答案,而且提示词是我写的——我自己把"记忆系统"的框架塞了进去,再测它们会不会偏向记忆系统。
+3. **语料对搜索是可发现的。** `memories/three-layers.md` 是仓库里的文件,agent 能 grep 到。"锚定拓扑够不着"和"搜索找不到"是两件事,只区分开了一半。
+4. **第一节的判别用的是 `warrant` 有无。** 这依据 [runtime-read.md:25](memories/runtime-read.md#L25) 和 `ground()` 的代码路径,不是独立观测。
+5. **第六节的时间是单机单次(min of 5 / min of 2)**,不是基准套件。
 
 ---
 
-## 六 · 出口本身的问题(最初的问题)
+## 十一 · 还没有答案的
 
-上面讲的是"价值为什么不落地"。这一节是"载体本身有什么毛病"。
-
-### 唯一需要的那次调用,不在契约里(代码可查)
-
-`gmr read --json` 一次给出:锚 · state · facts · `fact_address` · 记忆地址 · warrant · **记忆全文**。任何第二个前端要的就是它。
-
-但它吐的 `Grounded` / `AnchorView` / `MemoryView` **不在 `contract.rs` 里**,所以 `SHAPE` 盖不住,改字段没有任何东西报警。
-
-```
-sample → Reading    SDK 用,目前没有已知真实用户    ✅ 改字段 gate 就红
-read   → Grounded   每一个 agent,SKILL.md 第 2 步   ❌ 随便改,没人报警
-```
-
-同时 `ContentErrorCode` 是契约里一个**已经存在的洞**:`Grounding::Unreachable` 和 `Before::Unreachable` 都在契约里,它自己没在册。
-
-### CLI 有 94 处手写 `json!`,而 SDK 有版本有形状哈希
-
-SDK 那边:`gmr.contract.v8` + 挣来的 `SHAPE` + 两道 gate 检查(形状变了而版本没动就红;`index.d.ts` 版本串对不上也红)。
-
-CLI 这边:94 处 `json!` 散在 24 个 verb 文件里,没有版本标记、没有 schema、gate 一行都不查。
-
-而 `tools/accept/driver.py` 开头写着 *"No caller above this file may match on prose"* ——**你自己的验收套件把 CLI 的 `--json` 当契约在用,但那份契约没人守。**
-
-### `status` 对单键跑全仓审计,慢 59 倍(实测)
-
-```
-gmr --version                        7 ms
-gmr read   <一个坐标> --json        37 ms
-gmr status <同一个坐标> --json    2194 ms
-gmr status --json (全部)         12982 ms
-```
-
-即使只问一个锚,`status` 也要 `memories::scan()` 扫全部笔记 + `sync::audit()` 全仓审计——那是三个 criteria 报告要的,而单键调用方没要。**这决定了任何热路径前端必须建在 `read` 上而不是 `status` 上。**
-
-### 能力已经存在,只是没有出口(三次查证,同一个结论)
-
-| 已存在 | 在哪 | 为什么用不上 |
-|---|---|---|
-| `read --json` 带记忆全文 | `memories[].grounding.content` | 动词叫 "read an anchor",名字没说它是什么 |
-| 便宜的 fold-only 读 | `Runtime::sample` / `read` / `read_all` | CLI 一个都没用,走的是带记忆抓取的路径 |
-| 廉价的锚 key 列举 | `Runtime::anchors()`,9 个 verb 在内部用 | 没有任何出口 |
-| wikilink 解析 | `prose::wikilinks`,只喂 `atlas` | 结果直接烘进 HTML |
-
-**我自己读了这个代码库几个小时,仍然漏了第一条,并绕出了一个"查锚→再读文件"的两步变通。** 能力在那儿,名字没有透露它是什么。
-
-### CLI 与 SDK 的动词对不上(代码可查)
-
-| Runtime 方法 | CLI | SDK |
-|---|---|---|
-| `grounded_within` | `read` | — |
-| `sample` | **没有** | `sample` |
-| `bind`(Said) | `said` | `bind` |
-| `bind`(Stored) | `bind` / `attest` | `bind` |
-| `ground` | `standing` | `ground` |
-| `changed_since` | `edges` | `since` |
-
-`bind` 在两边意思都不一样:CLI 的只接记录,SDK 的什么 claim 都接。
-
-### `since` 一个动词横跨两个回路,代价差 40 倍(实测)
-
-```
-since(cursor, Some(status))  →  0.18ms  ·  只问「锚状态动了吗」
-since(cursor, None)          →  7.23ms  ·  构建 raised,每个锚 fetch 一次记录
-```
-
-`memories/latency-baseline.md` 自己写着:*"nothing in the signature says so."*
-
----
-
-## 七 · 定位从来没有被写进仓库
-
-上面第零节那些——两个产品面、两种形态、职责三不、最小闭环原理——**在这次讨论里确立了,但仓库里没有一处记录**。
-
-最接近的两条(`three-layers` / `gmr-not-entailment`)锚在已删除的文档上(见问题四)。
-
-**后果:** 下一个 agent(或三个月后的人)会从零重推,并大概率重复"GMR 是记忆工具"那个短路。这份文档存在,一半是为了这个。
-
----
-
-## 八 · 这次实施暴露的问题
-
-这一节是过程问题,跟产品问题分开。
-
-### 这个仓库有两类东西,只有一类有 undo(代码可查)
-
-```
-可逆    源码 · 文档 · memories/*.md · tools/gate.py       git,一条命令
-不可逆  .anchor/state/memory.db                            没有
-        journal · bindings · links · sealed                schema.rs 逐表 RAISE(ABORT,'append_only')
-```
-
-`schema.rs` 的小标题就写着 *"Append-only — by trigger, not by good intentions"*。
-
-**我把日志当源码用了。** 实施期间每一次 `gmr sync` 都当成"验证步骤"随手跑,而每一次都是往不可逆的那一半里写。
-
-### 三个具体的过程失误
-
-1. **动手前只读了接口,没读不变量。** 读了 `LinkStore` 的两个方法就得出"没有 unlink,加一个 relink",**没读 `schema.rs`**。整个方案建立在一个从没查过的事实上。
-2. **验证看输出不看退出码。** `gmr sync >/dev/null 2>&1` 然后数边——检查的是希望看到的症状,不是那条命令有没有跑成功。两次静默失败的 sync 被当成"幂等通过"。
-3. **用不可逆的操作清理可逆的错误。** 381 条链接是坏的但**有界**;为清掉它们做的 export/import 手术是**无界**的,它重建了整个 store,而我不知道我没恢复的表有谁在读。**清理比烂摊子本身危险一个量级。**
-
-### 留下的残留(实测)
-
-- `.anchor/state/memory.db` 里有 **381 条 `kind='cites'` 的边**。经 `carry_linked`,投递从 617 条涨到 2328 条(**3.8×**),涉及 659 个锚里的 531 个。append-only,删不掉。
-- 孤儿锚 `crates/gmr-runtime/src/read.rs#Blind`——为一条已删除的笔记开的,`doctor` 报 `undeclared`。
-
-### 顺带查出、不是本次造成的两件
-
-- **`check` / `observe` 无 key 时走 `rt.anchors()`,包含 closed 锚**,而 closed 锚不入队 → 租不到就报"被别人占着"。今天能跑只因为旧库留着 closed 锚的队列残留行。同族的 `status` 明确过滤 closed。
-- **`Blind::of` 把 `TimedOut` 映射为 `NeverAsked`** 抢在 `ReasonClass` 分支之前。**不是 bug**:传输层用同一个码表示"探针跑了但超时"和"预算在调用前就耗尽",两者不可区分,`NeverAsked` 是 claim 更少的那一半。
-
----
-
-## 九 · 这次调查自身的缺陷
-
-不写下来,下面的结论会被当成比实际更硬。
-
-1. **"裸"组不是裸的。** CLAUDE.md 自动进每个 agent 的上下文。实测的其实是「CLAUDE.md」vs「CLAUDE.md + 坐标本地记忆」。
-2. **B2 判据不硬。** "设计语义检索"没有无歧义的错误答案,两臂都把"已绑定=已复核"和"召回=猜测"分开了,那是站得住的答案。**B2 证明不了任何事。**
-3. **B2 提示词预载了框架。** 我写的是 "GMR stores maintained memories… there is no way to ask which memories are relevant"——**我自己把"记忆系统"的框架塞了进去**,然后测它们会不会偏向记忆系统。
-4. **语料对搜索是可发现的。** `memories/three-layers.md` 是仓库里的文件,agent 能 grep 到。被删的是它锚定的 `docs/GMR.md`,不是它自己。所以"锚定拓扑够不着"和"搜索找不到"是两件事,这次只区分开了一半。
-5. **窄化的第一次测量是循环论证。** 我按符号名找片段,片段当然含符号名。重做后才得到 100% / 0% 那组数。
-
----
-
-## 十 · 还没有答案的
-
-- **宪法层能压到多小而不失去打断闭环的能力。** 那 4 条重心记忆 12.6KB,挂在每次编辑上太贵。这是信息论问题,而且可实验:注入 1KB 蒸馏版 vs 12.6KB 原文,比较打断率。
+- **宪法层能压到多小而不失去打断闭环的能力。** 那四条重心记忆 12.6KB,挂在每次编辑上太贵。可实验:注入 1KB 蒸馏版 vs 12.6KB 原文,比较打断率。
 - **服务侧动态发现的事实源怎么锚。** 过敏原例子:AI 在分析配料时才发现要查"花生油是否致敏"。预先枚举 = 退回传统系统;运行时开长期锚 = 锚随对话无限增长;一次性读数 = 今天不存在。
 - **注入在长会话中是否随上下文增长而失效。** 没测过。
-- **最小信息量是不是可计算。** 从坐标出发求"使闭环正确的最小记忆集"——目标函数("闭环正确")依赖任务,选集合时任务未知,不可先验计算。图里有一个可计算的层级信号(锚定目标的类型),但那只是近似。
+- **第三节那类错误能不能被机械发现。** "笔记引用了它不 watch 的符号的行为"——这是 entailment,基座不能做。但一条笔记提到的**符号名**是否都在它的 `about:` 覆盖范围内,是结构问题,可算。不知道召回率有多低。
