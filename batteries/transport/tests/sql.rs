@@ -839,7 +839,7 @@ async fn keeping_the_endpoint_costs_a_handshake_once_and_not_per_reading() {
         ProbeName::new("v"),
         Ask::on(
             Source::FromEnv("GMR_TEST_POSTGRES_URL".to_owned()),
-            "SELECT 1",
+            "SELECT pg_backend_pid()",
         ),
     )]);
     let sql = Sql::new(asks);
@@ -856,19 +856,19 @@ async fn keeping_the_endpoint_costs_a_handshake_once_and_not_per_reading() {
         budget: &budget,
     };
 
-    let mut taken = Vec::new();
+    let mut pids = std::collections::BTreeSet::new();
     for _ in 0..8 {
-        let at = std::time::Instant::now();
-        sql.invoke(&asked).await.unwrap();
-        taken.push(at.elapsed());
+        let outcome = sql.invoke(&asked).await.unwrap();
+        let gmr_core::Outcome::Found { facts } = outcome else {
+            panic!("the query answers on every healthy connection");
+        };
+        pids.insert(facts.as_value()["value"].clone().to_string());
     }
-    let first = taken[0];
-    let rest: Duration = taken[1..].iter().sum::<Duration>() / (taken.len() - 1) as u32;
-    println!("first {first:?}  then {rest:?}");
-    assert!(
-        rest * 4 < first,
-        "a connection handshake to a local postgres is around 42 ms and the query is 2.5. \
-         Every reading used to pay the handshake and throw it away: first {first:?}, \
-         then {rest:?}"
+    assert_eq!(
+        pids.len(),
+        1,
+        "the endpoint is kept, so every reading is answered by the same backend \
+         process. A fresh pid per reading is a fresh handshake per reading — the \
+         exact cost the pool exists to pay once. pids seen: {pids:?}"
     );
 }
