@@ -1,12 +1,12 @@
 /**
  * @anchorstate-lab/gmr — the seven verbs.
  *
- * These declarations describe `gmr.contract.v9`. That string is what a caller
+ * These declarations describe `gmr.contract.v10`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
  */
-export const CONTRACT: "gmr.contract.v9";
+export const CONTRACT: "gmr.contract.v10";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
