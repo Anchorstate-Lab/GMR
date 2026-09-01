@@ -15,11 +15,13 @@ terminal — building a tokio runtime by hand, and turning an outcome into an
 `ExitCode`. See [[cli-embeddable]] for what that unblocked and the test that
 keeps it unblocked.
 
-`run` dispatches `Publish`, `Probes`, and `Init` before the journal is even
-opened: publishing an artifact happens before any log exists, and building
-probes likewise never touches the journal — routing them through a full
-`Runtime` would be pure overhead for verbs that only need the filesystem
-and the probe store.
+`run` dispatches `Publish`, `Probes`, `Init`, and `Adopt` before the journal
+is even opened: publishing an artifact happens before any log exists, building
+probes never touches the journal, and `adopt` nominates from a repository that
+may not have run `init` yet — cold start is its whole point, so requiring a
+`Runtime` would gate the door on the thing behind the door. Routing any of
+them through a full `Runtime` would be pure overhead for verbs that only need
+the filesystem and the probe store.
 
 ## Why the split into `run` and `served`
 
