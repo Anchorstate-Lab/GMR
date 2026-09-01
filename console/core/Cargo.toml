@@ -1,0 +1,15 @@
+[package]
+name = "gmr-console"
+description = "The console's shared half: options in, an assembled Runtime and the verb-table helpers out. Bindings adapt only the error type."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gmr = { path = "../../crates/gmr", features = ["sqlite"] }
+gmr-transport = { path = "../../batteries/transport", features = ["shell", "script", "http", "file", "sql", "postgres"] }
+gmr-provider = { path = "../../batteries/provider", features = ["git", "claude-code", "mem0"] }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

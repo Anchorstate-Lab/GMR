@@ -55,7 +55,9 @@ CLEAN_ZONES = [
     "batteries/transport",
     "packs/coding/extract",
     "console/cli",
+    "console/core",
     "console/node",
+    "console/python",
 ]
 EXEMPT_FILES = ["console/cli/src/cli.rs"]
 
@@ -445,6 +447,7 @@ def check_contract_shape_is_earned():
 TYPED_SURFACES = [
     ROOT / "dist" / "npm" / "index.d.ts",
     ROOT / "dist" / "npm" / "index.js",
+    ROOT / "console" / "python" / "gmr.pyi",
 ]
 
 

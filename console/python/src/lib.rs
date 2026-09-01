@@ -1,0 +1,257 @@
+use std::sync::Arc;
+
+use gmr_api::{AnchorKey, Binding, Runtime, StatusId, Version};
+use gmr_console as core;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use serde_json::Value;
+
+fn failed(message: impl Into<String>) -> PyErr {
+    PyValueError::new_err(message.into())
+}
+
+fn ok<T>(outcome: Result<T, core::Fault>) -> PyResult<T> {
+    outcome.map_err(failed)
+}
+
+fn taken(py: Python<'_>, value: Option<Bound<'_, PyAny>>) -> PyResult<Option<Value>> {
+    let _ = py;
+    value
+        .map(|v| pythonize::depythonize(&v).map_err(|e| failed(e.to_string())))
+        .transpose()
+}
+
+fn handed(py: Python<'_>, value: Value) -> PyResult<PyObject> {
+    pythonize::pythonize(py, &value)
+        .map(|b| b.unbind())
+        .map_err(|e| failed(e.to_string()))
+}
+
+#[pyclass]
+struct Gmr {
+    rt: Arc<Runtime>,
+    loop_: Arc<tokio::runtime::Runtime>,
+}
+
+impl Gmr {
+    fn run<T>(
+        &self,
+        py: Python<'_>,
+        work: impl std::future::Future<Output = PyResult<T>> + Send,
+    ) -> PyResult<T>
+    where
+        T: Send,
+    {
+        let loop_ = Arc::clone(&self.loop_);
+        py.allow_threads(|| loop_.block_on(work))
+    }
+}
+
+#[pyfunction]
+fn open(py: Python<'_>, options: Bound<'_, PyAny>) -> PyResult<Gmr> {
+    let asked: core::Opening = ok(core::said(
+        taken(py, Some(options))?.expect("an argument was passed"),
+    ))?;
+    let loop_ = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| failed(format!("cannot start the runtime loop: {e}")))?;
+    let rt = py.allow_threads(|| loop_.block_on(core::opened(asked)));
+    Ok(Gmr {
+        rt: Arc::new(rt.map_err(failed)?),
+        loop_: Arc::new(loop_),
+    })
+}
+
+#[pymethods]
+impl Gmr {
+    #[pyo3(signature = (claims, how=None))]
+    fn ground(
+        &self,
+        py: Python<'_>,
+        claims: Vec<Bound<'_, PyAny>>,
+        how: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<PyObject> {
+        let claims = claims
+            .into_iter()
+            .map(|c| {
+                let value = taken(py, Some(c))?.expect("an element was passed");
+                ok(core::asking(value))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let how = ok(core::asked(taken(py, how)?))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(rt.ground(&claims, &how).await))
+        })?;
+        handed(py, out)
+    }
+
+    #[pyo3(signature = (anchor, how=None))]
+    fn sample(
+        &self,
+        py: Python<'_>,
+        anchor: String,
+        how: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<PyObject> {
+        let key = AnchorKey::new(anchor);
+        let how = ok(core::asked(taken(py, how)?))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(rt.sample(&key, &how).await))
+        })?;
+        handed(py, out)
+    }
+
+    #[pyo3(signature = (anchor, how=None))]
+    fn read(
+        &self,
+        py: Python<'_>,
+        anchor: String,
+        how: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<PyObject> {
+        let key = AnchorKey::new(anchor);
+        let how = ok(core::asked(taken(py, how)?))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(rt.grounded_within(&key, &how).await))
+        })?;
+        handed(py, out)
+    }
+
+    #[pyo3(signature = (cursor, status=None))]
+    fn since(&self, py: Python<'_>, cursor: u64, status: Option<String>) -> PyResult<PyObject> {
+        let status = status.map(StatusId::new);
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(
+                rt.changed_since(cursor, status.as_ref()).await,
+            ))
+        })?;
+        handed(py, out)
+    }
+
+    #[pyo3(signature = (claim, anchors, source, how=None))]
+    fn bind(
+        &self,
+        py: Python<'_>,
+        claim: String,
+        anchors: Vec<String>,
+        source: String,
+        how: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<PyObject> {
+        let how: core::Asserting = match taken(py, how)? {
+            Some(stated) => ok(core::said(stated))?,
+            None => core::Asserting::default(),
+        };
+        let claim = ok(core::asserting(ok(core::named(claim))?, how.asserts))?;
+        let anchors = anchors.into_iter().map(AnchorKey::new).collect();
+        let mut binding = Binding::on(claim, anchors);
+        if let Some(source_expr) = how.depends {
+            ok(core::invariant(&source_expr))?;
+            binding = binding.depending(source_expr);
+        }
+        let source = ok(core::attested(&source))?;
+        let bound_version = how.bound_version.map(Version::new);
+        let saw = how
+            .saw
+            .into_iter()
+            .map(|s| ok(core::looked(s)))
+            .collect::<PyResult<_>>()?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(
+                rt.bind(binding, bound_version, saw, source).await,
+            ))
+        })?;
+        handed(py, out)
+    }
+
+    fn revoke(&self, py: Python<'_>, claim: String, source: String) -> PyResult<PyObject> {
+        let claim = ok(core::named(claim))?;
+        let source = ok(core::attested(&source))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(rt.revoke(&claim, source).await))
+        })?;
+        handed(py, out)
+    }
+
+    fn link(
+        &self,
+        py: Python<'_>,
+        from: String,
+        to: String,
+        kind: String,
+        source: String,
+    ) -> PyResult<()> {
+        let from = ok(core::stored(from))?;
+        let to = ok(core::stored(to))?;
+        let kind = gmr_api::LinkKind(kind);
+        let source = ok(core::attested(&source))?;
+        let rt = Arc::clone(&self.rt);
+        self.run(py, async move {
+            rt.link(&from, &to, kind, source)
+                .await
+                .map_err(|e| failed(e.to_string()))
+        })
+    }
+
+    fn unlink(
+        &self,
+        py: Python<'_>,
+        from: String,
+        to: String,
+        kind: String,
+        source: String,
+    ) -> PyResult<u64> {
+        let from = ok(core::stored(from))?;
+        let to = ok(core::stored(to))?;
+        let kind = gmr_api::LinkKind(kind);
+        let source = ok(core::attested(&source))?;
+        let rt = Arc::clone(&self.rt);
+        self.run(py, async move {
+            rt.unlink(&gmr_api::LinkRevocation {
+                from,
+                to,
+                kind,
+                asserted_as: None,
+                source,
+                when: chrono::Utc::now(),
+            })
+            .await
+            .map_err(|e| failed(e.to_string()))
+        })
+    }
+
+    #[pyo3(name = "open")]
+    fn open_anchor(&self, py: Python<'_>, request: Bound<'_, PyAny>) -> PyResult<PyObject> {
+        let request = ok(core::said(
+            taken(py, Some(request))?.expect("an argument was passed"),
+        ))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(
+            py,
+            async move { ok(core::answered(rt.open(request).await)) },
+        )?;
+        handed(py, out)
+    }
+
+    fn close(&self, py: Python<'_>, key: String, why: String) -> PyResult<()> {
+        let key = AnchorKey::new(key);
+        let rt = Arc::clone(&self.rt);
+        self.run(py, async move {
+            rt.close(&key, why.as_bytes())
+                .await
+                .map_err(|e| failed(e.to_string()))
+        })
+    }
+}
+
+#[pymodule]
+fn gmr(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("CONTRACT", gmr_api::contract::CONTRACT)?;
+    m.add_class::<Gmr>()?;
+    m.add_function(wrap_pyfunction!(open, m)?)?;
+    Ok(())
+}

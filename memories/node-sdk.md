@@ -2,8 +2,8 @@
 about:
   - console/node/src/lib.rs#open
   - console/node/src/lib.rs#Gmr
-  - console/node/src/lib.rs#Opening
-  - console/node/src/lib.rs#answered
+  - console/core/src/lib.rs#Opening
+  - console/core/src/lib.rs#answered
   - tools/gate.py#check_typed_surface_names_the_contract
 watch: [sig, logic]
 ---
@@ -93,8 +93,9 @@ A `#[napi(object)]` silently ignores a property it does not know. `{ maxStalenes
 60000 }` would be dropped and the caller would get an answer served from the
 record under a freshness bound they believe they set — invisible from outside,
 indistinguishable from a fresh answer. Every input here is a `serde_json::Value`
-deserialised with `deny_unknown_fields`, so the same typo is an error naming the
-field it could not place. TypeScript would catch it at compile time for some
+deserialised with `deny_unknown_fields` — the shapes and refusals now live once
+in [[console-core]], and each door only adapts the error type — so the same typo
+is an error naming the field it could not place. TypeScript would catch it at compile time for some
 callers; the refusal catches it for all of them.
 
 ## What a caller may not hand in
