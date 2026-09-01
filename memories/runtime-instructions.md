@@ -19,6 +19,7 @@ is the same species and says so by sitting next to it:
 max_staleness   re-probe, or serve what is on record        changes what we do
 budget          how long this call may spend reaching out   changes what we do
 reach           how many link hops to follow, if any        changes what we do
+carry           whether an anchor read brings linked records changes what we do
 ```
 
 `reach` passes the same test the other two do. It says how far to walk, not what
@@ -27,6 +28,13 @@ records that moved and their paths, and stops. Absent means the walk does not
 happen at all, which is the one default a cost knob can have: a store read per
 record, on a path that runs on every `ground`, is not something a caller should
 pay for without having asked.
+
+`carry` is the same rule reaching the anchor read. `grounded` used to walk one
+link hop unconditionally, and in this repository that priced every read at
+roughly four times its declared bindings — records that merely mention a bound
+note, delivered beside the ones that are about the anchor. Now the walk happens
+only when asked, and what it brings in is marked (see
+[[runtime-carry-linked]]). Absent means only what is bound.
 
 Neither is a threshold GMR applies to grade an answer. Whether six hours is too
 old is the caller's question and GMR never answers it — it reports `observed_at`
