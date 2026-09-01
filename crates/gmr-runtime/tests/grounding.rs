@@ -510,7 +510,15 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
         .await
         .unwrap();
 
-    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    let how = gmr_runtime::Instructions {
+        carry: true,
+        ..Default::default()
+    };
+    let view = w
+        .runtime
+        .grounded_within(&AnchorKey::new("a"), &how)
+        .await
+        .unwrap();
     let by_id = |id: &str| {
         view.memories
             .iter()
@@ -1307,7 +1315,7 @@ async fn both_phases_of_one_call_run_against_one_deadline() {
             &gmr_runtime::Instructions {
                 max_staleness: Some(std::time::Duration::ZERO),
                 budget: Some(std::time::Duration::from_millis(40)),
-                reach: None,
+                ..Default::default()
             },
         )
         .await
@@ -2038,4 +2046,86 @@ async fn what_a_claim_asserted_comes_back_with_it() {
         "and one nothing was ever asserted about comes back as asked, because there is no \
          stored version of it to prefer"
     );
+}
+
+#[tokio::test]
+async fn a_record_bound_elsewhere_is_not_delivered_here_just_for_being_linked() {
+    use gmr_core::LinkKind;
+
+    let w = World::new(true);
+    w.memory("bound.md", "About a.");
+    w.memory("other.md", "About b, and bound there.");
+    w.open("a").await;
+    w.open("b").await;
+    w.bind("bound.md", &["a"]).await;
+    w.bind("other.md", &["b"]).await;
+    w.runtime
+        .link(
+            &Ref::new("git", "memories/bound.md"),
+            &Ref::new("git", "memories/other.md"),
+            LinkKind("cites".into()),
+        )
+        .await
+        .unwrap();
+
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        view.memories.len(),
+        1,
+        "the caller says whether to walk, and silence says not at all — the rule the \
+         claim path already seals for `reach`. A default read that follows every link \
+         hands back what merely mentions the anchor's records, priced the same as what \
+         is about them: {:?}",
+        view.memories
+            .iter()
+            .map(|m| m.reference.external_id.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(view.memories[0].reference.external_id.as_str(), "memories/bound.md");
+}
+
+#[tokio::test]
+async fn carrying_linked_records_is_asked_for_and_they_come_back_marked() {
+    use gmr_core::LinkKind;
+
+    let w = World::new(true);
+    w.memory("bound.md", "About a.");
+    w.memory("other.md", "About b, and bound there.");
+    w.open("a").await;
+    w.open("b").await;
+    w.bind("bound.md", &["a"]).await;
+    w.bind("other.md", &["b"]).await;
+    w.runtime
+        .link(
+            &Ref::new("git", "memories/bound.md"),
+            &Ref::new("git", "memories/other.md"),
+            LinkKind("cites".into()),
+        )
+        .await
+        .unwrap();
+
+    let how = gmr_runtime::Instructions {
+        carry: true,
+        ..Default::default()
+    };
+    let view = w
+        .runtime
+        .grounded_within(&AnchorKey::new("a"), &how)
+        .await
+        .unwrap();
+    let by_id = |id: &str| {
+        view.memories
+            .iter()
+            .find(|m| m.reference.external_id.as_str() == id)
+            .unwrap_or_else(|| panic!("{id} should be present here: {:?}", view.memories))
+    };
+    assert!(by_id("memories/bound.md").grounded);
+    assert!(by_id("memories/bound.md").warrant.is_some());
+    assert!(
+        !by_id("memories/other.md").grounded,
+        "being bound to some other anchor is not being about this one. A carried record \
+         wearing grounded:true here lets a link launder a foreign binding into a local \
+         guarantee"
+    );
+    assert!(by_id("memories/other.md").warrant.is_none());
 }

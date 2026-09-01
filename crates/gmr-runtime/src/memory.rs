@@ -241,7 +241,9 @@ impl MemoryLens {
             let Some(held) = self.binding_of(&Claim::Stored(reference)).await?.held() else {
                 continue;
             };
-            memories.push(self.fetch_memory(held, &total.narrowed(call)).await?);
+            let mut carried = self.fetch_memory(held, &total.narrowed(call)).await?;
+            carried.grounded = false;
+            memories.push(carried);
         }
         Ok(())
     }

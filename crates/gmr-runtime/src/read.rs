@@ -37,6 +37,8 @@ pub struct Instructions {
     pub budget: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reach: Option<usize>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub carry: bool,
 }
 
 mod millis {
@@ -601,6 +603,7 @@ impl Runtime {
             moved_at,
             &reaching(policy, how),
             policy.content_call(),
+            how.carry,
         )
         .await
     }
@@ -796,7 +799,9 @@ impl Runtime {
         for key in keys {
             let looks = seen.get(&key).copied().unwrap_or_default();
             let (view, moved_at) = stand(&self.log, &key, &looks).await?;
-            out.push(ground(&self.log, &self.memory, view, moved_at, &total, call).await?);
+            out.push(
+                ground(&self.log, &self.memory, view, moved_at, &total, call, how.carry).await?,
+            );
         }
         Ok(out)
     }
@@ -1126,6 +1131,7 @@ async fn ground(
     moved_at: Option<Seq>,
     total: &Budget,
     call: Duration,
+    carry: bool,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
@@ -1136,7 +1142,9 @@ async fn ground(
         held.warrant = Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
         memories.push(held);
     }
-    memory.carry_linked(&mut memories, total, call).await?;
+    if carry {
+        memory.carry_linked(&mut memories, total, call).await?;
+    }
     Ok(Grounded { view, memories })
 }
 
