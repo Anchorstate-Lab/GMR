@@ -7,13 +7,7 @@ use crate::probes::Catalog;
 use crate::verbs::sync::{self, Audit, Context, DEFAULT_FILE, read_declared};
 
 fn axes_line(view: &AnchorView) -> Option<String> {
-    let v = view.state.as_value().get("v")?.as_object()?;
-    Some(
-        v.iter()
-            .map(|(k, on)| format!("{k} {}", u8::from(on.as_bool().unwrap_or(false))))
-            .collect::<Vec<_>>()
-            .join("  "),
-    )
+    crate::render::axes_line(&view.state)
 }
 
 fn unwritten(root: &Path, note: &str) -> bool {
@@ -53,19 +47,32 @@ pub async fn run(
         catalog: Catalog::load(root)?,
     };
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let scanned = crate::memories::scan(root, &ctx.catalog)?;
+    let scanned = match named {
+        false => crate::memories::scan(root, &ctx.catalog)?,
+        true => {
+            let rels: std::collections::BTreeSet<String> = live
+                .iter()
+                .flat_map(|g| &g.memories)
+                .filter(|m| m.reference.provider.as_str() == "git")
+                .map(|m| m.reference.external_id.to_string())
+                .collect();
+            crate::memories::scan_among(root, &ctx.catalog, &rels)?
+        }
+    };
+    let bound = match named {
+        false => sync::Bound::of(rt).await?,
+        true => sync::Bound::among(
+            live.iter()
+                .filter(|g| !g.memories.is_empty())
+                .map(|g| g.view.key.clone()),
+        ),
+    };
     let decls = sync::merged(&declared, &scanned.notes);
     let Audit {
         drifted,
         unreadable,
         undeclared,
-    } = sync::audit(
-        live.iter().map(|g| &g.view),
-        &sync::Bound::of(rt).await?,
-        &decls,
-        &scanned,
-        &ctx,
-    )?;
+    } = sync::audit(live.iter().map(|g| &g.view), &bound, &decls, &scanned, &ctx)?;
 
     let mut rows = Vec::new();
     for grounded in &live {

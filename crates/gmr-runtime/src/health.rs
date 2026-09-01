@@ -10,9 +10,27 @@ use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
 use crate::read::{AnchorView, Footing, Grounded, HoldingKind, KnowledgeKind, knowledge_of};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+pub struct Aim {
+    pub readings: u32,
+    pub answered: u32,
+    pub moved_a_memory: u32,
+}
+
+impl Aim {
+    pub fn never_fired(&self) -> bool {
+        self.answered == 0 && self.readings > 0
+    }
+
+    pub fn fired_and_changed_nothing(&self) -> bool {
+        self.answered > 0 && self.moved_a_memory == 0
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AnchorHealth {
     pub anchor: AnchorKey,
+    pub aim: Aim,
     pub revisions: BTreeMap<ChangeKind, u32>,
     pub restate_count: u32,
     pub restate_interval_secs: Vec<i64>,
@@ -93,12 +111,18 @@ async fn health(
     let entries = log.entries(key, 0).await?;
 
     let mut restate_at: Vec<DateTime<Utc>> = Vec::new();
+    let mut restate_seq: Vec<Seq> = Vec::new();
+    let mut readings: u32 = 0;
     let mut rationale_hashes: Vec<ContentHash> = Vec::new();
     let mut initial: Option<State> = None;
     let mut last_failure = None;
 
-    let s = scan(&entries, |_, entry, _| match entry {
-        Entry::Open { state, .. } => initial = Some(state.clone()),
+    let s = scan(&entries, |seq, entry, _| match entry {
+        Entry::Open { state, .. } => {
+            readings += 1;
+            initial = Some(state.clone());
+        }
+        Entry::Transition { .. } | Entry::Still { .. } => readings += 1,
         Entry::Attempt {
             reason,
             code,
@@ -118,6 +142,7 @@ async fn health(
         } => {
             if matches!(change, Change::Restate { .. }) {
                 restate_at.push(*at);
+                restate_seq.push(seq);
             }
             rationale_hashes.push(rationale.clone());
         }
@@ -140,6 +165,7 @@ async fn health(
 
     Ok(AnchorHealth {
         anchor: key.clone(),
+        aim: aimed(log, memory, key, readings, &restate_seq).await?,
         restate_count: *s.revisions.get(&ChangeKind::Restate).unwrap_or(&0),
         restate_interval_secs: restate_at
             .windows(2)
@@ -157,11 +183,58 @@ async fn health(
     })
 }
 
+async fn aimed(
+    log: &AnchorLog,
+    memory: &MemoryLens,
+    key: &AnchorKey,
+    readings: u32,
+    restates: &[Seq],
+) -> Result<Aim, RuntimeError> {
+    let mut aim = Aim {
+        readings,
+        answered: restates.len() as u32,
+        moved_a_memory: 0,
+    };
+    if restates.is_empty() {
+        return Ok(aim);
+    }
+    let mut stamped: Vec<Vec<(Seq, gmr_core::Version)>> = Vec::new();
+    for bound in memory.bindings_on(log, key).await? {
+        let mut each: Vec<(Seq, gmr_core::Version)> = bound
+            .assertions()
+            .iter()
+            .filter_map(|r| Some((r.bound_at_seq?, r.bound_version.clone()?)))
+            .collect();
+        each.sort_by_key(|(seq, _)| *seq);
+        stamped.push(each);
+    }
+
+    for (at, after) in restates.iter().zip(
+        restates
+            .iter()
+            .skip(1)
+            .copied()
+            .chain(std::iter::once(Seq::MAX)),
+    ) {
+        let moved = stamped.iter().any(|each| {
+            let before = each.iter().rev().find(|(seq, _)| seq <= at);
+            let later = each.iter().rev().find(|(seq, _)| *seq < after);
+            match (before, later) {
+                (Some((_, a)), Some((_, b))) => a != b,
+                (None, Some(_)) => true,
+                _ => false,
+            }
+        });
+        aim.moved_a_memory += u32::from(moved);
+    }
+    Ok(aim)
+}
+
 async fn corpus_health(
     memory: &MemoryLens,
     grounded: &[Grounded],
 ) -> Result<CorpusHealth, RuntimeError> {
-    let bindings = crate::memory::by_reference(memory.all().await?);
+    let bindings = crate::memory::by_claim(memory.all().await?);
     let views = || grounded.iter().map(|g| &g.view);
     let open: BTreeSet<&AnchorKey> = views().filter(|v| !v.closed).map(|v| &v.key).collect();
 
@@ -183,7 +256,7 @@ async fn corpus_health(
     let unsupervised: Vec<Ref> = bindings
         .iter()
         .filter(|b| !b.anchors().is_empty())
-        .filter_map(|b| b.standing().map(|r| r.binding.reference.clone()))
+        .filter_map(|b| b.stored().cloned())
         .filter(|reference| !delivered.contains(reference))
         .collect();
 

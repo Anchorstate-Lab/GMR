@@ -28,11 +28,14 @@ default = []
 #    feature + 一个模块，不是加一个包。
 shell = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:thiserror", "dep:serde"]
 # 网络：身份 = 声明（url + 选择器 + 头名），调用时算。凭证只存引用不存值。
-http = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:reqwest"]
+http = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:reqwest", "dep:serde"]
 # 本地文件：身份 = 声明（路径 + 选择器 + 格式），不是文件内容——内容才是事实。
-file = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:toml", "dep:serde_yaml_ng"]
+file = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:toml", "dep:serde_yaml_ng", "dep:serde"]
 # 数据库：身份 = 声明（连接引用 + 查询 + 取哪一列），只读打开——探针观察，不改动。
-sql = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:sqlx"]
+sql = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio", "dep:sqlx", "dep:serde", "sqlx/sqlite"]
+# 第二个后端不是绕开 sqlite 的判定，是在同一处判定上多一个分支。TLS 用的是
+# http 传输已经在用的那一套 rustls，两个后端信任同一份根证书。
+postgres = ["sql", "sqlx/postgres", "sqlx/tls-rustls-ring-webpki"]
 # 进程内：机制在这里，探针本身由域注册。
 inproc = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 # 用户仓库里的一个文件。身份 = 那个文件的内容，调用时算。
@@ -41,7 +44,7 @@ script = ["dep:gmr-core", "dep:serde_json", "dep:async-trait", "dep:tokio"]
 testkit = ["shell", "dep:tempfile"]
 
 [dev-dependencies]
-gmr-transport = { path = ".", features = ["shell", "inproc", "script", "http", "file", "sql", "testkit"] }
+gmr-transport = { path = ".", features = ["shell", "inproc", "script", "http", "file", "sql", "postgres", "testkit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = { workspace = true }
 sqlx = { workspace = true }

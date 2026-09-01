@@ -24,6 +24,11 @@ repository re-asserts the whole corpus.
 
 ## A note declares its whole coordinate set, so dropping a line revokes
 
+A note with no `about:` and no `anchors:` never reaches this alignment at
+all — a links-only note declares edges, not bindings, and letting it in
+here would read its empty coordinate set as a request to revoke everything
+it is bound to. Its edges are `align_links`' business.
+
 `about:` states everything the note is about, which makes `had - want` a
 removal the note is asking for — `align_bindings` emits a revocation for it,
 recorded as `Derived` like the assertion it undoes. Under

@@ -37,6 +37,10 @@ pub async fn run(
                 ("unseen", Some(format!("{code:?}: {message}")))
             }
             Observed::Closed => ("closed", None),
+            Observed::Contended => (
+                "contended",
+                Some("another writer recorded first; nothing was written".to_owned()),
+            ),
         };
 
         let memories = match &observed {

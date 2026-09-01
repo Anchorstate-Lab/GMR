@@ -88,6 +88,11 @@ impl ProbeError {
     pub fn code(&self) -> &'static str {
         self.code.as_str()
     }
+
+    pub fn about(mut self, name: &ProbeName) -> Self {
+        self.message = format!("`{name}`: {}", self.message);
+        self
+    }
 }
 
 #[async_trait]

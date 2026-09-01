@@ -1,18 +1,35 @@
 ---
-about: crates/gmr-store/src/sqlite/mod.rs#ref_key
+about:
+  - crates/gmr-store/src/sqlite/mod.rs#ref_key
+  - crates/gmr-store/src/sqlite/mod.rs#claim_key
+  - crates/gmr-store/src/sqlite/mod.rs#keyed
 watch: [sig, logic]
 ---
 
-# `ref_key` can `expect()` past the depth guard because `Ref`'s shape is fixed
+# `keyed` can `expect()` past the depth guard because what reaches it is flat
 
-`canonicalize` can refuse input that nests deeper than its guard allows,
-but `ref_key` calls `.expect()` on that result without a fallback, because
-`Ref` is two flat string fields — its nesting depth is fixed by the type
-itself, not by any data it could ever hold, so the depth guard can never
-actually trigger here.
+`canonicalize` can refuse input that nests deeper than its guard allows, but
+`keyed` calls `.expect()` on that result without a fallback. Both callers hand
+it something whose nesting depth is fixed by construction rather than by data:
+`ref_key` a `Ref`, two flat string fields, and `claim_key` a `Claim::identity`,
+which is that same `Ref` or the one-field object `{"said": id}`.
+
+`Claim::Said` does carry an arbitrary `asserts` value, and it would nest as deep
+as a caller likes. It never reaches here, because identity is not content —
+`identity` leaves `asserts` out, which is also what makes two readings of one
+utterance the same claim. See [[memory-Binding]].
+
+`claim_key(Claim::Stored(r))` is `ref_key(r)`, byte for byte. Every binding
+written before claims existed keeps its key, which is the only reason the change
+was possible at all: the table refuses `UPDATE` by trigger, so a key that moved
+would be a key with no way back.
 
 ## When this changes, ask
 
-Does `Ref` (or whatever type flows through here) gain a field that could
-nest arbitrarily, rather than staying flat by construction? If so this
-`expect()` stops being provably safe and needs a real error path.
+Does anything start keying on the whole `Claim` rather than on `identity`? Then
+`asserts` reaches `canonicalize`, the depth guard becomes reachable, and this
+`expect()` stops being provably safe — and separately, two readings of one
+sentence begin filing under two keys that nothing looks up together.
+
+Does `Ref` gain a field that could nest arbitrarily, rather than staying flat by
+construction? Same answer: this needs a real error path.

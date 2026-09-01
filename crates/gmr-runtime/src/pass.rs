@@ -112,6 +112,7 @@ async fn pass(
                     },
                 }
             }
+            Observed::Contended => Disposition::Reschedule { after_secs: 0 },
             other => {
                 if matches!(other, Observed::Transitioned { .. }) {
                     out.moved.push(ticket.anchor.clone());

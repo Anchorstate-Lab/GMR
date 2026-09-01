@@ -1,6 +1,6 @@
 use chrono::Utc;
 use gmr_core::{AnchorKey, Change, ContentHash, Entry};
-use gmr_store::Fence;
+use gmr_store::{Expected, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -75,6 +75,7 @@ async fn revise(
             at: Utc::now(),
         },
         Fence::Unleased,
+        Expected::Head(s.head),
     )
     .await?;
 

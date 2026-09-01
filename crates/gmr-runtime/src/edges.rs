@@ -35,8 +35,8 @@ pub enum Edge {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "standing", rename_all = "snake_case")]
-pub enum Standing {
+#[serde(tag = "raised", rename_all = "snake_case")]
+pub enum Raised {
     Stale {
         anchor: AnchorKey,
         last_sighting: Option<DateTime<Utc>>,
@@ -66,7 +66,7 @@ pub enum Standing {
     },
 }
 
-impl Standing {
+impl Raised {
     pub fn of(anchor: AnchorKey, view: crate::read::MemoryView) -> Option<Self> {
         let crate::read::MemoryView {
             reference,
@@ -110,7 +110,7 @@ impl Standing {
 pub struct Edges {
     pub edges: Vec<Edge>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub standing: Option<Vec<Standing>>,
+    pub raised: Option<Vec<Raised>>,
     pub cursor: Seq,
 }
 
@@ -137,7 +137,7 @@ async fn changed_since(
     let total = policy.content_budget();
     let call = policy.content_call();
     let mut edges = Vec::new();
-    let mut standing = status.is_none().then(Vec::new);
+    let mut raised = status.is_none().then(Vec::new);
     let mut head = cursor;
 
     for key in log.anchors().await? {
@@ -147,7 +147,7 @@ async fn changed_since(
             head = head.max(*seq);
         }
 
-        if let Some(standing) = standing.as_mut() {
+        if let Some(raised) = raised.as_mut() {
             let looked = seen
                 .get(&key)
                 .and_then(|s| s.last_at)
@@ -156,15 +156,18 @@ async fn changed_since(
                 && !s.closed
                 && looked.is_none_or(|t| (now - t).num_seconds() > policy.stalled_staleness_secs)
             {
-                standing.push(Standing::Stale {
+                raised.push(Raised::Stale {
                     anchor: key.clone(),
                     last_sighting: looked,
                 });
             }
 
             for asserted in memory.bindings_on(log, &key).await? {
-                let view = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
-                standing.extend(Standing::of(key.clone(), view));
+                let Some(held) = asserted.held() else {
+                    continue;
+                };
+                let view = memory.fetch_memory(held, &total.narrowed(call)).await?;
+                raised.extend(Raised::of(key.clone(), view));
             }
         }
     }
@@ -184,7 +187,7 @@ async fn changed_since(
 
     Ok(Edges {
         edges,
-        standing,
+        raised,
         cursor: head,
     })
 }
@@ -304,7 +307,7 @@ mod tests {
     fn the_two_corpus_walks_cannot_disagree_about_whether_a_record_is_fine() {
         for grounding in every_grounding() {
             let footing = grounding.footing();
-            let raised = Standing::of(AnchorKey::new("a"), viewed(grounding.clone())).is_some();
+            let raised = Raised::of(AnchorKey::new("a"), viewed(grounding.clone())).is_some();
             assert_eq!(
                 raised,
                 !footing.is_current(),

@@ -10,6 +10,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  moment:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: What does this change move
+      uses: ./
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        source: cargo
+
   gate:
     runs-on: ubuntu-latest
     steps:
@@ -18,6 +34,10 @@ jobs:
         fetch-depth: 0
     - name: Substrate gate
       run: sh gate.sh
+    - name: The menu walkthrough still holds
+      run: |
+        cargo build --release -p coding-anchor
+        PATH="$PWD/target/release:$PATH" bash examples/menu/walkthrough.sh --ci
 
   # Kept out of the gate on purpose. gate.sh only checks the substrate and the
   # batteries and never touches an anchor, because a red anchor is a signal for
@@ -42,6 +62,44 @@ jobs:
         sh acceptance.sh | tee /tmp/acceptance.out
         grep -q 'ACCEPTANCE COMPLETE steps=4' /tmp/acceptance.out \
           || { echo "acceptance.sh did not run every step it declares"; exit 1; }
+
+  # The addon is a cdylib, so `cargo test` never loads it and never learns
+  # whether Node can. This job builds it and drives the six verbs from
+  # JavaScript -- the only place the binding's own translation is exercised.
+  node:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: The six verbs, from JavaScript
+      run: sh domains/node/test.sh
+
+  # The postgres branch cannot be exercised without a postgres, so the tests
+  # that reach one are #[ignore]d and this job is where they run. Without it
+  # the second backend is checked only by the assertions that never connect.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: gmr
+          POSTGRES_DB: gmr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+    - uses: actions/checkout@v4
+    - name: A second backend, against a real one
+      env:
+        GMR_TEST_POSTGRES_URL: postgres://postgres:gmr@127.0.0.1:5432/gmr
+      run: cargo test -p gmr-transport --test sql -- --ignored
 
   # Layer 3 of the gate: land a known break in the product and insist the
   # promises notice. A promise no mutation can break is a promise nothing is

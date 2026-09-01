@@ -12,9 +12,13 @@ fn criteria(
     catalog: Catalog,
     views: &[AnchorView],
     bound: &sync::Bound,
+    among: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Audit, CliError> {
     let declared = read_declared(root, DEFAULT_FILE)?;
-    let scanned = crate::memories::scan(root, &catalog)?;
+    let scanned = match among {
+        None => crate::memories::scan(root, &catalog)?,
+        Some(rels) => crate::memories::scan_among(root, &catalog, rels)?,
+    };
     let decls = sync::merged(&declared, &scanned.notes);
     let ctx = Context { catalog };
     sync::audit(views, bound, &decls, &scanned, &ctx)
@@ -22,7 +26,7 @@ fn criteria(
 
 fn settled(observed: &Observed, before: &State) -> Option<(bool, State)> {
     match observed {
-        Observed::Attempt { .. } | Observed::Closed => None,
+        Observed::Attempt { .. } | Observed::Closed | Observed::Contended => None,
         Observed::Transitioned { to, .. } => Some((true, to.clone())),
         Observed::Unchanged { state } => Some((false, state.clone())),
         Observed::Still => Some((false, before.clone())),
@@ -63,12 +67,36 @@ pub async fn run(
     key: Option<String>,
     json: bool,
 ) -> Result<i32, CliError> {
+    let named = key.is_some();
     let keys = match key {
         Some(k) => super::resolve(rt, &k).await?,
         None => rt.anchors().await?,
     };
     let catalog = Catalog::load(root)?;
-    let (subs, unwatchable) = Subscriptions::load(root, &catalog, names)?;
+    let (bound, among) = match named {
+        false => (sync::Bound::of(rt).await?, None),
+        true => {
+            let records = rt.memory().all().await?;
+            let mut rels = std::collections::BTreeSet::new();
+            let mut held = Vec::new();
+            for record in &records {
+                if !record.binding.anchors.iter().any(|a| keys.contains(a)) {
+                    continue;
+                }
+                held.extend(record.binding.anchors.iter().cloned());
+                if let Some(reference) = record.binding.claim.stored()
+                    && reference.provider.as_str() == "git"
+                {
+                    rels.insert(reference.external_id.to_string());
+                }
+            }
+            (sync::Bound::among(held), Some(rels))
+        }
+    };
+    let (subs, unwatchable) = match &among {
+        None => Subscriptions::load(root, &catalog, names)?,
+        Some(rels) => Subscriptions::load_among(root, &catalog, names, rels)?,
+    };
 
     let (views, looks): (Vec<AnchorView>, Vec<Observed>) = rt
         .look_all(&keys)
@@ -81,7 +109,7 @@ pub async fn run(
         drifted,
         unreadable,
         undeclared,
-    } = criteria(root, catalog, &views, &sync::Bound::of(rt).await?)?;
+    } = criteria(root, catalog, &views, &bound, among.as_ref())?;
     let swapped = super::swapped(rt, &views);
 
     let mut handed: Vec<(AnchorKey, String, Option<String>, Vec<gmr::Ref>)> = Vec::new();

@@ -1,4 +1,5 @@
 pub mod accept;
+pub mod adopt;
 pub mod anchor;
 pub mod atlas;
 pub mod bind;
@@ -23,6 +24,8 @@ pub mod reaffirm;
 pub mod rebase;
 pub mod requeue;
 pub mod revise;
+pub mod said;
+pub mod standing;
 pub mod status;
 pub mod sync;
 
@@ -61,6 +64,9 @@ fn pick(all: &[AnchorKey], arg: &str) -> Vec<AnchorKey> {
 }
 
 pub(crate) async fn resolve(rt: &Runtime, arg: &str) -> Result<Vec<AnchorKey>, CliError> {
+    if let Some((path, line)) = positioned(arg) {
+        return resolve_position(rt, path, line).await;
+    }
     let all = rt.anchors().await?;
     let hits = pick(&all, arg);
     match hits.is_empty() {
@@ -69,6 +75,59 @@ pub(crate) async fn resolve(rt: &Runtime, arg: &str) -> Result<Vec<AnchorKey>, C
             nearest(&all, arg)
         ))),
         false => Ok(hits),
+    }
+}
+
+fn positioned(arg: &str) -> Option<(&str, u64)> {
+    let (path, digits) = arg.rsplit_once(':')?;
+    if path.is_empty() || digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((path, digits.parse().ok()?))
+}
+
+fn starts_at(view: &gmr::AnchorView) -> Option<u64> {
+    view.facts
+        .as_ref()?
+        .as_value()
+        .get("facts")?
+        .get("line")?
+        .as_u64()
+}
+
+async fn resolve_position(rt: &Runtime, path: &str, line: u64) -> Result<Vec<AnchorKey>, CliError> {
+    let all = rt.anchors().await?;
+    let mut best: Option<(u64, AnchorKey)> = None;
+    let mut file_level = None;
+    for key in &all {
+        let s = key.as_str();
+        if s == path {
+            file_level = Some(key.clone());
+            continue;
+        }
+        let Some(rest) = s.strip_prefix(path) else {
+            continue;
+        };
+        if !rest.starts_with('#') {
+            continue;
+        }
+        let view = rt.read(key).await?;
+        if view.closed {
+            continue;
+        }
+        let Some(at) = starts_at(&view) else {
+            continue;
+        };
+        if at <= line && best.as_ref().is_none_or(|(held, _)| at >= *held) {
+            best = Some((at, key.clone()));
+        }
+    }
+    match best.map(|(_, key)| key).or(file_level) {
+        Some(key) => Ok(vec![key]),
+        None => Err(CliError(format!(
+            "no anchor covers {path}:{line}.\n{}",
+            nearest(&all, path)
+        ))),
     }
 }
 
@@ -146,7 +205,7 @@ pub(crate) async fn memories_on(rt: &Runtime, key: &AnchorKey) -> Result<Vec<gmr
         .bindings_on(rt.log(), key)
         .await?
         .iter()
-        .filter_map(|b| b.standing().map(|r| r.binding.reference.clone()))
+        .filter_map(|b| b.stored().cloned())
         .collect())
 }
 

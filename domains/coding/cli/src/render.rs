@@ -32,6 +32,16 @@ pub fn diagnosis(facts: Option<&gmr::Facts>) -> Option<String> {
     })
 }
 
+pub fn axes_line(state: &gmr::State) -> Option<String> {
+    let v = state.as_value().get("v")?.as_object()?;
+    Some(
+        v.iter()
+            .map(|(k, on)| format!("{k} {}", u8::from(on.as_bool().unwrap_or(false))))
+            .collect::<Vec<_>>()
+            .join("  "),
+    )
+}
+
 pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
     let v = &g.view;
     let mut out = String::new();
@@ -45,7 +55,23 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
     }
     out.push('\n');
 
-    out.push_str(&format!("  state  {}\n", v.state.as_value()));
+    match axes_line(&v.state) {
+        Some(axes) => out.push_str(&format!("  axes   {axes}\n")),
+        None => {
+            let now = v
+                .state
+                .as_value()
+                .get("now")
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| v.state.as_value().to_string());
+            let short: String = now.chars().take(120).collect();
+            let mark = match now.chars().count() > 120 {
+                true => "…",
+                false => "",
+            };
+            out.push_str(&format!("  now    {short}{mark}\n"));
+        }
+    }
 
     if let Some(f) = &v.faltering {
         out.push_str(&format!(

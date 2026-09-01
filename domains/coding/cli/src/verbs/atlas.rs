@@ -367,6 +367,7 @@ mod tests {
             last_sighting: None,
             sightings: 1,
             derivation: None,
+            fact_address: None,
             facts: None,
         }
     }

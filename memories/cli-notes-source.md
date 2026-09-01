@@ -28,8 +28,8 @@ a store is adding a source rather than editing this parser.
 Everything it decides is a domain decision: that notes live in one named
 directory, that only `.md` counts, and that the grid a note speaks to GMR
 through is its YAML frontmatter. It hands that grid over as an opaque
-`Claim::Says` and reads none of it — `about` and `watch` are interpreted in
-`claims_of`, one layer up. That split is what lets the same source serve a
+`Claim::Says` and reads none of it — `about`, `watch` and `links` are
+interpreted in `claims_of`, one layer up. That split is what lets the same source serve a
 domain with a completely different vocabulary, and it is the same line
 [[content-discovery]] draws for every source.
 

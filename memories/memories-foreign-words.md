@@ -11,7 +11,7 @@ watch: [sig, logic]
 
 Every top-level key in a note's frontmatter is checked against
 `FRONTMATTER_WORDS`. Anything else raises `unrecognised` at weight `Breaks`,
-naming both the foreign words and the four this format has.
+naming both the foreign words and the five this format has.
 
 A header that parses but names nothing this format knows declares no anchor
 while looking, from outside, like it declared one — quieter than no

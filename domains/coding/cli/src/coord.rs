@@ -95,7 +95,7 @@ pub async fn resolve(
         &routed.probe,
         routed.params.clone(),
     )?;
-    let Ok(gmr::Outcome::Found { facts }) = rt.sample(&probe, &routed.position).await else {
+    let Ok(gmr::Outcome::Found { facts }) = rt.probed(&probe, &routed.position).await else {
         return Ok(routed.position.clone());
     };
     let facts = facts.as_value();

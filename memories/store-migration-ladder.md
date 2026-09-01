@@ -4,6 +4,7 @@ about:
   - crates/gmr-store/src/sqlite/mod.rs#climb
   - crates/gmr-store/src/sqlite/mod.rs#rung
   - crates/gmr-store/src/sqlite/mod.rs#under_the_write_lock
+  - crates/gmr-store/src/sqlite/mod.rs#statements
   - crates/gmr-store/src/sqlite/mod.rs#a_climbed_database_ends_up_shaped_like_a_freshly_built_one
   - crates/gmr-store/src/sqlite/mod.rs#a_whole_v6_database_climbs_into_the_shape_a_fresh_build_makes
   - crates/gmr-store/src/sqlite/mod.rs#blueprint
@@ -159,6 +160,15 @@ it on the old binary and importing on the new one.
 appears from here on: adding a version without adding its rung makes every
 database at the version below permanently unopenable, and nothing else would
 notice until a user hit it.
+
+## Every statement of a rung goes through one function
+
+`statements()` exists so that a schema step — which is many statements, hence
+`raw_sql` rather than `query` — is run as `connection.execute(raw_sql(sql))` and
+never as `raw_sql(sql).execute(connection)`. The two do the same thing to the
+database and only one of them leaves a future a host can spawn; see
+[[hosts-spawn]]. It is one function rather than three call sites so that there
+is one place to be right.
 
 ## When this changes, ask
 

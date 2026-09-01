@@ -31,6 +31,14 @@ backwards.
 | `status` `read` `check` `observe` `health` | expand | looking at five anchors is looking at five anchors; no judgment |
 | `close` `accept` `restate` `re*` `rebase` `requeue` | refuse | each is an independent judgment, and one `--why` cannot cover them |
 
+`path:line` sits on the expand side for the same reason: `resolve` maps a
+position to the anchor whose symbol starts at or above that line in that
+file (file-level anchor as fallback), and the matched key is printed in the
+answer, so a wrong guess is visible rather than silently acted on. Only
+start lines exist in the facts, so the rule is containment by start —
+precise spans would mean rolling every probe's earned hash for one
+resolver's benefit.
+
 This is the same rule as `accept --all` only pairing with `--criteria`: one declaration
 change is one decision, while every baseline drift is its own. See [[shapes-Dim]].
 

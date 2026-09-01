@@ -23,7 +23,8 @@ different question ("show me this one") and `status <key>` no longer filters `cl
 for that case either, but the no-argument listing still does, on purpose.
 
 **Their JSON shapes are not the same schema at two verbosity levels.** `read --json`
-serializes `gmr::AnchorView` verbatim — `sighting`, `faltering`, `derivation`, `facts`,
+serializes `gmr::AnchorView` verbatim — `sighting`, `faltering`, `derivation`,
+`fact_address`, `facts`,
 and per memory `grounded`, `warrant` and `grounding`. `status --json` hand-
 builds a projection (`anchor`, `shape`, `status`, `state`, `memories` with an
 `unwritten` flag) and adds `criteria_drifted`/`criteria_unreadable`/`criteria_undeclared`

@@ -1,5 +1,8 @@
 use chrono::Utc;
-use gmr_core::{AnchorKey, Binding, Ref, Source, Version};
+use std::collections::BTreeSet;
+
+use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Source, Version};
+use serde::Serialize;
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -9,11 +12,16 @@ use crate::memory::MemoryLens;
 impl Runtime {
     pub async fn bind(
         &self,
-        reference: Ref,
-        anchors: Vec<AnchorKey>,
+        binding: Binding,
         bound_version: Option<Version>,
+        saw: BTreeSet<FactAddress>,
         source: Source,
     ) -> Result<Landed, RuntimeError> {
+        let Binding {
+            claim,
+            anchors,
+            depends,
+        } = binding;
         let mut landed = Landed::default();
         for named in anchors {
             let living = self.living(&named).await?;
@@ -24,19 +32,22 @@ impl Runtime {
                 landed.anchors.push(living);
             }
         }
-        let bound = self.memory.binding_of(&reference).await?;
-        if bound.says(&landed.anchors, bound_version.as_ref(), source) {
+        let bound = self.memory.binding_of(&claim).await?;
+        let asking = Binding {
+            claim,
+            anchors: landed.anchors.clone(),
+            depends,
+        };
+        if bound.says(&asking, bound_version.as_ref(), &saw, source) {
             return Ok(landed);
         }
         landed.recorded = true;
         self.memory
             .bind(
                 &self.log,
-                &Binding {
-                    reference,
-                    anchors: landed.anchors.clone(),
-                },
+                &asking,
                 bound_version.as_ref(),
+                &saw,
                 source,
                 Utc::now(),
             )
@@ -81,13 +92,13 @@ impl Runtime {
 
     pub async fn revoke(
         &self,
-        reference: &Ref,
+        claim: &Claim,
         source: Source,
     ) -> Result<Vec<AnchorKey>, RuntimeError> {
-        let bound = self.memory.binding_of(reference).await?;
+        let bound = self.memory.binding_of(claim).await?;
         if bound.is_empty() {
             return Err(RuntimeError::NotBound {
-                reference: reference.clone(),
+                claim: claim.clone(),
             });
         }
         let when = Utc::now();
@@ -95,7 +106,7 @@ impl Runtime {
         for anchor in bound.anchors() {
             self.memory
                 .revoke(&gmr_store::Revocation {
-                    reference: reference.clone(),
+                    claim: claim.clone(),
                     at: anchor.clone(),
                     tags: bound.tags_on(anchor),
                     source,
@@ -109,11 +120,11 @@ impl Runtime {
 
     pub async fn revoke_on(
         &self,
-        reference: &Ref,
+        claim: &Claim,
         anchors: &[AnchorKey],
         source: Source,
     ) -> Result<(), RuntimeError> {
-        let bound = self.memory.binding_of(reference).await?;
+        let bound = self.memory.binding_of(claim).await?;
         let when = Utc::now();
         for anchor in anchors {
             let tags = bound.tags_on(anchor);
@@ -122,7 +133,7 @@ impl Runtime {
             }
             self.memory
                 .revoke(&gmr_store::Revocation {
-                    reference: reference.clone(),
+                    claim: claim.clone(),
                     at: anchor.clone(),
                     tags,
                     source,
@@ -131,6 +142,13 @@ impl Runtime {
                 .await?;
         }
         Ok(())
+    }
+
+    pub async fn claims(&self) -> Result<Vec<Claim>, RuntimeError> {
+        Ok(crate::memory::by_claim(self.memory.all().await?)
+            .into_iter()
+            .filter_map(|held| held.claim().cloned())
+            .collect())
     }
 
     pub async fn bindings_on(
@@ -142,41 +160,44 @@ impl Runtime {
 
     pub async fn reaffirm(
         &self,
-        reference: &Ref,
+        claim: &Claim,
         bound_version: Option<Version>,
     ) -> Result<(), RuntimeError> {
-        reaffirm(&self.log, &self.memory, reference, bound_version).await
+        reaffirm(&self.log, &self.memory, claim, bound_version).await
     }
 }
 
 async fn reaffirm(
     log: &AnchorLog,
     memory: &MemoryLens,
-    reference: &Ref,
+    claim: &Claim,
     bound_version: Option<Version>,
 ) -> Result<(), RuntimeError> {
-    let bound = memory.binding_of(reference).await?;
+    let bound = memory.binding_of(claim).await?;
     if bound.is_empty() {
         return Err(RuntimeError::NotBound {
-            reference: reference.clone(),
+            claim: claim.clone(),
         });
     }
+    let saw = bound.saw().clone();
     let binding = Binding {
-        reference: reference.clone(),
+        claim: claim.clone(),
         anchors: bound.anchors().to_vec(),
+        depends: bound.depends().cloned(),
     };
     memory
         .bind(
             log,
             &binding,
             bound_version.as_ref(),
+            &saw,
             Source::Adjudicated,
             Utc::now(),
         )
         .await
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Landed {
     pub anchors: Vec<AnchorKey>,
     pub moved: Vec<(AnchorKey, AnchorKey)>,

@@ -4,7 +4,8 @@ use chrono::Utc;
 use gmr_core::{
     Anchor, AnchorKey, Entry, ProbeRef, RunSettings, State, StatusId, Superseded, Transitions,
 };
-use gmr_store::Fence;
+use gmr_store::{Expected, Fence};
+use serde::{Deserialize, Serialize};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -14,7 +15,7 @@ use crate::observer::Observer;
 use crate::scheduler::Scheduler;
 use crate::translate::{Transitioned, bind_warnings, transition};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Opened {
     pub key: AnchorKey,
     pub state: State,
@@ -22,19 +23,56 @@ pub struct Opened {
     pub supersedes: Option<AnchorKey>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Supersede {
     pub key: AnchorKey,
+    #[serde(with = "written")]
     pub rationale: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenRequest {
     pub key: AnchorKey,
     pub probe: ProbeRef,
+    #[serde(default, deserialize_with = "authored")]
     pub transitions: Transitions,
+    #[serde(default)]
     pub terminal: BTreeSet<StatusId>,
+    #[serde(default)]
     pub initial: Option<State>,
+    #[serde(default)]
     pub settings: RunSettings,
+    #[serde(default)]
     pub supersedes: Option<Supersede>,
+}
+
+mod written {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        Ok(String::deserialize(d)?.into_bytes())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Written {
+    when: String,
+    to: String,
+}
+
+fn authored<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Transitions, D::Error> {
+    Ok(Transitions(
+        Vec::<Written>::deserialize(d)?
+            .into_iter()
+            .map(|rule| gmr_core::Rule {
+                when: gmr_core::Expr::text(rule.when),
+                to: gmr_core::Expr::text(rule.to),
+            })
+            .collect(),
+    ))
 }
 
 impl Runtime {
@@ -82,15 +120,21 @@ async fn open(
         .resolve(&anchor.probe)
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
+    if let Some(message) = blind(&anchor, &derivation.observes) {
+        return Err(RuntimeError::CannotOpen { message });
+    }
+
     let outcome = observer
         .invoke(&anchor, initial.position(), &scheduler.policy().budget())
         .await
         .map_err(|e| RuntimeError::CannotOpen { message: e.message })?;
 
     let at = Utc::now();
+    let observes = derivation.observes.clone();
     let observation =
         crate::observe::observe_into(&anchor, outcome, derivation, request.settings.facts)?;
     let mut warnings = bind_warnings(&anchor, &observation);
+    warnings.extend(behind(&anchor, &observes, &observation));
     warnings.extend(accumulator_warning(scheduler, &anchor));
 
     let state = match transition(&anchor, &observation, &initial, at, at) {
@@ -111,6 +155,7 @@ async fn open(
             at,
         },
         Fence::Unleased,
+        Expected::Head(0),
     )
     .await?;
 
@@ -138,6 +183,45 @@ async fn open(
     })
 }
 
+fn blind(anchor: &Anchor, observes: &gmr_core::Observes) -> Option<String> {
+    let mut unmet: BTreeSet<String> = BTreeSet::new();
+    for rule in anchor.transitions.iter() {
+        for expr in [&rule.when, &rule.to] {
+            let Ok(node) = gmr_expr::parse(&expr.source) else {
+                continue;
+            };
+            unmet.extend(node.reads_obs().into_iter().filter(|r| !observes.covers(r)));
+        }
+    }
+    if unmet.is_empty() {
+        return None;
+    }
+    let gmr_core::Observes::Named { fields } = observes else {
+        return None;
+    };
+    Some(format!(
+        "`{}` reads {} from its probe, and `{}` never reports {}: it reports {}. \
+         An anchor opened this way observes forever and never transitions, and the \
+         first thing anyone would have to notice is that nothing ever happened",
+        anchor.key,
+        unmet
+            .iter()
+            .map(|r| format!("obs.{r}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+        anchor.probe.name,
+        match unmet.len() {
+            1 => "it",
+            _ => "them",
+        },
+        fields
+            .iter()
+            .map(|f| format!("obs.{f}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    ))
+}
+
 async fn seal_supersede(
     log: &AnchorLog,
     memory: &MemoryLens,
@@ -154,6 +238,30 @@ async fn seal_supersede(
         key: s.key,
         rationale: memory.seal(&s.rationale).await?,
     })
+}
+
+fn behind(
+    anchor: &Anchor,
+    observes: &gmr_core::Observes,
+    observation: &gmr_core::Observation,
+) -> Option<String> {
+    let facts = observation.facts()?;
+    let extra = observes.undeclared(facts.as_value());
+    if extra.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "`{}` reported {}, and `{}` declares none of it. The declaration is what an open \
+         refuses rules against, so a rule reading one of these would be turned away for \
+         reading something the probe demonstrably reports",
+        anchor.probe.name,
+        extra
+            .iter()
+            .map(|f| format!("obs.{f}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+        anchor.probe.name,
+    ))
 }
 
 fn accumulator_warning(scheduler: &Scheduler, anchor: &Anchor) -> Option<String> {

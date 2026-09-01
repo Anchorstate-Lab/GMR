@@ -21,12 +21,20 @@ pkgdir="$tmp/pkg"
 mkdir -p "$pkgdir/bin"
 cp -r "$tmp/bin/"* "$pkgdir/bin/"
 
+# The addon is optional in the packer and required in practice: a platform
+# package without it installs a working CLI and an SDK that cannot load.
+files='"bin/gmr"'
+if [ -f "$tmp/gmr.node" ]; then
+    cp "$tmp/gmr.node" "$pkgdir/gmr.node"
+    files='"bin/gmr", "gmr.node"'
+fi
+
 cat > "$pkgdir/package.json" <<JSON
 {
   "name": "$pkgname",
   "version": "$version",
   "bin": { "gmr": "bin/gmr" },
-  "files": ["bin/gmr"],
+  "files": [$files],
   "license": "MIT"
 }
 JSON

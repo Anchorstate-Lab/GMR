@@ -46,8 +46,20 @@ impl Notes {
     }
 
     pub fn declared(&self) -> Result<Vec<Stated>, CliError> {
+        self.stated(|_| true)
+    }
+
+    pub fn declared_among(
+        &self,
+        keep: &std::collections::BTreeSet<String>,
+    ) -> Result<Vec<Stated>, CliError> {
+        self.stated(|rel| keep.contains(rel))
+    }
+
+    fn stated(&self, keep: impl Fn(&str) -> bool) -> Result<Vec<Stated>, CliError> {
         let mut rels = Vec::new();
         walk(&self.root, &self.root.join(&self.dir), &mut rels)?;
+        rels.retain(|rel| keep(rel));
         rels.sort();
 
         let read: Vec<(String, Result<String, String>)> = rels

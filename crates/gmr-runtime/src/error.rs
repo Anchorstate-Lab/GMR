@@ -1,4 +1,4 @@
-use gmr_core::{AnchorKey, ProviderId, Ref};
+use gmr_core::{AnchorKey, Claim, ProviderId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
@@ -12,8 +12,8 @@ pub enum RuntimeError {
     )]
     NoProvider { provider: ProviderId },
 
-    #[error("`{reference:?}` is not bound to anything — nothing to reaffirm; bind it first")]
-    NotBound { reference: Ref },
+    #[error("`{claim}` is not bound to anything — nothing to reaffirm; bind it first")]
+    NotBound { claim: Claim },
 
     #[error("anchor `{key}` is already open — change it with revise, which leaves a sealed record")]
     AlreadyOpen { key: AnchorKey },
@@ -27,6 +27,13 @@ pub enum RuntimeError {
 
     #[error("`{key}` is still running — only a finished anchor can be superseded")]
     NotClosedYet { key: AnchorKey },
+
+    #[error(
+        "`{claim}` was asserted and the assertion is in the store, so asking with anchors, \
+         `saw` or `depends` inline would answer against something nobody recorded. \
+         Ask about it bare, or revise the assertion"
+    )]
+    AlreadyAsserted { claim: gmr_core::Claim },
 
     #[error(
         "the probe would not run while opening: {message}. \
@@ -61,6 +68,10 @@ pub enum RuntimeError {
 }
 
 impl RuntimeError {
+    pub fn head_moved(&self) -> bool {
+        matches!(self, Self::Store(e) if e.code == gmr_store::ErrorCode::HeadMoved)
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Self::NoSuchAnchor { .. } => "no_such_anchor",
@@ -69,6 +80,7 @@ impl RuntimeError {
             Self::AlreadyOpen { .. } => "already_open",
             Self::AnchorClosed { .. } => "anchor_closed",
             Self::NotClosedYet { .. } => "not_closed_yet",
+            Self::AlreadyAsserted { .. } => "already_asserted",
             Self::CannotOpen { .. } => "cannot_open",
             Self::Undigested { .. } => "undigested",
             Self::NoQueue => "no_queue",

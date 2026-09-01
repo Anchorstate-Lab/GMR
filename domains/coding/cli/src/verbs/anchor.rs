@@ -198,6 +198,15 @@ fn slug(raw: &str) -> String {
     }
 }
 
+fn named(source: &gmr_transport::sql::Source) -> String {
+    match source {
+        gmr_transport::sql::Source::Given(url) => url.clone(),
+        gmr_transport::sql::Source::FromEnv(var) => {
+            format!("the database named by the environment variable `{var}`")
+        }
+    }
+}
+
 fn taken(name: &str, at: &str, select: Option<&str>) -> CliError {
     CliError(format!(
         "`{name}` already names a fetched fact, and it points somewhere else (`{at}`{}). \
@@ -216,6 +225,9 @@ fn fetch_declared(
     where_: &Reached,
     select: Option<&str>,
 ) -> Result<bool, CliError> {
+    if let Reached::Over(url) | Reached::Through(url) = where_ {
+        gmr_transport::given::without_credentials(url).map_err(|e| CliError(e.to_string()))?;
+    }
     match where_ {
         Reached::Over(url) => match catalog.https().find(|(n, _)| *n == name) {
             Some((_, held)) if held.url == *url && held.select.as_deref() == select => Ok(false),
@@ -224,7 +236,7 @@ fn fetch_declared(
                 crate::probes::declare_http(
                     root,
                     name,
-                    &crate::probes::HttpDecl {
+                    &gmr_transport::http::Ask {
                         url: url.clone(),
                         select: select.map(str::to_owned),
                         headers: Default::default(),
@@ -234,14 +246,10 @@ fn fetch_declared(
             }
         },
         Reached::Through(db) => match catalog.sqls().find(|(n, _)| *n == name) {
-            Some((_, held)) if held.url.as_deref() == Some(db.as_str()) => Ok(false),
-            Some((_, held)) => Err(taken(
-                name,
-                held.url
-                    .as_deref()
-                    .unwrap_or("a database from the environment"),
-                Some(&held.query),
-            )),
+            Some((_, held)) if held.source == gmr_transport::sql::Source::Given(db.clone()) => {
+                Ok(false)
+            }
+            Some((_, held)) => Err(taken(name, &named(&held.source), Some(&held.query))),
             None => {
                 let query = select.ok_or_else(|| {
                     CliError(
@@ -254,11 +262,11 @@ fn fetch_declared(
                 crate::probes::declare_sql(
                     root,
                     name,
-                    &crate::probes::SqlDecl {
-                        url: Some(db.clone()),
-                        url_from_env: None,
+                    &gmr_transport::sql::Ask {
+                        source: gmr_transport::sql::Source::Given(db.clone()),
                         query: query.to_owned(),
                         column: None,
+                        binds: Vec::new(),
                     },
                 )?;
                 Ok(true)
@@ -271,7 +279,7 @@ fn fetch_declared(
                 crate::probes::declare_file(
                     root,
                     name,
-                    &crate::probes::FileDecl {
+                    &gmr_transport::file::Ask {
                         path: path.clone(),
                         select: select.map(str::to_owned),
                         shaped: None,
@@ -448,6 +456,33 @@ pub async fn run(
     }
 
     let key = gmr::AnchorKey::new(coord.clone());
+    if !json
+        && routed.probe == "prose-map"
+        && matches!(
+            rt.read(&key).await,
+            Ok(view) if view
+                .state
+                .as_value()
+                .pointer("/v/missing")
+                .and_then(|m| m.as_bool())
+                .unwrap_or(false)
+        )
+        && let Some(file) = routed.position.get("file").and_then(|f| f.as_str())
+        && let Ok(body) = std::fs::read_to_string(root.join(file))
+    {
+        let crumbs = crate::prose::breadcrumbs(&body);
+        if !crumbs.is_empty() {
+            println!(
+                "absent    nothing in {file} answers to that heading today. Its sections are:"
+            );
+            for crumb in crumbs.iter().take(12) {
+                println!("            {file}#{crumb}");
+            }
+            if crumbs.len() > 12 {
+                println!("            ({} more)", crumbs.len() - 12);
+            }
+        }
+    }
     let mut attached = None;
     if let Some(reference) = named {
         let (version, landed) = crate::verbs::bind::assert_on(

@@ -2,6 +2,7 @@
 about:
   - crates/gmr-budget/src/lib.rs#Budget
   - crates/gmr-budget/src/lib.rs#narrowed
+  - crates/gmr-budget/src/lib.rs#narrowed_to
   - crates/gmr-probe/src/lib.rs#ProbeCall
   - crates/gmr-runtime/src/policy.rs#budget
   - crates/gmr-budget/src/lib.rs#narrowing_can_only_tighten_a_budget_never_widen_it

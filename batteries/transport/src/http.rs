@@ -4,26 +4,30 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use gmr_budget::{Budget, Spent};
 use gmr_core::{
-    Derivation, Kind, Openness, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
-    content_hash_of_bytes,
+    Derivation, Kind, Observes, Openness, Outcome, ProbeName, ProbeVersion, ReasonClass,
+    Verifiability, content_hash_of_bytes,
 };
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use crate::select::VALUE;
 
 pub const SCHEMA: &str = "gmr.probe-http.v1";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Header {
     Given(String),
     FromEnv(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ask {
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, Header>,
 }
 
@@ -118,6 +122,12 @@ impl Asks for BTreeMap<ProbeName, Ask> {
     }
 }
 
+impl<T: Asks + ?Sized> Asks for Arc<T> {
+    fn ask(&self, name: &ProbeName) -> Option<Ask> {
+        (**self).ask(name)
+    }
+}
+
 pub struct Http {
     kind: Kind,
     asks: Arc<dyn Asks>,
@@ -147,6 +157,7 @@ impl Transport for Http {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: self.asks.ask(name)?.version(),
+            observes: Observes::named([crate::select::VALUE]),
             verifiability: Verifiability::open([Openness::Network, Openness::Clock]),
         })
     }
@@ -161,7 +172,14 @@ impl Transport for Http {
             )
         })?;
 
-        let reply = self.fetch.get(&ask.url, &ask.sent()?, call.budget).await?;
+        let url = crate::template::url(&ask.url, call.position)?;
+        crate::given::without_credentials(&url)?;
+        let sent = ask.sent().map_err(|e| e.about(name))?;
+        let reply = self
+            .fetch
+            .get(&url, &sent, call.budget)
+            .await
+            .map_err(|e| e.about(name))?;
         let ask = &ask;
 
         match reply.status {
@@ -172,22 +190,24 @@ impl Transport for Http {
                     ReasonClass::Unusable,
                     ProbeErrorCode::ArtifactInvalid,
                     format!(
-                        "{} refused this request ({}); that is something about our request \
-                         -- a credential, or a header it requires -- and not its answer",
-                        ask.url, reply.status
+                        "the endpoint `{name}` reads refused this request ({}); that is \
+                         something about our request -- a credential, or a header it \
+                         requires -- and not its answer",
+                        reply.status
                     ),
                 ));
             }
             500..=599 => {
                 return Err(ProbeError::unreachable(format!(
-                    "{} answered {}; the fact is not established either way",
-                    ask.url, reply.status
+                    "the endpoint `{name}` reads answered {}; the fact is not established \
+                     either way",
+                    reply.status
                 )));
             }
             other => {
                 return Err(ProbeError::unusable(format!(
-                    "{} answered {other}, which is neither an answer nor an outage",
-                    ask.url
+                    "the endpoint `{name}` reads answered {other}, which is neither an \
+                     answer nor an outage"
                 )));
             }
         }
@@ -204,8 +224,8 @@ impl Transport for Http {
                 ReasonClass::Unusable,
                 ProbeErrorCode::InvalidJson,
                 format!(
-                    "{} did not answer with JSON ({e}); received prefix: {}",
-                    ask.url,
+                    "the endpoint `{name}` reads did not answer with JSON ({e}); received \
+                     prefix: {}",
                     reply.body.chars().take(120).collect::<String>()
                 ),
             )
@@ -252,13 +272,17 @@ impl Fetch for Reqwest {
         }
         let response = request.send().await.map_err(|e| match e.is_timeout() {
             true => ProbeError::spent(Spent::Deadline, budget),
-            false => ProbeError::unreachable(format!("cannot reach {url}: {e}")),
+            false => {
+                ProbeError::unreachable(format!("cannot reach the endpoint: {}", e.without_url()))
+            }
         })?;
         let status = response.status().as_u16();
-        let body = response
-            .text()
-            .await
-            .map_err(|e| ProbeError::unreachable(format!("cannot read {url}'s answer: {e}")))?;
+        let body = response.text().await.map_err(|e| {
+            ProbeError::unreachable(format!(
+                "cannot read the endpoint's answer: {}",
+                e.without_url()
+            ))
+        })?;
         Ok(Reply { status, body })
     }
 }

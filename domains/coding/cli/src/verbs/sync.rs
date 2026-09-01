@@ -174,6 +174,8 @@ pub struct Synced {
     pub instrument_swapped: Vec<String>,
     pub resettled: Vec<String>,
     pub bound: Vec<String>,
+    pub linked: Vec<String>,
+    pub unlinked: Vec<String>,
     pub renamed: Vec<String>,
     pub warnings: Vec<String>,
     pub dry_run: bool,
@@ -278,10 +280,30 @@ pub async fn synced(
                 Step::Bind(reference, anchors, version, dropped)
             }),
     );
+    let (link_plans, linked, unlinked) = align_links(rt, notes, names).await?;
 
     let mut warnings = Vec::new();
     let mut scheduled = 0;
     if !dry_run {
+        for plan in link_plans {
+            match plan {
+                LinkStep::Add(from, to, kind) => {
+                    rt.link(&from, &to, gmr::LinkKind(kind), gmr::Source::Derived)
+                        .await?;
+                }
+                LinkStep::Drop(from, to, kind) => {
+                    rt.unlink(&gmr::LinkRevocation {
+                        from,
+                        to,
+                        kind: gmr::LinkKind(kind),
+                        asserted_as: Some(gmr::Source::Derived),
+                        source: gmr::Source::Derived,
+                        when: chrono::Utc::now(),
+                    })
+                    .await?;
+                }
+            }
+        }
         for step in steps {
             match step {
                 Step::Schedule(key) => scheduled += usize::from(rt.ensure_scheduled(&key).await?),
@@ -294,11 +316,16 @@ pub async fn synced(
                 }
                 Step::Bind(reference, anchors, version, dropped) => {
                     if !dropped.is_empty() {
-                        rt.revoke_on(&reference, &dropped, gmr::Source::Derived)
+                        rt.revoke_on(&reference.clone().into(), &dropped, gmr::Source::Derived)
                             .await?;
                     }
-                    rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
-                        .await?;
+                    rt.bind(
+                        gmr::Binding::on(reference, anchors),
+                        Some(version),
+                        Default::default(),
+                        gmr::Source::Derived,
+                    )
+                    .await?;
                 }
             }
         }
@@ -310,6 +337,8 @@ pub async fn synced(
         instrument_swapped: swapped,
         resettled,
         bound,
+        linked,
+        unlinked,
         renamed,
         warnings,
         dry_run,
@@ -396,6 +425,30 @@ fn told(s: &Synced) {
             println!("  + {b}");
         }
     }
+    if !s.linked.is_empty() {
+        println!(
+            "\n{} edges {} declared:",
+            s.linked.len(),
+            if s.dry_run { "would be" } else { "are" }
+        );
+        for l in &s.linked {
+            println!("  + {l}");
+        }
+    }
+    if !s.unlinked.is_empty() {
+        println!(
+            "\n{} declared edges {} — their declaration is gone:",
+            s.unlinked.len(),
+            if s.dry_run {
+                "would be revoked"
+            } else {
+                "revoked"
+            }
+        );
+        for l in &s.unlinked {
+            println!("  - {l}");
+        }
+    }
     if !s.renamed.is_empty() {
         println!(
             "\n{} notes dropped a key and gained an unseen one. That is either a\n\
@@ -462,6 +515,9 @@ async fn align_bindings(
     let mut renamed = Vec::new();
 
     for note in notes {
+        if note.wants.is_empty() {
+            continue;
+        }
         let reference = note.reference.clone();
         let named = names.of(&reference);
         let mut want: Vec<AnchorKey> = note
@@ -472,7 +528,7 @@ async fn align_bindings(
         want.sort();
         want.dedup();
 
-        let current = rt.memory().binding_of(&reference).await?;
+        let current = rt.memory().binding_of(&reference.clone().into()).await?;
         let had = current.anchors().to_vec();
         let mut closed = Vec::new();
         for key in had.iter().filter(|k| !want.contains(k)) {
@@ -495,7 +551,14 @@ async fn align_bindings(
                 reference.provider
             ))
         })?;
-        let settled = had == want && current.says(&want, Some(&version), gmr::Source::Derived);
+        let asking = gmr::Binding::on(reference.clone(), want.clone());
+        let settled = had == want
+            && current.says(
+                &asking,
+                Some(&version),
+                &Default::default(),
+                gmr::Source::Derived,
+            );
         if settled {
             continue;
         }
@@ -508,6 +571,53 @@ async fn align_bindings(
         planned.push((reference, want, version, dropped));
     }
     Ok((planned, bound, renamed))
+}
+
+enum LinkStep {
+    Add(gmr::Ref, gmr::Ref, String),
+    Drop(gmr::Ref, gmr::Ref, String),
+}
+
+async fn align_links(
+    rt: &Runtime,
+    notes: &[crate::memories::Note],
+    names: &crate::memories::Names,
+) -> Result<(Vec<LinkStep>, Vec<String>, Vec<String>), CliError> {
+    use std::collections::BTreeSet;
+
+    let mut plans = Vec::new();
+    let mut linked = Vec::new();
+    let mut unlinked = Vec::new();
+
+    for note in notes {
+        let named = names.of(&note.reference);
+        let want: BTreeSet<(String, gmr::Ref)> = note.links.iter().cloned().collect();
+        let current: BTreeSet<(String, gmr::Ref)> = rt
+            .links_of(&note.reference)
+            .await?
+            .into_iter()
+            .filter(|l| l.source == gmr::Source::Derived)
+            .map(|l| (l.kind.0, l.to))
+            .collect();
+
+        for (kind, to) in want.difference(&current) {
+            linked.push(format!("{named} --{kind}--> {}", to.external_id));
+            plans.push(LinkStep::Add(
+                note.reference.clone(),
+                to.clone(),
+                kind.clone(),
+            ));
+        }
+        for (kind, to) in current.difference(&want) {
+            unlinked.push(format!("{named} --{kind}--> {}", to.external_id));
+            plans.push(LinkStep::Drop(
+                note.reference.clone(),
+                to.clone(),
+                kind.clone(),
+            ));
+        }
+    }
+    Ok((plans, linked, unlinked))
 }
 
 pub fn differs(
@@ -567,6 +677,10 @@ pub fn standing<'a>(
 pub struct Bound(std::collections::BTreeSet<AnchorKey>);
 
 impl Bound {
+    pub fn among(keys: impl IntoIterator<Item = AnchorKey>) -> Self {
+        Self(keys.into_iter().collect())
+    }
+
     pub async fn of(rt: &Runtime) -> Result<Self, CliError> {
         Ok(Self(
             rt.memory()
@@ -701,11 +815,11 @@ mod tests {
         let rt = Runtime::builder()
             .journal(std::sync::Arc::new(store.journal()))
             .bindings(std::sync::Arc::new(store.bindings()))
-            .sealer(std::sync::Arc::new(store.bindings()))
+            .sealer(std::sync::Arc::new(store.sealer()))
             .links(std::sync::Arc::new(store.links()))
             .queue(std::sync::Arc::new(store.queue()))
-            .settings(std::sync::Arc::new(store.queue()))
-            .sightings(std::sync::Arc::new(store.queue()))
+            .settings(std::sync::Arc::new(store.settings()))
+            .sightings(std::sync::Arc::new(store.sightings()))
             .provider(std::sync::Arc::new(Versions(ProviderId::new("git"))))
             .build();
         (rt, store)
@@ -720,6 +834,7 @@ mod tests {
             reference: reference.clone(),
             wants: vec![crate::memories::Want::Existing("some::key".to_owned())],
             watch: None,
+            links: Vec::new(),
         }];
 
         let names = crate::memories::Names::over(vec![std::sync::Arc::new(
@@ -736,7 +851,11 @@ mod tests {
              reader learns to distrust both"
         );
         assert!(
-            rt.memory().binding_of(&reference).await.unwrap().is_empty(),
+            rt.memory()
+                .binding_of(&reference.clone().into())
+                .await
+                .unwrap()
+                .is_empty(),
             "resolution has to finish before the first write, because the journal is \
              append-only and there is no rollback. Writing as it went is how a sync that \
              failed on the last note left 346 anchors open with nothing bound to them — a \
@@ -744,15 +863,127 @@ mod tests {
         );
 
         for (reference, anchors, version, _) in plan {
-            rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
-                .await
-                .unwrap();
+            rt.bind(
+                gmr::Binding::on(reference, anchors),
+                Some(version),
+                Default::default(),
+                gmr::Source::Derived,
+            )
+            .await
+            .unwrap();
         }
         assert!(
-            !rt.memory().binding_of(&reference).await.unwrap().is_empty(),
+            !rt.memory()
+                .binding_of(&reference.clone().into())
+                .await
+                .unwrap()
+                .is_empty(),
             "and the plan really does bind when applied — without this the assertion above \
              would pass just as well against a fixture that could never bind at all"
         );
+        store.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_declared_edge_is_planned_once_and_settles_after_applying() {
+        let dir = tempfile::tempdir().unwrap();
+        let (rt, store) = runtime(dir.path()).await;
+        let reference = Ref::new("git", "memories/a.md");
+        let to = Ref::new("git", "memories/positioning.md");
+        let notes = vec![crate::memories::Note {
+            reference: reference.clone(),
+            wants: Vec::new(),
+            watch: None,
+            links: vec![("rests-on".to_owned(), to.clone())],
+        }];
+        let names = crate::memories::Names::over(vec![std::sync::Arc::new(
+            crate::memories::declaring(dir.path()),
+        )]);
+
+        let (plans, linked, unlinked) = align_links(&rt, &notes, &names).await.unwrap();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(linked.len(), 1);
+        assert!(unlinked.is_empty());
+
+        rt.link(
+            &reference,
+            &to,
+            gmr::LinkKind("rests-on".to_owned()),
+            gmr::Source::Derived,
+        )
+        .await
+        .unwrap();
+        let (plans, _, _) = align_links(&rt, &notes, &names).await.unwrap();
+        assert!(
+            plans.is_empty(),
+            "an edge the store already carries as Derived is settled, not re-asserted \
+             on every sync"
+        );
+        store.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_derived_edge_whose_declaration_is_gone_is_revoked_and_an_agents_stays() {
+        let dir = tempfile::tempdir().unwrap();
+        let (rt, store) = runtime(dir.path()).await;
+        let reference = Ref::new("git", "memories/a.md");
+        let to = Ref::new("git", "memories/b.md");
+        rt.link(
+            &reference,
+            &to,
+            gmr::LinkKind("cites".to_owned()),
+            gmr::Source::Derived,
+        )
+        .await
+        .unwrap();
+        rt.link(
+            &reference,
+            &to,
+            gmr::LinkKind("cites".to_owned()),
+            gmr::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+        let notes = vec![crate::memories::Note {
+            reference: reference.clone(),
+            wants: Vec::new(),
+            watch: None,
+            links: Vec::new(),
+        }];
+        let names = crate::memories::Names::over(vec![std::sync::Arc::new(
+            crate::memories::declaring(dir.path()),
+        )]);
+        let (plans, linked, unlinked) = align_links(&rt, &notes, &names).await.unwrap();
+        assert!(linked.is_empty());
+        assert_eq!(
+            unlinked.len(),
+            1,
+            "the declaration is the sole warrant for a Derived edge; when it goes, \
+             sync owes the store the revocation"
+        );
+        for plan in plans {
+            let LinkStep::Drop(from, to, kind) = plan else {
+                panic!("nothing was declared, so nothing may be added");
+            };
+            rt.unlink(&gmr::LinkRevocation {
+                from,
+                to,
+                kind: gmr::LinkKind(kind),
+                asserted_as: Some(gmr::Source::Derived),
+                source: gmr::Source::Derived,
+                when: chrono::Utc::now(),
+            })
+            .await
+            .unwrap();
+        }
+        let held = rt.links_of(&reference).await.unwrap();
+        assert_eq!(
+            held.len(),
+            1,
+            "the agent vouched for the same edge separately, and sync may not touch that"
+        );
+        assert_eq!(held[0].source, gmr::Source::SelfAttested);
         store.close().await;
     }
 
@@ -765,15 +996,16 @@ mod tests {
             reference: reference.clone(),
             wants: vec![crate::memories::Want::Existing("some::key".to_owned())],
             watch: None,
+            links: Vec::new(),
         }];
         let names = crate::memories::Names::over(vec![std::sync::Arc::new(
             crate::memories::declaring(dir.path()),
         )]);
 
         rt.bind(
-            reference.clone(),
-            keys(&["some::key"]),
+            gmr::Binding::on(reference.clone(), keys(&["some::key"])),
             Some(Version::new("v1")),
+            Default::default(),
             gmr::Source::Unknown,
         )
         .await
@@ -787,9 +1019,14 @@ mod tests {
              owes the record one"
         );
         for (reference, anchors, version, _) in plan {
-            rt.bind(reference, anchors, Some(version), gmr::Source::Derived)
-                .await
-                .unwrap();
+            rt.bind(
+                gmr::Binding::on(reference, anchors),
+                Some(version),
+                Default::default(),
+                gmr::Source::Derived,
+            )
+            .await
+            .unwrap();
         }
 
         let (plan, _, _) = align_bindings(&rt, &notes, &names).await.unwrap();

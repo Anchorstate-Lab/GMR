@@ -102,25 +102,15 @@ fn walk_state(node: &gmr::expr::Node, out: &mut BTreeSet<String>) {
         }
         Node::Object(fields) => fields.iter().for_each(|(_, v)| walk_state(v, out)),
         Node::Array(items) => items.iter().for_each(|v| walk_state(v, out)),
-    }
-}
-
-fn known(obs: &crate::probes::Obs) -> BTreeSet<String> {
-    if obs.schema == COORD_SCHEMA {
-        let mut out: BTreeSet<String> = REPORT.iter().map(|s| (*s).to_owned()).collect();
-        out.extend(obs.at.iter().map(|k| format!("at.{k}")));
-        out.extend(obs.facts.iter().map(|k| format!("facts.{k}")));
-        out
-    } else {
-        obs.at.iter().chain(&obs.facts).cloned().collect()
+        Node::Quantified { body, .. } => walk_state(body, out),
     }
 }
 
 pub fn unmet(reads: &BTreeSet<String>, obs: &crate::probes::Obs) -> Vec<String> {
-    let known = known(obs);
+    let observes = obs.observes();
     reads
         .iter()
-        .filter(|r| !known.contains(*r))
+        .filter(|r| !observes.covers(r))
         .cloned()
         .collect()
 }

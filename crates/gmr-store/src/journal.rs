@@ -18,6 +18,12 @@ impl Fence {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expected {
+    Any,
+    Head(Seq),
+}
+
 #[async_trait]
 pub trait Journal: Send + Sync {
     async fn append(
@@ -25,6 +31,7 @@ pub trait Journal: Send + Sync {
         anchor: &AnchorKey,
         entry: &Entry,
         fence: Fence,
+        expected: Expected,
     ) -> Result<Seq, StoreError>;
 
     async fn entries(&self, anchor: &AnchorKey, from: Seq)
@@ -57,23 +64,21 @@ pub fn link(
     .map_err(|e| StoreError::other(format!("could not link the entry: {e}")))
 }
 
-pub fn guard(fence: Fence, seen: i64, entry: &Entry) -> Result<(), StoreError> {
-    match fence {
-        Fence::Held(epoch) if (epoch as i64) < seen => Err(StoreError::with_code(
-            ErrorKind::Constraint,
-            ErrorCode::StaleFence,
-            format!(
-                "fencing token {epoch} is stale (already saw {seen}) — a lease expiring \
-             does not mean the holder stopped working"
-            ),
-        )),
-        Fence::Unleased if seen > 0 && entry.is_sighting() => Err(StoreError::with_code(
-            ErrorKind::Constraint,
-            ErrorCode::LeaseManagedObservation,
-            "observations on this anchor are lease-managed and will not be accepted \
-             without a token; go through the queue, or stop polling"
-                .to_owned(),
-        )),
-        _ => Ok(()),
+pub fn guard(anchor: &AnchorKey, expected: Expected, head: Seq) -> Result<(), StoreError> {
+    let Expected::Head(at) = expected else {
+        return Ok(());
+    };
+    if at == head {
+        return Ok(());
     }
+    Err(StoreError::with_code(
+        ErrorKind::Constraint,
+        ErrorCode::HeadMoved,
+        format!(
+            "this entry was computed from `{anchor}` as it stood at {at}, and it now stands \
+             at {head} — somebody appended in between. The reading that produced this entry \
+             is still good; the state it was folded against is not. Re-read, recompute, \
+             append again"
+        ),
+    ))
 }

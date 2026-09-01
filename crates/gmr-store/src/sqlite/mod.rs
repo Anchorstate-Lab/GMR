@@ -10,7 +10,7 @@ pub mod sightings;
 use std::path::Path;
 
 use crate::{ErrorCode, ErrorKind, StoreError};
-use gmr_core::{Ref, canonicalize};
+use gmr_core::{Claim, Ref, canonicalize};
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
@@ -20,8 +20,15 @@ pub use portable::{EXPORT_SCHEMA, PortableSummary};
 pub use queue::SqliteQueue;
 
 pub(crate) fn ref_key(r: &Ref) -> String {
-    let bytes = canonicalize(&serde_json::to_value(r).expect("a Ref always serialises"))
-        .expect("a Ref never exceeds canonicalization limits");
+    keyed(&serde_json::to_value(r).expect("a Ref always serialises"))
+}
+
+pub(crate) fn claim_key(c: &Claim) -> String {
+    keyed(&c.identity())
+}
+
+fn keyed(value: &serde_json::Value) -> String {
+    let bytes = canonicalize(value).expect("a reference never exceeds canonicalization limits");
     String::from_utf8(bytes).expect("canonical JSON is always UTF-8")
 }
 
@@ -105,6 +112,7 @@ async fn connect(
     Ok(SqliteStore { pool })
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum Rung {
     Sql(&'static str),
     Chain,
@@ -116,6 +124,8 @@ pub(crate) const LADDER: &[(i64, Rung)] = &[
     (8, Rung::Sql(schema::V8_TO_V9)),
     (9, Rung::Sql(schema::V9_TO_V10)),
     (10, Rung::Chain),
+    (11, Rung::Sql(schema::V11_TO_V12)),
+    (12, Rung::Sql(schema::V12_TO_V13)),
 ];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
@@ -140,7 +150,9 @@ fn from_the_future(stamped: i64) -> StoreError {
         format!(
             "this database is stamped schema v{stamped}, and this build only knows v{}. \
              Refusing to open — misreading a database written by a later generation is \
-             far worse than not opening it. Upgrade gmr",
+             far worse than not opening it. Upgrade this binary: \
+             `npm i -g @anchorstate-lab/gmr@latest`, or \
+             `curl -fsSL https://raw.githubusercontent.com/Anchorstate-Lab/GMR/main/dist/install.sh | sh`",
             schema::SCHEMA_VERSION
         ),
     )
@@ -177,12 +189,12 @@ async fn rung(pool: &SqlitePool, to: i64, ladder: &[(i64, Rung)]) -> Result<Clim
 }
 
 async fn under_the_write_lock(
-    held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
+    held: &mut sqlx::SqliteConnection,
     to: i64,
     ladder: &[(i64, Rung)],
 ) -> Result<Climbed, StoreError> {
     let at: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(&mut **held)
+        .fetch_one(&mut *held)
         .await
         .map_err(db_err)?;
 
@@ -194,13 +206,13 @@ async fn under_the_write_lock(
     }
 
     let (next, step) = match at {
-        0 => (to, &Rung::Sql(schema::SCHEMA)),
+        0 => (to, Rung::Sql(schema::SCHEMA)),
         _ => (
             at + 1,
             ladder
                 .iter()
                 .find(|(rung, _)| *rung == at)
-                .map(|(_, step)| step)
+                .map(|(_, step)| *step)
                 .ok_or_else(|| {
                     StoreError::with_code(
                         ErrorKind::Constraint,
@@ -216,16 +228,11 @@ async fn under_the_write_lock(
     };
 
     match step {
-        Rung::Sql(sql) => {
-            sqlx::raw_sql(sql)
-                .execute(&mut **held)
-                .await
-                .map_err(db_err)?;
-        }
-        Rung::Chain => chain_the_journal(held).await?,
+        Rung::Sql(sql) => statements(&mut *held, sql).await?,
+        Rung::Chain => chain_the_journal(&mut *held).await?,
     }
     sqlx::query(&format!("PRAGMA user_version = {next}"))
-        .execute(&mut **held)
+        .execute(&mut *held)
         .await
         .map_err(db_err)?;
 
@@ -235,18 +242,19 @@ async fn under_the_write_lock(
     })
 }
 
-async fn chain_the_journal(
-    held: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
-) -> Result<(), StoreError> {
+async fn statements(held: &mut sqlx::SqliteConnection, sql: &str) -> Result<(), StoreError> {
+    use sqlx::Executor;
+    held.execute(sqlx::raw_sql(sql)).await.map_err(db_err)?;
+    Ok(())
+}
+
+async fn chain_the_journal(held: &mut sqlx::SqliteConnection) -> Result<(), StoreError> {
     use sqlx::Row;
 
-    sqlx::raw_sql(schema::V10_TO_V11_OPEN)
-        .execute(&mut **held)
-        .await
-        .map_err(db_err)?;
+    statements(&mut *held, schema::V10_TO_V11_OPEN).await?;
 
     let rows = sqlx::query("SELECT seq, anchor, fence, body FROM journal ORDER BY seq")
-        .fetch_all(&mut **held)
+        .fetch_all(&mut *held)
         .await
         .map_err(db_err)?;
 
@@ -264,16 +272,13 @@ async fn chain_the_journal(
             .bind(prev.as_deref())
             .bind(hash.as_str())
             .bind(r.get::<i64, _>("seq"))
-            .execute(&mut **held)
+            .execute(&mut *held)
             .await
             .map_err(db_err)?;
         prev = Some(hash.into_inner());
     }
 
-    sqlx::raw_sql(schema::V10_TO_V11_CLOSE)
-        .execute(&mut **held)
-        .await
-        .map_err(db_err)?;
+    statements(&mut *held, schema::V10_TO_V11_CLOSE).await?;
     Ok(())
 }
 
@@ -295,7 +300,19 @@ impl SqliteStore {
         SqliteBindings::new(self.pool.clone())
     }
 
+    pub fn sealer(&self) -> SqliteBindings {
+        SqliteBindings::new(self.pool.clone())
+    }
+
     pub fn queue(&self) -> SqliteQueue {
+        SqliteQueue::new(self.pool.clone())
+    }
+
+    pub fn settings(&self) -> SqliteQueue {
+        SqliteQueue::new(self.pool.clone())
+    }
+
+    pub fn sightings(&self) -> SqliteQueue {
         SqliteQueue::new(self.pool.clone())
     }
 
@@ -492,7 +509,10 @@ mod tests {
 
         let e = migrate(store.pool()).await.unwrap_err();
         assert_eq!(e.code, ErrorCode::SchemaVersionMismatch);
-        assert!(e.to_string().contains("Upgrade gmr"), "{e}");
+        assert!(
+            e.to_string().contains("Upgrade this binary"),
+            "the refusal has to carry the way out, not just the verdict: {e}"
+        );
     }
 
     #[tokio::test]

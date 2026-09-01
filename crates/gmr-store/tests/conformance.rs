@@ -3,7 +3,7 @@ use gmr_core::{
     ProbeName, ProbeRef, ProbeVersion, ReasonClass, Ref, Rule, State, Transitions, Version,
     Versions, fold,
 };
-use gmr_store::{Asserted, BindingStore, ErrorCode, ErrorKind, Fence, Journal, Sealer};
+use gmr_store::{Asserted, BindingStore, ErrorCode, ErrorKind, Expected, Fence, Journal, Sealer};
 
 fn at(n: i64) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000 + n, 0).unwrap()
@@ -54,6 +54,7 @@ fn observation(pairs: &[(&str, serde_json::Value)]) -> Observation {
         versions: Versions {
             declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
             derivation: gmr_core::Derivation {
+                observes: Default::default(),
                 version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
                 verifiability: gmr_core::Verifiability::Closed,
             },
@@ -85,7 +86,10 @@ async fn journal_hands_back_what_it_was_given<J: Journal>(j: &J) {
     let key = AnchorKey::new("core::modules");
     let entry = open_entry("core::modules", &["count"], serde_json::json!(5));
 
-    let seq = j.append(&key, &entry, Fence::Unleased).await.unwrap();
+    let seq = j
+        .append(&key, &entry, Fence::Unleased, Expected::Any)
+        .await
+        .unwrap();
     let back = j.entries(&key, 0).await.unwrap();
 
     assert_eq!(back.len(), 1);
@@ -104,6 +108,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
         &a,
         &open_entry("a", &["x"], serde_json::json!(1)),
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -111,6 +116,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
         &b,
         &open_entry("b", &["x"], serde_json::json!(2)),
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -123,6 +129,7 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
             at: at(10),
         },
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -136,41 +143,49 @@ async fn journal_is_ordered_and_scoped_per_anchor<J: Journal>(j: &J) {
     assert_eq!(anchors, vec![a, b]);
 }
 
-fn author_entry() -> Entry {
-    Entry::Close {
-        context: gmr_core::ContentHash::try_new("e".repeat(64)).unwrap(),
-        rationale: gmr_core::ContentHash::try_new("f".repeat(64)).unwrap(),
-        at: at(20),
-    }
-}
+async fn journal_refuses_an_entry_folded_against_a_head_that_moved<J: Journal>(j: &J) {
+    let key = AnchorKey::new("contended");
+    let other = AnchorKey::new("elsewhere");
+    let entry = open_entry("contended", &["x"], serde_json::json!(1));
 
-async fn journal_refuses_a_stale_fencing_token<J: Journal>(j: &J) {
-    let key = AnchorKey::new("fenced");
-    let entry = open_entry("fenced", &["x"], serde_json::json!(1));
-
-    j.append(&key, &entry, Fence::Unleased).await.unwrap();
-    j.append(&key, &entry, Fence::Unleased).await.unwrap();
-
-    j.append(&key, &entry, Fence::Held(7)).await.unwrap();
-
-    let err = j.append(&key, &entry, Fence::Held(3)).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Constraint);
-    assert_eq!(err.code, ErrorCode::StaleFence);
-    assert!(
-        !err.kind.is_retryable(),
-        "retrying a stale token cannot help"
-    );
-
-    j.append(&key, &entry, Fence::Held(8)).await.unwrap();
-
-    let err = j.append(&key, &entry, Fence::Unleased).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Constraint);
-    assert_eq!(err.code, ErrorCode::LeaseManagedObservation);
-
-    j.append(&key, &author_entry(), Fence::Unleased)
+    let first = j
+        .append(&key, &entry, Fence::Unleased, Expected::Head(0))
         .await
         .unwrap();
-    assert_eq!(j.entries(&key, 0).await.unwrap().len(), 5);
+
+    let err = j
+        .append(&key, &entry, Fence::Unleased, Expected::Head(0))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Constraint);
+    assert_eq!(err.code, ErrorCode::HeadMoved);
+    assert!(
+        !err.kind.is_retryable(),
+        "the entry has to be recomputed against the head that is actually there; \
+         re-sending the same bytes cannot help"
+    );
+
+    let second = j
+        .append(&key, &entry, Fence::Unleased, Expected::Head(first))
+        .await
+        .unwrap();
+
+    j.append(&other, &entry, Fence::Unleased, Expected::Any)
+        .await
+        .unwrap();
+    j.append(&key, &entry, Fence::Unleased, Expected::Head(second))
+        .await
+        .expect(
+            "seq is global but a head is this anchor's own — an append elsewhere must not \
+             invalidate work folded against this anchor, or every anchor would conflict with \
+             every other one",
+        );
+
+    j.append(&key, &entry, Fence::Unleased, Expected::Any)
+        .await
+        .expect("an entry decided by nothing it read carries no expectation to break");
+
+    assert_eq!(j.entries(&key, 0).await.unwrap().len(), 4);
 }
 
 async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
@@ -179,6 +194,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
         &key,
         &open_entry("folded", &["shape"], serde_json::json!("old")),
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -190,6 +206,7 @@ async fn a_stored_log_folds_back_into_state<J: Journal>(j: &J) {
             at: at(10),
         },
         Fence::Unleased,
+        Expected::Any,
     )
     .await
     .unwrap();
@@ -204,16 +221,17 @@ fn asserted(binding: &Binding, version: &str, bound_at_seq: Option<gmr_core::Seq
         binding: binding.clone(),
         bound_version: Some(Version::new(version)),
         bound_at_seq,
+        saw: Default::default(),
         source: gmr_core::Source::Adjudicated,
         at: chrono::Utc::now(),
     }
 }
 
 async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
-    let binding = Binding {
-        reference: Ref::new("git", "memories/core-modules.md"),
-        anchors: vec![AnchorKey::new("core::modules")],
-    };
+    let binding = Binding::on(
+        Ref::new("git", "memories/core-modules.md"),
+        vec![AnchorKey::new("core::modules")],
+    );
     let bound_version = Version::new("blob-v1");
     b.bind(&asserted(&binding, bound_version.as_str(), Some(7)))
         .await
@@ -230,21 +248,59 @@ async fn bindings_record_the_version_they_bound<B: BindingStore>(b: &B) {
     assert_eq!(on[0].source, gmr_core::Source::Adjudicated);
 
     assert_eq!(
-        b.binding_of(&binding.reference).await.unwrap().len(),
+        b.binding_of(&binding.claim).await.unwrap().len(),
         1,
         "the reverse direction answers about the same one assertion"
     );
 }
 
-async fn a_binding_stamped_with_no_seq_reads_back_as_none<B: BindingStore>(b: &B) {
-    let binding = Binding {
-        reference: Ref::new("git", "memories/many.md"),
-        anchors: vec![AnchorKey::new("a"), AnchorKey::new("b")],
+async fn what_the_asserter_was_looking_at_is_kept_beside_the_assertion<B: BindingStore>(b: &B) {
+    let saw = gmr_core::FactAddress::try_new("a".repeat(64)).unwrap();
+    let claim = gmr_core::Claim::Said {
+        id: gmr_core::SaidId::new("turn-7"),
+        asserts: Some(serde_json::json!({ "price_cents": 420 })),
     };
+    let binding = Binding::on(claim.clone(), vec![AnchorKey::new("dish::icejelly")]);
+    b.bind(&Asserted {
+        binding,
+        bound_version: None,
+        bound_at_seq: Some(3),
+        saw: std::collections::BTreeSet::from([saw.clone()]),
+        source: gmr_core::Source::SelfAttested,
+        at: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
+
+    let found = b.binding_of(&claim).await.unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].saw.iter().collect::<Vec<_>>(),
+        vec![&saw],
+        "an assertion that cites no reading and one that cites a reading nobody took are \
+         the same row without this column, and only the second is a defect"
+    );
+    assert_eq!(found[0].binding.claim, claim);
+    assert_eq!(
+        b.binding_of(&gmr_core::Claim::said("turn-7"))
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "one utterance is one claim: what it asserts rides along, it does not file a \
+         separate row"
+    );
+}
+
+async fn a_binding_stamped_with_no_seq_reads_back_as_none<B: BindingStore>(b: &B) {
+    let binding = Binding::on(
+        Ref::new("git", "memories/many.md"),
+        vec![AnchorKey::new("a"), AnchorKey::new("b")],
+    );
     b.bind(&asserted(&binding, "v", None)).await.unwrap();
 
     assert_eq!(
-        b.binding_of(&binding.reference).await.unwrap()[0].bound_at_seq,
+        b.binding_of(&binding.claim).await.unwrap()[0].bound_at_seq,
         None,
         "every row written before this column existed has no seq and never will -- the \
          table is append-only. A store that invented one would date a binding to a moment \
@@ -257,10 +313,7 @@ async fn asserting_a_second_anchor_does_not_take_the_first_away<B: BindingStore>
     let reference = Ref::new("git", "memories/moved.md");
     for anchor in ["from", "to"] {
         b.bind(&asserted(
-            &Binding {
-                reference: reference.clone(),
-                anchors: vec![AnchorKey::new(anchor)],
-            },
+            &Binding::on(reference.clone(), vec![AnchorKey::new(anchor)]),
             "v",
             None,
         ))
@@ -290,10 +343,7 @@ async fn asserting_the_same_anchor_twice_still_delivers_it_once<B: BindingStore>
     let reference = Ref::new("git", "memories/twice.md");
     for v in ["v1", "v2"] {
         b.bind(&asserted(
-            &Binding {
-                reference: reference.clone(),
-                anchors: vec![AnchorKey::new("same")],
-            },
+            &Binding::on(reference.clone(), vec![AnchorKey::new("same")]),
             v,
             None,
         ))
@@ -317,10 +367,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
     let reference = Ref::new("git", "memories/orset.md");
     let at = AnchorKey::new("g");
     b.bind(&asserted(
-        &Binding {
-            reference: reference.clone(),
-            anchors: vec![at.clone()],
-        },
+        &Binding::on(reference.clone(), vec![at.clone()]),
         "v1",
         None,
     ))
@@ -329,7 +376,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
 
     let first = b.bindings_on(std::slice::from_ref(&at)).await.unwrap();
     b.revoke(&gmr_store::Revocation {
-        reference: reference.clone(),
+        claim: reference.clone().into(),
         at: at.clone(),
         tags: vec![gmr_store::Tag {
             binding: first[0].seq,
@@ -349,10 +396,7 @@ async fn a_revocation_kills_only_the_tags_it_named<B: BindingStore>(b: &B) {
     );
 
     b.bind(&asserted(
-        &Binding {
-            reference: reference.clone(),
-            anchors: vec![at.clone()],
-        },
+        &Binding::on(reference.clone(), vec![at.clone()]),
         "v2",
         None,
     ))
@@ -376,10 +420,7 @@ async fn a_revocation_does_not_reach_a_generation_it_was_not_made_at<B: BindingS
     let older = AnchorKey::new("older");
     let heir = AnchorKey::new("heir");
     b.bind(&asserted(
-        &Binding {
-            reference: reference.clone(),
-            anchors: vec![older.clone()],
-        },
+        &Binding::on(reference.clone(), vec![older.clone()]),
         "v1",
         None,
     ))
@@ -388,7 +429,7 @@ async fn a_revocation_does_not_reach_a_generation_it_was_not_made_at<B: BindingS
     let seq = b.bindings_on(std::slice::from_ref(&older)).await.unwrap()[0].seq;
 
     b.revoke(&gmr_store::Revocation {
-        reference: reference.clone(),
+        claim: reference.clone().into(),
         at: heir.clone(),
         tags: vec![gmr_store::Tag {
             binding: seq,
@@ -438,12 +479,22 @@ async fn links_are_scoped_to_the_from_reference<L: gmr_store::LinkStore>(l: &L) 
     let b = Ref::new("git", "memories/b.md");
     let c = Ref::new("git", "memories/c.md");
 
-    l.link(&a, &b, gmr_core::LinkKind("elaborates".into()))
-        .await
-        .unwrap();
-    l.link(&a, &c, gmr_core::LinkKind("contradicts".into()))
-        .await
-        .unwrap();
+    l.link(
+        &a,
+        &b,
+        gmr_core::LinkKind("elaborates".into()),
+        gmr_core::Source::Adjudicated,
+    )
+    .await
+    .unwrap();
+    l.link(
+        &a,
+        &c,
+        gmr_core::LinkKind("contradicts".into()),
+        gmr_core::Source::Derived,
+    )
+    .await
+    .unwrap();
 
     let from_a = l.links_of(&a).await.unwrap();
     assert_eq!(from_a.len(), 2);
@@ -454,6 +505,99 @@ async fn links_are_scoped_to_the_from_reference<L: gmr_store::LinkStore>(l: &L) 
         l.links_of(&b).await.unwrap().is_empty(),
         "links are directed: b was linked to, not from"
     );
+}
+
+async fn an_edge_carries_who_asserted_it<L: gmr_store::LinkStore>(l: &L) {
+    let a = Ref::new("git", "memories/a.md");
+    let b = Ref::new("git", "memories/b.md");
+    l.link(
+        &a,
+        &b,
+        gmr_core::LinkKind("rests-on".into()),
+        gmr_core::Source::Derived,
+    )
+    .await
+    .unwrap();
+
+    let held = l.links_of(&a).await.unwrap();
+    assert_eq!(held.len(), 1);
+    assert_eq!(
+        held[0].source,
+        gmr_core::Source::Derived,
+        "a reader deciding whether to trust an edge needs who said it, the same \
+         question independent() answers for a binding"
+    );
+}
+
+async fn unlinking_names_only_the_rows_it_observed<L: gmr_store::LinkStore>(l: &L) {
+    let a = Ref::new("git", "memories/a.md");
+    let b = Ref::new("git", "memories/b.md");
+    let kind = gmr_core::LinkKind("rests-on".into());
+    l.link(&a, &b, kind.clone(), gmr_core::Source::Derived)
+        .await
+        .unwrap();
+
+    let revoked = l
+        .unlink(&gmr_store::LinkRevocation {
+            from: a.clone(),
+            to: b.clone(),
+            kind: kind.clone(),
+            asserted_as: Some(gmr_core::Source::Derived),
+            source: gmr_core::Source::Derived,
+            when: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(revoked, 1);
+    assert!(l.links_of(&a).await.unwrap().is_empty());
+
+    l.link(&a, &b, kind.clone(), gmr_core::Source::SelfAttested)
+        .await
+        .unwrap();
+    assert_eq!(
+        l.links_of(&a).await.unwrap().len(),
+        1,
+        "a revocation kills the rows it observed, never the edge as an idea: \
+         a later assertion of the same edge is a new row and stands"
+    );
+}
+
+async fn unlinking_derived_rows_leaves_an_agents_identical_edge_standing<
+    L: gmr_store::LinkStore,
+>(
+    l: &L,
+) {
+    let a = Ref::new("git", "memories/a.md");
+    let b = Ref::new("git", "memories/b.md");
+    let kind = gmr_core::LinkKind("rests-on".into());
+    l.link(&a, &b, kind.clone(), gmr_core::Source::Derived)
+        .await
+        .unwrap();
+    l.link(&a, &b, kind.clone(), gmr_core::Source::SelfAttested)
+        .await
+        .unwrap();
+
+    let revoked = l
+        .unlink(&gmr_store::LinkRevocation {
+            from: a.clone(),
+            to: b.clone(),
+            kind: kind.clone(),
+            asserted_as: Some(gmr_core::Source::Derived),
+            source: gmr_core::Source::Derived,
+            when: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(revoked, 1);
+
+    let held = l.links_of(&a).await.unwrap();
+    assert_eq!(
+        held.len(),
+        1,
+        "declaration reconciliation owns only what declarations wrote; an agent \
+         vouching for the same edge is a separate assertion it may not touch"
+    );
+    assert_eq!(held[0].source, gmr_core::Source::SelfAttested);
 }
 
 macro_rules! journal_conformance {
@@ -507,12 +651,13 @@ macro_rules! links_conformance {
 journal_conformance!(
     journal_hands_back_what_it_was_given,
     journal_is_ordered_and_scoped_per_anchor,
-    journal_refuses_a_stale_fencing_token,
+    journal_refuses_an_entry_folded_against_a_head_that_moved,
     a_stored_log_folds_back_into_state,
 );
 
 bindings_conformance!(
     bindings_record_the_version_they_bound,
+    what_the_asserter_was_looking_at_is_kept_beside_the_assertion,
     a_binding_stamped_with_no_seq_reads_back_as_none,
     asserting_a_second_anchor_does_not_take_the_first_away,
     asserting_the_same_anchor_twice_still_delivers_it_once,
@@ -521,7 +666,12 @@ bindings_conformance!(
     sealing_is_content_addressed_and_idempotent,
 );
 
-links_conformance!(links_are_scoped_to_the_from_reference);
+links_conformance!(
+    links_are_scoped_to_the_from_reference,
+    an_edge_carries_who_asserted_it,
+    unlinking_names_only_the_rows_it_observed,
+    unlinking_derived_rows_leaves_an_agents_identical_edge_standing,
+);
 
 async fn queue_contract<Q: gmr_store::Queue>(q: &Q) {
     use chrono::{Duration, TimeZone, Utc};

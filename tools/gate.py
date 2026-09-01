@@ -55,6 +55,7 @@ CLEAN_ZONES = [
     "batteries/transport",
     "domains/coding/extract",
     "domains/coding/cli",
+    "domains/node",
 ]
 EXEMPT_FILES = ["domains/coding/cli/src/cli.rs"]
 
@@ -268,7 +269,11 @@ def check_version_bump():
 
 
 
-CONTRACT_CRATES = {"gmr_core": "crates/gmr-core", "gmr_budget": "crates/gmr-budget"}
+CONTRACT_CRATES = {
+    "gmr_core": "crates/gmr-core",
+    "gmr_budget": "crates/gmr-budget",
+    "gmr_content": "crates/gmr-content",
+}
 
 
 def block_from(source, open_at):
@@ -291,7 +296,7 @@ def with_attributes(source, start):
     return kept
 
 
-def declaration_of(source, name):
+def declaration_of(source, name, beside=""):
     m = re.search(rf"^pub (?:struct|enum) {name}\b", source, re.M)
     if m is not None:
         brace = source.index("{", m.start())
@@ -301,17 +306,18 @@ def declaration_of(source, name):
         head = source[m.start() : brace]
         return with_attributes(source, m.start()) + (head + body).splitlines()
 
-    m = re.search(rf"^\s*admitted {name},(.+)$", source, re.M)
+    m = re.search(rf"^\s*(?:admitted|minted) {name},(.+)$", source, re.M)
     if m is None:
         return None
-    validator = m.group(1).strip()
+    validator = m.group(1).strip().rsplit("::", 1)[-1]
     lines = [m.group(0).strip()]
-    v = re.search(rf"^fn {re.escape(validator)}\b", source, re.M)
+    where = source if f"fn {validator}" in source else beside
+    v = re.search(rf"^(?:pub )?fn {re.escape(validator)}\b", where, re.M)
     if v is not None:
-        brace = source.index("{", v.start())
-        body = block_from(source, brace)
+        brace = where.index("{", v.start())
+        body = block_from(where, brace)
         if body is not None:
-            lines += (source[v.start() : brace] + body).splitlines()
+            lines += (where[v.start() : brace] + body).splitlines()
     return lines
 
 
@@ -322,8 +328,10 @@ def contract_types(module):
     trait roster check exists to stop, one directory over.
     """
     out, unresolved = [], []
-    for path, names in re.findall(r"pub use ([\w:]+)::\{([^}]*)\}", module):
-        wanted = [n.strip() for n in names.split(",") if n.strip()]
+    for path, braced, bare in re.findall(
+        r"pub use ([\w:]+)::(?:\{([^}]*)\}|(\w+));", module
+    ):
+        wanted = [n.strip() for n in (braced or bare).split(",") if n.strip()]
         if path.startswith("crate::"):
             files = [ROOT / "crates/gmr-runtime/src" / f"{path.split('::')[1]}.rs"]
         elif path in CONTRACT_CRATES:
@@ -331,12 +339,13 @@ def contract_types(module):
         else:
             unresolved += [f"{n} (via `{path}`)" for n in wanted]
             continue
+        beside = "\n".join(f.read_text() for f in files if f.exists())
         for name in wanted:
             hit = next(
                 (
-                    (f, declaration_of(f.read_text(), name))
+                    (f, declaration_of(f.read_text(), name, beside))
                     for f in files
-                    if f.exists() and declaration_of(f.read_text(), name)
+                    if f.exists() and declaration_of(f.read_text(), name, beside)
                 ),
                 None,
             )
@@ -433,6 +442,48 @@ def check_contract_shape_is_earned():
     return []
 
 
+TYPED_SURFACES = [
+    ROOT / "dist" / "npm" / "index.d.ts",
+    ROOT / "dist" / "npm" / "index.js",
+]
+
+
+def check_typed_surface_names_the_contract():
+    """The published TypeScript says which contract it describes, and means it.
+
+    The addon hands JSON across, so nothing in Rust declares the shapes a
+    TypeScript caller matches on -- `index.d.ts` does, by hand, because a
+    second declaration of every contract type in Rust would be the drift path
+    the binding exists to avoid. That leaves one thing to check mechanically:
+    that the file names the version whose shapes it is describing.
+
+    `check_contract_shape_is_earned` already refuses a shape that moves while
+    `CONTRACT` stands still. Together the two are the whole guard: a contract
+    type cannot change without `CONTRACT` moving, and `CONTRACT` cannot move
+    without this file being edited to say so -- at which moment whoever edits
+    it is looking at the declarations that have to move with it.
+    """
+    if not CONTRACT_MODULE.exists():
+        return []
+    version, _ = recorded(CONTRACT_MODULE.read_text())
+    if version is None:
+        return []
+    out = []
+    for path in TYPED_SURFACES:
+        where = path.relative_to(ROOT)
+        if not path.exists():
+            out.append(f"{where} is gone -- it is the published surface's only type declaration")
+            continue
+        named = set(re.findall(r'"(gmr\.contract\.v\d+)"', path.read_text()))
+        if named != {version}:
+            out.append(
+                f"{where} names {sorted(named) or 'no contract'} and the runtime is "
+                f"`{version}` -- a caller pins that string to know which shapes they "
+                "may match on"
+            )
+    return out
+
+
 TRAIT_ROSTERS = {"gmr-store": "crates/gmr-store", "gmr-content": "crates/gmr-content"}
 
 
@@ -521,6 +572,64 @@ def check_acceptance_intact():
             f"acceptance.sh runs {declared} steps but the workflow greps for "
             f"steps={expected.group(1)} — the two must not drift"
         )
+    return errors
+
+
+def check_every_transport_says_what_it_observes():
+    """A transport that can say what it emits has to say it, or nothing checks.
+
+    `Derivation.observes` is what lets `Runtime::open` refuse an anchor whose
+    rules read a field the probe never reports -- an anchor that observes
+    forever, never transitions, and reads as supervised the whole time.
+
+    Three transports **know**: their whole reading comes back through
+    `select::pick`, which puts it under one key. Two **relay**: they run somebody
+    else's program but carry a declaration written by whoever installed it --
+    shell's is in the artifact manifest and inside the version it is addressed
+    by, the in-process one's is handed over with the closure. One **cannot**:
+    `script` runs an interpreter over a path with nothing describing it.
+
+    Only that last one may write `Observes::Unknown` in its own `resolve`.
+    Anywhere else it is a check silently switched off for every anchor behind
+    that transport -- which is what shell did while the description sat in a
+    recipe file the transport never saw.
+
+    The rule reads the body of `Transport::resolve` rather than the whole file,
+    because every one of these has fixtures that construct an `Unknown` and a
+    fixture is not an answer. It matches the full signature and not `fn resolve`,
+    because `sql.rs` resolves a connection url under that name first and would
+    otherwise be checked against the wrong function. And it is a roster on purpose, unlike the trait rosters two
+    checks up: nothing in the source distinguishes "cannot say" from "did not
+    bother", so the distinction is recorded by a person and compared by a
+    machine.
+    """
+    families = ROOT / "batteries" / "transport" / "src"
+    speaks = {"http.rs", "file.rs", "sql.rs", "shell/mod.rs", "inproc.rs"}
+    cannot = {"script.rs"}
+    errors = []
+    for name in sorted(speaks | cannot):
+        f = families / name
+        if not f.exists():
+            errors.append(f"the transport roster names {name}, which is not there")
+            continue
+        source = f.read_text()
+        m = re.search(r"fn resolve\(&self, name: &ProbeName\)", source)
+        if m is None:
+            errors.append(f"{name} is rostered as a transport and declares no `resolve`")
+            continue
+        brace = source.index("{", m.start())
+        body = block_from(source, brace) or ""
+        if "observes:" not in body:
+            errors.append(
+                f"{name}'s `resolve` names no `observes`, so every anchor behind it opens "
+                "without the check that its rules read something the probe reports"
+            )
+        elif name in speaks and "Observes::Unknown" in body:
+            errors.append(
+                f"{name}'s `resolve` answers `Observes::Unknown`, and it is rostered as a "
+                "transport that either knows or is handed the answer. Saying it does not "
+                "know turns the open-time check off for everything behind it"
+            )
     return errors
 
 
@@ -613,11 +722,13 @@ CHECKS = [
     ("facade: only re-exports", check_facade_only_reexports),
     ("every trait a rostered crate defines is named in CLAUDE.md", check_trait_roster),
     ("the contract's shape is the one its version claims", check_contract_shape_is_earned),
+("the published types name the contract they describe", check_typed_surface_names_the_contract),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
     ("every mutation sentinel still aims at code and at a promise", check_sentinels_still_aimed),
     ("what decides an extractor's answer is hashed with it", check_criteria_inside_the_closure),
+    ("every transport that can say what it observes does", check_every_transport_says_what_it_observes),
     ("Cargo.toml version, if touched, only claims a major.minor line — patch is CI's", check_version_bump),
 ]
 

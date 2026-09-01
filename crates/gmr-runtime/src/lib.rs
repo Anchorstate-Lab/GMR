@@ -21,9 +21,10 @@ mod translate;
 
 pub use assembly::{AssemblyError, Part, Runtime, RuntimeBuilder};
 pub use bind::Landed;
-pub use edges::{Edge, Edges, Standing};
+pub use edges::{Edge, Edges, Raised};
 pub use error::RuntimeError;
-pub use health::{AnchorHealth, Corpus, CorpusHealth};
+pub use health::{Aim, AnchorHealth, Corpus, CorpusHealth};
+pub use link::{REACHED_AT_MOST, Reached};
 pub use log::AnchorLog;
 pub use memory::{Bound, MemoryLens};
 pub use observe::{Looked, Observed};
@@ -31,8 +32,9 @@ pub use open::{OpenRequest, Opened, Supersede};
 pub use pass::Passed;
 pub use policy::Policy;
 pub use read::{
-    AnchorView, Before, Blind, Footing, Grounded, Grounding, Holding, HoldingKind, Instructions,
-    Knowledge, KnowledgeKind, MemoryView, Sighting, Warrant,
+    AnchorView, Anchored, Asked, Before, Blind, Depends, Evidence, Footing, Grounded, Grounding,
+    Holding, HoldingKind, Instructions, Knowledge, KnowledgeKind, Linked, MemoryView, Reading,
+    Shown, Sighting, Standing, Warrant,
 };
 pub use revise::Revised;
 pub use scheduler::Scheduler;

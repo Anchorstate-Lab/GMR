@@ -5,20 +5,23 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use gmr_budget::Spent;
 use gmr_core::{
-    Derivation, Kind, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
+    Derivation, Kind, Observes, Outcome, ProbeName, ProbeVersion, ReasonClass, Verifiability,
     content_hash_of_bytes,
 };
 use gmr_probe::{ProbeCall, ProbeError, ProbeErrorCode, Transport};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use crate::select::VALUE;
 
 pub const SCHEMA: &str = "gmr.probe-file.v1";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Shaped {
     Json,
     Toml,
+    #[serde(alias = "yml")]
     Yaml,
 }
 
@@ -49,10 +52,12 @@ impl Shaped {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ask {
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shaped: Option<Shaped>,
 }
 
@@ -101,6 +106,12 @@ impl Asks for BTreeMap<ProbeName, Ask> {
     }
 }
 
+impl<T: Asks + ?Sized> Asks for Arc<T> {
+    fn ask(&self, name: &ProbeName) -> Option<Ask> {
+        (**self).ask(name)
+    }
+}
+
 pub struct Files {
     kind: Kind,
     root: PathBuf,
@@ -146,6 +157,7 @@ impl Transport for Files {
     fn resolve(&self, name: &ProbeName) -> Option<Derivation> {
         Some(Derivation {
             version: self.asks.ask(name)?.version(),
+            observes: Observes::named([crate::select::VALUE]),
             verifiability: Verifiability::Closed,
         })
     }
@@ -160,15 +172,15 @@ impl Transport for Files {
             )
         })?;
 
-        let at = inside(&self.root, &ask.path).ok_or_else(|| {
+        let declared = crate::template::path(&ask.path, call.position)?;
+        let at = inside(&self.root, &declared).ok_or_else(|| {
             ProbeError::with_code(
                 ReasonClass::Unusable,
                 ProbeErrorCode::ArtifactInvalid,
                 format!(
-                    "`{}` leaves the repository. A declaration is reviewed, but a probe that \
-                     can read outside the tree can put anything on the host into an \
-                     append-only log; say what you mean with a path inside it",
-                    ask.path
+                    "`{declared}` leaves the repository. A declaration is reviewed, but a \
+                     probe that can read outside the tree can put anything on the host into \
+                     an append-only log; say what you mean with a path inside it"
                 ),
             )
         })?;
@@ -193,8 +205,7 @@ impl Transport for Files {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Outcome::NotFound),
             Err(e) => {
                 return Err(ProbeError::unreachable(format!(
-                    "cannot read `{}`: {e}",
-                    ask.path
+                    "cannot read `{declared}`: {e}"
                 )));
             }
         };
@@ -205,8 +216,7 @@ impl Transport for Files {
 
         let body = shaped.parse(&text).map_err(|e| {
             ProbeError::unusable(format!(
-                "`{}` is not readable as {}: {e}",
-                ask.path,
+                "`{declared}` is not readable as {}: {e}",
                 shaped.as_str()
             ))
         })?;

@@ -64,6 +64,12 @@ whitespace cannot make it fire on its own. Zero comments in the clean zones
 otherwise be the exact silent break D-3 found the plan had already made once,
 in the other direction, by misreading `AnchorKey`'s bound.
 
+Both macro arms count, and the validator is looked for beside the type as well as
+in its own file. `FactAddress` is `minted` and its validator lives in `addr.rs`
+while the type lives in `probe.rs`; a reader that knew only `admitted` reported it
+as unresolvable, and one that searched only the type's own file would have hashed
+the `minted` line while `check_sha256_hex` was free to change underneath it.
+
 ## The list of contract types is not written here
 
 `contract_types` reads the `pub use` lines out of `contract.rs` and resolves each
@@ -72,6 +78,13 @@ name to its declaration. There is deliberately no roster of these names in
 check were built to stop, one directory over — a list that goes on being checked
 after it stops being true. Adding a type to the contract is one edit, and the
 gate follows.
+
+It reads both spellings of that line. Reading only `pub use x::{A, B}` left
+`Landed` — re-exported on its own — outside the shape from the day the check was
+written, and nothing said so, because a name the reader never sees is
+indistinguishable from a module that does not re-export it. That is the failure
+mode this section's last paragraph names, arriving through the parser rather than
+through the contract.
 
 The cost is that a name the module re-exports but the gate cannot resolve is an
 error rather than a shrug. That is the right direction: an unresolvable name

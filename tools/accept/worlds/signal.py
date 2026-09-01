@@ -50,6 +50,7 @@ class World(base.World):
     name = "deploy"
     derives_from_source = False
     has_axes = False
+    invariant = 'all(anchors, state.status == "captured")'
     swappable_instrument = True
     expresses = base.UNIVERSAL
 

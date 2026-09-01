@@ -60,11 +60,15 @@ impl Budget {
     }
 
     pub fn narrowed(&self, span: Duration) -> Self {
+        self.narrowed_to(span, self.output_cap)
+    }
+
+    pub fn narrowed_to(&self, span: Duration, output_cap: usize) -> Self {
         let mut inherited = self.inherited.clone();
         inherited.push(Arc::clone(&self.cancel));
         Self {
             inherited,
-            ..Self::until((Instant::now() + span).min(self.deadline), self.output_cap)
+            ..Self::until((Instant::now() + span).min(self.deadline), output_cap)
         }
     }
 
@@ -171,6 +175,35 @@ mod tests {
         let inner = one.narrowed(Duration::from_secs(600));
         batch.cancel();
         assert_eq!(inner.checkpoint(), Err(Spent::Cancelled));
+    }
+
+    #[test]
+    fn a_phase_states_its_own_output_cap_because_it_is_not_the_parents() {
+        let call = Budget::within(Duration::from_secs(600), usize::MAX);
+        let probing = call.narrowed_to(Duration::from_secs(30), 1024);
+        let reading = call.narrowed_to(Duration::from_secs(30), usize::MAX);
+
+        assert_eq!(probing.output_cap(), 1024);
+        assert_eq!(
+            reading.output_cap(),
+            usize::MAX,
+            "one call, two phases, and how much output each may take is a property of the \
+             phase, not of the call they descend from. Inheriting the parent's cap would \
+             make the two phases share a limit neither of them declared"
+        );
+        assert!(probing.deadline() <= call.deadline());
+        assert!(reading.deadline() <= call.deadline());
+    }
+
+    #[test]
+    fn a_wider_cap_still_cannot_buy_more_time() {
+        let call = Budget::within(Duration::from_millis(50), 16);
+        assert!(
+            call.narrowed_to(Duration::from_secs(3600), usize::MAX)
+                .deadline()
+                <= call.deadline(),
+            "stating a cap must not be a second way around the deadline"
+        );
     }
 
     #[test]

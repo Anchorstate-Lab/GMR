@@ -97,6 +97,17 @@ class Cell:
         self.gmr.bind(address, anchors=[self.world.signal])
         return address
 
+    def reading(self, signal=None):
+        """The address of the reading this signal is showing right now.
+
+        It is what `gmr read --json` hands an agent, and what an agent has to
+        carry back into `said` for anything to be able to tell a conclusion
+        built through the anchor from one built beside it.
+        """
+        res = self.gmr.read(signal or self.world.signal)
+        seen = res.body if isinstance(res.body, dict) else res.body[0]
+        return seen.get("fact_address")
+
     def without_store(self):
         """The same instance, with this store pointed somewhere that is not there."""
         if not self.store.env_key:

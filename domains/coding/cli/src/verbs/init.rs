@@ -18,6 +18,7 @@ const GITIGNORE: &str = "\
 !.gitignore
 !anchors.toml
 !probes.toml
+!providers.toml
 ";
 
 fn bundled() -> Option<PathBuf> {
@@ -183,5 +184,33 @@ fn example(readable: &[(String, usize)]) -> String {
     match readable.first() {
         Some((ext, _)) => format!("src/<file>.{ext}#<functionName>"),
         None => "src/<file>#<name>".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GITIGNORE;
+
+    #[test]
+    fn every_file_a_declaration_is_written_to_survives_the_gitignore() {
+        let anchors = crate::verbs::sync::DEFAULT_FILE
+            .rsplit('/')
+            .next()
+            .expect("the default anchors path ends in a file name");
+        for declared in [
+            anchors,
+            crate::probes::RECIPES_FILE,
+            crate::providers::RECIPES_FILE,
+        ] {
+            assert!(
+                GITIGNORE.lines().any(|line| line == format!("!{declared}")),
+                "`gmr init` writes `*` into .anchor/.gitignore and then re-admits the \
+                 declarations by name. {declared} is a declaration channel -- CLAUDE.md \
+                 §2 says it travels with the repository -- and it is not re-admitted, so \
+                 a stranger's `gmr init` silently drops it and nothing anywhere says so. \
+                 That is how providers.toml was lost: this repository's own .anchor \
+                 predates the constant and kept working, so the two never had to agree"
+            );
+        }
     }
 }

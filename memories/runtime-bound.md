@@ -1,7 +1,7 @@
 ---
 about:
   - crates/gmr-runtime/src/memory.rs#Bound
-  - crates/gmr-runtime/src/memory.rs#by_reference
+  - crates/gmr-runtime/src/memory.rs#by_claim
   - crates/gmr-runtime/src/memory.rs#bindings_on
   - crates/gmr-runtime/tests/grounding.rs#an_anchor_names_each_memory_once_however_many_assertions_stand_on_it
   - crates/gmr-runtime/src/bind.rs#bind
@@ -13,8 +13,8 @@ watch: [sig, logic]
 # `Bound` is the folded answer, and every reader is handed it instead of the rows
 
 **Both directions of the projection return `Bound`**, not
-`Vec<BindingRecord>`: `binding_of` one of them, `bindings_on` one per
-reference on the anchor. The rows behind it stay reachable through
+`Vec<BindingRecord>`: `binding_of` one of them, `bindings_on` one per claim on
+the anchor. The rows behind it stay reachable through
 `assertions()` for the one caller that needs row identity — a revocation has
 to name the tags it observed ([[store-orset-projection]]) — and nothing else
 sees them.
@@ -24,10 +24,16 @@ one. Three parties asserting a link is three assertions and one memory, and
 a verb that lists per row reports three memories in trouble where there is
 one — with nothing in its type to say it disagrees with the verb beside it.
 
-`by_reference` groups through a map keyed by `Ref`, not by scanning the
+`by_claim` groups through a map keyed by `Claim::identity`, not by scanning the
 groups it has built so far. `corpus_health` hands it the whole table, so the
-scan would be quadratic in the corpus rather than in one anchor's share of
-it.
+scan would be quadratic in the corpus rather than in one anchor's share of it.
+
+The key is `identity`, not `Display`. Grouping on the rendered address had two
+readings of one utterance land together only as long as nothing else rendered
+the same way — and `said` was a legal provider name, so `said:t7` was both an
+utterance and a record in a store called `said`. `check_provider_id` now refuses
+that name, and this map keys on the same canonical form the store does
+([[store-sqlite-ref-key]]). One thing decides claim identity, in one place.
 
 Each dimension is folded exactly once, here:
 
@@ -45,8 +51,9 @@ reconciliation and `doctor` end up answering the same question three ways.
 
 ## `says` is where write-idempotence lives, because the table is append-only
 
-`says(anchors, version, source)` asks whether the projection already holds
-what a caller is about to assert. `Runtime::bind` asks it and returns
+`says(asking, version, saw, source)` asks whether the projection already holds
+what a caller is about to assert. `asking` is the whole `Binding` — claim,
+anchors and invariant — because all three are part of the assertion. `Runtime::bind` asks it and returns
 `Landed { recorded: false }` without writing when the answer is yes.
 
 Nothing can be taken back from an append-only table, so a writer that
@@ -62,6 +69,15 @@ only the projection can answer that.
 a link a first party already asserted is new information — it is what
 `independent()` reads ([[store-binding-record]]) — so it is recorded, and the
 run after it is not.
+
+So does `saw`. The same sentence asserted twice in front of two different
+readings is two assertions, and collapsing them would throw away the only record
+of which reading each answer was actually built from.
+
+So does `depends`. The same sentence on the same anchors under two different
+invariants is two assertions, and the second is the one that says what its
+author thought it rested on. Collapsing them would leave the projection holding
+a condition nobody restated.
 
 ## `reaffirm` is deliberately outside this
 

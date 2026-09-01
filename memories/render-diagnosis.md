@@ -32,9 +32,9 @@ closest" — and the problem is clear on the spot.
 
 `Observed` is "what happened in this one observation"; `AnchorView` is "what this
 anchor looks like now". The diagnosis answers the latter — whoever opens `gmr status`
-has not just run an observation. `read()` already took `sighting` and `derivation` out
-of `latest`, and `facts` is a third thing on the same object that can be handed over
-without explanation.
+has not just run an observation. `read()` already took `sighting`, `derivation` and `fact_address` out
+of `latest`, and `facts` is one more field on the same object that can be handed
+over without explanation.
 
 **The substrate does not interpret it.** `Facts` is passed through as-is and how to read
 it is the domain's business — `diagnosis` recognises the schema `gmr.probe-coord.v1`,

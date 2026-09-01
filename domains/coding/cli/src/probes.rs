@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{PoisonError, RwLock, RwLockReadGuard};
 
-use gmr::{Kind, ProbeVersion};
+use gmr::{Kind, ProbeName, ProbeVersion};
 use gmr_transport::shell::{Artifacts, publish};
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,21 @@ pub struct Obs {
     pub facts: Vec<String>,
 }
 
+impl Obs {
+    pub fn observes(&self) -> gmr::Observes {
+        let named: Vec<String> = match self.schema == crate::contract::COORD_SCHEMA {
+            true => crate::contract::REPORT
+                .iter()
+                .map(|k| (*k).to_owned())
+                .chain(self.at.iter().map(|k| format!("at.{k}")))
+                .chain(self.facts.iter().map(|k| format!("facts.{k}")))
+                .collect(),
+            false => self.at.iter().chain(&self.facts).cloned().collect(),
+        };
+        gmr::Observes::named(named)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Recipe {
     #[serde(default)]
@@ -38,98 +54,6 @@ pub struct Recipe {
     pub obs: Obs,
     #[serde(default)]
     pub handles: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HeaderDecl {
-    Given(String),
-    FromEnv(String),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct HttpDecl {
-    pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub select: Option<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, HeaderDecl>,
-}
-
-impl HttpDecl {
-    pub fn ask(&self) -> gmr_transport::http::Ask {
-        gmr_transport::http::Ask {
-            url: self.url.clone(),
-            select: self.select.clone(),
-            headers: self
-                .headers
-                .iter()
-                .map(|(name, value)| {
-                    let value = match value {
-                        HeaderDecl::Given(v) => gmr_transport::http::Header::Given(v.clone()),
-                        HeaderDecl::FromEnv(v) => gmr_transport::http::Header::FromEnv(v.clone()),
-                    };
-                    (name.clone(), value)
-                })
-                .collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct FileDecl {
-    pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub select: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shaped: Option<String>,
-}
-
-impl FileDecl {
-    pub fn ask(&self) -> gmr_transport::file::Ask {
-        gmr_transport::file::Ask {
-            path: self.path.clone(),
-            select: self.select.clone(),
-            shaped: self
-                .shaped
-                .as_deref()
-                .and_then(gmr_transport::file::Shaped::of_extension),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SqlDecl {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url_from_env: Option<String>,
-    pub query: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub column: Option<String>,
-}
-
-impl SqlDecl {
-    pub fn source(&self) -> Result<gmr_transport::sql::Source, CliError> {
-        match (&self.url, &self.url_from_env) {
-            (Some(url), None) => Ok(gmr_transport::sql::Source::Given(url.clone())),
-            (None, Some(var)) => Ok(gmr_transport::sql::Source::FromEnv(var.clone())),
-            (None, None) => Err(CliError(
-                "a sql probe needs either `url` or `url_from_env`".to_owned(),
-            )),
-            (Some(_), Some(_)) => Err(CliError(
-                "a sql probe names both `url` and `url_from_env`; say which one it is".to_owned(),
-            )),
-        }
-    }
-
-    pub fn ask(&self) -> Option<gmr_transport::sql::Ask> {
-        Some(gmr_transport::sql::Ask {
-            source: self.source().ok()?,
-            query: self.query.clone(),
-            column: self.column.clone(),
-        })
-    }
 }
 
 pub fn sql_obs() -> Obs {
@@ -174,11 +98,11 @@ struct File {
     #[serde(default)]
     script: BTreeMap<String, ScriptDecl>,
     #[serde(default)]
-    http: BTreeMap<String, HttpDecl>,
+    http: BTreeMap<ProbeName, gmr_transport::http::Ask>,
     #[serde(default)]
-    file: BTreeMap<String, FileDecl>,
+    file: BTreeMap<ProbeName, gmr_transport::file::Ask>,
     #[serde(default)]
-    sql: BTreeMap<String, SqlDecl>,
+    sql: BTreeMap<ProbeName, gmr_transport::sql::Ask>,
 }
 
 #[derive(Debug, Default)]
@@ -373,11 +297,14 @@ pub fn build_one(
     let artifact = publish(
         artifacts,
         staging.path(),
-        gmr::Kind::new("shell"),
-        version.clone(),
-        &recipe.entrypoint,
-        recipe.args.clone(),
-        env,
+        gmr_transport::shell::Declared {
+            kind: gmr::Kind::new("shell"),
+            derivation: version.clone(),
+            entrypoint: recipe.entrypoint.clone(),
+            args: recipe.args.clone(),
+            env,
+            observes: recipe.obs.observes(),
+        },
     )
     .map_err(|e| CliError(format!("cannot publish `{name}`: {}", e.0)))?;
 
@@ -411,20 +338,22 @@ fn copy_mode(_src: &Path, _dst: &Path) -> Result<(), CliError> {
 pub struct Catalog {
     recipes: Recipes,
     scripts: BTreeMap<String, ScriptDecl>,
-    https: BTreeMap<String, HttpDecl>,
-    files: BTreeMap<String, FileDecl>,
-    sqls: BTreeMap<String, SqlDecl>,
+    fetched: gmr_transport::recipes::Recipes,
 }
 
 impl Catalog {
     pub fn load(root: &Path) -> Result<Self, CliError> {
         let file = read_file(root)?;
         Ok(Self {
-            recipes: Recipes::load(root)?,
+            recipes: Recipes {
+                declared: file.probe,
+            },
             scripts: file.script,
-            https: file.http,
-            files: file.file,
-            sqls: file.sql,
+            fetched: gmr_transport::recipes::Recipes {
+                http: file.http,
+                file: file.file,
+                sql: file.sql,
+            },
         })
     }
 
@@ -443,13 +372,14 @@ impl Catalog {
         if Self::builtin(name).is_some() {
             return Kind::new("builtin");
         }
-        if self.https.contains_key(name) {
+        let probe = ProbeName::new(name);
+        if self.fetched.http.contains_key(&probe) {
             return Kind::new("http");
         }
-        if self.files.contains_key(name) {
+        if self.fetched.file.contains_key(&probe) {
             return Kind::new("file");
         }
-        if self.sqls.contains_key(name) {
+        if self.fetched.sql.contains_key(&probe) {
             return Kind::new("sql");
         }
         match self.scripts.contains_key(name) {
@@ -469,13 +399,14 @@ impl Catalog {
                 facts: v.facts.iter().map(|s| (*s).to_owned()).collect(),
             });
         }
-        if self.https.contains_key(name) {
+        let probe = ProbeName::new(name);
+        if self.fetched.http.contains_key(&probe) {
             return Ok(http_obs());
         }
-        if self.files.contains_key(name) {
+        if self.fetched.file.contains_key(&probe) {
             return Ok(file_obs());
         }
-        if self.sqls.contains_key(name) {
+        if self.fetched.sql.contains_key(&probe) {
             return Ok(sql_obs());
         }
         if let Some(d) = self.scripts.get(name) {
@@ -501,76 +432,89 @@ impl Catalog {
         self.scripts.iter().map(|(n, d)| (n.as_str(), d))
     }
 
-    pub fn https(&self) -> impl Iterator<Item = (&str, &HttpDecl)> {
-        self.https.iter().map(|(n, d)| (n.as_str(), d))
+    pub fn https(&self) -> impl Iterator<Item = (&str, &gmr_transport::http::Ask)> {
+        self.fetched.http.iter().map(|(n, a)| (n.as_str(), a))
     }
 
-    pub fn files(&self) -> impl Iterator<Item = (&str, &FileDecl)> {
-        self.files.iter().map(|(n, d)| (n.as_str(), d))
+    pub fn files(&self) -> impl Iterator<Item = (&str, &gmr_transport::file::Ask)> {
+        self.fetched.file.iter().map(|(n, a)| (n.as_str(), a))
     }
 
-    pub fn sqls(&self) -> impl Iterator<Item = (&str, &SqlDecl)> {
-        self.sqls.iter().map(|(n, d)| (n.as_str(), d))
-    }
-
-    pub fn asks(&self) -> BTreeMap<gmr::ProbeName, gmr_transport::http::Ask> {
-        self.https
-            .iter()
-            .map(|(n, d)| (gmr::ProbeName::new(n.clone()), d.ask()))
-            .collect()
+    pub fn sqls(&self) -> impl Iterator<Item = (&str, &gmr_transport::sql::Ask)> {
+        self.fetched.sql.iter().map(|(n, a)| (n.as_str(), a))
     }
 }
 
 pub struct Declared {
     root: PathBuf,
+    held: RwLock<gmr_transport::recipes::Recipes>,
 }
 
 impl Declared {
-    pub fn at(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+    pub fn at(root: impl Into<PathBuf>) -> Result<Self, CliError> {
+        let root = root.into();
+        Ok(Self {
+            held: RwLock::new(Catalog::load(&root)?.fetched),
+            root,
+        })
+    }
+
+    fn reading(&self) -> RwLockReadGuard<'_, gmr_transport::recipes::Recipes> {
+        self.held.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn restock(&self) {
+        let Ok(catalog) = Catalog::load(&self.root) else {
+            return;
+        };
+        *self.held.write().unwrap_or_else(PoisonError::into_inner) = catalog.fetched;
+    }
+
+    fn asking<T>(&self, pick: impl Fn(&gmr_transport::recipes::Recipes) -> Option<T>) -> Option<T> {
+        if let Some(found) = pick(&self.reading()) {
+            return Some(found);
+        }
+        self.restock();
+        pick(&self.reading())
     }
 }
 
 impl gmr_transport::http::Asks for Declared {
-    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::http::Ask> {
-        Catalog::load(&self.root)
-            .ok()?
-            .https()
-            .find(|(n, _)| *n == name.as_str())
-            .map(|(_, d)| d.ask())
+    fn ask(&self, name: &ProbeName) -> Option<gmr_transport::http::Ask> {
+        self.asking(|held| held.http.get(name).cloned())
     }
 }
 
 impl gmr_transport::sql::Asks for Declared {
-    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::sql::Ask> {
-        Catalog::load(&self.root)
-            .ok()?
-            .sqls()
-            .find(|(n, _)| *n == name.as_str())
-            .and_then(|(_, d)| d.ask())
+    fn ask(&self, name: &ProbeName) -> Option<gmr_transport::sql::Ask> {
+        self.asking(|held| held.sql.get(name).cloned())
     }
 }
 
 impl gmr_transport::file::Asks for Declared {
-    fn ask(&self, name: &gmr::ProbeName) -> Option<gmr_transport::file::Ask> {
-        Catalog::load(&self.root)
-            .ok()?
-            .files()
-            .find(|(n, _)| *n == name.as_str())
-            .map(|(_, d)| d.ask())
+    fn ask(&self, name: &ProbeName) -> Option<gmr_transport::file::Ask> {
+        self.asking(|held| held.file.get(name).cloned())
     }
 }
 
-pub fn declare_http(root: &Path, name: &str, decl: &HttpDecl) -> Result<(), CliError> {
-    declare_probe(root, "http", name, decl)
+pub fn declare_http(
+    root: &Path,
+    name: &str,
+    ask: &gmr_transport::http::Ask,
+) -> Result<(), CliError> {
+    declare_probe(root, "http", name, ask)
 }
 
-pub fn declare_file(root: &Path, name: &str, decl: &FileDecl) -> Result<(), CliError> {
-    declare_probe(root, "file", name, decl)
+pub fn declare_file(
+    root: &Path,
+    name: &str,
+    ask: &gmr_transport::file::Ask,
+) -> Result<(), CliError> {
+    declare_probe(root, "file", name, ask)
 }
 
-pub fn declare_sql(root: &Path, name: &str, decl: &SqlDecl) -> Result<(), CliError> {
-    declare_probe(root, "sql", name, decl)
+pub fn declare_sql(root: &Path, name: &str, ask: &gmr_transport::sql::Ask) -> Result<(), CliError> {
+    declare_probe(root, "sql", name, ask)
 }
 
 fn declare_probe<T: Serialize>(
@@ -699,6 +643,47 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file"], facts = ["line"] }
         let d = world(&[(".anchor/probes.toml", TOML), ("src/probe.sh", "echo 1")]);
         let e = Recipes::load(d.path()).unwrap().get("nope").unwrap_err();
         assert!(e.to_string().contains("demo"), "{e}");
+    }
+
+    #[test]
+    fn a_declaration_already_held_is_answered_without_going_back_to_the_file() {
+        let d = world(&[(
+            ".anchor/probes.toml",
+            "[file.deploy-replicas]\npath = \"deploy.yaml\"\n",
+        )]);
+        let declared = Declared::at(d.path()).unwrap();
+        std::fs::remove_file(d.path().join(".anchor/probes.toml")).unwrap();
+
+        assert_eq!(
+            gmr_transport::file::Asks::ask(&declared, &ProbeName::new("deploy-replicas")),
+            Some(gmr_transport::file::Ask::at("deploy.yaml")),
+            "every observation used to cost a disk read and a TOML parse, which a one-shot \
+             command can afford and a process serving requests cannot"
+        );
+    }
+
+    #[test]
+    fn a_probe_declared_after_the_transports_were_built_is_still_found() {
+        let d = world(&[]);
+        let declared = Declared::at(d.path()).unwrap();
+        let name = ProbeName::new("deploy-replicas");
+        assert_eq!(gmr_transport::file::Asks::ask(&declared, &name), None);
+
+        declare_file(
+            d.path(),
+            "deploy-replicas",
+            &gmr_transport::file::Ask::at("deploy.yaml"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            gmr_transport::file::Asks::ask(&declared, &name),
+            Some(gmr_transport::file::Ask::at("deploy.yaml")),
+            "`gmr anchor file://deploy.yaml#$.service.replicas` writes the declaration and \
+             observes it in the same run, so a map captured when the transport was built is \
+             stale by exactly the probe the person just asked for. That is not a race; it is \
+             the ordinary path"
+        );
     }
 
     #[test]

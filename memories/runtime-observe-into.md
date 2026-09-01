@@ -27,5 +27,5 @@ of the resolved `derivation`? And does `NotFound` still get a real
 `fact_address` rather than being skipped as "nothing to address"?
 
 Does a second way to build an `Observation` appear? Then the guard has a
-bypass, and `docs/GMR.md`'s rule about write tokens covering *every* path is
-the argument against it.
+bypass, and `docs/ARCHITECTURE.md` §11.4's rule about the premise guard covering *every*
+write path is the argument against it.

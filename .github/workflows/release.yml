@@ -141,7 +141,16 @@ jobs:
           TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
           mkdir -p tmp/bin
           cp "$BIN" tmp/bin/gmr
-          tar -czf "$TARFILE" -C tmp bin
+          PACK=bin
+          for made in libgmr_node.so libgmr_node.dylib gmr_node.dll; do
+            if [ -f "target/${{ matrix.target }}/release/$made" ]; then
+              cp "target/${{ matrix.target }}/release/$made" tmp/gmr.node
+              PACK="bin gmr.node"
+              break
+            fi
+          done
+          if [ "$PACK" = bin ]; then echo "addon not found for ${{ matrix.target }}"; exit 1; fi
+          tar -czf "$TARFILE" -C tmp $PACK
           rm -rf tmp
 
       - name: Upload artifact
@@ -184,7 +193,16 @@ jobs:
           TARFILE="artifacts/gmr-${{ matrix.target }}.tar.gz"
           mkdir -p tmp/bin
           cp "$BIN" tmp/bin/gmr
-          tar -czf "$TARFILE" -C tmp bin
+          PACK=bin
+          for made in libgmr_node.so libgmr_node.dylib gmr_node.dll; do
+            if [ -f "target/${{ matrix.target }}/release/$made" ]; then
+              cp "target/${{ matrix.target }}/release/$made" tmp/gmr.node
+              PACK="bin gmr.node"
+              break
+            fi
+          done
+          if [ "$PACK" = bin ]; then echo "addon not found for ${{ matrix.target }}"; exit 1; fi
+          tar -czf "$TARFILE" -C tmp $PACK
           rm -rf tmp
 
       - name: Upload artifact

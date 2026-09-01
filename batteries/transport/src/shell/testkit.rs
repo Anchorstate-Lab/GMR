@@ -26,11 +26,14 @@ pub fn publish_script(store: impl AsRef<Path>, body: &str) -> ProbeVersion {
     publish(
         &Artifacts::new(store.as_ref()),
         staging.path(),
-        Kind::new("shell"),
-        ProbeVersion::of(gmr_core::content_hash_of_bytes(body.as_bytes())),
-        "probe",
-        Vec::new(),
-        Default::default(),
+        crate::shell::Declared {
+            kind: Kind::new("shell"),
+            derivation: ProbeVersion::of(gmr_core::content_hash_of_bytes(body.as_bytes())),
+            entrypoint: "probe".to_owned(),
+            args: Vec::new(),
+            env: Default::default(),
+            observes: Default::default(),
+        },
     )
     .expect("cannot publish")
 }

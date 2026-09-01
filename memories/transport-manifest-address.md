@@ -21,6 +21,20 @@ one machine could be compared against a journal on another, which is
 exactly what `the_platform_is_part_of_the_address` checks (`address`
 differs, `derivation` does not).
 
+## What the probe reports is in `address` and not in `derivation`
+
+`observes` joined the manifest, so it is inside `address` — the declaration
+cannot be rewritten without the artifact being addressed somewhere else, which
+is the whole reason it moved out of `.anchor/probes.toml` and into the thing
+that travels ([[probe-Derivation]]).
+
+It is deliberately **not** in `derivation`, and the asymmetry is the point.
+Widening what a recipe declares changes nothing about what the program prints,
+so readings taken before and after are comparable and the journal must go on
+treating them as one instrument. Folding it into `derivation` would report every
+anchor behind that probe as read by a swapped instrument on the day somebody
+wrote down a field that had been there all along.
+
 `address` never risks exceeding the canonicalizer's depth limit, because a
 `Manifest`'s nesting is bounded by its *type*, not by how much data it
 holds — however many files, args, or env entries it carries, they sit at

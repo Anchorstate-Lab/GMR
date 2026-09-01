@@ -98,9 +98,12 @@ async fn one_read_hands_back_both_the_change_and_the_memory_it_may_have_invalida
     .unwrap();
 
     rt.bind(
-        Ref::new("git", "memories/core-modules.md"),
-        vec![key.clone()],
+        gmr_core::Binding::on(
+            Ref::new("git", "memories/core-modules.md"),
+            vec![key.clone()],
+        ),
         Some(Version::new("blob-at-bind-time")),
+        Default::default(),
         gmr_core::Source::Adjudicated,
     )
     .await

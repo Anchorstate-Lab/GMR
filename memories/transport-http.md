@@ -17,8 +17,9 @@ the declaration, not asserted by the thing being measured.
 
 ## What the version is earned from, and what it is deliberately blind to
 
-`Ask::version` hashes the url, the selector, and each header's **name plus where
-its value comes from**. Rule 5 wants everything that can change the output; the
+`Ask::version` hashes the url — the **template**, since G1.5, never an expansion
+of it; see [[transport-template]] — the selector, and each header's **name plus
+where its value comes from**. Rule 5 wants everything that can change the output; the
 selector decides what the output *is*, so it is in.
 
 Two things are out, and both are D-11's line:
@@ -40,6 +41,12 @@ nowhere else — **a `ProbeError` is written to the journal verbatim**, so a sec
 in an error string is a secret committed to an append-only log that nothing can
 delete. A test sends a credential, forces a failure, and greps the error for it.
 What the error may say is the variable's *name*, which is the useful half.
+
+The url got the same treatment in G1.5, and later than it should have: every
+status branch below used to interpolate `ask.url`, which carries query strings,
+tenant names and sometimes a credential of its own. They name the probe now, and
+a url with userinfo in it is refused rather than fetched. See
+[[transport-given]].
 
 ## Four HTTP statuses, three different people's problem
 

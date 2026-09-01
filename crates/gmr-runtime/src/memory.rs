@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
-use gmr_core::{AnchorKey, Binding, ContentHash, Link, LinkKind, Ref, Source, Version};
-use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Revocation, Sealer};
+use gmr_core::{
+    AnchorKey, Binding, Claim, ContentHash, FactAddress, LinkKind, Ref, Source, Version,
+};
+use gmr_store::{
+    Asserted, BindingRecord, BindingStore, LinkRecord, LinkRevocation, LinkStore, Revocation,
+    Sealer,
+};
 use serde::Serialize;
 
 use crate::error::RuntimeError;
@@ -50,6 +55,7 @@ impl MemoryLens {
         log: &AnchorLog,
         binding: &Binding,
         bound_version: Option<&Version>,
+        saw: &std::collections::BTreeSet<FactAddress>,
         source: Source,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
@@ -60,6 +66,7 @@ impl MemoryLens {
                 binding: binding.clone(),
                 bound_version: bound_version.cloned(),
                 bound_at_seq,
+                saw: saw.clone(),
                 source,
                 at,
             })
@@ -72,11 +79,11 @@ impl MemoryLens {
         anchor: &AnchorKey,
     ) -> Result<Vec<Bound>, RuntimeError> {
         let chain = chain_from(log, anchor).await?;
-        Ok(by_reference(self.bindings.bindings_on(&chain).await?))
+        Ok(by_claim(self.bindings.bindings_on(&chain).await?))
     }
 
-    pub async fn binding_of(&self, reference: &Ref) -> Result<Bound, RuntimeError> {
-        Ok(Bound::fold(self.bindings.binding_of(reference).await?))
+    pub async fn binding_of(&self, claim: &Claim) -> Result<Bound, RuntimeError> {
+        Ok(Bound::fold(self.bindings.binding_of(claim).await?))
     }
 
     pub async fn revoke(&self, revocation: &Revocation) -> Result<(), RuntimeError> {
@@ -95,12 +102,26 @@ impl MemoryLens {
         Ok(self.sealer.sealed(addr).await?)
     }
 
-    pub async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), RuntimeError> {
-        Ok(self.links.link(from, to, kind).await?)
+    pub async fn link(
+        &self,
+        from: &Ref,
+        to: &Ref,
+        kind: LinkKind,
+        source: Source,
+    ) -> Result<(), RuntimeError> {
+        Ok(self.links.link(from, to, kind, source).await?)
     }
 
-    pub async fn links_of(&self, reference: &Ref) -> Result<Vec<Link>, RuntimeError> {
+    pub async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, RuntimeError> {
+        Ok(self.links.unlink(revocation).await?)
+    }
+
+    pub async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, RuntimeError> {
         Ok(self.links.links_of(reference).await?)
+    }
+
+    pub async fn all_links(&self) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
+        Ok(self.links.all().await?)
     }
 
     fn provider_for(&self, reference: &Ref) -> Option<&Arc<dyn ContentProvider>> {
@@ -127,16 +148,13 @@ impl MemoryLens {
 
     pub(crate) async fn fetch_memory(
         &self,
-        bound: Bound,
+        held: Held,
         budget: &Budget,
     ) -> Result<MemoryView, RuntimeError> {
-        let standing = bound
-            .standing()
-            .expect("a view is only assembled from at least one assertion");
+        let Held { reference, bound } = held;
         let baseline = bound
             .dating()
             .expect("a view is only assembled from at least one assertion");
-        let reference = standing.binding.reference.clone();
         let bound_version = baseline.bound_version.clone();
         let bound_at_seq = baseline.bound_at_seq;
         let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
@@ -144,10 +162,16 @@ impl MemoryLens {
         let sources = bound.sources();
 
         Ok(MemoryView {
-            links: self.links.links_of(&reference).await?,
+            links: self
+                .links
+                .links_of(&reference)
+                .await?
+                .into_iter()
+                .map(linked)
+                .collect(),
             grounded: !bound.anchors().is_empty(),
             grounding: self
-                .ground(&reference, bound_version.as_ref(), budget)
+                .grounding_of(&reference, bound_version.as_ref(), budget)
                 .await,
             reference,
             bound_version,
@@ -159,7 +183,7 @@ impl MemoryLens {
         })
     }
 
-    async fn ground(
+    pub(crate) async fn grounding_of(
         &self,
         reference: &Ref,
         bound_version: Option<&Version>,
@@ -237,13 +261,22 @@ impl MemoryLens {
             if memories.iter().any(|m| m.reference == reference) {
                 continue;
             }
-            let bound = self.binding_of(&reference).await?;
-            if bound.is_empty() {
+            let Some(held) = self.binding_of(&Claim::Stored(reference)).await?.held() else {
                 continue;
-            }
-            memories.push(self.fetch_memory(bound, &total.narrowed(call)).await?);
+            };
+            let mut carried = self.fetch_memory(held, &total.narrowed(call)).await?;
+            carried.grounded = false;
+            memories.push(carried);
         }
         Ok(())
+    }
+}
+
+fn linked(record: LinkRecord) -> crate::read::Linked {
+    crate::read::Linked {
+        to: record.to,
+        kind: record.kind,
+        source: record.source,
     }
 }
 
@@ -280,14 +313,20 @@ pub(crate) async fn chain_from(
     Ok(out)
 }
 
-pub fn by_reference(records: Vec<BindingRecord>) -> Vec<Bound> {
-    let mut out: std::collections::BTreeMap<Ref, Vec<BindingRecord>> = Default::default();
+pub fn by_claim(records: Vec<BindingRecord>) -> Vec<Bound> {
+    let mut out: std::collections::BTreeMap<String, Vec<BindingRecord>> = Default::default();
     for record in records {
-        out.entry(record.binding.reference.clone())
+        out.entry(record.binding.claim.identity().to_string())
             .or_default()
             .push(record);
     }
     out.into_values().map(Bound::fold).collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    reference: Ref,
+    bound: Bound,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -338,6 +377,32 @@ impl Bound {
         self.baseline().and_then(|r| r.bound_version.as_ref())
     }
 
+    pub fn claim(&self) -> Option<&Claim> {
+        self.standing().map(|r| &r.binding.claim)
+    }
+
+    pub fn stored(&self) -> Option<&Ref> {
+        self.standing().and_then(|r| r.binding.stored())
+    }
+
+    pub fn held(self) -> Option<Held> {
+        let reference = self.stored()?.clone();
+        Some(Held {
+            reference,
+            bound: self,
+        })
+    }
+
+    pub fn saw(&self) -> &std::collections::BTreeSet<FactAddress> {
+        static NOTHING: std::sync::LazyLock<std::collections::BTreeSet<FactAddress>> =
+            std::sync::LazyLock::new(Default::default);
+        self.standing().map_or(&NOTHING, |r| &r.saw)
+    }
+
+    pub fn depends(&self) -> Option<&gmr_core::Expr> {
+        self.standing().and_then(|r| r.binding.depends.as_ref())
+    }
+
     pub fn sources(&self) -> std::collections::BTreeSet<Source> {
         self.asserted.iter().map(|r| r.source).collect()
     }
@@ -357,11 +422,19 @@ impl Bound {
             .collect()
     }
 
-    pub fn says(&self, anchors: &[AnchorKey], version: Option<&Version>, source: Source) -> bool {
+    pub fn says(
+        &self,
+        asking: &Binding,
+        version: Option<&Version>,
+        saw: &std::collections::BTreeSet<FactAddress>,
+        source: Source,
+    ) -> bool {
         !self.asserted.is_empty()
-            && anchors.iter().all(|a| self.anchors.contains(a))
+            && asking.anchors.iter().all(|a| self.anchors.contains(a))
             && self.sources().contains(&source)
             && self.bound_version() == version
+            && self.saw() == saw
+            && self.depends() == asking.depends.as_ref()
             && self.dating().is_some_and(|r| r.bound_at_seq.is_some())
     }
 }

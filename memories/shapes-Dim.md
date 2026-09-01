@@ -2,6 +2,9 @@
 about:
   - domains/coding/cli/src/shapes.rs#Dim
   - domains/coding/cli/src/shapes.rs#Reads
+  - domains/coding/cli/src/shapes.rs#CONTRACT
+  - domains/coding/cli/src/shapes.rs#GONE
+  - domains/coding/extract/src/ast.rs#RECIPE
 ---
 
 # An axis is a fork in what you should go and do, not a kind of thing
@@ -16,15 +19,17 @@ There is one criterion: **if two changes would make a person do the same thing,
 they are one axis; if they lead to different actions, they must be separate.** A
 bit lighting up means "here is what you should now go and do".
 
-`contract`'s six come from that:
+`contract`'s eight come from that:
 
 ```
 missing   the anchor points elsewhere now, or should be closed
+name      it is called something else; every mention of the old name is now wrong
+file      it lives somewhere else; confirm the move was intentional
 kind      this is no longer the same sort of thing; rewrite the memory entirely
 sig       go look at every caller
 surface   the public surface changed; ask who is using it
 logic     re-read this implementation, ask whether the contract still holds
-place     confirm this move was intentional
+place     confirm this move was intentional, within the file
 ```
 
 The order is the priority (decision 10, first match wins) and decides only which
@@ -38,7 +43,7 @@ separately, because they are not the same judgment.
 
 ```
 Now    "is it this way right now"        recomputed from the reading each observation — missing
-Since  "has it changed since you confirmed"   already happened, accumulates until accept — the other five
+Since  "has it changed since you confirmed"   already happened, accumulates until accept — the other seven
 ```
 
 **`Now` may clear on any observation, `Since` may not.** The difference is not
@@ -97,11 +102,30 @@ representation: `async` / `unsafe` / generic bounds equally mean "go look at eve
 caller", and they were not in `shape` at all. **Fix the representation, do not add
 an axis.**
 
-**`file` was deleted for this reason.** ast-map's `ITEMS` puts `file` ahead of
-`name`, which declares that "a definition's identity is the thing called this in
-this file". Under that identity, a function moving to another file is `missing`,
-and the event `moved-file` cannot happen. An axis that can never light up is not
+**`file` is this criterion applied twice, and the second time the answer flipped.**
+
+It was deleted once, and rightly. ast-map listed its coordinate items with `file`
+ahead of `name` and nothing else said what identity *was*, so a definition that
+moved to another file was a different definition: `missing` fired and the event
+then called `moved-file` could not happen. An axis that can never light up is not
 "not implemented yet", it is a bit in the vector telling a lie.
+
+What changed afterwards is the representation, not the criterion. `Recipe` now
+declares `identity` apart from `items`, and ast-map's is
+`["name", "callee", "member", "shape"]` — `file` deliberately outside it. A
+definition that moves keeps its identity, so the report comes back `found` while
+`exact` goes false, and `GONE`'s guard moved from `obs.exact == false` to
+`obs.found == false` in the same change. "This moved to another file" became a
+thing that can be observed, it is one action, and it earned the axis back under
+the name `relocated`.
+
+**This is the `sig` lesson arriving from the other side.** There the answer was:
+do not add an axis, go fix the representation. Here the representation was fixed
+for its own reasons and an axis that had been impossible became possible. The
+criterion never moved; what it was being applied to did.
+
+It is not `place`. `place` asks who you sit after *within* a file; `file` asks
+which file. Two moves, two different things to go and confirm.
 
 **`place` measures "who it sits after", not an absolute line number.** It used to be
 the line number, and the consequence was measured: adding one `use` at the top of
@@ -128,6 +152,13 @@ back to **today's behaviour** (hashing the source text) is the safe answer; fall
 back to "treat it as unchanged" is that false negative.
 
 ## When this changes, ask
+
+Changing `identity` on an extractor's `Recipe` → which axes just became
+possible, and which just became bits that can never light up? Identity decides
+what counts as the same thing, so every axis measuring something outside it
+depends on that line. `file` was deleted and restored by exactly this, and in
+between, nothing observed the connection — this note was anchored to `Dim` and
+`Reads`, and neither of them is where the answer lives.
 
 Adding an axis → first: **when it lights up, what does the person have to do that is
 different from all six existing ones?** If you cannot say → it belongs to an existing

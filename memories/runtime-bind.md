@@ -24,14 +24,18 @@ moment, and every later move takes a higher seq. What changed is that the
 value now exists for the case provenance is made of: one memory resting on
 several facts.
 
-## The source and the clock arrive from outside
+## The source, the clock and the reading arrive from outside
 
-`bind` takes `source` and `at` rather than deciding either. The source is
+`bind` takes `source`, `at` and `saw` rather than deciding any of them. The source is
 the caller's fact — `sync` reaching a coordinate through a note is
 `Derived`, a person naming one at the CLI is `Adjudicated` — and the runtime
 has no way to tell them apart from here. The clock is passed for the reason
 [[store-binding-record]] gives: replay should put back the moment the
-assertion was made, not the moment it was read back.
+assertion was made, not the moment it was read back. `saw` is the caller's too,
+and it has to be: only the caller knows which reading the sentence it is about to
+write was built from. Guessing it from the anchor's current state here would make
+every assertion agree with the world by construction, which is the one thing this
+column exists to be able to disagree with — see [[runtime-ground]].
 
 ## When this changes, ask
 

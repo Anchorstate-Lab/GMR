@@ -80,6 +80,46 @@ fn grounds_line(ground: &gmr::CorpusHealth, kind: HoldingKind) -> Option<String>
     Some(format!("{pairs} record(s) on {} anchor(s)", on.len()))
 }
 
+fn counted(records: &[(&gmr::AnchorKey, &gmr::Ref)]) -> Option<String> {
+    if records.is_empty() {
+        return None;
+    }
+    let anchors: std::collections::BTreeSet<_> = records.iter().map(|(k, _)| *k).collect();
+    Some(format!(
+        "{} record(s) on {} anchor(s)",
+        records.len(),
+        anchors.len()
+    ))
+}
+
+type Standing<'a> = Vec<(&'a gmr::AnchorKey, &'a gmr::Ref)>;
+
+fn subscribed<'a>(
+    ground: &'a gmr::CorpusHealth,
+    subs: &crate::delivery::Subscriptions,
+    live: &[&gmr::AnchorView],
+) -> (Standing<'a>, Standing<'a>) {
+    let mut watched = Vec::new();
+    let mut quiet = Vec::new();
+    let Some(on) = ground.holdings.get(&HoldingKind::Moved) else {
+        return (watched, quiet);
+    };
+    for (key, refs) in on {
+        let Some(view) = live.iter().find(|v| &v.key == key) else {
+            quiet.extend(refs.iter().map(|r| (key, r)));
+            continue;
+        };
+        let shape = crate::shapes::of(&view.anchor.transitions);
+        for note in refs {
+            match subs.delivers(key.as_str(), shape, note, &view.state) {
+                Ok(true) => watched.push((key, note)),
+                _ => quiet.push((key, note)),
+            }
+        }
+    }
+    (watched, quiet)
+}
+
 fn spelled(refs: &[gmr::Ref], names: &crate::memories::Names) -> String {
     refs.iter()
         .map(|r| names.of(r))
@@ -140,7 +180,8 @@ pub async fn run(
     let no_git = versioning_is_broken(root);
     let provider_warnings = rt.memory().provider_warnings();
     let catalog = crate::probes::Catalog::load(root)?;
-    let (_, watch) = crate::delivery::Subscriptions::load(root, &catalog, names)?;
+    let (subs, watch) = crate::delivery::Subscriptions::load(root, &catalog, names)?;
+    let (watched, quiet) = subscribed(ground, &subs, &live);
     let mut scanned = crate::memories::scan(root, &catalog)?;
     let declared = read_declared(root, DEFAULT_FILE)?;
     scanned.accounted_for(
@@ -155,6 +196,12 @@ pub async fn run(
     let mut faults = scanned.faults;
     faults.extend(watch);
     faults.sort_by(|a, b| (b.weight, &a.note, a.code).cmp(&(a.weight, &b.note, b.code)));
+    let mut kinds: std::collections::BTreeMap<(String, &'static str), usize> = Default::default();
+    for (_, record) in rt.all_links().await? {
+        *kinds
+            .entry((record.kind.0, record.source.as_str()))
+            .or_default() += 1;
+    }
     let (breaking, advisory): (Vec<_>, Vec<_>) = faults.iter().partition(|f| f.breaks());
     let exit_code = i32::from(
         Verdict {
@@ -195,6 +242,9 @@ pub async fn run(
                 "no_before": addresses(ground.on(Footing::NoBefore)),
                 "unverified": addresses(ground.on(Footing::Unverified)),
                 "unsupervised": addresses(&ground.unsupervised),
+                "edges": kinds.iter().map(|((kind, source), count)| serde_json::json!({
+                    "kind": kind, "source": source, "count": count,
+                })).collect::<Vec<_>>(),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
                 "chain_break": chain_break,
@@ -233,6 +283,13 @@ pub async fn run(
         let line: Vec<String> = counts.iter().map(|(s, n)| format!("{s}x{n}")).collect();
         println!("status    {}", line.join("  "));
     }
+    if !kinds.is_empty() {
+        let line: Vec<String> = kinds
+            .iter()
+            .map(|((kind, source), n)| format!("{kind}x{n} ({source})"))
+            .collect();
+        println!("edges     {}", line.join("  "));
+    }
     if !absent.is_empty() {
         println!(
             "absent    {}\n          <- the probe has not seen anything yet; this is normal when criteria are written before implementation",
@@ -266,12 +323,19 @@ pub async fn run(
             println!("{label} {}\n          <- {whose}", keys.join(", "));
         }
     }
+    if let Some(line) = counted(&watched) {
+        println!(
+            "moved      {line}\n          <- the ground under these records moved after they \
+             were bound, on an axis their note subscribes to. `gmr check` hands them back"
+        );
+    }
+    if let Some(line) = counted(&quiet) {
+        println!(
+            "quiet      {line}\n          <- moved on axes their note's `watch:` does not name. \
+             `check` will not hand these back and is not meant to; `gmr status` shows them"
+        );
+    }
     for (kind, label, whose) in [
-        (
-            HoldingKind::Moved,
-            "moved     ",
-            "the ground under these records moved after they were bound. `gmr check` is where you read them again",
-        ),
         (
             HoldingKind::Incomparable,
             "incomparable",
@@ -402,6 +466,40 @@ mod tests {
     #[test]
     fn a_quiet_run_is_green() {
         assert!(!Verdict::default().theirs_to_fix());
+    }
+
+    #[test]
+    fn a_record_nobody_subscribed_to_is_counted_apart_from_one_check_will_hand_back() {
+        let key = AnchorKey::new("a");
+        let note = gmr::Ref::new("git", "memories/n.md");
+        let watched = [(&key, &note)];
+        let none: [(&AnchorKey, &gmr::Ref); 0] = [];
+
+        assert_eq!(
+            counted(&watched).as_deref(),
+            Some("1 record(s) on 1 anchor(s)")
+        );
+        assert_eq!(
+            counted(&none),
+            None,
+            "an empty bucket prints no line at all, so a reader is never told to go \
+             read something back that `check` was built to stay silent about"
+        );
+    }
+
+    #[test]
+    fn two_records_on_one_anchor_are_two_records_and_one_anchor() {
+        let key = AnchorKey::new("a");
+        let (one, two) = (
+            gmr::Ref::new("git", "memories/one.md"),
+            gmr::Ref::new("git", "memories/two.md"),
+        );
+        assert_eq!(
+            counted(&[(&key, &one), (&key, &two)]).as_deref(),
+            Some("2 record(s) on 1 anchor(s)"),
+            "the count a reader acts on is records; the anchors are how many places \
+             to look, and collapsing them would make one busy anchor read as many"
+        );
     }
 
     #[test]

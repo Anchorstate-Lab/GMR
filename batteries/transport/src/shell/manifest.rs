@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gmr_core::{ContentHash, Kind, ProbeVersion, content_hash_of};
+use gmr_core::{ContentHash, Kind, Observes, ProbeVersion, content_hash_of};
 use serde::{Deserialize, Serialize};
 
 pub const MANIFEST_SCHEMA: &str = "gmr.probe-artifact.v2";
@@ -41,6 +41,8 @@ pub struct Manifest {
     pub files: Vec<FileEntry>,
     pub platform: Platform,
     pub output_contract: String,
+    #[serde(default, skip_serializing_if = "Observes::is_unknown")]
+    pub observes: Observes,
 }
 
 impl Manifest {
@@ -66,6 +68,7 @@ mod tests {
             schema: MANIFEST_SCHEMA.to_owned(),
             kind: Kind::new("shell"),
             derivation: ProbeVersion::try_new("d".repeat(64)).unwrap(),
+            observes: Default::default(),
             entrypoint: entry.to_owned(),
             args: vec!["--mode".into(), "contract".into()],
             env: BTreeMap::new(),

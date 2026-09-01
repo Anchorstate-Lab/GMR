@@ -1,25 +1,59 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use futures_util::{StreamExt, TryStreamExt, future::try_join};
 use gmr_budget::Budget;
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, AnchorState, Derivation, Entry, Facts, FailureCode, Faltering, Link,
-    Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State, StatusId,
-    Verifiability, Version, scan,
+    Anchor, AnchorKey, AnchorState, Claim, Derivation, Entry, FactAddress, Facts, FailureCode,
+    Faltering, LinkKind, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State,
+    StatusId, Verifiability, Version,
 };
 use gmr_store::Seen;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
 use crate::memory::MemoryLens;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Instructions {
+    #[serde(
+        rename = "max_staleness_ms",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "millis"
+    )]
     pub max_staleness: Option<Duration>,
+    #[serde(
+        rename = "budget_ms",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "millis"
+    )]
     pub budget: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reach: Option<usize>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub carry: bool,
+}
+
+mod millis {
+    use std::time::Duration;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(held: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+        held.map(|span| u64::try_from(span.as_millis()).unwrap_or(u64::MAX))
+            .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+        Ok(Option::<u64>::deserialize(d)?.map(Duration::from_millis))
+    }
 }
 
 impl Instructions {
@@ -66,7 +100,37 @@ pub struct AnchorView {
     pub sightings: u64,
     pub derivation: Option<Derivation>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub fact_address: Option<FactAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub facts: Option<Facts>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Reading {
+    pub key: AnchorKey,
+    pub sighting: Sighting,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facts: Option<Facts>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fact_address: Option<FactAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub derivation: Option<Derivation>,
+    pub at: Option<DateTime<Utc>>,
+    pub knowledge: Knowledge,
+}
+
+impl From<AnchorView> for Reading {
+    fn from(view: AnchorView) -> Self {
+        Self {
+            knowledge: knowledge_of(&view),
+            key: view.key,
+            sighting: view.sighting,
+            facts: view.facts,
+            fact_address: view.fact_address,
+            derivation: view.derivation,
+            at: view.last_sighting,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,13 +140,20 @@ pub struct Grounded {
     pub memories: Vec<MemoryView>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Linked {
+    pub to: Ref,
+    pub kind: LinkKind,
+    pub source: Source,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MemoryView {
     pub reference: Ref,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bound_version: Option<Version>,
     pub grounded: bool,
-    pub links: Vec<Link>,
+    pub links: Vec<Linked>,
     pub bound_at_seq: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline_at: Option<Seq>,
@@ -165,6 +236,191 @@ impl Grounding {
 pub struct Warrant {
     pub holding: Holding,
     pub knowledge: Knowledge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Evidence {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading: Option<FactAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument: Option<ProbeVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bound_at: Option<Seq>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moved_at: Option<Seq>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub saw: BTreeSet<FactAddress>,
+    #[serde(flatten)]
+    pub shown: Shown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "shown", rename_all = "snake_case")]
+pub enum Shown {
+    Seen { at: Seq },
+    Unseen,
+    NotSaid,
+}
+
+impl Shown {
+    pub fn is_seen(&self) -> bool {
+        matches!(self, Self::Seen { .. })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "anchored", rename_all = "snake_case")]
+pub enum Anchored {
+    On {
+        key: AnchorKey,
+        warrant: Box<Warrant>,
+        evidence: Box<Evidence>,
+    },
+    Unopened {
+        key: AnchorKey,
+    },
+}
+
+impl Anchored {
+    pub fn key(&self) -> &AnchorKey {
+        match self {
+            Self::On { key, .. } | Self::Unopened { key } => key,
+        }
+    }
+
+    pub fn warrant(&self) -> Option<&Warrant> {
+        match self {
+            Self::On { warrant, .. } => Some(warrant),
+            Self::Unopened { .. } => None,
+        }
+    }
+
+    pub fn evidence(&self) -> Option<&Evidence> {
+        match self {
+            Self::On { evidence, .. } => Some(evidence),
+            Self::Unopened { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asked {
+    pub claim: Claim,
+    pub anchors: Vec<AnchorKey>,
+    pub saw: BTreeSet<FactAddress>,
+    pub depends: Option<gmr_core::Expr>,
+}
+
+impl Asked {
+    pub fn about(claim: Claim) -> Self {
+        Self {
+            claim,
+            anchors: Vec::new(),
+            saw: BTreeSet::new(),
+            depends: None,
+        }
+    }
+
+    pub fn on(mut self, anchors: impl IntoIterator<Item = AnchorKey>) -> Self {
+        self.anchors = anchors.into_iter().collect();
+        self
+    }
+
+    pub fn saw(mut self, addresses: impl IntoIterator<Item = FactAddress>) -> Self {
+        self.saw = addresses.into_iter().collect();
+        self
+    }
+
+    pub fn depending(mut self, source: impl Into<String>) -> Self {
+        self.depends = Some(gmr_core::Expr::text(source));
+        self
+    }
+
+    pub fn inline(&self) -> bool {
+        !self.anchors.is_empty() || !self.saw.is_empty() || self.depends.is_some()
+    }
+}
+
+enum Rests<'a> {
+    Stored(&'a crate::memory::Bound),
+    Inline(&'a Asked),
+}
+
+impl Rests<'_> {
+    fn anchors(&self) -> &[AnchorKey] {
+        match self {
+            Self::Stored(bound) => bound.anchors(),
+            Self::Inline(asked) => &asked.anchors,
+        }
+    }
+
+    fn saw(&self) -> &BTreeSet<FactAddress> {
+        static NONE: std::sync::LazyLock<BTreeSet<FactAddress>> =
+            std::sync::LazyLock::new(BTreeSet::new);
+        match self {
+            Self::Stored(bound) => bound.saw(),
+            Self::Inline(asked) => match asked.saw.is_empty() {
+                true => &NONE,
+                false => &asked.saw,
+            },
+        }
+    }
+
+    fn depends(&self) -> Option<&gmr_core::Expr> {
+        match self {
+            Self::Stored(bound) => bound.depends(),
+            Self::Inline(asked) => asked.depends.as_ref(),
+        }
+    }
+
+    fn bound_at(&self) -> Option<Seq> {
+        match self {
+            Self::Stored(bound) => bound.dating().and_then(|r| r.bound_at_seq),
+            Self::Inline(_) => None,
+        }
+    }
+
+    fn bound_version(&self) -> Option<&Version> {
+        match self {
+            Self::Stored(bound) => bound.bound_version(),
+            Self::Inline(_) => None,
+        }
+    }
+
+    fn claim<'c>(&'c self, asked: &'c Claim) -> &'c Claim {
+        match self {
+            Self::Stored(bound) => bound.claim().unwrap_or(asked),
+            Self::Inline(_) => asked,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Standing {
+    pub claim: Claim,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record: Option<Grounding>,
+    #[serde(flatten)]
+    pub depends: Depends,
+    pub on: Vec<Anchored>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reached: Vec<crate::link::Reached>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "depends", rename_all = "snake_case")]
+pub enum Depends {
+    Holds,
+    Broken,
+    Vacuous { wrote: String },
+    Unevaluable { why: String },
+    Unstated,
+}
+
+impl Depends {
+    pub fn stated(&self) -> bool {
+        !matches!(self, Self::Unstated)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -323,6 +579,18 @@ impl Runtime {
         Ok(out)
     }
 
+    pub async fn sample(
+        &self,
+        key: &AnchorKey,
+        how: &Instructions,
+    ) -> Result<Reading, RuntimeError> {
+        self.refresh(key, how).await?;
+        Ok(stand(&self.log, key, &self.scheduler.seen(key).await?)
+            .await?
+            .0
+            .into())
+    }
+
     pub async fn grounded(&self, key: &AnchorKey) -> Result<Grounded, RuntimeError> {
         self.grounded_within(key, &Instructions::default()).await
     }
@@ -334,16 +602,15 @@ impl Runtime {
     ) -> Result<Grounded, RuntimeError> {
         let policy = self.scheduler.policy();
         self.refresh(key, how).await?;
-        let entries = self.log.entries(key, 0).await?;
-        let (view, moved_at) = project(&entries, key, &self.scheduler.seen(key).await?)?;
+        let (view, moved_at) = stand(&self.log, key, &self.scheduler.seen(key).await?).await?;
         ground(
             &self.log,
             &self.memory,
             view,
-            &entries,
             moved_at,
             &reaching(policy, how),
             policy.content_call(),
+            how.carry,
         )
         .await
     }
@@ -353,8 +620,7 @@ impl Runtime {
             return Ok(());
         }
         let looks = self.scheduler.seen(key).await?;
-        let entries = self.log.entries(key, 0).await?;
-        let (view, _) = project(&entries, key, &looks)?;
+        let (view, _) = stand(&self.log, key, &looks).await?;
         if view.closed || !how.stale(view.last_sighting, Utc::now()) {
             return Ok(());
         }
@@ -372,8 +638,152 @@ impl Runtime {
             .await
     }
 
-    pub async fn cobound(&self, reference: &Ref) -> Result<Vec<Ref>, RuntimeError> {
-        cobound(&self.log, &self.memory, reference).await
+    pub async fn ground(
+        &self,
+        asked: &[Asked],
+        how: &Instructions,
+    ) -> Result<Vec<Standing>, RuntimeError> {
+        let policy = self.scheduler.policy();
+
+        let mut bound = Vec::with_capacity(asked.len());
+        for one in asked {
+            let held = self.memory.binding_of(&one.claim).await?;
+            if one.inline() && !held.is_empty() {
+                return Err(RuntimeError::AlreadyAsserted {
+                    claim: one.claim.clone(),
+                });
+            }
+            bound.push(held);
+        }
+        let rests: Vec<Rests<'_>> = asked
+            .iter()
+            .zip(&bound)
+            .map(|(one, held)| match held.is_empty() {
+                true => Rests::Inline(one),
+                false => Rests::Stored(held),
+            })
+            .collect();
+        let keys: Vec<AnchorKey> = rests
+            .iter()
+            .flat_map(|r| r.anchors().iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        let call = Budget::within(span_of(policy, how), usize::MAX);
+        let probing = call.narrowed_to(
+            Duration::from_millis(policy.probe_budget_ms),
+            policy.probe_output_cap,
+        );
+        let reading = call.narrowed_to(Duration::from_millis(policy.content_total_ms), usize::MAX);
+
+        let (stood, records) = try_join(
+            self.stood_all(&keys, how, &probing),
+            self.records_of(asked, &rests, &reading, policy.content_call()),
+        )
+        .await?;
+
+        let mut out = Vec::with_capacity(asked.len());
+        for ((one, held), record) in asked.iter().zip(&rests).zip(records) {
+            let claim = &one.claim;
+            let mut on = Vec::with_capacity(held.anchors().len());
+            for key in held.anchors() {
+                on.push(anchored(&self.log, key, held, stood.get(key)).await?);
+            }
+            let reached = match (how.reach, claim.stored()) {
+                (Some(depth), Some(from)) => {
+                    crate::link::reaching(
+                        &self.memory,
+                        from,
+                        depth,
+                        &reading,
+                        policy.content_call(),
+                    )
+                    .await?
+                }
+                _ => Vec::new(),
+            };
+            out.push(Standing {
+                claim: held.claim(claim).clone(),
+                record,
+                depends: depends(held, &stood),
+                on,
+                reached,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn stood_all(
+        &self,
+        keys: &[AnchorKey],
+        how: &Instructions,
+        budget: &Budget,
+    ) -> Result<BTreeMap<AnchorKey, (AnchorView, Option<Seq>)>, RuntimeError> {
+        let at_once = self.scheduler.policy().observe_at_once.max(1);
+        let seen = self.scheduler.all_seen().await?;
+        let now = Utc::now();
+
+        let each = futures_util::stream::iter(keys.to_vec())
+            .map(|key| {
+                let looks = seen.get(&key).copied().unwrap_or_default();
+                async move {
+                    let Some((view, moved_at)) = standing_at(&self.log, &key, &looks).await? else {
+                        return Ok::<_, RuntimeError>(None);
+                    };
+                    if view.closed || !how.stale(view.last_sighting, now) {
+                        return Ok(Some((view, moved_at)));
+                    }
+                    match crate::observe::observe(
+                        &self.log,
+                        &self.observer,
+                        &self.scheduler,
+                        &key,
+                        budget,
+                    )
+                    .await
+                    {
+                        Ok(_) | Err(RuntimeError::Leased { .. }) => {}
+                        Err(e) => return Err(e),
+                    }
+                    standing_at(&self.log, &key, &self.scheduler.seen(&key).await?).await
+                }
+            })
+            .buffered(at_once)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        Ok(keys
+            .iter()
+            .cloned()
+            .zip(each)
+            .filter_map(|(key, view)| view.map(|v| (key, v)))
+            .collect())
+    }
+
+    async fn records_of(
+        &self,
+        asked: &[Asked],
+        rests: &[Rests<'_>],
+        total: &Budget,
+        call: Duration,
+    ) -> Result<Vec<Option<Grounding>>, RuntimeError> {
+        let mut out = Vec::with_capacity(asked.len());
+        for (one, held) in asked.iter().zip(rests) {
+            out.push(match one.claim.stored() {
+                None => None,
+                Some(reference) => Some(
+                    self.memory
+                        .grounding_of(reference, held.bound_version(), &total.narrowed(call))
+                        .await,
+                ),
+            });
+        }
+        Ok(out)
+    }
+
+    pub async fn cobound(&self, claim: &Claim) -> Result<Vec<Claim>, RuntimeError> {
+        cobound(&self.log, &self.memory, claim).await
     }
 
     pub async fn grounded_all(&self) -> Result<Vec<Grounded>, RuntimeError> {
@@ -395,23 +805,118 @@ impl Runtime {
         let mut out = Vec::new();
         for key in keys {
             let looks = seen.get(&key).copied().unwrap_or_default();
-            let entries = self.log.entries(&key, 0).await?;
-            let (view, moved_at) = project(&entries, &key, &looks)?;
+            let (view, moved_at) = stand(&self.log, &key, &looks).await?;
             out.push(
                 ground(
                     &self.log,
                     &self.memory,
                     view,
-                    &entries,
                     moved_at,
                     &total,
                     call,
+                    how.carry,
                 )
                 .await?,
             );
         }
         Ok(out)
     }
+}
+
+async fn anchored(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    held: &Rests<'_>,
+    stood: Option<&(AnchorView, Option<Seq>)>,
+) -> Result<Anchored, RuntimeError> {
+    let Some((view, moved_at)) = stood else {
+        return Ok(Anchored::Unopened { key: key.clone() });
+    };
+    let bound_at = held.bound_at();
+    let saw = held.saw().clone();
+    let shown = shown_at(log, key, &saw).await?;
+    Ok(Anchored::On {
+        key: key.clone(),
+        warrant: Box::new(warranted(log, key, bound_at, view, *moved_at).await?),
+        evidence: Box::new(Evidence {
+            reading: view.fact_address.clone(),
+            instrument: view.derivation.as_ref().map(|d| d.version.clone()),
+            bound_at,
+            moved_at: *moved_at,
+            saw,
+            shown,
+        }),
+    })
+}
+
+fn depends(held: &Rests<'_>, stood: &BTreeMap<AnchorKey, (AnchorView, Option<Seq>)>) -> Depends {
+    let Some(source) = held.depends() else {
+        return Depends::Unstated;
+    };
+    let node = match gmr_expr::parse(&source.source) {
+        Ok(node) => node,
+        Err(e) => {
+            return Depends::Unevaluable {
+                why: format!("`{}`: {e}", source.source),
+            };
+        }
+    };
+    if !node.reads_anchors() {
+        return Depends::Vacuous {
+            wrote: source.source.clone(),
+        };
+    }
+    let states: Vec<serde_json::Value> = held
+        .anchors()
+        .iter()
+        .filter_map(|key| stood.get(key))
+        .map(|(view, _)| view.state.as_value().clone())
+        .collect();
+    let nothing = serde_json::Value::Null;
+    let ctx = gmr_expr::Ctx::new(&nothing, &nothing).over(&states);
+    match gmr_expr::eval(&node, ctx) {
+        gmr_expr::Evaluated::Value(serde_json::Value::Bool(true)) => Depends::Holds,
+        gmr_expr::Evaluated::Value(serde_json::Value::Bool(false)) => Depends::Broken,
+        gmr_expr::Evaluated::Value(other) => Depends::Unevaluable {
+            why: format!("answered with {other}, which is not a yes or a no"),
+        },
+        gmr_expr::Evaluated::Absent => Depends::Unevaluable {
+            why: "answered with nothing at all".to_owned(),
+        },
+        gmr_expr::Evaluated::Fault(f) => Depends::Unevaluable {
+            why: format!("could not be settled: {}", f.class()),
+        },
+    }
+}
+
+async fn shown_at(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    saw: &BTreeSet<FactAddress>,
+) -> Result<Shown, RuntimeError> {
+    if saw.is_empty() {
+        return Ok(Shown::NotSaid);
+    }
+    Ok(recorded_at(&log.entries(key, 0).await?, saw))
+}
+
+fn recorded_at(entries: &[(Seq, Entry)], saw: &BTreeSet<FactAddress>) -> Shown {
+    let looked = entries.iter().find_map(|(seq, entry)| match entry {
+        Entry::Open { observation, .. } | Entry::Transition { observation, .. } => {
+            saw.contains(&observation.fact_address).then_some(*seq)
+        }
+        _ => None,
+    });
+    match looked {
+        Some(at) => Shown::Seen { at },
+        None => Shown::Unseen,
+    }
+}
+
+fn span_of(policy: &crate::Policy, how: &Instructions) -> Duration {
+    how.budget.unwrap_or_else(|| {
+        Duration::from_millis(policy.probe_budget_ms.max(policy.content_total_ms))
+    })
 }
 
 fn reaching(policy: &crate::Policy, how: &Instructions) -> Budget {
@@ -460,6 +965,20 @@ fn differing(
                 }
             }
         }
+        (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+            for at in 0..a.len().max(b.len()) {
+                let next = match path.is_empty() {
+                    true => at.to_string(),
+                    false => format!("{path}.{at}"),
+                };
+                match (a.get(at), b.get(at)) {
+                    (Some(x), Some(y)) => differing(x, y, &next, out),
+                    (None, Some(_)) => out.push((next, Divergence::Added)),
+                    (Some(_), None) => out.push((next, Divergence::Removed)),
+                    (None, None) => {}
+                }
+            }
+        }
         _ if before != now => out.push((path.to_owned(), Divergence::Differing)),
         _ => {}
     }
@@ -479,16 +998,17 @@ fn named(axes: Vec<(String, Divergence)>) -> Vec<String> {
     axes.into_iter().map(|(path, _)| path).collect()
 }
 
-fn warranted(
-    held: &MemoryView,
+async fn warranted(
+    log: &AnchorLog,
+    key: &AnchorKey,
+    bound_at_seq: Option<Seq>,
     view: &AnchorView,
-    entries: &[(Seq, Entry)],
     moved_at: Option<Seq>,
-) -> Warrant {
-    Warrant {
-        holding: holding(held.bound_at_seq, view, entries, moved_at),
+) -> Result<Warrant, RuntimeError> {
+    Ok(Warrant {
+        holding: holding(log, key, bound_at_seq, view, moved_at).await?,
         knowledge: knowledge_of(view),
-    }
+    })
 }
 
 pub(crate) fn knowledge_of(view: &AnchorView) -> Knowledge {
@@ -512,21 +1032,26 @@ pub(crate) fn knowledge_of(view: &AnchorView) -> Knowledge {
     }
 }
 
-fn holding(
+async fn holding(
+    log: &AnchorLog,
+    key: &AnchorKey,
     bound_at_seq: Option<Seq>,
     view: &AnchorView,
-    entries: &[(Seq, Entry)],
     moved_at: Option<Seq>,
-) -> Holding {
+) -> Result<Holding, RuntimeError> {
     if view.sighting == Sighting::Absent {
-        return Holding::Absent;
+        return Ok(Holding::Absent);
     }
     let (Some(bound), Some(moved)) = (bound_at_seq, moved_at) else {
-        return Holding::Undated;
+        return Ok(Holding::Undated);
     };
     if bound >= moved {
-        return Holding::Holds;
+        return Ok(Holding::Holds);
     }
+    Ok(folded(&log.entries(key, 0).await?, bound, view, moved))
+}
+
+fn folded(entries: &[(Seq, Entry)], bound: Seq, view: &AnchorView, moved: Seq) -> Holding {
     let Some(before) = folded_at(entries, bound) else {
         return Holding::NeverEstablished;
     };
@@ -559,27 +1084,20 @@ pub(crate) async fn stand(
     key: &AnchorKey,
     looks: &Seen,
 ) -> Result<(AnchorView, Option<Seq>), RuntimeError> {
-    let stood = log
-        .stood(key)
+    standing_at(log, key, looks)
         .await?
-        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
-    Ok(viewed(stood.anchor, key, looks, stood.logged))
+        .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })
 }
 
-fn project(
-    entries: &[(Seq, Entry)],
+pub(crate) async fn standing_at(
+    log: &AnchorLog,
     key: &AnchorKey,
     looks: &Seen,
-) -> Result<(AnchorView, Option<Seq>), RuntimeError> {
-    let mut logged: u64 = 0;
-    let s = scan(entries, |_, entry, _| {
-        if entry.is_sighting() {
-            logged += 1;
-        }
-    })
-    .ok_or_else(|| RuntimeError::NoSuchAnchor { key: key.clone() })?;
-
-    Ok(viewed(s, key, looks, logged))
+) -> Result<Option<(AnchorView, Option<Seq>)>, RuntimeError> {
+    Ok(log
+        .stood(key)
+        .await?
+        .map(|stood| viewed(stood.anchor, key, looks, stood.logged)))
 }
 
 pub(crate) fn viewed(
@@ -598,6 +1116,7 @@ pub(crate) fn viewed(
         _ => Sighting::Absent,
     };
     let derivation = s.latest.as_ref().map(|o| o.versions.derivation.clone());
+    let fact_address = s.latest.as_ref().map(|o| o.fact_address.clone());
     let facts = s.latest.as_ref().and_then(|o| o.facts().cloned());
     let moved_at = s.moved_at;
 
@@ -614,6 +1133,7 @@ pub(crate) fn viewed(
             last_sighting,
             sightings,
             derivation,
+            fact_address,
             facts,
         },
         moved_at,
@@ -624,39 +1144,43 @@ async fn ground(
     log: &AnchorLog,
     memory: &MemoryLens,
     view: AnchorView,
-    entries: &[(Seq, Entry)],
     moved_at: Option<Seq>,
     total: &Budget,
     call: Duration,
+    carry: bool,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
-        let mut held = memory.fetch_memory(asserted, &total.narrowed(call)).await?;
-        held.warrant = Some(warranted(&held, &view, entries, moved_at));
+        let Some(stored) = asserted.held() else {
+            continue;
+        };
+        let mut held = memory.fetch_memory(stored, &total.narrowed(call)).await?;
+        held.warrant = Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
         memories.push(held);
     }
-    memory.carry_linked(&mut memories, total, call).await?;
+    if carry {
+        memory.carry_linked(&mut memories, total, call).await?;
+    }
     Ok(Grounded { view, memories })
 }
 
 async fn cobound(
     log: &AnchorLog,
     memory: &MemoryLens,
-    reference: &Ref,
-) -> Result<Vec<Ref>, RuntimeError> {
-    let bound = memory.binding_of(reference).await?;
-    let mut out: Vec<Ref> = Vec::new();
+    claim: &Claim,
+) -> Result<Vec<Claim>, RuntimeError> {
+    let bound = memory.binding_of(claim).await?;
+    let mut out: Vec<Claim> = Vec::new();
     for anchor in bound.anchors() {
         for other in memory.bindings_on(log, anchor).await? {
-            let Some(other_reference) = other.standing().map(|r| r.binding.reference.clone())
-            else {
+            let Some(beside) = other.claim().cloned() else {
                 continue;
             };
-            if &other_reference != reference && !out.contains(&other_reference) {
-                out.push(other_reference);
+            if !beside.same(claim) && !out.iter().any(|held| held.same(&beside)) {
+                out.push(beside);
             }
         }
     }
-    out.sort();
+    out.sort_by_key(Claim::to_string);
     Ok(out)
 }

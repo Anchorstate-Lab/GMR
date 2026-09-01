@@ -11,7 +11,7 @@ pub async fn run(
 ) -> Result<i32, CliError> {
     let how = Instructions {
         max_staleness: fresher_than_secs.map(std::time::Duration::from_secs),
-        budget: None,
+        ..Instructions::default()
     };
     let views = match key {
         Some(k) => {

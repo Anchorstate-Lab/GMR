@@ -1,12 +1,13 @@
+use chrono::DateTime;
 use chrono::Utc;
 use futures_util::{StreamExt, TryStreamExt};
 use gmr_budget::Budget;
 use gmr_core::{
-    Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded, State,
-    Versions, should_still,
+    Anchor, AnchorKey, AnchorState, Entry, FailureCode, Observation, ReasonClass, Recorded,
+    RunSettings, State, Versions, should_still,
 };
 use gmr_expr::EVALUATOR_VERSION;
-use gmr_store::{Disposition, Fence};
+use gmr_store::{Disposition, Expected, Fence};
 
 use crate::assembly::Runtime;
 use crate::error::RuntimeError;
@@ -33,6 +34,7 @@ pub enum Observed {
         attempts: u32,
     },
     Closed,
+    Contended,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +51,7 @@ impl Runtime {
         self.observer.resolve(probe)
     }
 
-    pub async fn sample(
+    pub async fn probed(
         &self,
         probe: &gmr_core::ProbeRef,
         position: &serde_json::Value,
@@ -118,7 +120,7 @@ impl Runtime {
     }
 }
 
-async fn observe(
+pub(crate) async fn observe(
     log: &AnchorLog,
     observer: &Observer,
     scheduler: &Scheduler,
@@ -216,69 +218,95 @@ async fn looked_at(
         }
         Err(e) => return Err(e),
     };
-    let entered_at = s.entered_at.unwrap_or(at);
 
-    let next = match transition(&s.anchor, &observation, &s.state, at, entered_at) {
-        Transitioned::To(next) => next,
-        Transitioned::Unchanged => s.state.clone(),
-        Transitioned::Unevaluable(code, message) => {
-            return record_attempt(log, key, code, message, fence, s.attempts() + 1).await;
-        }
-    };
+    recorded(log, scheduler, key, fence, at, &observation, run, s.clone()).await
+}
 
-    let still_ref = if run.retains_full() {
-        None
-    } else {
-        s.latest
-            .as_ref()
-            .filter(|last| {
-                should_still(
-                    &s.state,
-                    &last.fact_address,
-                    &next,
-                    &observation.fact_address,
-                )
-            })
-            .and(s.latest_seq)
-    };
+const REPLAYS: u32 = 3;
 
-    match still_ref {
-        Some(ref_entry) if s.attempts() > 0 => {
-            log.append(
-                key,
-                &Entry::Still {
-                    ref_entry,
-                    at,
-                    versions: observation.versions.clone(),
-                },
-                fence,
-            )
-            .await?;
+#[allow(clippy::too_many_arguments)]
+async fn recorded(
+    log: &AnchorLog,
+    scheduler: &Scheduler,
+    key: &AnchorKey,
+    fence: Fence,
+    at: DateTime<Utc>,
+    observation: &Observation,
+    run: RunSettings,
+    stood: AnchorState,
+) -> Result<Observed, RuntimeError> {
+    let mut s = stood;
+
+    for _ in 0..REPLAYS {
+        if s.closed {
+            return Ok(Observed::Closed);
         }
-        Some(_) => {}
-        None => {
-            log.append(
-                key,
-                &Entry::Transition {
-                    observation,
-                    state: next.clone(),
-                    at,
-                },
-                fence,
-            )
-            .await?;
+
+        let entered_at = s.entered_at.unwrap_or(at);
+        let next = match transition(&s.anchor, observation, &s.state, at, entered_at) {
+            Transitioned::To(next) => next,
+            Transitioned::Unchanged => s.state.clone(),
+            Transitioned::Unevaluable(code, message) => {
+                return record_attempt(log, key, code, message, fence, s.attempts() + 1).await;
+            }
+        };
+
+        let still_ref = match run.retains_full() {
+            true => None,
+            false => s
+                .latest
+                .as_ref()
+                .filter(|last| {
+                    should_still(
+                        &s.state,
+                        &last.fact_address,
+                        &next,
+                        &observation.fact_address,
+                    )
+                })
+                .and(s.latest_seq),
+        };
+
+        let entry = match still_ref {
+            Some(ref_entry) if s.attempts() > 0 => Some(Entry::Still {
+                ref_entry,
+                at,
+                versions: observation.versions.clone(),
+            }),
+            Some(_) => None,
+            None => Some(Entry::Transition {
+                observation: observation.clone(),
+                state: next.clone(),
+                at,
+            }),
+        };
+
+        if let Some(entry) = &entry
+            && let Err(e) = log.append(key, entry, fence, Expected::Head(s.head)).await
+        {
+            if !e.head_moved() {
+                return Err(e);
+            }
+            let Some(again) = log.stood(key).await? else {
+                return Err(RuntimeError::NoSuchAnchor { key: key.clone() });
+            };
+            s = again.anchor;
+            continue;
         }
+
+        scheduler.sighted(key, at).await?;
+
+        return Ok(match still_ref {
+            Some(_) => Observed::Still,
+            None if s.state == next => Observed::Unchanged { state: next },
+            None => Observed::Transitioned {
+                from: s.state.clone(),
+                to: next,
+            },
+        });
     }
-    scheduler.sighted(key, at).await?;
 
-    Ok(match still_ref {
-        Some(_) => Observed::Still,
-        None if s.state == next => Observed::Unchanged { state: next },
-        None => Observed::Transitioned {
-            from: s.state.clone(),
-            to: next,
-        },
-    })
+    Ok(Observed::Contended)
 }
 
 async fn record_attempt(
@@ -299,6 +327,7 @@ async fn record_attempt(
             at: Utc::now(),
         },
         fence,
+        Expected::Any,
     )
     .await?;
     Ok(Observed::Attempt {

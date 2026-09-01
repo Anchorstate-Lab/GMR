@@ -10,7 +10,7 @@ watch: [sig, logic]
 # Append-only is enforced by a trigger; the chain is what answers when something gets past one
 
 The journal already refuses `UPDATE` and `DELETE` by trigger
-([[store-journal-guard]] covers the other half, stale fences). A trigger binds
+([[store-journal-guard]] covers the other half, the premise a write states). A trigger binds
 whoever goes through this code. It binds nobody who opens the file with
 `sqlite3`, and it says nothing at all about a copy that travelled.
 
@@ -54,9 +54,9 @@ with `database is locked` until it did.
 ## `Chained` is its own trait
 
 Only some journals can answer this — the in-memory testkit has no file to
-protect and nothing to attest to. GMR.md's rule is that a capability some stores
-lack is expressed by not implementing a trait rather than by everyone returning
-"I have none", the way `History` sits beside `ContentProvider`.
+protect and nothing to attest to. CLAUDE.md §5's rule is that a capability some stores lack is expressed by not
+implementing a trait rather than by everyone returning "I have none", the way
+`History` sits beside `ContentProvider`.
 
 ## Where it runs
 

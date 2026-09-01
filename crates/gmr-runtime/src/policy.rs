@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use gmr_budget::Budget;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Policy {
     pub cadence_secs: u64,
     pub lease_secs: u64,

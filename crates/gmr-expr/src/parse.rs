@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::ast::{BinOp, Node, Path, Root, Step};
+use crate::ast::{BinOp, Node, Over, Path, Quant, Root, Step};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxError {
@@ -309,6 +309,9 @@ impl Parser {
                 }
                 return Ok(Node::Exists(Box::new(inner)));
             }
+            "any" => return self.quantified(Quant::Any),
+            "all" => return self.quantified(Quant::All),
+            "count" => return self.quantified(Quant::Count),
             _ => {}
         }
 
@@ -319,7 +322,8 @@ impl Parser {
             "entered_at" => Root::EnteredAt,
             other => {
                 return err(format!(
-                    "unknown named slot `{other}`; only obs · state · taken_at · entered_at"
+                    "unknown named slot `{other}`; only obs · state · taken_at · entered_at \
+                     (and `anchors`, inside any / all / count)"
                 ));
             }
         };
@@ -327,6 +331,46 @@ impl Parser {
             root,
             steps: self.steps()?,
         }))
+    }
+
+    fn quantified(&mut self, how: Quant) -> Result<Node, SyntaxError> {
+        let named = how.as_str();
+        self.skip_space();
+        if !self.eat("(") {
+            return err(format!("{named} must be followed by `(`"));
+        }
+        self.skip_space();
+        let start = self.at;
+        while matches!(self.peek(), Some(c) if is_ident(c)) {
+            self.at += 1;
+        }
+        let word: String = self.chars[start..self.at].iter().collect();
+        let over = match word.as_str() {
+            "anchors" => Over::Anchors,
+            other => {
+                return err(format!(
+                    "{named} quantifies over a named collection and `{other}` is not one; \
+                     only anchors"
+                ));
+            }
+        };
+        self.skip_space();
+        if !self.eat(",") {
+            return err(format!(
+                "{named}({}, ...) takes the collection, then what must be true of one of them",
+                over.as_str()
+            ));
+        }
+        let body = self.expr(0)?;
+        self.skip_space();
+        if !self.eat(")") {
+            return err(format!("unclosed parenthesis after {named}"));
+        }
+        Ok(Node::Quantified {
+            how,
+            over,
+            body: Box::new(body),
+        })
     }
 
     fn call_arg_string(&mut self, name: &str) -> Result<String, SyntaxError> {

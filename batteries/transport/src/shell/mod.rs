@@ -14,6 +14,7 @@ use tokio::process::Command;
 use gmr_budget::Spent;
 use gmr_probe::{PARAMS_ENV, POSITION_ENV, ProbeCall, ProbeError, ProbeErrorCode, Transport};
 
+pub use artifact::Declared;
 pub use artifact::{ArtifactError, Artifacts, publish};
 pub use manifest::{FileEntry, MANIFEST_SCHEMA, Manifest, Platform};
 
@@ -47,6 +48,7 @@ impl Transport for Shell {
         let resolved = self.artifacts.resolve(name).ok()?;
         Some(Derivation {
             version: resolved.manifest.derivation.clone(),
+            observes: resolved.manifest.observes.clone(),
             verifiability: match resolved.manifest.env.is_empty() {
                 true => Verifiability::Closed,
                 false => Verifiability::open([Openness::HostEnv]),
@@ -208,13 +210,17 @@ mod tests {
             let address = publish(
                 &Artifacts::new(&self.store),
                 &src,
-                Kind::new("shell"),
-                derivation.clone(),
-                "probe",
-                args.iter().map(|a| (*a).to_owned()).collect(),
-                env.iter()
-                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-                    .collect(),
+                Declared {
+                    kind: Kind::new("shell"),
+                    derivation: derivation.clone(),
+                    entrypoint: "probe".to_owned(),
+                    args: args.iter().map(|a| (*a).to_owned()).collect(),
+                    env: env
+                        .iter()
+                        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                        .collect(),
+                    observes: Default::default(),
+                },
             )
             .unwrap();
             Artifacts::new(&self.store)
@@ -498,6 +504,98 @@ mod tests {
             w.resolve().unwrap().verifiability,
             Verifiability::open([Openness::HostEnv]),
             "the manifest's env list is the openness, so `Open` carries its reason"
+        );
+    }
+}
+
+#[cfg(test)]
+mod declares {
+    use super::*;
+    use gmr_core::{Observes, ProbeVersion};
+
+    #[test]
+    fn what_a_recipe_says_the_probe_reports_travels_with_the_artifact() {
+        let store = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("probe"),
+            "#!/bin/sh\necho '{\"value\":1}'\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                src.path().join("probe"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let artifacts = Artifacts::new(store.path());
+        let declared = |observes: Observes| Declared {
+            kind: Kind::new("shell"),
+            derivation: ProbeVersion::try_new("d".repeat(64)).unwrap(),
+            entrypoint: "probe".to_owned(),
+            args: Vec::new(),
+            env: Default::default(),
+            observes,
+        };
+
+        let says = publish(&artifacts, src.path(), declared(Observes::named(["value"]))).unwrap();
+        let silent = publish(&artifacts, src.path(), declared(Observes::Unknown)).unwrap();
+        assert_ne!(
+            says, silent,
+            "the declaration is inside `Manifest::address`, so it cannot change without the \
+             version changing. Left outside it, a recipe could rewrite what it claims the \
+             program reports and every anchor behind it would go on comparing readings as \
+             though nothing had"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_transport_relays_the_declaration_rather_than_answering_for_it() {
+        let store = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("probe"),
+            "#!/bin/sh\necho '{\"value\":1}'\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                src.path().join("probe"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let artifacts = Artifacts::new(store.path());
+        let address = publish(
+            &artifacts,
+            src.path(),
+            Declared {
+                kind: Kind::new("shell"),
+                derivation: ProbeVersion::try_new("d".repeat(64)).unwrap(),
+                entrypoint: "probe".to_owned(),
+                args: Vec::new(),
+                env: Default::default(),
+                observes: Observes::named(["value"]),
+            },
+        )
+        .unwrap();
+        artifacts
+            .install(&ProbeName::new("counter"), &address)
+            .unwrap();
+
+        let shell = Shell::new(src.path(), store.path());
+        let observes = shell.resolve(&ProbeName::new("counter")).unwrap().observes;
+        assert!(observes.covers("value"));
+        assert!(
+            !observes.covers("sha"),
+            "a shell probe used to answer `Unknown` because the description stayed in the \
+             recipe file and never travelled. `open` therefore refused nothing behind it, \
+             for exactly the probes where somebody had already written the answer down"
         );
     }
 }

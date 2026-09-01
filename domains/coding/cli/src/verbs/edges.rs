@@ -1,4 +1,4 @@
-use gmr::{Before, Edge, Runtime, Standing, StatusId};
+use gmr::{Before, Edge, Raised, Runtime, StatusId};
 
 use crate::error::CliError;
 use crate::memories::Names;
@@ -47,21 +47,21 @@ pub async fn run(
         }
     }
 
-    match &out.standing {
+    match &out.raised {
         None => println!("\n(standing conditions are not computed when --status filters edges)"),
         Some(standing) if standing.is_empty() => {}
         Some(standing) => {
             println!("\nCurrent standing conditions (cursor-independent; repeated every time)");
             for s in standing {
                 match s {
-                    Standing::Stale {
+                    Raised::Stale {
                         anchor,
                         last_sighting,
                     } => match last_sighting {
                         Some(t) => println!("stale       {anchor}  last sighting {t}"),
                         None => println!("stale       {anchor}  never sighted"),
                     },
-                    Standing::Rewritten {
+                    Raised::Rewritten {
                         anchor,
                         reference,
                         before,
@@ -77,13 +77,13 @@ pub async fn run(
                         };
                         println!("rewritten   {anchor}  {}{tail}", names.of(reference));
                     }
-                    Standing::Gone {
+                    Raised::Gone {
                         anchor, reference, ..
                     } => println!(
                         "gone        {anchor}  {}  the provider says this record is gone",
                         names.of(reference)
                     ),
-                    Standing::NoProvider {
+                    Raised::NoProvider {
                         anchor,
                         reference,
                         provider,
@@ -91,7 +91,7 @@ pub async fn run(
                         "no provider {anchor}  {}  `{provider}` is not registered in this binary",
                         names.of(reference)
                     ),
-                    Standing::Unreachable {
+                    Raised::Unreachable {
                         anchor,
                         reference,
                         why,

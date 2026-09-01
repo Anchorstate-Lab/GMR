@@ -1,5 +1,6 @@
 mod addr;
 mod ast;
+pub mod comments;
 mod lang;
 mod name;
 mod prose;
@@ -9,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gmr_budget::Budget;
-use gmr_core::{ProbeName, ProbeVersion};
+use gmr_core::{ProbeName, ProbeVersion, Verifiability};
 use gmr_survey::bridge::Bridge;
 use gmr_survey::sqlite::{self, SqliteIndex};
 use gmr_survey::{Corpus, Halt};
@@ -34,6 +35,17 @@ pub struct Vocabulary {
     pub at: &'static [&'static str],
     pub facts: &'static [&'static str],
     pub reads: Reads,
+}
+
+impl Vocabulary {
+    pub fn observes(&self) -> gmr_core::Observes {
+        let named = gmr_survey::matching::REPORT
+            .iter()
+            .map(|k| (*k).to_owned())
+            .chain(self.at.iter().map(|k| format!("at.{k}")))
+            .chain(self.facts.iter().map(|k| format!("facts.{k}")));
+        gmr_core::Observes::named(named)
+    }
 }
 
 type Probe = fn(&str, &Value, &dyn Corpus, &Budget) -> Result<Value, Halt>;
@@ -183,6 +195,8 @@ pub fn registry_uncached() -> BTreeMap<ProbeName, Registered> {
                 Registered {
                     version: ProbeVersion::try_new(*version)
                         .expect("build.rs earns every version as a sha256 of its closure"),
+                    verifiability: Verifiability::Closed,
+                    observes: v.observes(),
                     extract: Arc::new(move |reach: &Reach| {
                         let bridge = gmr_survey::bridge::run_blocking(Bridge::<SqliteIndex>::open(
                             &reach.cwd,
@@ -216,6 +230,8 @@ fn bind(corpus: Arc<Bridge<SqliteIndex>>) -> BTreeMap<ProbeName, Registered> {
                 Registered {
                     version: ProbeVersion::try_new(*version)
                         .expect("build.rs earns every version as a sha256 of its closure"),
+                    verifiability: Verifiability::Closed,
+                    observes: v.observes(),
                     extract: Arc::new(move |reach: &Reach| {
                         probe(
                             &narrow_of(&reach.params),

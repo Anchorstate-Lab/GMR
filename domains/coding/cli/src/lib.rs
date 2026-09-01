@@ -77,6 +77,9 @@ pub async fn run(cli: Cli) -> Result<i32, CliError> {
     if let Command::Init { global } = cli.command {
         return verbs::init::run(&root, cli.json, global);
     }
+    if let Command::Adopt { paths, min_words } = cli.command {
+        return verbs::adopt::run(&root, paths, min_words, cli.json);
+    }
 
     let state = probes::state_dir(&root);
     stale_journal_guard(&root, &state)?;
@@ -103,6 +106,7 @@ pub async fn served(
     }
 
     let catalog = probes::Catalog::load(&root)?;
+    let declared = Arc::new(probes::Declared::at(&root)?);
     let linked = coding_extract::registry(&root, &state).await;
     if let Some(fault) = &linked.cache_fault {
         eprintln!("gmr: {fault}");
@@ -118,22 +122,22 @@ pub async fn served(
         .transport(Arc::new(Script::new(&root, catalog.script_paths())))
         .transport(Arc::new(Shell::new(&root, probes_dir(&root))))
         .transport(Arc::new(
-            gmr_transport::http::Http::new(crate::probes::Declared::at(&root))
+            gmr_transport::http::Http::new(Arc::clone(&declared))
                 .map_err(|e| CliError(format!("cannot build the http transport: {e}")))?,
         ))
         .transport(Arc::new(gmr_transport::file::Files::new(
             &root,
-            crate::probes::Declared::at(&root),
+            Arc::clone(&declared),
         )))
-        .transport(Arc::new(gmr_transport::sql::Sql::new(
-            crate::probes::Declared::at(&root),
-        )))
+        .transport(Arc::new(gmr_transport::sql::Sql::new(Arc::clone(
+            &declared,
+        ))))
         .queue(Arc::new(store.queue()))
-        .settings(Arc::new(store.queue()))
-        .sightings(Arc::new(store.queue()))
+        .settings(Arc::new(store.settings()))
+        .sightings(Arc::new(store.sightings()))
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
-        .sealer(Arc::new(store.bindings()))
+        .sealer(Arc::new(store.sealer()))
         .links(Arc::new(store.links()));
     let stores = stores::assembled(&root)?;
     for store in &stores.built {
@@ -171,10 +175,32 @@ pub async fn served(
         Command::Memories { provider } => verbs::memories::run(&rt, &stores, provider, json).await,
         Command::Status { key } => verbs::status::run(&rt, &root, names, key, json).await,
         Command::Check { key } => verbs::check::run(&rt, &root, names, key, json).await,
+        Command::Said {
+            text,
+            on,
+            saw,
+            depends,
+            id,
+        } => {
+            verbs::said::run(
+                &rt,
+                verbs::said::Said {
+                    id,
+                    text,
+                    on,
+                    saw,
+                    depends,
+                },
+                json,
+            )
+            .await
+        }
+        Command::Standing { id, retire } => verbs::standing::run(&rt, id, retire, json).await,
         Command::Atlas { out } => verbs::atlas::run(&rt, &root, names, out, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
         Command::Init { .. } => unreachable!("init was handled above"),
+        Command::Adopt { .. } => unreachable!("adopt was handled above"),
         Command::Open(args) => verbs::open::run(&rt, &root, args, json).await,
         Command::Observe { key } => verbs::observe::run(&rt, &root, names, key, json).await,
         Command::Accept {
@@ -228,12 +254,13 @@ pub async fn served(
             from,
             to,
             kind,
+            detach,
             from_provider,
             to_provider,
         } => {
             let from = stores.locate(&from, from_provider.as_deref())?;
             let to = stores.locate(&to, to_provider.as_deref())?;
-            verbs::link::run(&rt, from, to, kind, json).await
+            verbs::link::run(&rt, from, to, kind, detach, json).await
         }
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Edges { since, status } => {

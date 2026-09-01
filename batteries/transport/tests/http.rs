@@ -13,6 +13,7 @@ struct Answers {
     status: u16,
     body: String,
     seen: std::sync::Mutex<Vec<(String, String)>>,
+    asked: std::sync::Mutex<Vec<String>>,
 }
 
 impl Answers {
@@ -21,6 +22,7 @@ impl Answers {
             status,
             body: body.to_owned(),
             seen: std::sync::Mutex::new(Vec::new()),
+            asked: std::sync::Mutex::new(Vec::new()),
         })
     }
 }
@@ -29,10 +31,11 @@ impl Answers {
 impl Fetch for Answers {
     async fn get(
         &self,
-        _url: &str,
+        url: &str,
         headers: &[(String, String)],
         _budget: &Budget,
     ) -> Result<Reply, ProbeError> {
+        self.asked.lock().unwrap().push(url.to_owned());
         self.seen.lock().unwrap().extend_from_slice(headers);
         Ok(Reply {
             status: self.status,
@@ -50,6 +53,14 @@ fn probe() -> ProbeRef {
 }
 
 async fn ask_with(ask: Ask, fetch: Arc<dyn Fetch>) -> Result<Outcome, ProbeError> {
+    ask_at(ask, fetch, serde_json::Value::Null).await
+}
+
+async fn ask_at(
+    ask: Ask,
+    fetch: Arc<dyn Fetch>,
+    position: serde_json::Value,
+) -> Result<Outcome, ProbeError> {
     let mut asks = BTreeMap::new();
     asks.insert(ProbeName::new("quote"), ask);
     let http = Http::with(asks, fetch);
@@ -57,7 +68,7 @@ async fn ask_with(ask: Ask, fetch: Arc<dyn Fetch>) -> Result<Outcome, ProbeError
     let probe = probe();
     http.invoke(&ProbeCall {
         probe: &probe,
-        position: &serde_json::Value::Null,
+        position: &position,
         budget: &budget,
     })
     .await
@@ -273,5 +284,162 @@ fn the_declared_path_is_read_the_way_people_write_it() {
         pointer("a.b~c"),
         "/a/b~0c",
         "RFC 6901 escapes, because the pointer is serde_json's and not one we invented"
+    );
+}
+
+#[tokio::test]
+async fn what_the_endpoint_does_is_reported_by_probe_name_and_never_by_url() {
+    const URL: &str = "https://api.internal/v1/tenants/acme/keys?token=abcdef";
+
+    for (status, why) in [
+        (403u16, "a refusal names our request"),
+        (500, "an outage names the endpoint"),
+        (418, "and so does an answer that is neither"),
+    ] {
+        let err = ask_with(Ask::at(URL), Answers::new(status, ""))
+            .await
+            .expect_err(why);
+        assert!(
+            !err.to_string().contains(URL) && !err.to_string().contains("token=abcdef"),
+            "a probe error is written to the journal verbatim and stays there. A url is a \
+             place somebody chose to look, and it carries query strings, tenant names and \
+             sometimes a credential; the probe's name says the same thing to a reader and \
+             says nothing to anyone else: {err}"
+        );
+        assert!(
+            err.to_string().contains("quote"),
+            "and the name has to be in it, or the message tells a reader nothing about \
+             which of their probes this was: {err}"
+        );
+    }
+
+    let unparsed = ask_with(Ask::at(URL), Answers::new(200, "not json"))
+        .await
+        .expect_err("a body that is not JSON is unusable");
+    assert!(
+        !unparsed.to_string().contains(URL) && unparsed.to_string().contains("quote"),
+        "including the one message that quotes what came back: {unparsed}"
+    );
+}
+
+#[tokio::test]
+async fn a_url_that_carries_a_credential_is_refused_before_it_is_fetched() {
+    let seen = Answers::new(200, "{}");
+    let err = ask_with(
+        Ask::at("https://svc:hunter2@api.internal/v1/keys"),
+        seen.clone(),
+    )
+    .await
+    .expect_err("a password written into a declaration is a declaration to fix");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "it is not an outage to retry and not the world's answer -- it is ours to correct: \
+         {err}"
+    );
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "and saying it back is the leak this refusal exists to prevent: {err}"
+    );
+    assert!(
+        seen.seen.lock().unwrap().is_empty(),
+        "nothing was sent: the refusal is before the request, so the credential does not \
+         reach a wire, a proxy log or an access log on the way to being rejected"
+    );
+}
+
+#[tokio::test]
+async fn one_probe_at_two_positions_is_one_instrument_reading_two_places() {
+    let ask =
+        Ask::at("https://api.example.com/repos/{owner}/{repo}/commits/HEAD").selecting("$.sha");
+    let seen = Answers::new(200, r#"{"sha":"abc"}"#);
+
+    for (owner, repo) in [("anthropics", "gmr"), ("rust-lang", "cargo")] {
+        ask_at(
+            ask.clone(),
+            seen.clone(),
+            serde_json::json!({ "owner": owner, "repo": repo }),
+        )
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(
+        seen.asked.lock().unwrap().as_slice(),
+        &[
+            "https://api.example.com/repos/anthropics/gmr/commits/HEAD".to_owned(),
+            "https://api.example.com/repos/rust-lang/cargo/commits/HEAD".to_owned(),
+        ],
+        "the declaration says what this probe is; the position says where it is pointed"
+    );
+    assert_eq!(
+        ask.version(),
+        Ask::at("https://api.example.com/repos/{owner}/{repo}/commits/HEAD")
+            .selecting("$.sha")
+            .version(),
+        "and the version is earned from the template, never from an expansion of it. Were \
+         it otherwise every anchor on this endpoint would be read by a different instrument \
+         from every other, and none of their observations could be compared"
+    );
+}
+
+#[tokio::test]
+async fn what_the_position_supplies_is_a_value_and_can_never_become_structure() {
+    let seen = Answers::new(200, "{}");
+    ask_at(
+        Ask::at("https://api.example.com/crates/{name}"),
+        seen.clone(),
+        serde_json::json!({ "name": "serde?admin=1&x=../../etc" }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        seen.asked.lock().unwrap()[0],
+        "https://api.example.com/crates/serde%3Fadmin%3D1%26x%3D..%2F..%2Fetc",
+        "a position is data. Pasted in raw it would add query parameters and climb the \
+         path -- the same injection as any other, arriving through a coordinate"
+    );
+
+    let smuggled = Answers::new(200, "{}");
+    ask_at(
+        Ask::at("https://{host}/keys"),
+        smuggled.clone(),
+        serde_json::json!({ "host": "svc:hunter2@api.internal" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        smuggled.asked.lock().unwrap()[0],
+        "https://svc%3Ahunter2%40api.internal/keys",
+        "which is also why a credential cannot arrive this way: the `@` that would make          this userinfo is escaped into part of a hostname, so the refusal in `given` never          has to be the thing that catches it"
+    );
+}
+
+#[tokio::test]
+async fn a_template_the_position_cannot_fill_is_ours_to_fix_and_not_an_absence() {
+    let seen = Answers::new(200, "{}");
+    let err = ask_at(
+        Ask::at("https://api.example.com/crates/{name}"),
+        seen.clone(),
+        serde_json::json!({ "crate": "serde" }),
+    )
+    .await
+    .expect_err("the declaration and the position disagree about what is watched");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "NotFound would say the endpoint answered and the thing is not there; nothing was \
+         asked at all: {err}"
+    );
+    assert!(
+        seen.asked.lock().unwrap().is_empty(),
+        "and no request went out to be answered"
+    );
+    assert!(
+        err.to_string().contains("name") && err.to_string().contains("crate"),
+        "the message has to show both halves of the disagreement: {err}"
     );
 }

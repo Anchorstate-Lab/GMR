@@ -1,9 +1,12 @@
 use crate::{Asserted, BindingRecord, BindingStore, Revocation, Sealer, StoreError};
 use async_trait::async_trait;
-use gmr_core::{AnchorKey, Binding, ContentHash, Ref, Seq, Source, Version, content_hash_of_bytes};
+use gmr_core::{
+    AnchorKey, Binding, Claim, ContentHash, FactAddress, Seq, Source, Version,
+    content_hash_of_bytes,
+};
 use sqlx::{Row, SqlitePool};
 
-use super::{db_err, decode_err, ref_key};
+use super::{claim_key, db_err, decode_err};
 
 pub struct SqliteBindings {
     pub(super) pool: SqlitePool,
@@ -24,15 +27,16 @@ impl BindingStore for SqliteBindings {
 
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let seq: i64 = sqlx::query_scalar(
-            "INSERT INTO bindings (reference, body, bound_version, bound_at_seq, source, asserted_at, baseline_at_seq) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL) RETURNING seq",
+            "INSERT INTO bindings (reference, body, bound_version, bound_at_seq, source, asserted_at, baseline_at_seq, saw) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7) RETURNING seq",
         )
-        .bind(ref_key(&binding.reference))
+        .bind(claim_key(&binding.claim))
         .bind(&body)
         .bind(asserted.bound_version.as_ref().map(Version::as_str))
         .bind(asserted.bound_at_seq.map(|s| s as i64))
         .bind(asserted.source.as_str())
         .bind(asserted.at.to_rfc3339())
+        .bind(looked(&asserted.saw))
         .fetch_one(&mut *tx)
         .await
         .map_err(db_err)?;
@@ -55,7 +59,7 @@ impl BindingStore for SqliteBindings {
             "INSERT INTO binding_revocations (reference, anchor, source, revoked_at) \
              VALUES (?1, ?2, ?3, ?4) RETURNING seq",
         )
-        .bind(ref_key(&revocation.reference))
+        .bind(claim_key(&revocation.claim))
         .bind(revocation.at.as_str())
         .bind(revocation.source.as_str())
         .bind(revocation.when.to_rfc3339())
@@ -86,7 +90,7 @@ impl BindingStore for SqliteBindings {
         let slots = placeholders(anchors.len(), 1);
         let sql = format!(
             r#"
-            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at,
+            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at, b.saw,
                    ba.anchor AS live_anchor
             FROM bindings b
             JOIN binding_anchors ba ON ba.seq = b.seq
@@ -107,10 +111,10 @@ impl BindingStore for SqliteBindings {
         gathered(q.fetch_all(&self.pool).await.map_err(db_err)?)
     }
 
-    async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, StoreError> {
+    async fn binding_of(&self, claim: &Claim) -> Result<Vec<BindingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at,
+            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at, b.saw,
                    ba.anchor AS live_anchor
             FROM bindings b
             LEFT JOIN binding_anchors ba ON ba.seq = b.seq
@@ -122,7 +126,7 @@ impl BindingStore for SqliteBindings {
             ORDER BY b.seq, ba.anchor
             "#,
         )
-        .bind(ref_key(reference))
+        .bind(claim_key(claim))
         .fetch_all(&self.pool)
         .await
         .map_err(db_err)?;
@@ -132,7 +136,7 @@ impl BindingStore for SqliteBindings {
     async fn all(&self) -> Result<Vec<BindingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at,
+            SELECT b.seq, b.body, b.bound_version, b.bound_at_seq, b.source, b.asserted_at, b.saw,
                    ba.anchor AS live_anchor
             FROM bindings b
             LEFT JOIN binding_anchors ba ON ba.seq = b.seq
@@ -171,6 +175,35 @@ impl Sealer for SqliteBindings {
             .map_err(db_err)?;
         Ok(row.map(|r| r.get::<Vec<u8>, _>("body")))
     }
+}
+
+fn looked(saw: &std::collections::BTreeSet<FactAddress>) -> Option<String> {
+    match saw.len() {
+        0 => None,
+        1 => saw.iter().next().map(|a| a.as_str().to_owned()),
+        _ => serde_json::to_string(saw).ok(),
+    }
+}
+
+fn seen(held: Option<&str>) -> Result<std::collections::BTreeSet<FactAddress>, StoreError> {
+    let Some(text) = held else {
+        return Ok(Default::default());
+    };
+    let spelled: Vec<String> = match text.starts_with('[') {
+        true => serde_json::from_str(text).map_err(decode_err)?,
+        false => vec![text.to_owned()],
+    };
+    spelled
+        .into_iter()
+        .map(FactAddress::try_new)
+        .collect::<Result<_, _>>()
+        .map_err(|e| {
+            StoreError::other(format!(
+                "`saw` holds something that is not a fact address: {e}. It is what says which \
+                 reading the asserter was actually looking at, and a value nothing can match \
+                 is worse than none"
+            ))
+        })
 }
 
 fn placeholders(n: usize, from: usize) -> String {
@@ -219,6 +252,7 @@ fn decode_one(seq: Seq, row: sqlx::sqlite::SqliteRow) -> Result<BindingRecord, S
         binding,
         bound_version,
         bound_at_seq: row.get::<Option<i64>, _>("bound_at_seq").map(|s| s as Seq),
+        saw: seen(row.get::<Option<String>, _>("saw").as_deref())?,
         source,
         asserted_at: row
             .get::<Option<String>, _>("asserted_at")

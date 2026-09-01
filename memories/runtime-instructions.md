@@ -18,7 +18,23 @@ is the same species and says so by sitting next to it:
 ```
 max_staleness   re-probe, or serve what is on record        changes what we do
 budget          how long this call may spend reaching out   changes what we do
+reach           how many link hops to follow, if any        changes what we do
+carry           whether an anchor read brings linked records changes what we do
 ```
+
+`reach` passes the same test the other two do. It says how far to walk, not what
+to conclude about anything found out there — [[runtime-reaching]] reports the
+records that moved and their paths, and stops. Absent means the walk does not
+happen at all, which is the one default a cost knob can have: a store read per
+record, on a path that runs on every `ground`, is not something a caller should
+pay for without having asked.
+
+`carry` is the same rule reaching the anchor read. `grounded` used to walk one
+link hop unconditionally, and in this repository that priced every read at
+roughly four times its declared bindings — records that merely mention a bound
+note, delivered beside the ones that are about the anchor. Now the walk happens
+only when asked, and what it brings in is marked (see
+[[runtime-carry-linked]]). Absent means only what is bound.
 
 Neither is a threshold GMR applies to grade an answer. Whether six hours is too
 old is the caller's question and GMR never answers it — it reports `observed_at`
@@ -62,6 +78,27 @@ There is a staleness number in `Policy` already and these must not be merged. It
 is one global value on the scheduler, it drives an `edges` **report**, and it
 never decides whether to go and look. Same word, different layer, opposite job:
 one describes a condition to a reader, this one instructs an observation.
+
+## The wire shape, and why it waited for a consumer
+
+`Instructions` had no serde derive at all until there was somebody outside Rust
+to hand one in. That was deliberate: `Option<Duration>`'s own serde form is
+`{secs, nanos}`, which no caller outside Rust would write and none should have to
+read, so the shape is a decision and not a derive — and deciding it with zero
+consumers would have been guessing.
+
+It is **milliseconds, as a plain integer, with the unit in the field name**:
+`max_staleness_ms`, `budget_ms`. A number cannot carry a unit, and `Policy` had
+already settled that spelling for every span it holds; a second convention here
+would make one of the two wrong at a glance. A span nobody asked for is absent
+rather than null — an instruction says what it wants bounded, and silence is how
+it says the rest is unbounded.
+
+`deny_unknown_fields`, on both this and `Policy`. A caller who writes
+`maxStaleness` and is quietly ignored gets an answer served from the record under
+a freshness bound they believe they set — the failure is invisible from the
+outside and looks exactly like a fresh answer. That is the silent path CLAUDE.md
+refuses, arriving through the wire instead of through the code.
 
 ## When this changes, ask
 

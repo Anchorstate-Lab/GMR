@@ -9,41 +9,43 @@ about:
 watch: [sig, logic]
 ---
 
-# A `Queue` impl's fences must only ever climb, even across retirement
+# The lease stopped being a correctness device and became an efficiency one
 
-Every implementation of `Queue` has to guarantee that fences issued for one
-anchor increase strictly monotonically, and that retiring an anchor does
-not reset that counter. `journal::guard` (see [[store-journal-guard]]) uses
-the fence as a high-water mark to block stale-lease writes — going
-backwards even once, even after a retire, would let an old lease's writes
-look current again and wedge that anchor's fencing forever, since there
-would be no epoch left above the stale one to refuse it with.
+`lease` exists so a hand-triggered observation goes through the same
+scheduling path as a due one — `observe_with` still threads a ticket's fence
+into the append — and so two workers do not both fire the same
+probe at the same target and burn two network calls for one answer. Not
+getting it means somebody else is already on this anchor; the right response
+is to let them do it.
 
-`lease` exists specifically so a hand-triggered observation (someone asking
-for a fresh reading right now, outside the normal due-queue cycle) still
-goes through the same fencing path as a scheduled one. Without it, a
-manual trigger could only write past the current token — which is exactly
-the second-writer situation the lease mechanism exists to prevent. Not
-getting the lease here means someone else already holds it, and the right
-response is to let them write, not to retry around them.
+**What it no longer supplies is correctness.** It used to be the only thing
+standing between two writers and a lost update, which had two consequences
+worth remembering: a deployment with no queue had no protection at all, and
+the protection it did give was sized for crash recovery (`lease_secs`, tens
+of seconds) when the thing actually needing exclusion was one `append`.
+Two clocks in one number. The premise a write carries
+([[store-journal-expected]]) is what keeps the invariant now, in every
+deployment, queue or no queue.
 
-On the caller side, `gmr-runtime`'s hand-triggered `observe` path (which
-threads its `Fence` into `observe_with`, and from there into
-`AnchorLog::append`) takes the anchor's lease before writing for the same
-reason: writing past the current token from a manual trigger would be
-exactly the second writer the lease exists to prevent, and not getting the
-lease means someone else already holds it and should be left to write.
+## Fences must still only ever climb
 
-`SqliteQueue::settle`'s `Disposition::Retire` arm is where the invariant
-actually gets kept: it parks the row (`parked = 1`) instead of deleting it,
-because `epoch` is this anchor's token high-water mark, and deleting the
-row would let a future `INSERT` restart the count from zero — exactly the
-backwards jump the trait's contract forbids.
+`Queue` implementations still have to issue strictly increasing epochs per
+anchor, and retiring must not reset the counter — `SqliteQueue::settle`'s
+`Retire` arm parks the row (`parked = 1`) rather than deleting it, because a
+fresh `INSERT` would restart from zero.
+
+The reason is narrower than it was. Nothing refuses a write on this number
+any more; it is hashed into the chain as provenance
+([[store-journal-fence]]), and a counter that went backwards would make two
+different lease generations indistinguishable in the record. That is a
+weaker consequence than the one this invariant used to carry, and it is
+still a reason to keep it.
 
 ## When this changes, ask
 
-Could a new backend, or a retry/retire path, ever reissue a fence number
-that is not strictly greater than every fence issued before it for that
-anchor? Any way to make that happen breaks the high-water-mark guarantee
-every `journal::guard` call relies on. In particular: does retiring an
-anchor ever delete its row rather than parking it?
+Could a new backend, or a retry or retire path, reissue an epoch that is not
+strictly greater than every epoch issued before it for that anchor?
+
+And separately: is anything starting to lean on the lease for correctness
+again? A lease that is genuinely optional cannot be load-bearing — the
+moment it is, a queue-less deployment is silently a different system.

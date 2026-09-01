@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::ast::{BinOp, Node, Root, Step};
+use crate::ast::{BinOp, Node, Over, Quant, Root, Step};
 use crate::ctx::Ctx;
 use crate::parse::json_number;
 
@@ -72,6 +72,33 @@ pub fn eval(node: &Node, ctx: Ctx<'_>) -> Evaluated {
         Node::Binary { op, lhs, rhs } => binary(*op, lhs, rhs, ctx),
         Node::Object(fields) => object(fields, ctx),
         Node::Array(items) => array(items, ctx),
+        Node::Quantified { how, over, body } => quantified(*how, *over, body, ctx),
+    }
+}
+
+fn quantified(how: Quant, over: Over, body: &Node, ctx: Ctx<'_>) -> Evaluated {
+    let each = match over {
+        Over::Anchors => ctx.anchors,
+    };
+    let (mut held, mut answered) = (0usize, 0usize);
+    for state in each {
+        match eval(body, ctx.each(state)) {
+            Evaluated::Value(Value::Bool(yes)) => {
+                answered += 1;
+                held += usize::from(yes);
+            }
+            Evaluated::Absent => {}
+            Evaluated::Value(_) => return Evaluated::Fault(Fault::NotComparable),
+            fault @ Evaluated::Fault(_) => return fault,
+        }
+    }
+    if answered == 0 && !each.is_empty() {
+        return Evaluated::Absent;
+    }
+    match how {
+        Quant::Any => Evaluated::bool(held > 0),
+        Quant::All => Evaluated::bool(held == answered),
+        Quant::Count => Evaluated::Value(Value::from(held)),
     }
 }
 
@@ -577,5 +604,107 @@ mod tests {
     fn evaluation_is_deterministic() {
         let obs = json!({ "x": [1, 2, 3] });
         assert_eq!(run("obs.x[1]", obs.clone()), run("obs.x[1]", obs));
+    }
+}
+
+#[cfg(test)]
+mod quantifier_tests {
+    use super::*;
+    use crate::parse::parse;
+    use serde_json::json;
+
+    fn over(src: &str, anchors: &[Value]) -> Evaluated {
+        let nothing = Value::Null;
+        eval(
+            &parse(src).unwrap(),
+            Ctx::new(&nothing, &nothing).over(anchors),
+        )
+    }
+
+    fn moved(sig: bool, logic: bool) -> Value {
+        json!({ "position": {}, "v": { "sig": sig, "logic": logic }, "status": "settled" })
+    }
+
+    #[test]
+    fn a_quantifier_asks_the_same_question_of_every_anchor_the_claim_names() {
+        let none = [moved(false, false), moved(false, false)];
+        let one = [moved(false, false), moved(true, false)];
+
+        assert_eq!(
+            over("any(anchors, state.v.sig)", &none),
+            Evaluated::bool(false)
+        );
+        assert_eq!(
+            over("any(anchors, state.v.sig)", &one),
+            Evaluated::bool(true)
+        );
+        assert_eq!(
+            over("all(anchors, state.v.sig)", &one),
+            Evaluated::bool(false)
+        );
+        assert_eq!(
+            over("count(anchors, state.v.sig or state.v.logic)", &one),
+            Evaluated::Value(Value::from(1u64))
+        );
+    }
+
+    #[test]
+    fn inside_a_quantifier_state_is_the_one_anchor_being_asked_about() {
+        let each = [moved(true, false), moved(false, true)];
+        assert_eq!(
+            over("count(anchors, state.v.sig)", &each),
+            Evaluated::Value(Value::from(1u64)),
+            "if `state` stayed bound to whatever it was outside, every anchor would answer \
+             the same and the quantifier would be an expensive way to ask about one of them"
+        );
+    }
+
+    #[test]
+    fn an_invariant_over_no_anchors_is_kept_not_broken() {
+        assert_eq!(
+            over("all(anchors, state.v.sig)", &[]),
+            Evaluated::bool(true)
+        );
+        assert_eq!(
+            over("any(anchors, state.v.sig)", &[]),
+            Evaluated::bool(false)
+        );
+        assert_eq!(
+            over("count(anchors, state.v.sig)", &[]),
+            Evaluated::Value(Value::from(0u64)),
+            "`depends` reads true = still holds, so a claim bound to nothing has nothing \
+             that could have broken it. Reporting broken there would put every unbound \
+             claim in the same bucket as one whose ground moved"
+        );
+    }
+
+    #[test]
+    fn a_body_that_is_not_a_yes_or_a_no_is_a_fault_and_not_a_silent_false() {
+        assert_eq!(
+            over("any(anchors, state.v)", &[moved(true, false)]),
+            Evaluated::Fault(Fault::NotComparable),
+            "counting a non-boolean as false would let `all(...)` come back true over \
+             a body that never answered the question"
+        );
+    }
+
+    #[test]
+    fn the_quantified_form_survives_the_round_trip_through_its_own_rendering() {
+        for src in [
+            "any(anchors, state.v.sig)",
+            "all(anchors, (not (state.v.sig) and not (state.v.logic)))",
+            "count(anchors, state.v.roll)",
+        ] {
+            let once = parse(src).unwrap();
+            let twice = parse(&once.render()).unwrap();
+            assert_eq!(once, twice, "{src} rendered as {}", once.render());
+        }
+    }
+
+    #[test]
+    fn a_collection_nobody_defined_is_refused_at_parse_time() {
+        assert!(parse("all(memories, state.v.sig)").is_err());
+        assert!(parse("all(anchors)").is_err());
+        assert!(parse("anchors.x").is_err());
     }
 }

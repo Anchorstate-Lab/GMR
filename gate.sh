@@ -39,6 +39,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 echo "── test"
 cargo test --workspace
 
+echo "── node: the verbs from JavaScript"
+if ! command -v node >/dev/null 2>&1; then
+  echo "gate: node is not installed, and the SDK suite is part of the gate --"
+  echo "      the wire the npm package serves broke once with every Rust test green,"
+  echo "      because nothing local ever ran the JavaScript side. Install node."
+  exit 1
+fi
+sh domains/node/test.sh
+
 echo
 echo "══ Topology + Discipline"
 python3 tools/gate.py

@@ -30,10 +30,22 @@ async fn a_database(dir: &std::path::Path) -> String {
 }
 
 async fn run(ask: Ask) -> Result<Outcome, ProbeError> {
+    at(ask, serde_json::Value::Null).await
+}
+
+async fn at(ask: Ask, position: serde_json::Value) -> Result<Outcome, ProbeError> {
+    within(ask, position, Duration::from_secs(10)).await
+}
+
+async fn within(
+    ask: Ask,
+    position: serde_json::Value,
+    span: Duration,
+) -> Result<Outcome, ProbeError> {
     let mut asks = BTreeMap::new();
     asks.insert(ProbeName::new("db"), ask);
     let sql = Sql::new(asks);
-    let budget = Budget::within(Duration::from_secs(10), 1 << 20);
+    let budget = Budget::within(span, 1 << 20);
     let probe = ProbeRef::new(
         Kind::new("sql"),
         ProbeName::new("db"),
@@ -41,7 +53,7 @@ async fn run(ask: Ask) -> Result<Outcome, ProbeError> {
     );
     sql.invoke(&ProbeCall {
         probe: &probe,
-        position: &serde_json::Value::Null,
+        position: &position,
         budget: &budget,
     })
     .await
@@ -249,29 +261,24 @@ async fn a_credential_that_cannot_be_resolved_says_the_variable_and_not_a_guess(
 #[tokio::test]
 async fn a_backend_this_build_cannot_speak_is_ours_to_fix_and_not_an_outage() {
     let err = run(Ask::on(
-        Source::Given("postgres://user:secret@host:5432/db".to_owned()),
+        Source::Given("mysql://host:3306/db".to_owned()),
         "SELECT 1",
     ))
     .await
-    .expect_err("this build speaks sqlite only");
+    .expect_err("nothing here speaks mysql");
     assert_ne!(
         err.code(),
         "probe_unreachable",
-        "sqlx's sqlite parser takes ANY string as a filename, so a postgres url becomes a \
-         file named `postgres://...` and failing to open it read as `Unreachable` -- a \
-         transient outage the anchor backs off and retries forever, for a thing that can \
-         never work. Which code it carries matters less than which side of that line it \
-         falls on"
+        "sqlx's sqlite parser takes ANY string as a filename, so an unrouted url becomes a \
+         file by that name and failing to open it read as `Unreachable` -- a transient \
+         outage the anchor backs off and retries forever, for a thing that can never work. \
+         Which code it carries matters less than which side of that line it falls on"
     );
     assert_eq!(
         err.code(),
         "artifact_invalid",
         "and the artifact a declared probe has is its declaration, which is what is wrong \
          here -- the same code `http` gives an unresolvable one"
-    );
-    assert!(
-        !err.to_string().contains("secret"),
-        "and saying so must not quote the url back, which carries the password: {err}"
     );
 }
 
@@ -326,5 +333,542 @@ fn a_local_database_is_not_a_remote_system() {
          reads a local file and is `Closed`, and from the extractors, which do the same. \
          Openness must describe what actually happened; over-claiming it is not the safe \
          direction, it is a wrong answer that a reader has no way to check"
+    );
+}
+
+#[tokio::test]
+async fn a_connection_url_that_carries_a_credential_is_refused_rather_than_opened() {
+    let err = run(Ask::on(
+        Source::Given("postgres://svc:hunter2@db.internal/app".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("a password written into a declaration is a declaration to fix");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "not an outage to retry: nothing about the database decides this: {err}"
+    );
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "and saying it back is the leak this refusal exists to prevent: {err}"
+    );
+    assert!(
+        err.to_string().contains("environment variable"),
+        "the refusal has to say what to do instead, or it is a wall: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_database_reached_by_reference_does_not_have_its_url_quoted_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = format!("sqlite://{}", dir.path().join("no-such.db").display());
+    unsafe { std::env::set_var("GMR_TEST_ABSENT_DB", &missing) };
+
+    let err = run(Ask::on(
+        Source::FromEnv("GMR_TEST_ABSENT_DB".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("a database that is not there cannot be opened");
+
+    unsafe { std::env::remove_var("GMR_TEST_ABSENT_DB") };
+
+    assert!(
+        !err.to_string().contains(&missing),
+        "the driver quotes the connection string it was handed, and for a url held by \
+         reference that string is whatever the variable holds -- a password included. \
+         What reaches the journal must be the variable's name and the fact that it \
+         failed: {err}"
+    );
+    assert!(
+        err.to_string().contains("GMR_TEST_ABSENT_DB") && err.to_string().contains("db"),
+        "and both names a reader needs are safe to say: which probe, and which \
+         variable: {err}"
+    );
+}
+
+#[tokio::test]
+async fn the_position_reaches_the_query_as_a_bound_value_and_never_as_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let ask = Ask::on(
+        Source::Given(url.clone()),
+        "SELECT applied_at FROM migrations WHERE version = ?1",
+    )
+    .binding("version");
+
+    assert_eq!(
+        at(
+            ask.clone(),
+            serde_json::json!({ "version": "0042_add_index" })
+        )
+        .await
+        .unwrap(),
+        value(serde_json::json!(1700000000)),
+        "one declaration answers for every migration somebody anchors"
+    );
+    assert_eq!(
+        at(ask.clone(), serde_json::json!({ "version": "0001_init" }))
+            .await
+            .unwrap(),
+        Outcome::NotFound,
+        "and a row that is not there is the database answering, not a broken probe"
+    );
+
+    assert_eq!(
+        at(
+            ask.clone(),
+            serde_json::json!({ "version": "x' OR 1=1 --" }),
+        )
+        .await
+        .unwrap(),
+        Outcome::NotFound,
+        "a position is data all the way down. Pasted into the text this would return every \
+         row and the probe would then refuse the answer for having too many -- looking, from \
+         the outside, exactly like a fact that had moved"
+    );
+}
+
+#[tokio::test]
+async fn what_a_query_binds_is_part_of_the_instrument_and_what_fills_it_is_not() {
+    let base = || {
+        Ask::on(
+            Source::Given("sqlite://app.db".to_owned()),
+            "SELECT v FROM t WHERE k = ?1",
+        )
+    };
+    assert_ne!(
+        base().version(),
+        base().binding("k").version(),
+        "a query that reads its parameter from the position is a different instrument from \
+         one that does not, even with the same text"
+    );
+    assert_ne!(
+        base().binding("k").version(),
+        base().binding("other").version(),
+        "and so is one that reads a different field"
+    );
+    assert_eq!(
+        base().binding("k").version(),
+        base().binding("k").version(),
+        "what the field holds at any moment is the position, which is where the probe is \
+         pointed and never what the probe is"
+    );
+}
+
+#[tokio::test]
+async fn a_bound_name_the_position_cannot_fill_is_ours_to_fix_and_not_an_absence() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let err = at(
+        Ask::on(
+            Source::Given(url),
+            "SELECT applied_at FROM migrations WHERE version = ?1",
+        )
+        .binding("version"),
+        serde_json::json!({ "release": "0042_add_index" }),
+    )
+    .await
+    .expect_err("the declaration and the position disagree about what is watched");
+
+    assert_eq!(
+        err.code(),
+        "artifact_invalid",
+        "NotFound would say the database answered and there is no such row; nothing was \
+         asked at all: {err}"
+    );
+    assert!(
+        err.to_string().contains("version") && err.to_string().contains("release"),
+        "the message has to show both halves of the disagreement: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_second_backend_is_a_branch_on_the_same_decision_and_not_a_way_around_it() {
+    use gmr_transport::sql::{Spoken, spoken};
+
+    assert_eq!(spoken("app.db"), Some(Spoken::Sqlite));
+    assert_eq!(spoken("sqlite://app.db"), Some(Spoken::Sqlite));
+    assert_eq!(spoken("SQLITE://app.db"), Some(Spoken::Sqlite));
+    assert_eq!(spoken("postgres://host/db"), Some(Spoken::Postgres));
+    assert_eq!(spoken("postgresql://host/db"), Some(Spoken::Postgres));
+    assert_eq!(
+        spoken("mysql://host/db"),
+        None,
+        "a scheme nothing here speaks is not silently treated as a filename, which is what \
+         a boolean `is this sqlite` could only ever do"
+    );
+
+    let closed = |url: &str| {
+        Sql::new(BTreeMap::from([(
+            ProbeName::new("db"),
+            Ask::on(Source::Given(url.to_owned()), "SELECT 1"),
+        )]))
+        .resolve(&ProbeName::new("db"))
+        .unwrap()
+        .verifiability
+    };
+    assert_eq!(
+        closed("app.db"),
+        gmr_core::Verifiability::Closed,
+        "a local file is a closed reading"
+    );
+    assert_eq!(
+        closed("postgres://host/db"),
+        gmr_core::Verifiability::open([gmr_core::Openness::Network, gmr_core::Openness::Clock]),
+        "and a database across a network is not -- the second backend does not get to be \
+         quieter about that than the first"
+    );
+}
+
+#[tokio::test]
+async fn a_database_nobody_answers_for_is_an_outage_and_never_an_absent_fact() {
+    let err = within(
+        Ask::on(
+            Source::Given("postgres://127.0.0.1:1/app".to_owned()),
+            "SELECT version FROM migrations",
+        ),
+        serde_json::Value::Null,
+        Duration::from_millis(250),
+    )
+    .await
+    .expect_err("nothing is listening on port 1");
+
+    assert_eq!(
+        err.code(),
+        "probe_unreachable",
+        "NotFound would say the database answered and there is no such row. Nothing \
+         answered at all, and an anchor that folds silence into absence reports a fact as \
+         gone the first time a network blinks: {err}"
+    );
+}
+
+#[tokio::test]
+async fn the_second_backend_refuses_a_credential_in_its_url_like_the_first() {
+    let err = run(Ask::on(
+        Source::Given("postgres://svc:hunter2@127.0.0.1:1/app".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("a password written into a declaration is a declaration to fix");
+
+    assert_eq!(err.code(), "artifact_invalid", "{err}");
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "the refusal must not repeat it, and a new backend does not get a new answer to \
+         that question: {err}"
+    );
+
+    let named = run(Ask::on(
+        Source::Given("postgres://svc@127.0.0.1:1/app".to_owned()),
+        "SELECT 1",
+    ))
+    .await
+    .expect_err("a bare username before the host is userinfo too");
+    assert_eq!(
+        named.code(),
+        "artifact_invalid",
+        "which for postgres means a connection string is declared by reference or not at \
+         all. That is the right end of the trade: a DSN naming its user today is a DSN \
+         carrying its password tomorrow, and the second spelling is one character away from \
+         the first: {named}"
+    );
+}
+
+fn a_postgres() -> Option<String> {
+    std::env::var("GMR_TEST_POSTGRES_URL")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+async fn a_schema(url: &str, table: &str) -> sqlx::PgPool {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(url)
+        .await
+        .expect("GMR_TEST_POSTGRES_URL names a database this test can reach");
+    for statement in [
+        format!("DROP TABLE IF EXISTS {table}"),
+        format!(
+            "CREATE TABLE {table} (version TEXT, applied_at BIGINT, shipped BOOLEAN, note TEXT)"
+        ),
+        format!("INSERT INTO {table} VALUES ('0042_add_index', 1700000000, true, NULL)"),
+    ] {
+        sqlx::query(&statement).execute(&pool).await.unwrap();
+    }
+    pool
+}
+
+#[tokio::test]
+#[ignore = "needs GMR_TEST_POSTGRES_URL"]
+async fn a_fact_in_postgres_is_read_the_way_one_in_sqlite_is() {
+    let Some(url) = a_postgres() else { return };
+    let _ = a_schema(&url, "read_the_way").await;
+    let on = |q: &str| Ask::on(Source::FromEnv("GMR_TEST_POSTGRES_URL".to_owned()), q);
+
+    assert_eq!(
+        run(on(
+            "SELECT applied_at FROM read_the_way WHERE version = '0042_add_index'"
+        ))
+        .await
+        .unwrap(),
+        value(serde_json::json!(1700000000i64)),
+        "a BIGINT is a number, not the string a driver would hand back by default -- state \
+         is compared by value, and \"1700000000\" never equals 1700000000"
+    );
+    assert_eq!(
+        run(on("SELECT shipped FROM read_the_way")).await.unwrap(),
+        value(serde_json::json!(true))
+    );
+    assert_eq!(
+        run(on("SELECT note FROM read_the_way")).await.unwrap(),
+        Outcome::NotFound,
+        "a NULL is the database saying there is nothing there"
+    );
+    assert_eq!(
+        run(on(
+            "SELECT version FROM read_the_way WHERE version = 'nope'"
+        ))
+        .await
+        .unwrap(),
+        Outcome::NotFound
+    );
+
+    assert_eq!(
+        at(
+            on("SELECT applied_at FROM read_the_way WHERE version = $1").binding("version"),
+            serde_json::json!({ "version": "0042_add_index" }),
+        )
+        .await
+        .unwrap(),
+        value(serde_json::json!(1700000000i64)),
+        "and the position reaches the query as a bound value here too"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs GMR_TEST_POSTGRES_URL"]
+async fn a_postgres_probe_observes_and_may_not_write() {
+    let Some(url) = a_postgres() else { return };
+    let pool = a_schema(&url, "may_not_write").await;
+
+    let err = run(Ask::on(
+        Source::FromEnv("GMR_TEST_POSTGRES_URL".to_owned()),
+        "UPDATE may_not_write SET note = 'probe wrote this'",
+    ))
+    .await
+    .expect_err("a probe observes");
+    assert_eq!(
+        err.code(),
+        "probe_unusable",
+        "sqlite gets this from the driver's own read_only flag. Postgres has no such flag, \
+         so the session says so to the server and the server refuses -- which is the same \
+         kind of enforcement and not a promise this crate makes to itself: {err}"
+    );
+
+    let note: Option<String> = sqlx::query_scalar("SELECT note FROM may_not_write")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(note, None, "and nothing moved");
+}
+
+#[tokio::test]
+#[ignore = "needs GMR_TEST_POSTGRES_URL"]
+async fn a_column_this_build_cannot_read_says_so_instead_of_inventing_a_shape() {
+    let Some(url) = a_postgres() else { return };
+    let _ = a_schema(&url, "cannot_read").await;
+
+    let err = run(Ask::on(
+        Source::FromEnv("GMR_TEST_POSTGRES_URL".to_owned()),
+        "SELECT now() AS observed",
+    ))
+    .await
+    .expect_err("a timestamptz has no reading here");
+    assert!(
+        err.to_string().contains("observed") && err.to_string().contains("cast"),
+        "naming the column and what to do about it, because a Null here would be this \
+         transport reporting something the database did not say: {err}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs GMR_TEST_POSTGRES_URL"]
+async fn a_declaration_names_where_and_the_environment_names_who() {
+    let Some(url) = a_postgres() else { return };
+    let _ = a_schema(&url, "where_and_who").await;
+
+    let parsed = url.strip_prefix("postgres://").unwrap();
+    let (who, at) = parsed
+        .split_once('@')
+        .expect("the test url carries a credential");
+    let (user, password) = who.split_once(':').unwrap_or((who, ""));
+    unsafe {
+        std::env::set_var("PGUSER", user);
+        std::env::set_var("PGPASSWORD", password);
+    }
+
+    let found = run(Ask::on(
+        Source::Given(format!("postgres://{at}")),
+        "SELECT applied_at FROM where_and_who",
+    ))
+    .await;
+
+    unsafe {
+        std::env::remove_var("PGUSER");
+        std::env::remove_var("PGPASSWORD");
+    }
+
+    assert_eq!(
+        found.unwrap(),
+        value(serde_json::json!(1700000000i64)),
+        "a coordinate typed at a terminal cannot say `from_env`, and this is why it does \
+         not have to: the declaration carries host, port and database -- none of them a \
+         secret -- and PGUSER/PGPASSWORD carry the rest, which is postgres's own answer to \
+         the same question rather than a syntax invented here"
+    );
+}
+
+#[tokio::test]
+async fn a_second_reading_of_the_same_database_does_not_open_it_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("m.db");
+    let url = format!("sqlite://{}", db.display());
+    {
+        let pool = sqlx::SqlitePool::connect(&format!("{url}?mode=rwc"))
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+    }
+
+    let asks = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("count"),
+        gmr_transport::sql::Ask {
+            source: gmr_transport::sql::Source::Given(url),
+            query: "SELECT n FROM t".to_owned(),
+            column: None,
+            binds: Vec::new(),
+        },
+    )]);
+    let sql = gmr_transport::sql::Sql::new(asks);
+    let probe = gmr_core::ProbeRef::new(
+        gmr_core::Kind::new("sql"),
+        gmr_core::ProbeName::new("count"),
+        serde_json::Value::Null,
+    );
+    let budget = gmr_budget::Budget::within(std::time::Duration::from_secs(10), usize::MAX);
+
+    let mut taken = Vec::new();
+    for _ in 0..6 {
+        let at = std::time::Instant::now();
+        let outcome = sql
+            .invoke(&gmr_probe::ProbeCall {
+                probe: &probe,
+                position: &serde_json::Value::Null,
+                budget: &budget,
+            })
+            .await
+            .unwrap();
+        taken.push(at.elapsed());
+        assert!(matches!(outcome, gmr_core::Outcome::Found { .. }));
+    }
+
+    let first = taken[0];
+    let rest = taken[1..].iter().sum::<std::time::Duration>() / (taken.len() - 1) as u32;
+    assert!(
+        rest <= first,
+        "every invoke used to build a pool and close it, so a connection handshake was \
+         paid per observation -- 42 ms of one against a local postgres, against 2.5 ms for \
+         the query. The endpoint is keyed by the hash of its resolved url, never by the \
+         url, so a credential never becomes a map key: first {first:?}, then {rest:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_database_that_goes_away_between_readings_is_still_an_outage() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = a_database(dir.path()).await;
+    let asks = BTreeMap::from([(
+        ProbeName::new("v"),
+        Ask::on(Source::Given(url), "SELECT version FROM migrations"),
+    )]);
+    let sql = Sql::new(asks);
+    let probe = ProbeRef::new(
+        Kind::new("sql"),
+        ProbeName::new("v"),
+        serde_json::Value::Null,
+    );
+    let budget = Budget::within(Duration::from_secs(5), usize::MAX);
+    let nothing = serde_json::Value::Null;
+    let asked = ProbeCall {
+        probe: &probe,
+        position: &nothing,
+        budget: &budget,
+    };
+
+    assert!(matches!(
+        sql.invoke(&asked).await.unwrap(),
+        Outcome::Found { .. }
+    ));
+    std::fs::remove_file(dir.path().join("app.db")).unwrap();
+
+    match sql.invoke(&asked).await {
+        Ok(_) => {}
+        Err(e) => assert_ne!(
+            e.code(),
+            "probe_unusable",
+            "the class used to be decided by which call site raised it -- connect meant an \
+             outage, query meant a bad declaration -- and that was only ever right because \
+             every invoke reconnected. With the pool kept, a database that goes away \
+             surfaces inside the query, and reading it as `unusable` would be the OCSP \
+             mistake: an outage reported as a declaration to fix: {e}"
+        ),
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs GMR_TEST_POSTGRES_URL"]
+async fn keeping_the_endpoint_costs_a_handshake_once_and_not_per_reading() {
+    let asks = BTreeMap::from([(
+        ProbeName::new("v"),
+        Ask::on(
+            Source::FromEnv("GMR_TEST_POSTGRES_URL".to_owned()),
+            "SELECT pg_backend_pid()",
+        ),
+    )]);
+    let sql = Sql::new(asks);
+    let probe = ProbeRef::new(
+        Kind::new("sql"),
+        ProbeName::new("v"),
+        serde_json::Value::Null,
+    );
+    let budget = Budget::within(Duration::from_secs(10), usize::MAX);
+    let nothing = serde_json::Value::Null;
+    let asked = ProbeCall {
+        probe: &probe,
+        position: &nothing,
+        budget: &budget,
+    };
+
+    let mut pids = std::collections::BTreeSet::new();
+    for _ in 0..8 {
+        let outcome = sql.invoke(&asked).await.unwrap();
+        let gmr_core::Outcome::Found { facts } = outcome else {
+            panic!("the query answers on every healthy connection");
+        };
+        pids.insert(facts.as_value()["value"].clone().to_string());
+    }
+    assert!(
+        pids.len() < 8,
+        "a kept endpoint means readings share backend processes; the pool may \
+         legitimately hold more than one connection, but eight readings answered \
+         by eight distinct pids is a fresh handshake per reading — the exact cost \
+         keeping the endpoint exists to pay once. pids seen: {pids:?}"
     );
 }

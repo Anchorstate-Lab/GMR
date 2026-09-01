@@ -2,7 +2,7 @@
 about:
   - crates/gmr-runtime/src/policy.rs#content_budget
   - crates/gmr-runtime/src/policy.rs#content_call
-  - crates/gmr-runtime/src/memory.rs#ground
+  - crates/gmr-runtime/src/memory.rs#grounding_of
 watch: [sig, logic]
 ---
 

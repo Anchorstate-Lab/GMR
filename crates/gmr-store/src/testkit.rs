@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, Binding, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq,
+    AnchorKey, Binding, Claim, ContentHash, Entry, LinkKind, Ref, RunSettings, Seq,
     content_hash_of_bytes,
 };
 
@@ -11,15 +11,14 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::bindings::{Asserted, BindingRecord, BindingStore, Revocation};
 use crate::error::StoreError;
-use crate::journal::{Fence, Journal};
-use crate::links::LinkStore;
+use crate::journal::{Expected, Fence, Journal};
+use crate::links::{LinkRecord, LinkRevocation, LinkStore};
 use crate::queue::{Disposition, Queue, Ticket};
 use crate::sealer::Sealer;
 
 #[derive(Default)]
 struct JournalInner {
     entries: Vec<(AnchorKey, Seq, Entry)>,
-    fences: HashMap<AnchorKey, u64>,
     next: Seq,
 }
 
@@ -34,14 +33,18 @@ impl Journal for MemoryJournal {
         &self,
         anchor: &AnchorKey,
         entry: &Entry,
-        fence: Fence,
+        _fence: Fence,
+        expected: Expected,
     ) -> Result<Seq, StoreError> {
         let mut inner = self.inner.lock().unwrap();
-        let seen = inner.fences.get(anchor).copied().unwrap_or(0);
-        crate::journal::guard(fence, seen as i64, entry)?;
-        inner
-            .fences
-            .insert(anchor.clone(), fence.epoch().unwrap_or(0).max(seen));
+        let head = inner
+            .entries
+            .iter()
+            .filter(|(a, _, _)| a == anchor)
+            .map(|(_, s, _)| *s)
+            .next_back()
+            .unwrap_or(0);
+        crate::journal::guard(anchor, expected, head)?;
         inner.next += 1;
         let seq = inner.next;
         inner.entries.push((anchor.clone(), seq, entry.clone()));
@@ -80,7 +83,7 @@ struct BindingInner {
     bindings: Vec<BindingRecord>,
     revocations: Vec<Revocation>,
     sealed: HashMap<ContentHash, Vec<u8>>,
-    links: Vec<(Ref, Link)>,
+    links: Vec<(Ref, LinkRecord, bool)>,
 }
 
 #[derive(Default)]
@@ -117,8 +120,9 @@ impl MemoryBindings {
                 }
                 Some(BindingRecord {
                     binding: Binding {
-                        reference: r.binding.reference.clone(),
+                        claim: r.binding.claim.clone(),
                         anchors,
+                        depends: r.binding.depends.clone(),
                     },
                     ..r.clone()
                 })
@@ -137,6 +141,7 @@ impl BindingStore for MemoryBindings {
             binding: asserted.binding.clone(),
             bound_version: asserted.bound_version.clone(),
             bound_at_seq: asserted.bound_at_seq,
+            saw: asserted.saw.clone(),
             source: asserted.source,
             asserted_at: Some(asserted.at),
         });
@@ -156,11 +161,11 @@ impl BindingStore for MemoryBindings {
         Ok(self.live(Some(anchors)))
     }
 
-    async fn binding_of(&self, reference: &Ref) -> Result<Vec<BindingRecord>, StoreError> {
+    async fn binding_of(&self, claim: &Claim) -> Result<Vec<BindingRecord>, StoreError> {
         Ok(self
             .live(None)
             .into_iter()
-            .filter(|r| &r.binding.reference == reference)
+            .filter(|r| r.binding.claim.same(claim))
             .collect())
     }
 
@@ -188,26 +193,66 @@ impl Sealer for MemoryBindings {
 
 #[async_trait]
 impl LinkStore for MemoryBindings {
-    async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), StoreError> {
+    async fn link(
+        &self,
+        from: &Ref,
+        to: &Ref,
+        kind: LinkKind,
+        source: gmr_core::Source,
+    ) -> Result<(), StoreError> {
         self.inner.lock().unwrap().links.push((
             from.clone(),
-            Link {
+            LinkRecord {
                 to: to.clone(),
                 kind,
+                source,
             },
+            false,
         ));
         Ok(())
     }
 
-    async fn links_of(&self, reference: &Ref) -> Result<Vec<Link>, StoreError> {
+    async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, StoreError> {
+        let mut held = self.inner.lock().unwrap();
+        let mut revoked = 0u64;
+        for (from, record, dead) in held.links.iter_mut() {
+            if *dead
+                || from != &revocation.from
+                || record.to != revocation.to
+                || record.kind != revocation.kind
+            {
+                continue;
+            }
+            if revocation.asserted_as.is_some_and(|of| of != record.source) {
+                continue;
+            }
+            *dead = true;
+            revoked += 1;
+        }
+        Ok(revoked)
+    }
+
+    async fn all(&self) -> Result<Vec<(Ref, LinkRecord)>, StoreError> {
         Ok(self
             .inner
             .lock()
             .unwrap()
             .links
             .iter()
-            .filter(|(from, _)| from == reference)
-            .map(|(_, link)| link.clone())
+            .filter(|(_, _, dead)| !dead)
+            .map(|(from, record, _)| (from.clone(), record.clone()))
+            .collect())
+    }
+
+    async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, StoreError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .links
+            .iter()
+            .filter(|(from, _, dead)| from == reference && !dead)
+            .map(|(_, record, _)| record.clone())
             .collect())
     }
 }

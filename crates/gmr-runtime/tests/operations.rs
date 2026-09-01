@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gmr_core::{
     AnchorKey, Change, Expr, Kind, ProbeRef, Ref, Retain, Rule, RunSettings, State, StatusId,
     Transitions, Version,
 };
 use gmr_runtime::{
-    Blind, Edge, Holding, HoldingKind, Knowledge, KnowledgeKind, Looked, Observed, OpenRequest,
-    Policy, Runtime,
+    Asked, Blind, Edge, Holding, HoldingKind, Knowledge, KnowledgeKind, Looked, Observed,
+    OpenRequest, Policy, Runtime,
 };
 use gmr_store::BindingStore;
 use gmr_store::testkit::{MemoryBindings, MemoryJournal, MemoryQueue};
@@ -22,6 +22,7 @@ struct Counted {
     reads: std::sync::atomic::AtomicUsize,
     rows: std::sync::atomic::AtomicUsize,
     stagger: std::sync::atomic::AtomicBool,
+    contend: Mutex<Option<gmr_core::Entry>>,
 }
 
 impl Counted {
@@ -42,6 +43,10 @@ impl Counted {
         self.reads.store(0, std::sync::atomic::Ordering::SeqCst);
         self.rows.store(0, std::sync::atomic::Ordering::SeqCst);
     }
+
+    fn contend_once_with(&self, entry: gmr_core::Entry) {
+        *self.contend.lock().unwrap() = Some(entry);
+    }
 }
 
 #[async_trait::async_trait]
@@ -51,8 +56,15 @@ impl gmr_store::Journal for Counted {
         anchor: &AnchorKey,
         entry: &gmr_core::Entry,
         fence: gmr_store::Fence,
+        expected: gmr_store::Expected,
     ) -> Result<gmr_core::Seq, gmr_store::StoreError> {
-        self.inner.append(anchor, entry, fence).await
+        let ahead = self.contend.lock().unwrap().take();
+        if let Some(ahead) = ahead {
+            self.inner
+                .append(anchor, &ahead, fence, gmr_store::Expected::Any)
+                .await?;
+        }
+        self.inner.append(anchor, entry, fence, expected).await
     }
 
     async fn entries(
@@ -128,7 +140,7 @@ impl World {
 
     fn elsewhere(&self) -> World {
         let dir = tempfile::tempdir().unwrap();
-        let bindings = Arc::new(MemoryBindings::default());
+        let bindings = self.bindings.clone();
         let runtime = Runtime::builder()
             .transport(Arc::new(Shell::new(dir.path(), dir.path().join(".probes"))))
             .journal(self.journal.clone())
@@ -384,7 +396,7 @@ async fn edges_can_be_filtered_by_status() {
             .changed_since(start, Some(&StatusId::new("body-moved")))
             .await
             .unwrap()
-            .standing
+            .raised
             .is_none(),
         "a status filter is a specific question about edges; standing has no \
          status to filter by, so it must come back absent, not an empty list \
@@ -540,9 +552,9 @@ async fn corpus_health_sees_barren_anchors() {
 
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -565,9 +577,9 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
     let note = Ref::new("git", "m.md");
     w.runtime
         .bind(
-            note.clone(),
-            vec![key()],
+            gmr_core::Binding::on(note.clone(), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -594,9 +606,9 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
 
     w.runtime
         .bind(
-            note.clone(),
-            vec![key()],
+            gmr_core::Binding::on(note.clone(), vec![key()]),
             Some(Version::new("v2")),
+            Default::default(),
             gmr_core::Source::SelfAttested,
         )
         .await
@@ -626,9 +638,9 @@ async fn a_record_bound_to_an_anchor_nobody_ever_opened_is_stranded_too() {
     let note = Ref::new("git", "orphan.md");
     w.runtime
         .bind(
-            note.clone(),
-            vec![AnchorKey::new("never-opened")],
+            gmr_core::Binding::on(note.clone(), vec![AnchorKey::new("never-opened")]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -756,9 +768,9 @@ async fn an_event_is_handed_over_once_a_condition_is_reported_every_time() {
 
     let a = stale.runtime.changed_since(0, None).await.unwrap();
     let b = stale.runtime.changed_since(a.cursor, None).await.unwrap();
-    assert_eq!(a.standing.iter().flatten().count(), 1);
+    assert_eq!(a.raised.iter().flatten().count(), 1);
     assert_eq!(
-        b.standing.iter().flatten().count(),
+        b.raised.iter().flatten().count(),
         1,
         "there are no new entries after the cursor, but the anchor is still stale now"
     );
@@ -867,8 +879,8 @@ async fn a_hand_run_observation_takes_the_lease_instead_of_slipping_past_it() {
 }
 
 #[tokio::test]
-async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() {
-    use gmr_store::Fence;
+async fn an_entry_folded_against_a_head_that_moved_is_refused() {
+    use gmr_store::{Expected, Fence};
 
     let w = World::polled(Policy::default());
     w.write(r#"{"x":1}"#);
@@ -880,19 +892,34 @@ async fn an_observation_without_a_token_cannot_slip_in_beside_the_leaseholder() 
     w.runtime.pass().await.unwrap();
 
     let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
-    let (_, sighting) = entries
+    let (at, sighting) = entries
         .iter()
         .rev()
         .find(|(_, e)| e.is_sighting())
         .unwrap()
         .clone();
+    let head = entries.last().unwrap().0;
+
     let err = w
         .runtime
         .log()
-        .append(&key(), &sighting, Fence::Unleased)
+        .append(&key(), &sighting, Fence::Unleased, Expected::Head(at - 1))
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "lease_managed_observation");
+    assert_eq!(
+        err.code(),
+        "head_moved",
+        "an observation folded against a state that has since been written past is not \
+         admitted just because the writer holds no lease -- the lease was never what made \
+         it safe"
+    );
+    assert!(err.head_moved());
+
+    w.runtime
+        .log()
+        .append(&key(), &sighting, Fence::Unleased, Expected::Head(head))
+        .await
+        .expect("folded against the head that is actually there, it goes in unleased");
 }
 
 fn slow_probe(root: &std::path::Path, secs: &str) -> ProbeRef {
@@ -1009,9 +1036,9 @@ async fn a_failed_observation_does_not_move_the_ground_under_a_memory() {
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1075,9 +1102,9 @@ async fn a_ground_that_moved_and_then_went_dark_says_both() {
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1155,9 +1182,9 @@ async fn a_memory_about_several_anchors_is_dated_against_each_of_them() {
     let note = Ref::new("git", "many.md");
     w.runtime
         .bind(
-            note.clone(),
-            vec![a.clone(), b.clone()],
+            gmr_core::Binding::on(note.clone(), vec![a.clone(), b.clone()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1203,9 +1230,9 @@ async fn recapturing_a_world_that_did_not_move_leaves_the_memories_on_it_alone()
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1253,12 +1280,10 @@ async fn a_binding_that_carries_no_date_says_so_rather_than_claiming_no_ground()
 
     w.bindings
         .bind(&gmr_store::Asserted {
-            binding: gmr_core::Binding {
-                reference: Ref::new("git", "m.md"),
-                anchors: vec![key()],
-            },
+            binding: gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             bound_version: Some(Version::new("v1")),
             bound_at_seq: None,
+            saw: Default::default(),
             source: gmr_core::Source::Adjudicated,
             at: chrono::Utc::now(),
         })
@@ -1293,9 +1318,9 @@ async fn a_key_only_the_newer_instrument_measures_is_not_the_older_one_disagreei
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1347,9 +1372,9 @@ async fn a_path_the_newer_instrument_stopped_measuring_still_cannot_be_compared(
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1397,9 +1422,9 @@ async fn a_reading_a_different_instrument_took_is_not_diffed_against_this_one() 
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1445,12 +1470,10 @@ async fn re_asserting_an_undated_binding_dates_it_instead_of_writing_nothing() {
     let note = Ref::new("git", "m.md");
     w.bindings
         .bind(&gmr_store::Asserted {
-            binding: gmr_core::Binding {
-                reference: note.clone(),
-                anchors: vec![key()],
-            },
+            binding: gmr_core::Binding::on(note.clone(), vec![key()]),
             bound_version: Some(Version::new("v1")),
             bound_at_seq: None,
+            saw: Default::default(),
             source: gmr_core::Source::Derived,
             at: chrono::Utc::now(),
         })
@@ -1460,9 +1483,9 @@ async fn re_asserting_an_undated_binding_dates_it_instead_of_writing_nothing() {
     let landed = w
         .runtime
         .bind(
-            note.clone(),
-            vec![key()],
+            gmr_core::Binding::on(note.clone(), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Derived,
         )
         .await
@@ -1486,9 +1509,9 @@ async fn re_asserting_an_undated_binding_dates_it_instead_of_writing_nothing() {
     let again = w
         .runtime
         .bind(
-            note,
-            vec![key()],
+            gmr_core::Binding::on(note, vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Derived,
         )
         .await
@@ -1584,9 +1607,9 @@ async fn a_freshness_bound_decides_whether_to_look_again_not_what_to_report() {
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1643,9 +1666,9 @@ async fn a_reading_that_could_not_be_refreshed_is_served_with_its_own_date_on_it
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1736,9 +1759,9 @@ async fn an_unchanged_reading_appends_nothing_and_leaves_the_warrant_where_it_wa
         .unwrap();
     w.runtime
         .bind(
-            Ref::new("git", "m.md"),
-            vec![key()],
+            gmr_core::Binding::on(Ref::new("git", "m.md"), vec![key()]),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -1809,9 +1832,12 @@ async fn the_same_record_buckets_under_two_holdings_because_it_hangs_on_two_anch
     let reference = Ref::new("git", "m.md");
     w.runtime
         .bind(
-            reference.clone(),
-            vec![AnchorKey::new("moves"), AnchorKey::new("stays")],
+            gmr_core::Binding::on(
+                reference.clone(),
+                vec![AnchorKey::new("moves"), AnchorKey::new("stays")],
+            ),
             Some(Version::new("v1")),
+            Default::default(),
             gmr_core::Source::Adjudicated,
         )
         .await
@@ -2006,4 +2032,525 @@ async fn a_batch_of_one_and_a_batch_of_none_are_both_answerable() {
         "an anchor nobody opened is still the error it was one at a time. A batch must not \
          quietly drop the member it could not answer for"
     );
+}
+
+fn folded_state(entries: &[(gmr_core::Seq, gmr_core::Entry)]) -> State {
+    gmr_core::fold(entries).unwrap().state
+}
+
+#[tokio::test]
+async fn no_entry_is_ever_folded_from_a_state_something_else_already_replaced() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let stolen = {
+        let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+        let (_, opened) = entries.last().unwrap().clone();
+        let gmr_core::Entry::Open {
+            observation, at, ..
+        } = opened
+        else {
+            unreachable!("opening appends an Open")
+        };
+        gmr_core::Entry::Transition {
+            observation,
+            state: State::new(serde_json::json!({ "x": 7, "status": "drifted" })),
+            at,
+        }
+    };
+
+    w.write(r#"{"x":2}"#);
+    w.journal.contend_once_with(stolen);
+    w.runtime.observe(&key()).await.unwrap();
+
+    let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+    assert_eq!(
+        entries.len(),
+        3,
+        "the open, the entry that got in first, and the replayed one -- the observation is \
+         not thrown away and it is not written twice"
+    );
+
+    for cut in 1..entries.len() {
+        let (seq, entry) = &entries[cut];
+        let gmr_core::Entry::Transition { state, .. } = entry else {
+            continue;
+        };
+        let before = folded_state(&entries[..cut]);
+        let after = folded_state(&entries[..=cut]);
+        assert_eq!(
+            &after, state,
+            "entry {seq} claims a state the fold does not land on"
+        );
+        assert_ne!(
+            before, *state,
+            "entry {seq} was folded against a state something else had already replaced \
+             -- this is the lost update the head expectation exists to refuse"
+        );
+    }
+
+    assert_eq!(
+        w.runtime.read(&key()).await.unwrap().state.as_value()["x"],
+        2,
+        "the replay recomputed against what the other writer left, so the reading we \
+         actually took is the one standing"
+    );
+}
+
+#[tokio::test]
+async fn a_replay_does_not_put_out_a_bit_the_other_writer_just_lit() {
+    let accumulating = rules(&[(
+        "true",
+        r#"{ x: obs.x, lit: state.lit or (obs.y != 0), status: "seen" }"#,
+    )]);
+
+    let w = World::new();
+    w.write(r#"{"x":1,"y":0}"#);
+    let mut opening = request(w.dir.path(), accumulating);
+    opening.initial = Some(State::new(
+        serde_json::json!({ "x": 1, "lit": false, "status": "seen" }),
+    ));
+    w.runtime.open(opening).await.unwrap();
+    assert_eq!(
+        w.runtime.read(&key()).await.unwrap().state.as_value()["lit"],
+        serde_json::json!(false),
+        "opening starts the accumulation at zero"
+    );
+
+    let lit = {
+        let entries = w.runtime.log().entries(&key(), 0).await.unwrap();
+        let (_, opened) = entries.last().unwrap().clone();
+        let gmr_core::Entry::Open {
+            observation, at, ..
+        } = opened
+        else {
+            unreachable!("opening appends an Open")
+        };
+        gmr_core::Entry::Transition {
+            observation,
+            state: State::new(serde_json::json!({ "x": 1, "lit": true, "status": "seen" })),
+            at,
+        }
+    };
+
+    w.write(r#"{"x":2,"y":0}"#);
+    w.journal.contend_once_with(lit);
+    w.runtime.observe(&key()).await.unwrap();
+
+    let state = w.runtime.read(&key()).await.unwrap().state;
+    assert_eq!(
+        state.as_value()["x"],
+        serde_json::json!(2),
+        "our own reading is what stands on the axis we actually measured"
+    );
+    assert_eq!(
+        state.as_value()["lit"],
+        serde_json::json!(true),
+        "our observation reads `y` unchanged, so nothing we saw lights this bit -- it is \
+         true only because the replay recomputed against the state the other writer left, \
+         and an accumulating axis reads its own last bit. Drop the `state.lit or` and \
+         whoever observes second eats a drift signal nobody will ever see again"
+    );
+}
+
+#[tokio::test]
+async fn two_opens_of_one_key_cannot_both_land() {
+    let w = World::new();
+    w.write(r#"{"x":1}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let second = w.elsewhere();
+    second.write(r#"{"x":1}"#);
+    let err = second
+        .runtime
+        .open(request(second.dir.path(), watching("x")))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, gmr_runtime::RuntimeError::AlreadyOpen { .. }),
+        "got {err:?}"
+    );
+    assert_eq!(
+        w.runtime.log().entries(&key(), 0).await.unwrap().len(),
+        1,
+        "a second Open replaces the fold outright, so it does not add a duplicate entry -- \
+         it silently discards every observation and every accumulated bit since the first one"
+    );
+}
+
+#[tokio::test]
+async fn grounding_reads_the_whole_log_only_when_the_binding_predates_the_move() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let early: gmr_core::Claim = Ref::new("git", "early.md").into();
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(early.clone(), vec![key()]),
+            Some(Version::new("v1")),
+            Default::default(),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    for n in 1..=8 {
+        w.write(&format!(r#"{{"x":{n}}}"#));
+        w.runtime.observe(&key()).await.unwrap();
+    }
+
+    let late: gmr_core::Claim = Ref::new("git", "late.md").into();
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(late.clone(), vec![key()]),
+            Some(Version::new("v1")),
+            Default::default(),
+            gmr_core::Source::Adjudicated,
+        )
+        .await
+        .unwrap();
+
+    let how = gmr_runtime::Instructions::default();
+
+    w.journal.reset();
+    w.runtime
+        .ground(&[Asked::about(late.clone())], &how)
+        .await
+        .unwrap();
+    assert_eq!(
+        w.journal.rows(),
+        0,
+        "bound after the last move, so the answer is `Holds` and nothing has to be folded \
+         back to. The view itself comes off the checkpoint"
+    );
+
+    w.journal.reset();
+    let held = w
+        .runtime
+        .ground(&[Asked::about(early.clone())], &how)
+        .await
+        .unwrap();
+    assert!(
+        w.journal.rows() >= 9,
+        "bound before the moves, so `Holding` has to fold the log back to the moment of \
+         binding to say what changed. That read is the one thing here that genuinely needs \
+         the whole log, and it is asked for only in this case: {}",
+        w.journal.rows()
+    );
+    assert!(
+        matches!(held[0].on[0].warrant(), Some(w) if !matches!(w.holding, Holding::Holds)),
+        "{:?}",
+        held[0].on[0]
+    );
+
+    let cold = w.elsewhere();
+    cold.journal.reset();
+    cold.runtime
+        .ground(&[Asked::about(late.clone())], &how)
+        .await
+        .unwrap();
+    assert!(
+        cold.journal.rows() >= 9,
+        "a runtime that has never folded this log has no checkpoint to stand on, which is \
+         what makes the zero above a measurement and not an accident: {}",
+        cold.journal.rows()
+    );
+
+    w.journal.reset();
+    w.runtime
+        .ground(&[Asked::about(early.clone())], &how)
+        .await
+        .unwrap();
+    assert!(
+        w.journal.rows() >= 9,
+        "and the fold-back is not cached either"
+    );
+}
+
+fn reading_the_file(
+    dir: &std::path::Path,
+) -> (Arc<gmr_transport::file::Files>, gmr_core::ProbeRef) {
+    let asks = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("world"),
+        gmr_transport::file::Ask::at("world.json"),
+    )]);
+    (
+        Arc::new(gmr_transport::file::Files::new(dir, asks)),
+        gmr_core::ProbeRef::new(
+            gmr_core::Kind::new("file"),
+            gmr_core::ProbeName::new("world"),
+            serde_json::Value::Null,
+        ),
+    )
+}
+
+#[tokio::test]
+async fn an_anchor_whose_rules_read_what_its_probe_never_reports_is_refused_at_open() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":0}"#).unwrap();
+    let (files, probe) = reading_the_file(dir.path());
+    let rt = Runtime::builder()
+        .transport(files)
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(Arc::new(MemoryBindings::default()))
+        .sealer(Arc::new(MemoryBindings::default()))
+        .links(Arc::new(MemoryBindings::default()))
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+
+    let key = gmr_core::AnchorKey::new("blind");
+    let asked = |transitions| gmr_runtime::OpenRequest {
+        key: key.clone(),
+        probe: probe.clone(),
+        transitions,
+        terminal: Default::default(),
+        initial: None,
+        settings: Default::default(),
+        supersedes: None,
+    };
+
+    let refused = rt
+        .open(asked(gmr_core::Transitions(vec![gmr_core::Rule {
+            when: gmr_core::Expr::text("obs.price_cents != state.price"),
+            to: gmr_core::Expr::text("{ price: obs.price_cents }"),
+        }])))
+        .await;
+    let Err(gmr_runtime::RuntimeError::CannotOpen { message }) = refused else {
+        panic!("{refused:?}")
+    };
+    assert!(message.contains("obs.price_cents"), "{message}");
+    assert!(
+        message.contains("obs.value"),
+        "naming what the probe does report is what turns a refusal into a fix: {message}"
+    );
+
+    assert!(
+        rt.log().entries(&key, 0).await.unwrap().is_empty(),
+        "a refused open writes nothing. An anchor that exists and can never transition is \
+         worse than one that was never opened, because it reads as supervised"
+    );
+
+    assert!(
+        rt.open(asked(gmr_core::Transitions(vec![gmr_core::Rule {
+            when: gmr_core::Expr::text("obs.value.x != state.x"),
+            to: gmr_core::Expr::text("{ x: obs.value.x }"),
+        }])))
+        .await
+        .is_ok(),
+        "the same key opens once the rules read where the probe actually looks"
+    );
+}
+
+#[tokio::test]
+async fn a_probe_that_cannot_say_what_it_reports_does_not_refuse_anything() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    let script = gmr_transport::shell::testkit::install_script(
+        w.dir.path().join(".probes"),
+        "anything",
+        "cat world.json",
+    );
+    let asked = gmr_runtime::OpenRequest {
+        key: gmr_core::AnchorKey::new("shelled"),
+        probe: script,
+        transitions: gmr_core::Transitions(vec![gmr_core::Rule {
+            when: gmr_core::Expr::text("obs.whatever != state.whatever"),
+            to: gmr_core::Expr::text("{ whatever: obs.whatever }"),
+        }]),
+        terminal: Default::default(),
+        initial: None,
+        settings: Default::default(),
+        supersedes: None,
+    };
+    assert!(
+        w.runtime.open(asked).await.is_ok(),
+        "most probes are somebody else's program and this build cannot read what they \
+         print. Refusing there would make the check a ban on shell probes rather than a \
+         check on rules"
+    );
+}
+
+#[tokio::test]
+async fn a_declaration_the_program_has_outgrown_is_said_at_open() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("world.json"), r#"{"x":0,"y":1}"#).unwrap();
+    let asks = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("world"),
+        gmr_transport::file::Ask::at("world.json"),
+    )]);
+    let rt = Runtime::builder()
+        .transport(Arc::new(gmr_transport::file::Files::new(dir.path(), asks)))
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(Arc::new(MemoryBindings::default()))
+        .sealer(Arc::new(MemoryBindings::default()))
+        .links(Arc::new(MemoryBindings::default()))
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+
+    let opened = rt
+        .open(gmr_runtime::OpenRequest {
+            key: gmr_core::AnchorKey::new("wide"),
+            probe: gmr_core::ProbeRef::new(
+                gmr_core::Kind::new("file"),
+                gmr_core::ProbeName::new("world"),
+                serde_json::Value::Null,
+            ),
+            transitions: gmr_core::Transitions(vec![gmr_core::Rule {
+                when: gmr_core::Expr::text("obs.value.x != state.x"),
+                to: gmr_core::Expr::text("{ x: obs.value.x }"),
+            }]),
+            terminal: Default::default(),
+            initial: None,
+            settings: Default::default(),
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+    assert!(
+        opened.warnings.is_empty(),
+        "a file probe declares `value` and puts everything under it, so nothing is behind: \
+         {:?}",
+        opened.warnings
+    );
+}
+
+#[tokio::test]
+async fn a_probe_reporting_more_than_it_declares_says_so_at_open() {
+    let registered = std::collections::BTreeMap::from([(
+        gmr_core::ProbeName::new("narrow"),
+        gmr_transport::inproc::Registered {
+            version: gmr_core::ProbeVersion::try_new("c".repeat(64)).unwrap(),
+            verifiability: gmr_core::Verifiability::Closed,
+            observes: gmr_core::Observes::named(["x"]),
+            extract: Arc::new(|_| Ok(serde_json::json!({ "x": 1, "y": 2 }))),
+        },
+    )]);
+    let rt = Runtime::builder()
+        .transport(Arc::new(gmr_transport::inproc::InProcess::new(
+            ".", registered,
+        )))
+        .journal(Arc::new(MemoryJournal::default()))
+        .bindings(Arc::new(MemoryBindings::default()))
+        .sealer(Arc::new(MemoryBindings::default()))
+        .links(Arc::new(MemoryBindings::default()))
+        .settings(Arc::new(MemoryQueue::default()))
+        .sightings(Arc::new(MemoryQueue::default()))
+        .build();
+
+    let opened = rt
+        .open(gmr_runtime::OpenRequest {
+            key: gmr_core::AnchorKey::new("behind"),
+            probe: gmr_core::ProbeRef::new(
+                gmr_core::Kind::new("builtin"),
+                gmr_core::ProbeName::new("narrow"),
+                serde_json::Value::Null,
+            ),
+            transitions: gmr_core::Transitions(vec![gmr_core::Rule {
+                when: gmr_core::Expr::text("obs.x != state.x"),
+                to: gmr_core::Expr::text("{ x: obs.x }"),
+            }]),
+            terminal: Default::default(),
+            initial: None,
+            settings: Default::default(),
+            supersedes: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        opened.warnings.iter().any(|w| w.contains("obs.y")),
+        "the declaration is now what `open` refuses rules against, so a declaration the \
+         program has outgrown turns away a rule reading something the probe demonstrably \
+         reports. The first real observation is the only moment anyone can notice, and it \
+         costs a set comparison on data already in hand: {:?}",
+        opened.warnings
+    );
+    assert!(
+        !opened.warnings.iter().any(|w| w.contains("obs.x")),
+        "what it did declare is not reported as a surprise"
+    );
+}
+
+#[tokio::test]
+async fn an_anchor_reports_whether_its_firing_ever_changed_a_memory() {
+    let w = World::new();
+    w.write(r#"{"x":0}"#);
+    w.runtime
+        .open(request(w.dir.path(), watching("x")))
+        .await
+        .unwrap();
+
+    let m = |n: &str| gmr_core::Ref::new("git", n);
+    let bind = |name: &'static str, version: &'static str| {
+        w.runtime.bind(
+            gmr_core::Binding::on(m(name), vec![key()]),
+            Some(gmr_core::Version::new(version)),
+            Default::default(),
+            gmr_core::Source::Adjudicated,
+        )
+    };
+    bind("a.md", "v1").await.unwrap();
+
+    let aim = w.runtime.health(&key()).await.unwrap().aim;
+    assert_eq!(aim.answered, 0);
+    assert!(
+        aim.never_fired(),
+        "an anchor that has read the world and never handed anything back is either \
+         watching a direction nothing moves in, or watching a fact that fully determines \
+         the judgement -- which docs/GMR.md says not to anchor at all: {aim:?}"
+    );
+
+    w.write(r#"{"x":1}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    w.runtime
+        .revise(&key(), restate(), b"looked, still fine")
+        .await
+        .unwrap();
+
+    let aim = w.runtime.health(&key()).await.unwrap().aim;
+    assert_eq!(aim.answered, 1);
+    assert!(
+        aim.fired_and_changed_nothing(),
+        "the anchor fired, a person answered, and no memory on it moved. One of those is \
+         a verified memory; a run of them is an anchor pointed somewhere its notes do not \
+         care about, and nothing measured it before: {aim:?}"
+    );
+
+    w.write(r#"{"x":2}"#);
+    w.runtime.observe(&key()).await.unwrap();
+    bind("a.md", "v2").await.unwrap();
+    w.runtime
+        .revise(&key(), restate(), b"and this time I rewrote it")
+        .await
+        .unwrap();
+
+    let aim = w.runtime.health(&key()).await.unwrap().aim;
+    assert_eq!(
+        (aim.answered, aim.moved_a_memory),
+        (2, 1),
+        "precision, from data the journal and the binding table already hold: how often a \
+         hand-back was answered by rewriting what it handed back. No new storage, and no \
+         asking a person to grade it afterwards: {aim:?}"
+    );
+    assert!(!aim.fired_and_changed_nothing());
+}
+
+fn restate() -> gmr_core::Change {
+    gmr_core::Change::Restate {
+        state: gmr_core::State::new(serde_json::json!({ "x": 2 })),
+    }
 }

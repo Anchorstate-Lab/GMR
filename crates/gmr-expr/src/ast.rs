@@ -92,6 +92,38 @@ impl BinOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Quant {
+    Any,
+    All,
+    Count,
+}
+
+impl Quant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::All => "all",
+            Self::Count => "count",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Over {
+    Anchors,
+}
+
+impl Over {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Anchors => "anchors",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "node", rename_all = "snake_case")]
 pub enum Node {
@@ -108,6 +140,11 @@ pub enum Node {
     },
     Object(Vec<(String, Node)>),
     Array(Vec<Node>),
+    Quantified {
+        how: Quant,
+        over: Over,
+        body: Box<Node>,
+    },
 }
 
 impl Node {
@@ -119,6 +156,20 @@ impl Node {
             Self::Binary { lhs, rhs, .. } => lhs.reads_state() || rhs.reads_state(),
             Self::Object(fields) => fields.iter().any(|(_, v)| v.reads_state()),
             Self::Array(items) => items.iter().any(Node::reads_state),
+            Self::Quantified { .. } => false,
+        }
+    }
+
+    pub fn reads_anchors(&self) -> bool {
+        match self {
+            Self::Quantified { over, body, .. } => match over {
+                Over::Anchors => body.reads_state(),
+            },
+            Self::Exists(x) | Self::Not(x) | Self::Neg(x) => x.reads_anchors(),
+            Self::Binary { lhs, rhs, .. } => lhs.reads_anchors() || rhs.reads_anchors(),
+            Self::Object(fields) => fields.iter().any(|(_, v)| v.reads_anchors()),
+            Self::Array(items) => items.iter().any(Node::reads_anchors),
+            Self::Path(_) | Self::Lit(_) | Self::Changed(_) => false,
         }
     }
 
@@ -154,6 +205,7 @@ impl Node {
             }
             Self::Object(fields) => fields.iter().for_each(|(_, v)| v.collect_obs(out)),
             Self::Array(items) => items.iter().for_each(|v| v.collect_obs(out)),
+            Self::Quantified { body, .. } => body.collect_obs(out),
         }
     }
 
@@ -179,6 +231,9 @@ impl Node {
                 let body: Vec<String> = items.iter().map(Node::render).collect();
                 format!("[{}]", body.join(", "))
             }
+            Self::Quantified { how, over, body } => {
+                format!("{}({}, {})", how.as_str(), over.as_str(), body.render())
+            }
         }
     }
 }
@@ -193,6 +248,54 @@ mod tests {
 
     fn obs_of(src: &str) -> Vec<String> {
         parse(src).unwrap().reads_obs().into_iter().collect()
+    }
+
+    fn reaches_the_world(src: &str) -> bool {
+        parse(src).unwrap().reads_anchors()
+    }
+
+    #[test]
+    fn an_expression_with_no_quantifier_has_no_channel_to_the_world() {
+        assert!(!reaches_the_world("true"));
+        assert!(!reaches_the_world("1 == 1"));
+        assert!(!reaches_the_world("exists(state)"));
+        assert!(!reaches_the_world("not false"));
+    }
+
+    #[test]
+    fn a_quantifier_whose_body_reads_nothing_reaches_nothing_either() {
+        assert!(!reaches_the_world("all(anchors, true)"));
+        assert!(!reaches_the_world("any(anchors, 1 == 1)"));
+        assert!(!reaches_the_world("count(anchors, true) >= 0"));
+    }
+
+    #[test]
+    fn a_body_that_reads_the_bound_state_is_what_makes_the_channel() {
+        assert!(reaches_the_world("all(anchors, state.v.sig)"));
+        assert!(reaches_the_world(
+            "any(anchors, state.status == \"stable\")"
+        ));
+        assert!(reaches_the_world("count(anchors, state.v.sig) > 0"));
+    }
+
+    #[test]
+    fn the_channel_is_found_at_any_depth() {
+        assert!(reaches_the_world("not all(anchors, state.v.sig)"));
+        assert!(reaches_the_world(
+            "all(anchors, true) or any(anchors, state.v.sig)"
+        ));
+        assert!(reaches_the_world("{ ok: all(anchors, state.v.sig) }"));
+        assert!(reaches_the_world("[all(anchors, state.v.sig)]"));
+    }
+
+    #[test]
+    fn reading_state_outside_a_quantifier_is_not_a_channel() {
+        assert!(reads("state.v.sig"));
+        assert!(
+            !reaches_the_world("state.v.sig"),
+            "`depends` is evaluated with state null and the anchors supplied to the \
+             quantifier, so an outer state read carries nothing from the world"
+        );
     }
 
     #[test]
@@ -242,6 +345,23 @@ mod tests {
         assert!(!reads(r#"{ note: "state.n" }"#));
         assert!(!reads("{ n: obs.n }"));
         assert!(!reads(r#"changed("state")"#));
+    }
+
+    #[test]
+    fn a_quantifier_body_reads_the_same_obs_as_everything_around_it() {
+        assert_eq!(obs_of("any(anchors, obs.x == state.x)"), ["x"]);
+    }
+
+    #[test]
+    fn a_quantifier_body_does_not_read_the_state_the_accumulator_warning_is_about() {
+        assert!(
+            !reads("all(anchors, state.v.sig)"),
+            "inside a quantifier `state` is the anchor being asked about, not the previous \
+             state of the anchor this rule belongs to. The one caller asks whether a rule \
+             folds its own last answer forward, and this one does not -- warning about \
+             over-counting here would fire on every invariant ever written"
+        );
+        assert!(reads("state.n and all(anchors, state.v.sig)"));
     }
 
     #[test]

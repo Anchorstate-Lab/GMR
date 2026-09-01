@@ -12,6 +12,11 @@ bytes is `async` I/O and `scan`'s fold callback is not — the second loop
 only ever iterates over the hashes the scan already picked out, it never
 re-derives which revisions were restates.
 
+`aimed` is the second pass of the same kind and obeys the same rule: the scan
+picks out the restate **seqs** as it goes, and the async step afterwards only
+reads the binding table against them ([[runtime-aim]]). It never re-walks the
+log to work out which revisions were restates.
+
 ## When this changes, ask
 
 Does the new step still limit itself to iterating over what `scan` already

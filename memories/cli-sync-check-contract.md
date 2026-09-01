@@ -34,3 +34,28 @@ Does a new declaration form (a third way to specify transitions, beyond
 funnel through `to_transitions` before `check_contract` inspects the
 result? A separate path could let a new declaration form skip this check
 entirely.
+
+## One predicate, one translation, and the answer travels with the artifact
+
+`Runtime::open` refuses an anchor whose rules read a field the probe declares it
+never reports. This one asks the same question before opening, so a bad
+declaration is refused with the key named rather than as an `open` failure — and
+it is the *same* question now, not a second implementation of it.
+
+`Obs::observes` is the one translation from this domain's `{schema, at, facts}`
+into the base's `Observes`; `Observes::covers` is the one predicate. `unmet` is a
+two-line adapter over both. `known` is gone — it reimplemented `covers` against
+a second reading of the same declaration.
+
+And the declaration reaches the transport now: `Obs::observes` goes into the
+shell `Manifest`, which is inside `Manifest::address`, so what the probe claims
+to report cannot change without the version it is addressed by changing. It used
+to sit in `.anchor/probes.toml` where the transport never saw it, which is why
+shell probes answered `Observes::Unknown` for exactly the probes where somebody
+had already written the answer down.
+
+What is still not checked is whether the declaration is **true** of the program.
+`open` warns when the first observation reports fields the declaration never
+mentions ([[probe-Derivation]]); the opposite direction — declaring a field the
+program never prints — surfaces as `NoSuchField` when a rule reads it, which is
+late but not silent.

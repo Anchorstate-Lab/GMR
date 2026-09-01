@@ -10,3 +10,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# playwright test artifacts
+.playwright-mcp/ 

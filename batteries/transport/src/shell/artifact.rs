@@ -161,15 +161,29 @@ fn verify(dir: &Path, rel: &str, want: &ContentHash) -> Result<(), ArtifactError
     Ok(())
 }
 
+pub struct Declared {
+    pub kind: gmr_core::Kind,
+    pub derivation: ProbeVersion,
+    pub entrypoint: String,
+    pub args: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub observes: gmr_core::Observes,
+}
+
 pub fn publish(
     artifacts: &Artifacts,
     from: &Path,
-    kind: gmr_core::Kind,
-    derivation: ProbeVersion,
-    entrypoint: &str,
-    args: Vec<String>,
-    env: std::collections::BTreeMap<String, String>,
+    declared: Declared,
 ) -> Result<ProbeVersion, ArtifactError> {
+    let Declared {
+        kind,
+        derivation,
+        entrypoint,
+        args,
+        env,
+        observes,
+    } = declared;
+    let entrypoint = entrypoint.as_str();
     let mut files = Vec::new();
     collect(from, from, &mut files)?;
     files.sort_by(|a: &FileEntry, b| a.path.cmp(&b.path));
@@ -188,6 +202,7 @@ pub fn publish(
         files,
         platform: Platform::host(),
         output_contract: gmr_core::OUTCOME_CONTRACT.to_owned(),
+        observes,
     };
     let version = manifest.address();
 

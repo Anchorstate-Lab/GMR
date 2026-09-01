@@ -5,6 +5,9 @@ about:
   - crates/gmr-runtime/src/read.rs#Knowledge
   - crates/gmr-runtime/src/read.rs#warranted
   - crates/gmr-runtime/src/read.rs#holding
+  - crates/gmr-runtime/src/read.rs#folded
+  - crates/gmr-runtime/src/read.rs#differing
+  - crates/gmr-runtime/tests/grounding.rs#a_list_that_moved_says_which_element_and_which_field
 watch: [sig, logic]
 ---
 
@@ -59,7 +62,7 @@ Read that rule again as a sentence about the caller. It says *when you may still
 rely on this*. `Moved > Blind` and `Holds + Blind -> Blind` are not facts about
 what was observed; they are one policy about what to do with two facts that are
 both true. GMR does not emit verdicts — that reduction is the caller's, and
-`docs/GMR.md`'s boundary puts it outside. The rule is not lost: it is written
+`docs/ARCHITECTURE.md` §1.4 puts it outside. The rule is not lost: it is written
 down as the **draft default policy for the warrant-to-verdict adapter**, which is
 where a named, optional, versioned reduction belongs.
 
@@ -124,6 +127,12 @@ firehose arriving through the other door.
 
 So the state diff decides and `moved_at` only gates it: `bound >= moved_at`
 means no state change has happened since the bind, so the fold can be skipped.
+The gate is now what decides whether the journal is read at all: `holding` takes
+the log rather than a slice of entries, answers `Holds`, `Absent` or `Undated`
+off the view alone, and calls `entries` only on the far side of the gate, where
+`folded` does the comparison. Folding back to the moment of binding is the one
+question in the read path that genuinely needs the whole log, and it is now the
+only thing that asks for it.
 Past that gate the answer comes from comparing the two states, and an empty diff
 is `Holds` — including when the world moved out and came back, which is the same
 early cutoff [[runtime-moved-at]] argues for one level down.
@@ -147,11 +156,10 @@ told apart from here.
 This is not a hypothetical. This repository's own corpus had 74 memories
 reporting `Moved` on axes like `baseline.name` and `v.file` — keys the newer
 extractor started emitting — with every `body` hash identical on both sides.
-Nothing had moved. `docs/GMR.md`'s blast-radius clause asks exactly this of a
-consumer: the three identities are on every entry so that a batch of flips
-coming from a rules upgrade can be *identified*, and it says in as many words
-that recording the versions without that plan is fixing the record and not the
-explosion. `Incomparable` is that plan. It is also the memory-level twin of what
+Nothing had moved. `docs/ARCHITECTURE.md` §10.4 asks exactly this of a
+consumer: every observation records the three identities so a corpus-wide
+flip coming from a rules upgrade can be told from a world change — recording
+the versions without that plan would fix the record and not the explosion. `Incomparable` is that plan. It is also the memory-level twin of what
 the CLI already says one layer up when a probe version moves — that the stored
 baseline and what this build measures cannot be told apart — so it is the same
 idea at the layer that needed it, not a new one.
@@ -206,6 +214,18 @@ inside rule 4's "no fixed state vocabulary".
 the base is allowed to know without interpreting (rules 2 and 3): `position` is
 where we looked rather than what we found, and `status` is the summary the rule
 table already wrote from the rest.
+
+`differing` walks arrays as well as objects, by index. It stopped at arrays
+once, and a reading that is a *list* of things — a menu, a roster, a price table
+— then reported as the single path `value`: `Moved` could say the list changed
+and never which row. The cost of walking is that inserting at the front reports
+every element after it; that is honest, and it is what happened, while "the
+whole list" was the same claim with less of the answer in it.
+
+A path into an array is an index, and an index is only a name while the order
+holds. That is the probe's business, not the base's: a reading whose order is
+not stable is a reading whose diff nobody can read, in exactly the way a `SELECT`
+whose columns get reordered is (see [[transport-sql]]).
 
 ## When this changes, ask
 

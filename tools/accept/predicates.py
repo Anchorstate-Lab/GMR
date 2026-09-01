@@ -22,6 +22,87 @@ class Broken(AssertionError):
 # ── G1  取得出 ──────────────────────────────────────────────────────────────
 
 
+def _shown(one):
+    for anchored in one.get("on", []):
+        if anchored.get("anchored") == "on":
+            return (anchored.get("evidence") or {}).get("shown")
+    return None
+
+
+def _named(one):
+    claim = one.get("claim") or {}
+    return claim.get("said")
+
+
+def a_conclusion_stands(gmr, res):
+    """Nothing it named has moved, and it looked where it says it looked."""
+    body = res.body or []
+    broken = [_named(one) for one in body if one.get("depends") == "broken"]
+    unseen = [_named(one) for one in body if _shown(one) == "unseen"]
+    if broken or unseen:
+        raise Broken(
+            "G1",
+            f"a conclusion made against the reading in front of it does not stand: "
+            f"broken={broken} unseen={unseen}; exit {res.code}",
+        )
+    if res.code != 0:
+        raise Broken("G1", f"nothing is wrong and the exit code is {res.code}")
+
+
+def a_conclusion_no_longer_stands(gmr, res):
+    """What it said it rested on moved, so it comes back — and the exit says so.
+
+    This is the inference loop, and it is not the memory loop: a memory that
+    drifts is handed back for a person to re-read, while a conclusion whose own
+    stated condition failed needs nobody to adjudicate it.
+    """
+    body = res.body or []
+    if res.code == 0:
+        raise Broken(
+            "G1",
+            "the ground under a conclusion moved and nothing came back. An author who "
+            "stated an invariant is the authority on whether it survives; one who stated "
+            "none has said nothing, and saying nothing must not buy a green light: "
+            f"{[(_named(o), o.get('depends')) for o in body]}",
+        )
+    if res.code != 1:
+        raise Broken(
+            "G1",
+            f"a conclusion no longer stands and the exit code is {res.code}, so nothing "
+            "driving this from a script would ever find out",
+        )
+
+
+def told_apart_by_what_they_looked_at(gmr, res, seen, unseen, silent):
+    """Three conclusions, three answers: looked, looked elsewhere, did not say.
+
+    Collapsing the last two is what makes an anchor decorative -- a claim that
+    cited nothing and a claim that cited a reading nobody took are not the same
+    defect, and only one of them is a defect at all.
+    """
+    got = {"seen": set(), "unseen": set(), "not_said": set()}
+    for one in res.body or []:
+        mark = _shown(one)
+        if mark in got:
+            got[mark].add(_named(one))
+    want = {"seen": set(seen), "unseen": set(unseen), "not_said": set(silent)}
+    if got != want:
+        raise Broken(
+            "G1",
+            f"what each conclusion was looking at is not told apart: {got} != {want}",
+        )
+
+
+def nothing_is_still_being_asked_about(gmr, res):
+    """Retiring one stops it being asked about, without deleting what it said."""
+    body = res.body or []
+    if body:
+        raise Broken(
+            "G1",
+            f"a retired conclusion is still being asked about: {[_named(o) for o in body]}",
+        )
+
+
 def handed_back_exactly(gmr, res, expected):
     """The set handed back equals `expected` — not a superset.
 

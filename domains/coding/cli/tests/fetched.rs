@@ -22,13 +22,14 @@ async fn a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_m
     let rt = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
-        .sealer(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
         .links(std::sync::Arc::new(store.links()))
         .queue(std::sync::Arc::new(store.queue()))
-        .settings(std::sync::Arc::new(store.queue()))
-        .sightings(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(
-            gmr_transport::http::Http::new(coding_anchor::probes::Declared::at(root)).unwrap(),
+            gmr_transport::http::Http::new(coding_anchor::probes::Declared::at(root).unwrap())
+                .unwrap(),
         ))
         .build();
     let stores = coding_anchor::stores::assembled(root).unwrap();
@@ -116,14 +117,14 @@ async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
     let mut builder = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
-        .sealer(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
         .links(std::sync::Arc::new(store.links()))
         .queue(std::sync::Arc::new(store.queue()))
-        .settings(std::sync::Arc::new(store.queue()))
-        .sightings(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
             root,
-            coding_anchor::probes::Declared::at(root),
+            coding_anchor::probes::Declared::at(root).unwrap(),
         )));
     for built in &stores.built {
         builder = builder.provider(built.content());
@@ -206,7 +207,7 @@ path = "deploy.yaml"
 select = "$.a"
 
 [sql.a-sql]
-url = "sqlite://app.db"
+source = { given = "sqlite://app.db" }
 query = "SELECT 1"
 
 [script.a-script]
@@ -247,6 +248,123 @@ obs = { schema = "gmr.probe.v1", facts = ["v"] }
              all three were missed here, because nothing connected `kind_of` gaining a \\
              branch to this list gaining a loop -- this assertion is that connection. \\
              Listed: {by_name:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_coordinate_that_carries_a_credential_writes_nothing_at_all() {
+    let dir = a_repository();
+    let root = dir.path();
+
+    let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
+    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let rt = gmr::Runtime::builder()
+        .journal(std::sync::Arc::new(store.journal()))
+        .bindings(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
+        .links(std::sync::Arc::new(store.links()))
+        .queue(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
+        .build();
+
+    let err = coding_anchor::verbs::anchor::run(
+        &rt,
+        root,
+        &stores,
+        coding_anchor::verbs::anchor::Asked {
+            coordinate: Some("https://svc:hunter2@api.internal/v1/keys#$.rotated_at".to_owned()),
+            named: Some("key-rotation".to_owned()),
+            memory: None,
+            record: None,
+        },
+        true,
+    )
+    .await
+    .expect_err("a password in a coordinate is a declaration to fix, not one to write down");
+
+    assert!(
+        !err.to_string().contains("hunter2"),
+        "the refusal itself must not repeat it: {err}"
+    );
+    assert!(
+        !root.join(".anchor/probes.toml").exists(),
+        "and nothing is written. The refusal has to come before the write, or the password \
+         is already in a file the person is about to commit and push -- at which point \
+         deleting the line is not enough and the credential has to be rotated"
+    );
+}
+
+#[tokio::test]
+async fn one_declaration_watches_every_environment_somebody_anchors() {
+    let dir = a_repository();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("envs")).unwrap();
+    std::fs::write(root.join("envs/staging.yaml"), "service:\n  replicas: 2\n").unwrap();
+    std::fs::write(root.join("envs/prod.yaml"), "service:\n  replicas: 9\n").unwrap();
+    std::fs::write(
+        root.join(".anchor/probes.toml"),
+        "[file.replicas]\npath = \"envs/{env}.yaml\"\nselect = \"$.service.replicas\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(".anchor/anchors.toml"),
+        r#"
+[[anchor]]
+key = "staging-replicas"
+probe = "replicas"
+shape = "value"
+position = { env = "staging" }
+
+[[anchor]]
+key = "prod-replicas"
+probe = "replicas"
+shape = "value"
+position = { env = "prod" }
+"#,
+    )
+    .unwrap();
+
+    let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
+    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let mut builder = gmr::Runtime::builder()
+        .journal(std::sync::Arc::new(store.journal()))
+        .bindings(std::sync::Arc::new(store.bindings()))
+        .sealer(std::sync::Arc::new(store.sealer()))
+        .links(std::sync::Arc::new(store.links()))
+        .queue(std::sync::Arc::new(store.queue()))
+        .settings(std::sync::Arc::new(store.settings()))
+        .sightings(std::sync::Arc::new(store.sightings()))
+        .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
+            root,
+            coding_anchor::probes::Declared::at(root).unwrap(),
+        )));
+    for built in &stores.built {
+        builder = builder.provider(built.content());
+    }
+    let rt = builder.build();
+
+    sync::run(
+        &rt,
+        root,
+        &stores.names,
+        sync::DEFAULT_FILE.to_owned(),
+        false,
+        true,
+    )
+    .await
+    .unwrap();
+
+    for (key, replicas) in [("staging-replicas", 2), ("prod-replicas", 9)] {
+        let opened = rt.read(&gmr::AnchorKey::new(key)).await.expect("opened");
+        assert_eq!(
+            opened.state.0.pointer("/baseline/value"),
+            Some(&serde_json::json!(replicas)),
+            "one probe, one earned version, two places it is pointed. Before this, watching \
+             a second environment meant a second declaration with a second url in it, and \
+             the two were free to drift apart: {}",
+            opened.state.0
         );
     }
 }

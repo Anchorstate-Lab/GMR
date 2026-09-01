@@ -3,12 +3,13 @@ use gmr_core::{
     Observation, Outcome, ProbeName, ProbeRef, ProbeVersion, Ref, Rule, State, Transitions,
     Version, Versions, fold,
 };
-use gmr_store::{Asserted, BindingStore, ErrorKind, Fence, Journal, LinkStore, Sealer};
+use gmr_store::{Asserted, BindingStore, ErrorKind, Expected, Fence, Journal, LinkStore, Sealer};
 
 fn versions() -> Versions {
     Versions {
         declaration: gmr_core::ContentHash::try_new("d".repeat(64)).unwrap(),
         derivation: gmr_core::Derivation {
+            observes: Default::default(),
             version: ProbeVersion::try_new("a".repeat(64)).unwrap(),
             verifiability: gmr_core::Verifiability::Closed,
         },
@@ -58,6 +59,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 at: chrono::Utc::now(),
             },
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();
@@ -72,6 +74,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 versions: versions(),
             },
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();
@@ -91,6 +94,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
                 at: chrono::Utc::now(),
             },
             Fence::Unleased,
+            Expected::Any,
         )
         .await
         .unwrap();
@@ -98,12 +102,10 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
     store
         .bindings()
         .bind(&Asserted {
-            binding: Binding {
-                reference: Ref::new("git", "memories/one.md"),
-                anchors: vec![key.clone()],
-            },
+            binding: Binding::on(Ref::new("git", "memories/one.md"), vec![key.clone()]),
             bound_version: Some(Version::new("v1")),
             bound_at_seq: Some(open_seq),
+            saw: Default::default(),
             source: gmr_core::Source::Adjudicated,
             at: chrono::Utc::now(),
         })
@@ -116,7 +118,30 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
             &Ref::new("git", "memories/one.md"),
             &Ref::new("git", "memories/two.md"),
             LinkKind("contradicts".into()),
+            gmr_core::Source::Adjudicated,
         )
+        .await
+        .unwrap();
+    store
+        .links()
+        .link(
+            &Ref::new("git", "memories/one.md"),
+            &Ref::new("git", "memories/gone.md"),
+            LinkKind("rests-on".into()),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    store
+        .links()
+        .unlink(&gmr_store::LinkRevocation {
+            from: Ref::new("git", "memories/one.md"),
+            to: Ref::new("git", "memories/gone.md"),
+            kind: LinkKind("rests-on".into()),
+            asserted_as: Some(gmr_core::Source::Derived),
+            source: gmr_core::Source::Derived,
+            when: chrono::Utc::now(),
+        })
         .await
         .unwrap();
 
@@ -143,7 +168,12 @@ async fn round_trip_preserves_the_journal_bindings_links_and_sealed_rows() {
     assert_eq!(summary.journal, 3);
     assert_eq!(summary.bindings, 1);
     assert_eq!(summary.binding_anchors, 1);
-    assert_eq!(summary.links, 1);
+    assert_eq!(summary.links, 2);
+    assert_eq!(
+        summary.link_revocations, 1,
+        "a revoked edge travels as its row plus the revocation naming it, so the \
+         restored store answers links_of the same way the original did"
+    );
     assert_eq!(summary.sealed, 2);
 
     let mut second = Vec::new();

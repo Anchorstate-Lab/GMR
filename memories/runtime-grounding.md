@@ -2,7 +2,7 @@
 about:
   - crates/gmr-runtime/src/read.rs#Grounding
   - crates/gmr-runtime/src/read.rs#Before
-  - crates/gmr-runtime/src/memory.rs#ground
+  - crates/gmr-runtime/src/memory.rs#grounding_of
 watch: [sig, logic]
 ---
 

@@ -16,8 +16,10 @@ pub use journal::{
     AnchorState, Change, ChangeKind, Entry, FailureCode, Faltering, Observation, ReasonClass, Seq,
     Versions, fold, resume, scan, should_still,
 };
-pub use memory::{Binding, ExternalId, Link, LinkKind, ProviderId, Ref, Source, Version};
+pub use memory::{
+    Binding, Claim, ExternalId, Link, LinkKind, ProviderId, Ref, SaidId, Source, Version,
+};
 pub use probe::{
-    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Openness, Outcome, ProbeName, ProbeRef,
-    ProbeVersion, Verifiability,
+    Derivation, FactAddress, Facts, Kind, OUTCOME_CONTRACT, Observes, Openness, Outcome, ProbeName,
+    ProbeRef, ProbeVersion, Verifiability,
 };
