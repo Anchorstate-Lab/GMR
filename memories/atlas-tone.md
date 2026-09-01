@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/atlas.rs#anchor_tone
-  - domains/coding/cli/src/verbs/atlas.rs#memory_tone
-  - domains/coding/cli/src/verbs/atlas.rs#anchor_node
+  - console/cli/src/verbs/atlas.rs#anchor_tone
+  - console/cli/src/verbs/atlas.rs#memory_tone
+  - console/cli/src/verbs/atlas.rs#anchor_node
 watch: [sig, logic]
 ---
 

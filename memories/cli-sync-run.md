@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/sync.rs#run
-  - domains/coding/cli/src/verbs/sync.rs#synced
-  - domains/coding/cli/src/verbs/sync.rs#tell
-  - domains/coding/cli/src/memories.rs#Fault
+  - console/cli/src/verbs/sync.rs#run
+  - console/cli/src/verbs/sync.rs#synced
+  - console/cli/src/verbs/sync.rs#tell
+  - console/cli/src/memories.rs#Fault
 watch: [logic]
 ---
 

@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/delivery.rs#delivers
-  - domains/coding/cli/src/delivery.rs#a_note_that_says_nothing_takes_its_shapes_default
-  - domains/coding/cli/src/delivery.rs#an_anchor_with_no_shape_and_no_watch_refuses_to_guess
+  - console/cli/src/delivery.rs#delivers
+  - console/cli/src/delivery.rs#a_note_that_says_nothing_takes_its_shapes_default
+  - console/cli/src/delivery.rs#an_anchor_with_no_shape_and_no_watch_refuses_to_guess
 watch: [sig, logic]
 ---
 

@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/extract/src/lang.rs#Table
-  - domains/coding/extract/src/ast.rs#members
-  - domains/coding/extract/src/ast.rs#attributes
+  - packs/coding/extract/src/lang.rs#Table
+  - packs/coding/extract/src/ast.rs#members
+  - packs/coding/extract/src/ast.rs#attributes
 watch: [sig, logic]
 ---
 

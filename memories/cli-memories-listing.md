@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/memories.rs#run
-  - domains/coding/cli/src/stores.rs#silent
-  - domains/coding/cli/src/stores.rs#listing
+  - console/cli/src/verbs/memories.rs#run
+  - console/cli/src/stores.rs#silent
+  - console/cli/src/stores.rs#listing
 watch: [sig, logic]
 ---
 

@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/extract/src/lang.rs#RUST
-  - domains/coding/extract/src/ast.rs#a_constant_is_a_coordinate_something_can_be_anchored_to
-  - domains/coding/extract/src/ast.rs#a_constants_declared_type_is_part_of_its_shape
+  - packs/coding/extract/src/lang.rs#RUST
+  - packs/coding/extract/src/ast.rs#a_constant_is_a_coordinate_something_can_be_anchored_to
+  - packs/coding/extract/src/ast.rs#a_constants_declared_type_is_part_of_its_shape
 watch: [sig, logic]
 ---
 

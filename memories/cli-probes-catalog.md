@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/probes.rs#Catalog
+about: console/cli/src/probes.rs#Catalog
 watch: [sig, logic]
 ---
 

@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/sync.rs#align_bindings
+about: console/cli/src/verbs/sync.rs#align_bindings
 watch: [logic]
 ---
 

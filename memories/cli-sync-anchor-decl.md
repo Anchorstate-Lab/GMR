@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/sync.rs#AnchorDecl
-  - domains/coding/cli/src/verbs/sync.rs#declare
+  - console/cli/src/verbs/sync.rs#AnchorDecl
+  - console/cli/src/verbs/sync.rs#declare
 watch: [sig]
 ---
 

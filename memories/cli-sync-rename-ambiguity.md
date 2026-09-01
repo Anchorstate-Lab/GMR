@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/sync.rs#ambiguous
+about: console/cli/src/verbs/sync.rs#ambiguous
 watch: [sig, logic]
 ---
 

@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/rebase.rs#run
+about: console/cli/src/verbs/rebase.rs#run
 watch: [logic]
 ---
 

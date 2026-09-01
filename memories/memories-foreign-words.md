@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/memories.rs#foreign_words
-  - domains/coding/cli/src/memories.rs#FRONTMATTER_WORDS
-  - domains/coding/cli/src/memories.rs#a_header_in_another_products_format_is_louder_than_no_header_at_all
-  - domains/coding/cli/src/memories.rs#a_misspelt_word_is_foreign_like_any_other
+  - console/cli/src/memories.rs#foreign_words
+  - console/cli/src/memories.rs#FRONTMATTER_WORDS
+  - console/cli/src/memories.rs#a_header_in_another_products_format_is_louder_than_no_header_at_all
+  - console/cli/src/memories.rs#a_misspelt_word_is_foreign_like_any_other
 watch: [sig, logic]
 ---
 

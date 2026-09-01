@@ -1,5 +1,5 @@
 ---
-about: domains/coding/extract/src/ast.rs#naming
+about: packs/coding/extract/src/ast.rs#naming
 watch: [sig, logic]
 ---
 

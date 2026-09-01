@@ -1,10 +1,10 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/sync.rs#check_contract
-  - domains/coding/cli/src/verbs/sync.rs#hand_written_rules_and_a_named_shape_both_become_transitions
-  - domains/coding/cli/src/verbs/sync.rs#a_shape_the_probe_cannot_feed_is_refused
-  - domains/coding/cli/src/verbs/sync.rs#roster_rides_the_same_probe_happily
-  - domains/coding/cli/src/verbs/sync.rs#hand_written_rules_get_the_same_check_a_shape_gets
+  - console/cli/src/verbs/sync.rs#check_contract
+  - console/cli/src/verbs/sync.rs#hand_written_rules_and_a_named_shape_both_become_transitions
+  - console/cli/src/verbs/sync.rs#a_shape_the_probe_cannot_feed_is_refused
+  - console/cli/src/verbs/sync.rs#roster_rides_the_same_probe_happily
+  - console/cli/src/verbs/sync.rs#hand_written_rules_get_the_same_check_a_shape_gets
 watch: [sig, logic]
 ---
 

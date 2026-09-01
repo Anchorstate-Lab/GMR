@@ -3,8 +3,8 @@ about:
   - crates/gmr-core/src/addr.rs#check_sha256_hex
   - crates/gmr-core/src/addr.rs#a_minted_address_cannot_be_forged_through_the_wire
   - crates/gmr-core/src/addr.rs#an_admitted_name_is_not_refused_on_the_way_back_out_of_the_store
-  - domains/coding/cli/src/rules.rs#key
-  - domains/coding/cli/src/memories.rs#addressed_to
+  - console/cli/src/rules.rs#key
+  - console/cli/src/memories.rs#addressed_to
   - crates/gmr-core/src/memory.rs#check_provider_id
 watch: [sig, logic]
 ---

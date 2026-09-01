@@ -1,10 +1,10 @@
 ---
 about:
-  - domains/coding/cli/src/shapes.rs#Dim
-  - domains/coding/cli/src/shapes.rs#Reads
-  - domains/coding/cli/src/shapes.rs#CONTRACT
-  - domains/coding/cli/src/shapes.rs#GONE
-  - domains/coding/extract/src/ast.rs#RECIPE
+  - console/cli/src/shapes.rs#Dim
+  - console/cli/src/shapes.rs#Reads
+  - console/cli/src/shapes.rs#CONTRACT
+  - console/cli/src/shapes.rs#GONE
+  - packs/coding/extract/src/ast.rs#RECIPE
 ---
 
 # An axis is a fork in what you should go and do, not a kind of thing

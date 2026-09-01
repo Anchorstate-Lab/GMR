@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/extract/src/lib.rs#declares
-  - domains/coding/extract/src/lib.rs#catchall
-  - domains/coding/cli/src/probes.rs#for_extension
+  - packs/coding/extract/src/lib.rs#declares
+  - packs/coding/extract/src/lib.rs#catchall
+  - console/cli/src/probes.rs#for_extension
 watch: [sig, logic]
 ---
 

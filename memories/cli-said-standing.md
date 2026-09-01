@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/said.rs#run
-  - domains/coding/cli/src/verbs/standing.rs#run
-  - domains/coding/cli/src/verbs/standing.rs#counted
-  - domains/coding/cli/src/verbs/standing.rs#exit_of
+  - console/cli/src/verbs/said.rs#run
+  - console/cli/src/verbs/standing.rs#run
+  - console/cli/src/verbs/standing.rs#counted
+  - console/cli/src/verbs/standing.rs#exit_of
   - crates/gmr-runtime/src/bind.rs#claims
 watch: [sig, logic]
 ---

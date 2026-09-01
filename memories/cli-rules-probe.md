@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/rules.rs#probe
+about: console/cli/src/rules.rs#probe
 watch: [sig, logic]
 ---
 

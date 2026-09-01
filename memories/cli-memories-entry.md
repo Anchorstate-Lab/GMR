@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/memories.rs#Entry
+about: console/cli/src/memories.rs#Entry
 watch: [sig]
 ---
 

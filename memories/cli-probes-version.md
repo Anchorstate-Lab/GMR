@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/probes.rs#version
-  - domains/coding/cli/src/probes.rs#source_hashes
-  - domains/coding/cli/src/probes.rs#build_one
+  - console/cli/src/probes.rs#version
+  - console/cli/src/probes.rs#source_hashes
+  - console/cli/src/probes.rs#build_one
 watch: [sig, logic]
 ---
 

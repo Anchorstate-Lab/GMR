@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/stores.rs#assembled
-  - domains/coding/cli/src/stores.rs#Where
-  - domains/coding/cli/src/stores.rs#take
+  - console/cli/src/stores.rs#assembled
+  - console/cli/src/stores.rs#Where
+  - console/cli/src/stores.rs#take
 watch: [sig, logic]
 ---
 

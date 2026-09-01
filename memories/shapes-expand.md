@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/shapes.rs#expand
-  - domains/coding/cli/src/shapes.rs#reported
+  - console/cli/src/shapes.rs#expand
+  - console/cli/src/shapes.rs#reported
 watch: [sig, logic]
 ---
 

@@ -1,10 +1,10 @@
 ---
 about:
-  - domains/coding/cli/src/providers.rs#declared
-  - domains/coding/cli/src/providers.rs#assembled
-  - domains/coding/cli/src/providers.rs#script
-  - domains/coding/cli/src/providers.rs#can
-  - domains/coding/cli/src/providers.rs#caveat
+  - console/cli/src/providers.rs#declared
+  - console/cli/src/providers.rs#assembled
+  - console/cli/src/providers.rs#script
+  - console/cli/src/providers.rs#can
+  - console/cli/src/providers.rs#caveat
 watch: [sig, logic]
 ---
 

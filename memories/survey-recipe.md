@@ -4,8 +4,8 @@ about:
   - batteries/survey/src/recipe.rs#look
   - batteries/survey/src/recipe.rs#Merge
   - batteries/survey/src/recipe.rs#the_eligible_predicate_decides_what_the_corpus_even_contains
-  - domains/coding/extract/src/ast.rs#RECIPE
-  - domains/coding/extract/src/name.rs#RECIPE
+  - packs/coding/extract/src/ast.rs#RECIPE
+  - packs/coding/extract/src/name.rs#RECIPE
 watch: [sig, logic]
 ---
 

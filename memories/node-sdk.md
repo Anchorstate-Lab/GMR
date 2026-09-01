@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/node/src/lib.rs#open
-  - domains/node/src/lib.rs#Gmr
-  - domains/node/src/lib.rs#Opening
-  - domains/node/src/lib.rs#answered
+  - console/node/src/lib.rs#open
+  - console/node/src/lib.rs#Gmr
+  - console/node/src/lib.rs#Opening
+  - console/node/src/lib.rs#answered
   - tools/gate.py#check_typed_surface_names_the_contract
 watch: [sig, logic]
 ---
@@ -101,7 +101,7 @@ JavaScript for an array of byte values would be asking it to do the encoding.
 
 ## `open` is a generic domain, so what a domain owns has to be passed in
 
-`domains/coding` owns extractors, a coordinate syntax and `probes.toml`. This
+`packs/coding` owns extractors, a coordinate syntax and `probes.toml`. This
 domain owns none of that — its ontology arrives in the call:
 
 ```

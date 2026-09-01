@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/shapes.rs#vocabulary
-  - domains/coding/cli/src/memories.rs#tombstones
+  - console/cli/src/shapes.rs#vocabulary
+  - console/cli/src/memories.rs#tombstones
 watch: [sig, logic]
 ---
 

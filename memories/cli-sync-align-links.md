@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/sync.rs#align_links
-  - domains/coding/cli/src/memories.rs#linked_target
+  - console/cli/src/verbs/sync.rs#align_links
+  - console/cli/src/memories.rs#linked_target
 watch: [sig, logic]
 links:
   rests-on: [three-layers, runtime-link]

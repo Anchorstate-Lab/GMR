@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/extract/build.rs#gmr_outcome_contract
-  - domains/coding/extract/build.rs#locked_versions
+  - packs/coding/extract/build.rs#gmr_outcome_contract
+  - packs/coding/extract/build.rs#locked_versions
 watch: [sig, logic]
 ---
 

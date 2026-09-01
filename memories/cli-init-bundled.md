@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/init.rs#bundled
+about: console/cli/src/verbs/init.rs#bundled
 watch: [logic]
 ---
 

@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/skill.rs#stale
+about: console/cli/src/skill.rs#stale
 watch: [sig, logic]
 ---
 

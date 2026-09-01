@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/bind.rs#run
-  - domains/coding/cli/src/verbs/bind.rs#attest
-  - domains/coding/cli/src/verbs/bind.rs#asserted
-  - domains/coding/cli/src/verbs/bind.rs#assert_on
+  - console/cli/src/verbs/bind.rs#run
+  - console/cli/src/verbs/bind.rs#attest
+  - console/cli/src/verbs/bind.rs#asserted
+  - console/cli/src/verbs/bind.rs#assert_on
 watch: [logic]
 ---
 

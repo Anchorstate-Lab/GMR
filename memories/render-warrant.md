@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/render.rs#holding
-  - domains/coding/cli/src/render.rs#knowledge
-  - domains/coding/cli/src/render.rs#warranting
-  - domains/coding/cli/src/render.rs#unseen
+  - console/cli/src/render.rs#holding
+  - console/cli/src/render.rs#knowledge
+  - console/cli/src/render.rs#warranting
+  - console/cli/src/render.rs#unseen
 watch: [sig, logic]
 ---
 

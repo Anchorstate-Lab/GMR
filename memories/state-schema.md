@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/shapes.rs#seen
-  - domains/coding/cli/src/shapes.rs#state_carries_exactly_what_some_guard_compares_and_nothing_else
+  - console/cli/src/shapes.rs#seen
+  - console/cli/src/shapes.rs#state_carries_exactly_what_some_guard_compares_and_nothing_else
 watch: [sig, logic]
 ---
 

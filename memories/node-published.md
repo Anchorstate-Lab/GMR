@@ -2,7 +2,7 @@
 about:
   - dist/npm/index.d.ts
   - dist/npm/index.js
-  - domains/node/test/verbs.mjs
+  - console/node/test/verbs.mjs
 watch: [grew, shrank, roll]
 ---
 
@@ -10,7 +10,7 @@ watch: [grew, shrank, roll]
 
 Three files carry the binding outward: `dist/npm/index.d.ts` declares the shapes a
 caller may match on, `dist/npm/index.js` loads the platform addon and re-exports
-`CONTRACT`, and `domains/node/test/verbs.mjs` walks the discriminants against real
+`CONTRACT`, and `console/node/test/verbs.mjs` walks the discriminants against real
 output.
 
 None of the three has a symbol an extractor can address. A TypeScript declaration

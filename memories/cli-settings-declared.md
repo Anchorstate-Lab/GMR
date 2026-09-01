@@ -1,10 +1,10 @@
 ---
 about:
-  - domains/coding/cli/src/settings.rs#Declared
-  - domains/coding/cli/src/settings.rs#at_open
-  - domains/coding/cli/src/settings.rs#overlaid
-  - domains/coding/cli/src/settings.rs#a_declaration_that_says_nothing_changes_nothing
-  - domains/coding/cli/src/verbs/sync.rs#a_knob_the_toml_does_not_name_arrives_unsaid_rather_than_defaulted
+  - console/cli/src/settings.rs#Declared
+  - console/cli/src/settings.rs#at_open
+  - console/cli/src/settings.rs#overlaid
+  - console/cli/src/settings.rs#a_declaration_that_says_nothing_changes_nothing
+  - console/cli/src/verbs/sync.rs#a_knob_the_toml_does_not_name_arrives_unsaid_rather_than_defaulted
 watch: [sig, logic]
 ---
 

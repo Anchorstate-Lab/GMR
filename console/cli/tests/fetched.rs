@@ -28,8 +28,7 @@ async fn a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_m
         .settings(std::sync::Arc::new(store.settings()))
         .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(
-            gmr_transport::http::Http::new(gmr_cli::probes::Declared::at(root).unwrap())
-                .unwrap(),
+            gmr_transport::http::Http::new(gmr_cli::probes::Declared::at(root).unwrap()).unwrap(),
         ))
         .build();
     let stores = gmr_cli::stores::assembled(root).unwrap();

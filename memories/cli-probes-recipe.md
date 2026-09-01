@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/probes.rs#Obs
-  - domains/coding/cli/src/probes.rs#Recipe
-  - domains/coding/cli/src/probes.rs#ScriptDecl
-  - domains/coding/cli/src/probes.rs#Record
+  - console/cli/src/probes.rs#Obs
+  - console/cli/src/probes.rs#Recipe
+  - console/cli/src/probes.rs#ScriptDecl
+  - console/cli/src/probes.rs#Record
 watch: [sig]
 ---
 

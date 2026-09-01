@@ -1,9 +1,9 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/doctor.rs#versioning_is_broken
-  - domains/coding/cli/src/verbs/doctor.rs#run
-  - domains/coding/cli/src/verbs/doctor.rs#Verdict
-  - domains/coding/cli/src/verbs/doctor.rs#theirs_to_fix
+  - console/cli/src/verbs/doctor.rs#versioning_is_broken
+  - console/cli/src/verbs/doctor.rs#run
+  - console/cli/src/verbs/doctor.rs#Verdict
+  - console/cli/src/verbs/doctor.rs#theirs_to_fix
 watch: [sig, logic]
 ---
 

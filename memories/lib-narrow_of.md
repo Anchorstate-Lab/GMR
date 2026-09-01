@@ -1,5 +1,5 @@
 ---
-about: domains/coding/extract/src/lib.rs#narrow_of
+about: packs/coding/extract/src/lib.rs#narrow_of
 ---
 
 # The tree to walk and the subtree to report on are two axes, never one joined path

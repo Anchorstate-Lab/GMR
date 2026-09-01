@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/lib.rs#probes_dir
-  - domains/coding/cli/src/lib.rs#stale_journal_guard
+  - console/cli/src/lib.rs#probes_dir
+  - console/cli/src/lib.rs#stale_journal_guard
 watch: [sig, logic]
 ---
 
