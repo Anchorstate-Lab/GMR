@@ -677,6 +677,10 @@ pub fn standing<'a>(
 pub struct Bound(std::collections::BTreeSet<AnchorKey>);
 
 impl Bound {
+    pub fn among(keys: impl IntoIterator<Item = AnchorKey>) -> Self {
+        Self(keys.into_iter().collect())
+    }
+
     pub async fn of(rt: &Runtime) -> Result<Self, CliError> {
         Ok(Self(
             rt.memory()

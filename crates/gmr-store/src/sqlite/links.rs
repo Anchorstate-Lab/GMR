@@ -62,6 +62,40 @@ impl LinkStore for SqliteBindings {
         Ok(revoked)
     }
 
+    async fn all(&self) -> Result<Vec<(Ref, LinkRecord)>, StoreError> {
+        let rows = sqlx::query(
+            "SELECT l.from_ref, l.to_ref, l.kind, l.source FROM links l \
+             WHERE NOT EXISTS (SELECT 1 FROM link_revocations r WHERE r.link = l.seq) \
+             ORDER BY l.seq",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
+
+        rows.into_iter()
+            .map(|r| {
+                let from: Ref =
+                    serde_json::from_str(&r.get::<String, _>("from_ref")).map_err(decode_err)?;
+                let to: Ref =
+                    serde_json::from_str(&r.get::<String, _>("to_ref")).map_err(decode_err)?;
+                let raw: String = r.get("source");
+                let source = Source::parse(&raw).ok_or_else(|| {
+                    StoreError::corrupt(format!(
+                        "a link carries the source `{raw}`, which this build does not know"
+                    ))
+                })?;
+                Ok((
+                    from,
+                    LinkRecord {
+                        to,
+                        kind: LinkKind(r.get("kind")),
+                        source,
+                    },
+                ))
+            })
+            .collect()
+    }
+
     async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, StoreError> {
         let rows = sqlx::query(
             "SELECT l.to_ref, l.kind, l.source FROM links l \

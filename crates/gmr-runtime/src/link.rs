@@ -39,6 +39,10 @@ impl Runtime {
         self.memory.links_of(reference).await
     }
 
+    pub async fn all_links(&self) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
+        self.memory.all_links().await
+    }
+
     pub async fn reaching(&self, from: &Ref, depth: usize) -> Result<Vec<Reached>, RuntimeError> {
         let policy = self.scheduler.policy();
         reaching(

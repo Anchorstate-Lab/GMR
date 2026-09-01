@@ -34,4 +34,6 @@ pub trait LinkStore: Send + Sync {
     async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, StoreError>;
 
     async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, StoreError>;
+
+    async fn all(&self) -> Result<Vec<(Ref, LinkRecord)>, StoreError>;
 }

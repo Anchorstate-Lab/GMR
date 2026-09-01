@@ -167,7 +167,9 @@ pub enum Command {
     #[command(hide = true)]
     Observe { key: Option<String> },
 
-    /// Each anchor's current state.
+    /// Each anchor's current state. A key names an anchor; `path:line` names
+    /// a position, resolving to the anchor whose symbol starts at or above
+    /// that line in that file, falling back to the file's own anchor.
     #[command(hide = true)]
     Read {
         key: Option<String>,
@@ -290,6 +292,11 @@ pub enum Command {
         to: String,
         #[arg(long)]
         kind: String,
+        /// Revoke every live assertion of this edge instead of adding one,
+        /// whoever asserted it. The rows stay in the store; the revocation is
+        /// what makes reads stop seeing them.
+        #[arg(long)]
+        detach: bool,
         #[arg(long)]
         from_provider: Option<String>,
         #[arg(long)]

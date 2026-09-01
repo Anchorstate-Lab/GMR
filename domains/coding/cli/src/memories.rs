@@ -490,8 +490,26 @@ pub fn scan(root: &Path, catalog: &Catalog) -> Result<Scanned, CliError> {
     of(&declaring(root), catalog)
 }
 
+pub fn scan_among(
+    root: &Path,
+    catalog: &Catalog,
+    rels: &std::collections::BTreeSet<String>,
+) -> Result<Scanned, CliError> {
+    let source = declaring(root);
+    let declared = source.declared_among(rels)?;
+    scanned_from(declared, &source, catalog)
+}
+
 pub fn of(source: &crate::notes::Notes, catalog: &Catalog) -> Result<Scanned, CliError> {
     let declared = source.declared()?;
+    scanned_from(declared, source, catalog)
+}
+
+fn scanned_from(
+    declared: Vec<Stated>,
+    source: &crate::notes::Notes,
+    catalog: &Catalog,
+) -> Result<Scanned, CliError> {
     let mut notes = Vec::new();
     let mut faults = Vec::new();
     for record in &declared {

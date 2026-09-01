@@ -120,6 +120,10 @@ impl MemoryLens {
         Ok(self.links.links_of(reference).await?)
     }
 
+    pub async fn all_links(&self) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
+        Ok(self.links.all().await?)
+    }
+
     fn provider_for(&self, reference: &Ref) -> Option<&Arc<dyn ContentProvider>> {
         self.providers
             .iter()

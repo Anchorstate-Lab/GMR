@@ -196,6 +196,12 @@ pub async fn run(
     let mut faults = scanned.faults;
     faults.extend(watch);
     faults.sort_by(|a, b| (b.weight, &a.note, a.code).cmp(&(a.weight, &b.note, b.code)));
+    let mut kinds: std::collections::BTreeMap<(String, &'static str), usize> = Default::default();
+    for (_, record) in rt.all_links().await? {
+        *kinds
+            .entry((record.kind.0, record.source.as_str()))
+            .or_default() += 1;
+    }
     let (breaking, advisory): (Vec<_>, Vec<_>) = faults.iter().partition(|f| f.breaks());
     let exit_code = i32::from(
         Verdict {
@@ -236,6 +242,9 @@ pub async fn run(
                 "no_before": addresses(ground.on(Footing::NoBefore)),
                 "unverified": addresses(ground.on(Footing::Unverified)),
                 "unsupervised": addresses(&ground.unsupervised),
+                "edges": kinds.iter().map(|((kind, source), count)| serde_json::json!({
+                    "kind": kind, "source": source, "count": count,
+                })).collect::<Vec<_>>(),
                 "skill_stale": skill_stale.iter().map(|s| &s.path).collect::<Vec<_>>(),
                 "content_versioning": !no_git,
                 "chain_break": chain_break,
@@ -273,6 +282,13 @@ pub async fn run(
         }
         let line: Vec<String> = counts.iter().map(|(s, n)| format!("{s}x{n}")).collect();
         println!("status    {}", line.join("  "));
+    }
+    if !kinds.is_empty() {
+        let line: Vec<String> = kinds
+            .iter()
+            .map(|((kind, source), n)| format!("{kind}x{n} ({source})"))
+            .collect();
+        println!("edges     {}", line.join("  "));
     }
     if !absent.is_empty() {
         println!(

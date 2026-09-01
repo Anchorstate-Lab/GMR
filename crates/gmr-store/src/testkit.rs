@@ -232,6 +232,18 @@ impl LinkStore for MemoryBindings {
         Ok(revoked)
     }
 
+    async fn all(&self) -> Result<Vec<(Ref, LinkRecord)>, StoreError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .links
+            .iter()
+            .filter(|(_, _, dead)| !dead)
+            .map(|(from, record, _)| (from.clone(), record.clone()))
+            .collect())
+    }
+
     async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, StoreError> {
         Ok(self
             .inner

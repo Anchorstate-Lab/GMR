@@ -71,7 +71,26 @@ impl Subscriptions {
         catalog: &Catalog,
         names: &Names,
     ) -> Result<(Self, Vec<Fault>), CliError> {
-        let crate::memories::Scanned { notes, .. } = crate::memories::scan(root, catalog)?;
+        let scanned = crate::memories::scan(root, catalog)?;
+        Self::from_scanned(root, names, scanned)
+    }
+
+    pub fn load_among(
+        root: &Path,
+        catalog: &Catalog,
+        names: &Names,
+        rels: &std::collections::BTreeSet<String>,
+    ) -> Result<(Self, Vec<Fault>), CliError> {
+        let scanned = crate::memories::scan_among(root, catalog, rels)?;
+        Self::from_scanned(root, names, scanned)
+    }
+
+    fn from_scanned(
+        root: &Path,
+        names: &Names,
+        scanned: crate::memories::Scanned,
+    ) -> Result<(Self, Vec<Fault>), CliError> {
+        let crate::memories::Scanned { notes, .. } = scanned;
         let declared = read_declared(root, DEFAULT_FILE)?;
 
         let mut faults = Vec::new();
