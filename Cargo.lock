@@ -248,7 +248,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "coding-anchor"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "coding-extract"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "gmr-budget",
  "gmr-core",
@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "gmr"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "gmr-budget",
  "gmr-content",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-atlas"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -657,11 +657,11 @@ dependencies = [
 
 [[package]]
 name = "gmr-budget"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "gmr-content"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "gmr-budget",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "ryu",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-expr"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-node"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "gmr",
  "gmr-provider",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-probe"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "gmr-budget",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-provider"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "gmr-budget",
@@ -738,7 +738,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-runtime"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-store"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -775,7 +775,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-survey"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-transport"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "gmr-budget",
