@@ -15,6 +15,7 @@ pub struct PortableSummary {
     pub bindings: usize,
     pub binding_anchors: usize,
     pub links: usize,
+    pub link_revocations: usize,
     pub sealed: usize,
 }
 
@@ -52,6 +53,14 @@ enum Line {
         from_ref: String,
         to_ref: String,
         kind: String,
+        #[serde(default = "unknown_source")]
+        source: String,
+    },
+    LinkRevocations {
+        seq: i64,
+        link: i64,
+        source: String,
+        revoked_at: Option<String>,
     },
     Sealed {
         address: String,
@@ -161,10 +170,11 @@ impl SqliteStore {
             summary.binding_anchors += 1;
         }
 
-        let rows = sqlx::query("SELECT seq, from_ref, to_ref, kind FROM links ORDER BY seq")
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(db_err)?;
+        let rows =
+            sqlx::query("SELECT seq, from_ref, to_ref, kind, source FROM links ORDER BY seq")
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(db_err)?;
         for r in rows {
             write_line(
                 out,
@@ -173,9 +183,28 @@ impl SqliteStore {
                     from_ref: r.get("from_ref"),
                     to_ref: r.get("to_ref"),
                     kind: r.get("kind"),
+                    source: r.get("source"),
                 },
             )?;
             summary.links += 1;
+        }
+
+        let rows =
+            sqlx::query("SELECT seq, link, source, revoked_at FROM link_revocations ORDER BY seq")
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        for r in rows {
+            write_line(
+                out,
+                &Line::LinkRevocations {
+                    seq: r.get("seq"),
+                    link: r.get("link"),
+                    source: r.get("source"),
+                    revoked_at: r.get("revoked_at"),
+                },
+            )?;
+            summary.link_revocations += 1;
         }
 
         let rows = sqlx::query("SELECT address, body FROM sealed ORDER BY address")
@@ -202,6 +231,7 @@ impl SqliteStore {
             ("bindings", "SELECT COUNT(*) FROM bindings"),
             ("binding_anchors", "SELECT COUNT(*) FROM binding_anchors"),
             ("links", "SELECT COUNT(*) FROM links"),
+            ("link_revocations", "SELECT COUNT(*) FROM link_revocations"),
             ("sealed", "SELECT COUNT(*) FROM sealed"),
         ] {
             let n: i64 = sqlx::query_scalar(sql)
@@ -290,19 +320,44 @@ impl SqliteStore {
                     summary.binding_anchors += 1;
                 }
                 Line::Links {
+                    seq,
                     from_ref,
                     to_ref,
                     kind,
-                    ..
+                    source,
                 } => {
-                    sqlx::query("INSERT INTO links (from_ref, to_ref, kind) VALUES (?1, ?2, ?3)")
-                        .bind(&from_ref)
-                        .bind(&to_ref)
-                        .bind(&kind)
-                        .execute(&mut *tx)
-                        .await
-                        .map_err(db_err)?;
+                    let landed: i64 = sqlx::query_scalar(
+                        "INSERT INTO links (from_ref, to_ref, kind, source) \
+                         VALUES (?1, ?2, ?3, ?4) RETURNING seq",
+                    )
+                    .bind(&from_ref)
+                    .bind(&to_ref)
+                    .bind(&kind)
+                    .bind(&source)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+                    expect_seq("links", seq, landed)?;
                     summary.links += 1;
+                }
+                Line::LinkRevocations {
+                    seq,
+                    link,
+                    source,
+                    revoked_at,
+                } => {
+                    let landed: i64 = sqlx::query_scalar(
+                        "INSERT INTO link_revocations (link, source, revoked_at) \
+                         VALUES (?1, ?2, ?3) RETURNING seq",
+                    )
+                    .bind(link)
+                    .bind(&source)
+                    .bind(&revoked_at)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+                    expect_seq("link_revocations", seq, landed)?;
+                    summary.link_revocations += 1;
                 }
                 Line::Sealed { address, body_hex } => {
                     let bytes = from_hex(&body_hex).map_err(|e| {

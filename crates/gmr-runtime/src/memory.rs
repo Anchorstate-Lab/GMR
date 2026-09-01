@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
 use gmr_core::{
-    AnchorKey, Binding, Claim, ContentHash, FactAddress, Link, LinkKind, Ref, Source, Version,
+    AnchorKey, Binding, Claim, ContentHash, FactAddress, LinkKind, Ref, Source, Version,
 };
-use gmr_store::{Asserted, BindingRecord, BindingStore, LinkStore, Revocation, Sealer};
+use gmr_store::{
+    Asserted, BindingRecord, BindingStore, LinkRecord, LinkRevocation, LinkStore, Revocation,
+    Sealer,
+};
 use serde::Serialize;
 
 use crate::error::RuntimeError;
@@ -99,11 +102,21 @@ impl MemoryLens {
         Ok(self.sealer.sealed(addr).await?)
     }
 
-    pub async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), RuntimeError> {
-        Ok(self.links.link(from, to, kind).await?)
+    pub async fn link(
+        &self,
+        from: &Ref,
+        to: &Ref,
+        kind: LinkKind,
+        source: Source,
+    ) -> Result<(), RuntimeError> {
+        Ok(self.links.link(from, to, kind, source).await?)
     }
 
-    pub async fn links_of(&self, reference: &Ref) -> Result<Vec<Link>, RuntimeError> {
+    pub async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, RuntimeError> {
+        Ok(self.links.unlink(revocation).await?)
+    }
+
+    pub async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, RuntimeError> {
         Ok(self.links.links_of(reference).await?)
     }
 
@@ -145,7 +158,13 @@ impl MemoryLens {
         let sources = bound.sources();
 
         Ok(MemoryView {
-            links: self.links.links_of(&reference).await?,
+            links: self
+                .links
+                .links_of(&reference)
+                .await?
+                .into_iter()
+                .map(linked)
+                .collect(),
             grounded: !bound.anchors().is_empty(),
             grounding: self
                 .grounding_of(&reference, bound_version.as_ref(), budget)
@@ -246,6 +265,14 @@ impl MemoryLens {
             memories.push(carried);
         }
         Ok(())
+    }
+}
+
+fn linked(record: LinkRecord) -> crate::read::Linked {
+    crate::read::Linked {
+        to: record.to,
+        kind: record.kind,
+        source: record.source,
     }
 }
 

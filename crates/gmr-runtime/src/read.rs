@@ -7,7 +7,7 @@ use gmr_budget::Budget;
 use gmr_content::ContentErrorCode;
 use gmr_core::{
     Anchor, AnchorKey, AnchorState, Claim, Derivation, Entry, FactAddress, Facts, FailureCode,
-    Faltering, Link, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State,
+    Faltering, LinkKind, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State,
     StatusId, Verifiability, Version,
 };
 use gmr_store::Seen;
@@ -140,13 +140,20 @@ pub struct Grounded {
     pub memories: Vec<MemoryView>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Linked {
+    pub to: Ref,
+    pub kind: LinkKind,
+    pub source: Source,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MemoryView {
     pub reference: Ref,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bound_version: Option<Version>,
     pub grounded: bool,
-    pub links: Vec<Link>,
+    pub links: Vec<Linked>,
     pub bound_at_seq: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline_at: Option<Seq>,

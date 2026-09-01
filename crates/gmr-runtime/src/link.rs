@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use gmr_budget::Budget;
-use gmr_core::{Link, LinkKind, Ref};
+use gmr_core::{LinkKind, Ref, Source};
+use gmr_store::{LinkRecord, LinkRevocation};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -20,11 +21,21 @@ pub struct Reached {
 }
 
 impl Runtime {
-    pub async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), RuntimeError> {
-        self.memory.link(from, to, kind).await
+    pub async fn link(
+        &self,
+        from: &Ref,
+        to: &Ref,
+        kind: LinkKind,
+        source: Source,
+    ) -> Result<(), RuntimeError> {
+        self.memory.link(from, to, kind, source).await
     }
 
-    pub async fn links_of(&self, reference: &Ref) -> Result<Vec<Link>, RuntimeError> {
+    pub async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, RuntimeError> {
+        self.memory.unlink(revocation).await
+    }
+
+    pub async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, RuntimeError> {
         self.memory.links_of(reference).await
     }
 

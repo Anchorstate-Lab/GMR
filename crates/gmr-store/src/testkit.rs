@@ -12,7 +12,7 @@ use chrono::{DateTime, Duration, Utc};
 use crate::bindings::{Asserted, BindingRecord, BindingStore, Revocation};
 use crate::error::StoreError;
 use crate::journal::{Expected, Fence, Journal};
-use crate::links::LinkStore;
+use crate::links::{LinkRecord, LinkRevocation, LinkStore};
 use crate::queue::{Disposition, Queue, Ticket};
 use crate::sealer::Sealer;
 
@@ -83,7 +83,7 @@ struct BindingInner {
     bindings: Vec<BindingRecord>,
     revocations: Vec<Revocation>,
     sealed: HashMap<ContentHash, Vec<u8>>,
-    links: Vec<(Ref, Link)>,
+    links: Vec<(Ref, LinkRecord, bool)>,
 }
 
 #[derive(Default)]
@@ -193,26 +193,54 @@ impl Sealer for MemoryBindings {
 
 #[async_trait]
 impl LinkStore for MemoryBindings {
-    async fn link(&self, from: &Ref, to: &Ref, kind: LinkKind) -> Result<(), StoreError> {
+    async fn link(
+        &self,
+        from: &Ref,
+        to: &Ref,
+        kind: LinkKind,
+        source: gmr_core::Source,
+    ) -> Result<(), StoreError> {
         self.inner.lock().unwrap().links.push((
             from.clone(),
-            Link {
+            LinkRecord {
                 to: to.clone(),
                 kind,
+                source,
             },
+            false,
         ));
         Ok(())
     }
 
-    async fn links_of(&self, reference: &Ref) -> Result<Vec<Link>, StoreError> {
+    async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, StoreError> {
+        let mut held = self.inner.lock().unwrap();
+        let mut revoked = 0u64;
+        for (from, record, dead) in held.links.iter_mut() {
+            if *dead
+                || from != &revocation.from
+                || record.to != revocation.to
+                || record.kind != revocation.kind
+            {
+                continue;
+            }
+            if revocation.asserted_as.is_some_and(|of| of != record.source) {
+                continue;
+            }
+            *dead = true;
+            revoked += 1;
+        }
+        Ok(revoked)
+    }
+
+    async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, StoreError> {
         Ok(self
             .inner
             .lock()
             .unwrap()
             .links
             .iter()
-            .filter(|(from, _)| from == reference)
-            .map(|(_, link)| link.clone())
+            .filter(|(from, _, dead)| from == reference && !dead)
+            .map(|(_, record, _)| record.clone())
             .collect())
     }
 }

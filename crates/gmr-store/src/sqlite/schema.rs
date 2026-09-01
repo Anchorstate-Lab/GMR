@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 12;
+pub const SCHEMA_VERSION: i64 = 13;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -73,9 +73,20 @@ CREATE TABLE IF NOT EXISTS links (
     seq      INTEGER PRIMARY KEY AUTOINCREMENT,
     from_ref TEXT NOT NULL,     -- canonical Ref
     to_ref   TEXT NOT NULL,     -- canonical Ref
-    kind     TEXT NOT NULL
+    kind     TEXT NOT NULL,
+    source   TEXT NOT NULL DEFAULT 'unknown'
 );
 CREATE INDEX IF NOT EXISTS links_by_from ON links(from_ref);
+
+-- Link revocations: each row kills exactly one observed link row, so a
+-- concurrent re-assertion of the same edge lands as a new seq and survives.
+CREATE TABLE IF NOT EXISTS link_revocations (
+    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+    link       INTEGER NOT NULL REFERENCES links(seq),
+    source     TEXT NOT NULL,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS link_revocations_by_link ON link_revocations(link);
 
 -- ── Sealed records: append-only, content addressed ─────────
 
@@ -145,6 +156,10 @@ CREATE TRIGGER IF NOT EXISTS binding_revoked_tags_no_delete BEFORE DELETE ON bin
 CREATE TRIGGER IF NOT EXISTS links_no_update BEFORE UPDATE ON links
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS links_no_delete BEFORE DELETE ON links
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS link_revocations_no_update BEFORE UPDATE ON link_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS link_revocations_no_delete BEFORE DELETE ON link_revocations
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS sealed_no_update BEFORE UPDATE ON sealed
     BEGIN SELECT RAISE(ABORT, 'sealed_immutable'); END;
@@ -274,4 +289,19 @@ CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
 
 pub const V11_TO_V12: &str = r#"
 ALTER TABLE bindings ADD COLUMN saw TEXT;
+"#;
+
+pub const V12_TO_V13: &str = r#"
+ALTER TABLE links ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown';
+CREATE TABLE IF NOT EXISTS link_revocations (
+    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+    link       INTEGER NOT NULL REFERENCES links(seq),
+    source     TEXT NOT NULL,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS link_revocations_by_link ON link_revocations(link);
+CREATE TRIGGER IF NOT EXISTS link_revocations_no_update BEFORE UPDATE ON link_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS link_revocations_no_delete BEFORE DELETE ON link_revocations
+    BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 "#;

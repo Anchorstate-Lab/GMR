@@ -125,6 +125,7 @@ pub(crate) const LADDER: &[(i64, Rung)] = &[
     (9, Rung::Sql(schema::V9_TO_V10)),
     (10, Rung::Chain),
     (11, Rung::Sql(schema::V11_TO_V12)),
+    (12, Rung::Sql(schema::V12_TO_V13)),
 ];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {

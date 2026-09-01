@@ -118,7 +118,30 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
             &Ref::new("git", "memories/one.md"),
             &Ref::new("git", "memories/two.md"),
             LinkKind("contradicts".into()),
+            gmr_core::Source::Adjudicated,
         )
+        .await
+        .unwrap();
+    store
+        .links()
+        .link(
+            &Ref::new("git", "memories/one.md"),
+            &Ref::new("git", "memories/gone.md"),
+            LinkKind("rests-on".into()),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    store
+        .links()
+        .unlink(&gmr_store::LinkRevocation {
+            from: Ref::new("git", "memories/one.md"),
+            to: Ref::new("git", "memories/gone.md"),
+            kind: LinkKind("rests-on".into()),
+            asserted_as: Some(gmr_core::Source::Derived),
+            source: gmr_core::Source::Derived,
+            when: chrono::Utc::now(),
+        })
         .await
         .unwrap();
 
@@ -145,7 +168,12 @@ async fn round_trip_preserves_the_journal_bindings_links_and_sealed_rows() {
     assert_eq!(summary.journal, 3);
     assert_eq!(summary.bindings, 1);
     assert_eq!(summary.binding_anchors, 1);
-    assert_eq!(summary.links, 1);
+    assert_eq!(summary.links, 2);
+    assert_eq!(
+        summary.link_revocations, 1,
+        "a revoked edge travels as its row plus the revocation naming it, so the \
+         restored store answers links_of the same way the original did"
+    );
     assert_eq!(summary.sealed, 2);
 
     let mut second = Vec::new();

@@ -506,6 +506,7 @@ async fn an_unanchored_record_is_carried_along_but_marked() {
             &Ref::new("git", "memories/bound.md"),
             &Ref::new("git", "memories/loose.md"),
             LinkKind("elaborates".into()),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -1776,6 +1777,7 @@ async fn linked(w: &World, from: &str, to: &str, kind: &str) {
             &Ref::new("git", format!("memories/{from}")),
             &Ref::new("git", format!("memories/{to}")),
             gmr_core::LinkKind(kind.to_owned()),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -2064,6 +2066,7 @@ async fn a_record_bound_elsewhere_is_not_delivered_here_just_for_being_linked() 
             &Ref::new("git", "memories/bound.md"),
             &Ref::new("git", "memories/other.md"),
             LinkKind("cites".into()),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
@@ -2103,6 +2106,7 @@ async fn carrying_linked_records_is_asked_for_and_they_come_back_marked() {
             &Ref::new("git", "memories/bound.md"),
             &Ref::new("git", "memories/other.md"),
             LinkKind("cites".into()),
+            gmr_core::Source::Adjudicated,
         )
         .await
         .unwrap();
