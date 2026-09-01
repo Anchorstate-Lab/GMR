@@ -51,7 +51,7 @@ test("five lines get a sentence's grounding", async () => {
     max_staleness_ms: 0,
   });
 
-  assert.equal(standing.reference.provider, "git");
+  assert.equal(standing.claim.provider, "git");
   assert.equal(standing.on.length, 1, "the sentence is about one anchor");
   assert.equal(standing.on[0].anchored, "on");
   assert.equal(standing.on[0].key, "prod-replicas");
@@ -110,5 +110,5 @@ test("an instruction nobody here understands is refused, not dropped", async () 
 test("an address that names no store is refused before anything is asked", async () => {
   const root = aRepository();
   const gmr = await opened(root);
-  await assert.rejects(() => gmr.ground(["memories/replicas.md"]), /not an address/);
+  await assert.rejects(() => gmr.ground(["memories/replicas.md"]), /names nothing/);
 });
