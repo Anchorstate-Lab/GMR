@@ -562,7 +562,9 @@ async fn unlinking_names_only_the_rows_it_observed<L: gmr_store::LinkStore>(l: &
     );
 }
 
-async fn unlinking_derived_rows_leaves_an_agents_identical_edge_standing<L: gmr_store::LinkStore>(
+async fn unlinking_derived_rows_leaves_an_agents_identical_edge_standing<
+    L: gmr_store::LinkStore,
+>(
     l: &L,
 ) {
     let a = Ref::new("git", "memories/a.md");

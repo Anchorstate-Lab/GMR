@@ -147,6 +147,8 @@ struct Frontmatter {
     shape: Option<String>,
     #[serde(default)]
     watch: Option<Watch>,
+    #[serde(default)]
+    links: Option<std::collections::BTreeMap<String, OneOrMany>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -156,7 +158,7 @@ pub enum Watch {
     When(String),
 }
 
-const FRONTMATTER_WORDS: [&str; 4] = ["about", "anchors", "shape", "watch"];
+const FRONTMATTER_WORDS: [&str; 5] = ["about", "anchors", "links", "shape", "watch"];
 
 fn foreign_words(said: &Value) -> Vec<String> {
     let Some(map) = said.as_object() else {
@@ -188,6 +190,27 @@ pub struct Note {
     pub reference: Ref,
     pub wants: Vec<Want>,
     pub watch: Option<Watch>,
+    pub links: Vec<(String, Ref)>,
+}
+
+pub fn linked_target(text: &str) -> Result<Ref, String> {
+    if let Some((provider, rest)) = text.split_once(':') {
+        if rest.is_empty() || gmr::ProviderId::try_new(provider).is_err() {
+            return Err(format!(
+                "`{text}` looks like an address but `{provider}:` is not a provider prefix \
+                 this note format can carry"
+            ));
+        }
+        return Ok(Ref::new(provider, rest));
+    }
+    if text.is_empty() || text.contains('/') || text.ends_with(".md") {
+        return Err(format!(
+            "`{text}` is neither a bare note name nor a `provider:id` address. A bare name \
+             resolves to git:memories/<name>.md; anything with a path in it must say its \
+             provider in full"
+        ));
+    }
+    Ok(Ref::new("git", format!("memories/{text}.md")))
 }
 
 fn from_about(about: &str, catalog: &Catalog, shape: Option<&str>) -> Result<AnchorDecl, CliError> {
@@ -388,10 +411,36 @@ fn claims_of(
     }
     faults.extend(tombstones(rel, &text));
 
-    let note = (!wants.is_empty()).then(|| Note {
+    let mut links = Vec::new();
+    for (kind, targets) in fm.links.unwrap_or_default() {
+        if kind.is_empty() {
+            faults.push(at(
+                "unlinkable",
+                "a link kind is an empty string; an edge whose kind says nothing cannot be \
+                 meant"
+                    .to_owned(),
+                Weight::Breaks,
+            ));
+            continue;
+        }
+        for target in targets.into_vec() {
+            match linked_target(&target) {
+                Ok(to) => links.push((kind.clone(), to)),
+                Err(reason) => faults.push(Fault {
+                    key: Some(target),
+                    ..at("unlinkable", reason, Weight::Breaks)
+                }),
+            }
+        }
+    }
+    links.sort();
+    links.dedup();
+
+    let note = (!wants.is_empty() || !links.is_empty()).then(|| Note {
         reference: record.reference.clone(),
         wants,
         watch: fm.watch,
+        links,
     });
     (note, faults)
 }
@@ -501,6 +550,53 @@ obs = { schema = "gmr.probe-coord.v1", at = ["file", "name"], facts = ["body", "
              exactly what the lint says is missing. Left standing it makes `sync` exit 1 on a \
              repository whose script probe and note are both correct"
         );
+    }
+
+    #[test]
+    fn a_note_declares_typed_edges_and_bare_names_resolve_to_git_notes() {
+        let (d, r) = world(&[(
+            "memories/a.md",
+            "---\nabout: x\nlinks:\n  rests-on: [positioning, \"mem0:9f8e\"]\n  contradicts: [b]\n---\nbody",
+        )]);
+        let scanned = scan(d.path(), &r).unwrap();
+        let note = &scanned.notes[0];
+        assert_eq!(
+            note.links,
+            vec![
+                ("contradicts".to_owned(), Ref::new("git", "memories/b.md")),
+                (
+                    "rests-on".to_owned(),
+                    Ref::new("git", "memories/positioning.md")
+                ),
+                ("rests-on".to_owned(), Ref::new("mem0", "9f8e")),
+            ],
+            "a bare name is the wikilink habit made runtime-real, and a full address \
+             reaches any registered store — an edge is not a git-only capability"
+        );
+    }
+
+    #[test]
+    fn an_edge_target_that_is_neither_name_nor_address_is_refused_with_the_grammar() {
+        let (d, r) = world(&[(
+            "memories/a.md",
+            "---\nabout: x\nlinks:\n  rests-on: [\"memories/b.md\"]\n---\nbody",
+        )]);
+        let scanned = scan(d.path(), &r).unwrap();
+        assert!(
+            scanned.faults.iter().any(|f| f.code == "unlinkable"),
+            "`memories/b.md` as a bare name would resolve to memories/memories/b.md.md \
+             and record an edge to a record that never existed; refusing is the only \
+             answer that does not write a wrong address into an append-only store"
+        );
+    }
+
+    #[test]
+    fn a_note_carrying_only_edges_is_still_a_note() {
+        let (d, r) = world(&[("memories/a.md", "---\nlinks:\n  rests-on: [b]\n---\nbody")]);
+        let scanned = scan(d.path(), &r).unwrap();
+        assert_eq!(scanned.notes.len(), 1);
+        assert!(scanned.notes[0].wants.is_empty());
+        assert_eq!(scanned.notes[0].links.len(), 1);
     }
 
     const STORES: [&str; 3] = ["git", "mem0", "claude-code"];

@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use gmr_core::{
-    AnchorKey, Binding, Claim, ContentHash, Entry, Link, LinkKind, Ref, RunSettings, Seq,
+    AnchorKey, Binding, Claim, ContentHash, Entry, LinkKind, Ref, RunSettings, Seq,
     content_hash_of_bytes,
 };
 

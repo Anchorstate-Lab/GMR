@@ -80,7 +80,9 @@ impl LinkStore for SqliteBindings {
                     serde_json::from_str(&r.get::<String, _>("to_ref")).map_err(decode_err)?;
                 let raw: String = r.get("source");
                 let source = Source::parse(&raw).ok_or_else(|| {
-                    StoreError::corrupt(format!("a link carries the source `{raw}`, which this build does not know"))
+                    StoreError::corrupt(format!(
+                        "a link carries the source `{raw}`, which this build does not know"
+                    ))
                 })?;
                 Ok(LinkRecord {
                     to,

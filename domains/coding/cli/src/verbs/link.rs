@@ -14,8 +14,13 @@ pub async fn run(
         from_ref.external_id.to_string(),
         to_ref.external_id.to_string(),
     );
-    rt.link(&from_ref, &to_ref, LinkKind(kind.clone()), Source::Adjudicated)
-        .await?;
+    rt.link(
+        &from_ref,
+        &to_ref,
+        LinkKind(kind.clone()),
+        Source::Adjudicated,
+    )
+    .await?;
 
     if json {
         println!(
