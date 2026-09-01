@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use crate::error::CliError;
 use crate::probes::Catalog;
 
-const WHOLE: [&str; 2] = coding_extract::WHOLE;
+const WHOLE: [&str; 2] = gmr_coding_pack::WHOLE;
 const PART: &[&str] = &["name", "heading"];
 const PREFERENCE: &[&str] = &["contract", "fingerprint", "roster"];
 

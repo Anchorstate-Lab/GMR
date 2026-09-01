@@ -4,7 +4,7 @@
 # 跨平台、跨机器相同，所以两份日志比得起来。
 
 [package]
-name = "coding-extract"
+name = "gmr-coding-pack"
 description = "coding 域的抽取器：AST · 地址 · 名字 · 散文。"
 version.workspace = true
 edition.workspace = true

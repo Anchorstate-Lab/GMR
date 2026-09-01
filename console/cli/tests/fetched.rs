@@ -1,5 +1,5 @@
-use coding_anchor::probes::Catalog;
-use coding_anchor::verbs::sync;
+use gmr_cli::probes::Catalog;
+use gmr_cli::verbs::sync;
 
 fn a_repository() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -28,17 +28,17 @@ async fn a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_m
         .settings(std::sync::Arc::new(store.settings()))
         .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(
-            gmr_transport::http::Http::new(coding_anchor::probes::Declared::at(root).unwrap())
+            gmr_transport::http::Http::new(gmr_cli::probes::Declared::at(root).unwrap())
                 .unwrap(),
         ))
         .build();
-    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let stores = gmr_cli::stores::assembled(root).unwrap();
 
-    let _ = coding_anchor::verbs::anchor::run(
+    let _ = gmr_cli::verbs::anchor::run(
         &rt,
         root,
         &stores,
-        coding_anchor::verbs::anchor::Asked {
+        gmr_cli::verbs::anchor::Asked {
             coordinate: Some(
                 "http://127.0.0.1:1/api/v1/crates/reqwest#$.crate.max_stable_version".to_owned(),
             ),
@@ -113,7 +113,7 @@ async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
     .unwrap();
 
     let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
-    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let stores = gmr_cli::stores::assembled(root).unwrap();
     let mut builder = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
@@ -124,18 +124,18 @@ async fn a_config_value_is_watched_as_a_value_and_not_as_a_hash_of_its_file() {
         .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
             root,
-            coding_anchor::probes::Declared::at(root).unwrap(),
+            gmr_cli::probes::Declared::at(root).unwrap(),
         )));
     for built in &stores.built {
         builder = builder.provider(built.content());
     }
     let rt = builder.build();
 
-    coding_anchor::verbs::anchor::run(
+    gmr_cli::verbs::anchor::run(
         &rt,
         root,
         &stores,
-        coding_anchor::verbs::anchor::Asked {
+        gmr_cli::verbs::anchor::Asked {
             coordinate: Some("file://deploy.yaml#$.service.replicas".to_owned()),
             named: None,
             memory: Some("Three, because two cannot survive a rolling restart.".to_owned()),
@@ -228,7 +228,7 @@ obs = { schema = "gmr.probe.v1", facts = ["v"] }
         "each table routes to its own kind"
     );
 
-    let listed = coding_anchor::verbs::probes::rows(root).unwrap();
+    let listed = gmr_cli::verbs::probes::rows(root).unwrap();
     let by_name: std::collections::BTreeMap<&str, &str> = listed
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
@@ -258,7 +258,7 @@ async fn a_coordinate_that_carries_a_credential_writes_nothing_at_all() {
     let root = dir.path();
 
     let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
-    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let stores = gmr_cli::stores::assembled(root).unwrap();
     let rt = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
@@ -269,11 +269,11 @@ async fn a_coordinate_that_carries_a_credential_writes_nothing_at_all() {
         .sightings(std::sync::Arc::new(store.sightings()))
         .build();
 
-    let err = coding_anchor::verbs::anchor::run(
+    let err = gmr_cli::verbs::anchor::run(
         &rt,
         root,
         &stores,
-        coding_anchor::verbs::anchor::Asked {
+        gmr_cli::verbs::anchor::Asked {
             coordinate: Some("https://svc:hunter2@api.internal/v1/keys#$.rotated_at".to_owned()),
             named: Some("key-rotation".to_owned()),
             memory: None,
@@ -327,7 +327,7 @@ position = { env = "prod" }
     .unwrap();
 
     let store = gmr::sqlite::open(root.join("memory.db")).await.unwrap();
-    let stores = coding_anchor::stores::assembled(root).unwrap();
+    let stores = gmr_cli::stores::assembled(root).unwrap();
     let mut builder = gmr::Runtime::builder()
         .journal(std::sync::Arc::new(store.journal()))
         .bindings(std::sync::Arc::new(store.bindings()))
@@ -338,7 +338,7 @@ position = { env = "prod" }
         .sightings(std::sync::Arc::new(store.sightings()))
         .transport(std::sync::Arc::new(gmr_transport::file::Files::new(
             root,
-            coding_anchor::probes::Declared::at(root).unwrap(),
+            gmr_cli::probes::Declared::at(root).unwrap(),
         )));
     for built in &stores.built {
         builder = builder.provider(built.content());

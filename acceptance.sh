@@ -58,7 +58,7 @@ step() { steps=$((steps + 1)); echo; echo "── $1"; }
 # ── Shipping side: one binary. The extractor chain is inside it, and nothing
 #    that belongs to this repository travels with the package ────────────────
 step "build the tarball (release side; needs cargo)"
-cargo build --quiet --release -p coding-anchor
+cargo build --quiet --release -p gmr-cli
 mkdir -p "$bundle/bin"
 cp "$root/target/release/gmr" "$bundle/bin/gmr"
 

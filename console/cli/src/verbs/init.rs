@@ -97,7 +97,7 @@ pub fn run(root: &Path, json: bool, global: bool) -> Result<i32, CliError> {
     }
     let skill_written = write_new(&skill_target, crate::skill::SKILL_MD)?;
 
-    let mut installed: Vec<String> = coding_extract::vocabularies()
+    let mut installed: Vec<String> = gmr_coding_pack::vocabularies()
         .map(|v| v.name.to_owned())
         .collect();
     if let Some(from) = bundled() {

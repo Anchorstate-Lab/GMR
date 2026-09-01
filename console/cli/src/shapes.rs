@@ -775,7 +775,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(shot.file);
-        let reg = coding_extract::registry_uncached();
+        let reg = gmr_coding_pack::registry_uncached();
         let probe = &reg
             .get(&gmr::ProbeName::new(shot.probe))
             .unwrap_or_else(|| panic!("`{}` is not linked in", shot.probe))

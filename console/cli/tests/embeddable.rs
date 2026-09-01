@@ -1,4 +1,4 @@
-use coding_anchor::{delivery::Subscriptions, probes::Catalog, shapes, stores};
+use gmr_cli::{delivery::Subscriptions, probes::Catalog, shapes, stores};
 
 fn a_repository() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();

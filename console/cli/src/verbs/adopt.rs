@@ -49,7 +49,7 @@ fn rel_of(root: &Path, path: &Path) -> String {
 
 fn from_comments(root: &Path, rel: &str, src: &str, min_words: usize) -> Vec<Candidate> {
     let _ = root;
-    coding_extract::comments::adoptable(rel, src)
+    gmr_coding_pack::comments::adoptable(rel, src)
         .into_iter()
         .filter(|a| a.text.split_whitespace().count() >= min_words)
         .map(|a| Candidate {

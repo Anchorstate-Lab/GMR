@@ -39,7 +39,7 @@ NO_CONCRETE_IMPL = {
     "gmr-store": {"sqlx", "rusqlite", "libsqlite3", "postgres", "tokio-postgres"},
 }
 
-DIR_LAYERS = {"crates": 0, "batteries": 1, "domains": 2}
+DIR_LAYERS = {"crates": 0, "batteries": 1, "packs": 2, "console": 2}
 
 CLEAN_ZONES = [
     "crates/gmr-core",
@@ -53,11 +53,11 @@ CLEAN_ZONES = [
     "batteries/atlas",
     "batteries/provider",
     "batteries/transport",
-    "domains/coding/extract",
-    "domains/coding/cli",
-    "domains/node",
+    "packs/coding/extract",
+    "console/cli",
+    "console/node",
 ]
-EXEMPT_FILES = ["domains/coding/cli/src/cli.rs"]
+EXEMPT_FILES = ["console/cli/src/cli.rs"]
 
 
 def run(cmd, **kwargs):
@@ -649,7 +649,7 @@ def check_criteria_inside_the_closure():
     say what the probe reports, and the CLI uses them to route. `identity` says
     what the probe decides on. The two look alike and belong on opposite sides.
     """
-    extractors = ROOT / "domains" / "coding" / "extract" / "src"
+    extractors = ROOT / "packs" / "coding" / "extract" / "src"
     build = (extractors.parent / "build.rs").read_text()
     closure = re.findall(r'^\s*\(\s*"(\w+)",', build, re.MULTILINE)
     errors = []

@@ -364,8 +364,8 @@ impl Catalog {
             .collect()
     }
 
-    fn builtin(name: &str) -> Option<&'static coding_extract::Vocabulary> {
-        coding_extract::vocabularies().find(|v| v.name == name)
+    fn builtin(name: &str) -> Option<&'static gmr_coding_pack::Vocabulary> {
+        gmr_coding_pack::vocabularies().find(|v| v.name == name)
     }
 
     pub fn kind_of(&self, name: &str) -> Kind {
@@ -393,7 +393,7 @@ impl Catalog {
             return Ok(Obs {
                 schema: v.schema.to_owned(),
                 at: v.at.iter().map(|s| (*s).to_owned()).collect(),
-                identity: coding_extract::recipe(name)
+                identity: gmr_coding_pack::recipe(name)
                     .map(|r| r.identity.iter().map(|s| (*s).to_owned()).collect())
                     .unwrap_or_default(),
                 facts: v.facts.iter().map(|s| (*s).to_owned()).collect(),
@@ -416,7 +416,7 @@ impl Catalog {
     }
 
     pub fn for_extension(&self, ext: &str) -> Option<String> {
-        coding_extract::declares(ext)
+        gmr_coding_pack::declares(ext)
             .map(str::to_owned)
             .or_else(|| {
                 self.scripts
@@ -425,7 +425,7 @@ impl Catalog {
                     .map(|(n, _)| n.clone())
             })
             .or_else(|| self.recipes.for_extension(ext).map(str::to_owned))
-            .or_else(|| coding_extract::catchall().map(str::to_owned))
+            .or_else(|| gmr_coding_pack::catchall().map(str::to_owned))
     }
 
     pub fn scripts(&self) -> impl Iterator<Item = (&str, &ScriptDecl)> {

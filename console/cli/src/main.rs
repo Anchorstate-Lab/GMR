@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use coding_anchor::cli::Cli;
+use gmr_cli::cli::Cli;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -15,7 +15,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let outcome = runtime.block_on(coding_anchor::run(cli));
+    let outcome = runtime.block_on(gmr_cli::run(cli));
     runtime.shutdown_background();
     match outcome {
         Ok(code) => ExitCode::from(code as u8),

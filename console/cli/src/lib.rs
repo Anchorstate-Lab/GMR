@@ -107,7 +107,7 @@ pub async fn served(
 
     let catalog = probes::Catalog::load(&root)?;
     let declared = Arc::new(probes::Declared::at(&root)?);
-    let linked = coding_extract::registry(&root, &state).await;
+    let linked = gmr_coding_pack::registry(&root, &state).await;
     if let Some(fault) = &linked.cache_fault {
         eprintln!("gmr: {fault}");
     }

@@ -101,7 +101,7 @@ If you are using a fork or mirror, replace `Anchorstate-Lab/GMR` with your repos
 ### Build from source
 
 ```sh
-cargo install --path domains/coding/cli --locked --root ~/.local
+cargo install --path console/cli --locked --root ~/.local
 ```
 
 This installs the assembled `gmr` CLI built from the current workspace.

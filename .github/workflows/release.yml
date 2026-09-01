@@ -52,7 +52,7 @@ jobs:
             exit 0
           fi
           if git diff --name-only "$BEFORE" "${{ github.sha }}" \
-              | grep -E '^(crates/|batteries/|domains/|dist/|Cargo\.toml$|Cargo\.lock$)'; then
+              | grep -E '^(crates/|batteries/|console/|packs/|dist/|Cargo\.toml$|Cargo\.lock$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"

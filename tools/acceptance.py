@@ -105,7 +105,7 @@ def report(outcomes, faults, seconds):
 
 def rebuild():
     r = subprocess.run(
-        ["cargo", "build", "--release", "-p", "coding-anchor"],
+        ["cargo", "build", "--release", "-p", "gmr-cli"],
         cwd=ROOT,
         capture_output=True,
         text=True,

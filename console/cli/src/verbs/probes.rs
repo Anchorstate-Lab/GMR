@@ -73,8 +73,8 @@ fn built(root: &Path) -> Result<Vec<Row>, CliError> {
     let artifacts = Artifacts::new(store_dir(root));
 
     let mut rows = Vec::new();
-    let builtin = coding_extract::registry_uncached();
-    for v in coding_extract::vocabularies() {
+    let builtin = gmr_coding_pack::registry_uncached();
+    for v in gmr_coding_pack::vocabularies() {
         rows.push(Row {
             probe: v.name.to_owned(),
             kind: "builtin",
@@ -85,7 +85,7 @@ fn built(root: &Path) -> Result<Vec<Row>, CliError> {
             obs: ObsRow::of(
                 v.schema,
                 &owned(v.at),
-                &coding_extract::recipe(v.name)
+                &gmr_coding_pack::recipe(v.name)
                     .map(|r| owned(r.identity))
                     .unwrap_or_default(),
                 &owned(v.facts),
@@ -199,10 +199,10 @@ fn owned(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| (*s).to_owned()).collect()
 }
 
-fn reads_json(reads: coding_extract::Reads) -> serde_json::Value {
+fn reads_json(reads: gmr_coding_pack::Reads) -> serde_json::Value {
     match reads {
-        coding_extract::Reads::Extensions(exts) => serde_json::json!(exts),
-        coding_extract::Reads::Anything => serde_json::json!("*"),
+        gmr_coding_pack::Reads::Extensions(exts) => serde_json::json!(exts),
+        gmr_coding_pack::Reads::Anything => serde_json::json!("*"),
     }
 }
 

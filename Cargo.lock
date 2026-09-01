@@ -247,48 +247,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "coding-anchor"
-version = "0.6.0"
-dependencies = [
- "async-trait",
- "base64",
- "chrono",
- "clap",
- "coding-extract",
- "gmr",
- "gmr-atlas",
- "gmr-provider",
- "gmr-survey",
- "gmr-transport",
- "pulldown-cmark",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "tempfile",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "coding-extract"
-version = "0.6.0"
-dependencies = [
- "gmr-budget",
- "gmr-core",
- "gmr-probe",
- "gmr-survey",
- "gmr-transport",
- "serde_json",
- "sha2",
- "tempfile",
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,6 +616,48 @@ dependencies = [
 [[package]]
 name = "gmr-budget"
 version = "0.6.0"
+
+[[package]]
+name = "gmr-cli"
+version = "0.6.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "gmr",
+ "gmr-atlas",
+ "gmr-coding-pack",
+ "gmr-provider",
+ "gmr-survey",
+ "gmr-transport",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tempfile",
+ "tokio",
+ "toml",
+]
+
+[[package]]
+name = "gmr-coding-pack"
+version = "0.6.0"
+dependencies = [
+ "gmr-budget",
+ "gmr-core",
+ "gmr-probe",
+ "gmr-survey",
+ "gmr-transport",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
 
 [[package]]
 name = "gmr-content"
