@@ -25,6 +25,7 @@ pub mod rebase;
 pub mod requeue;
 pub mod revise;
 pub mod said;
+pub mod sample;
 pub mod standing;
 pub mod status;
 pub mod sync;

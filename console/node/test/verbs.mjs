@@ -112,3 +112,33 @@ test("an address that names no store is refused before anything is asked", async
   const gmr = await opened(root);
   await assert.rejects(() => gmr.ground(["memories/replicas.md"]), /names nothing/);
 });
+
+test("read hands back the envelope, and a carried edge says who asserted it", async () => {
+  const root = aRepository();
+  const gmr = await opened(root);
+  await gmr.open({
+    key: "prod-replicas",
+    probe: { kind: "file", name: "replicas" },
+    initial: { position: { env: "prod" } },
+    transitions: [
+      { when: "true", to: "{ position: state.position, v: obs.value }" },
+    ],
+  });
+  await gmr.bind("git:memories/replicas.md", ["prod-replicas"], "derived");
+  await gmr.link("git:memories/replicas.md", "git:memories/why.md", "rests-on", "adjudicated");
+
+  const view = await gmr.read("prod-replicas");
+  assert.equal(view.key, "prod-replicas");
+  assert.equal(view.memories.length, 1, "carry is opt-in; only the bound record answers");
+  const held = view.memories[0];
+  assert.equal(held.grounded, true);
+  assert.equal(held.links.length, 1);
+  assert.equal(held.links[0].kind, "rests-on");
+  assert.equal(held.links[0].source, "adjudicated");
+  assert.ok(held.warrant, "a bound record carries how it stands to this anchor");
+
+  const dropped = await gmr.unlink("git:memories/replicas.md", "git:memories/why.md", "rests-on", "adjudicated");
+  assert.equal(dropped, 1);
+  const after = await gmr.read("prod-replicas");
+  assert.equal(after.memories[0].links.length, 0, "a revoked edge stops being served");
+});

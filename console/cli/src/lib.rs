@@ -195,7 +195,11 @@ pub async fn served(
             )
             .await
         }
-        Command::Standing { id, retire } => verbs::standing::run(&rt, id, retire, json).await,
+        Command::Ground { id, retire } => verbs::standing::run(&rt, id, retire, json).await,
+        Command::Sample {
+            key,
+            fresher_than_secs,
+        } => verbs::sample::run(&rt, key, fresher_than_secs, json).await,
         Command::Atlas { out } => verbs::atlas::run(&rt, &root, names, out, json).await,
         Command::Publish { .. } => unreachable!("publish was handled above"),
         Command::Probes(_) => unreachable!("probes was handled above"),
@@ -263,7 +267,7 @@ pub async fn served(
             verbs::link::run(&rt, from, to, kind, detach, json).await
         }
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
-        Command::Edges { since, status } => {
+        Command::Since { since, status } => {
             verbs::edges::run(&rt, names, since, status, json).await
         }
         Command::Health { key } => verbs::health::run(&rt, key, json).await,

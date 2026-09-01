@@ -201,6 +201,47 @@ export interface Reading {
   knowledge: Knowledge;
 }
 
+/** One edge as `read` delivers it: who it points at, what kind, who said so. */
+export interface Linked {
+  to: Ref;
+  kind: string;
+  source: Source;
+}
+
+/** An anchor's current state, as `read` frames it. */
+export interface AnchorView {
+  key: string;
+  anchor: unknown;
+  state: unknown;
+  status: string | null;
+  sighting: "found" | "absent";
+  closed: boolean;
+  faltering?: unknown;
+  entered_at: Timestamp | null;
+  last_sighting: Timestamp | null;
+  sightings: number;
+  derivation: Derivation | null;
+  fact_address?: FactAddress;
+  facts?: unknown;
+}
+
+/** One bound record, delivered with its warrant and grounding. */
+export interface MemoryView {
+  reference: Ref;
+  bound_version?: Version;
+  grounded: boolean;
+  links: Linked[];
+  bound_at_seq: Seq | null;
+  baseline_at?: Seq;
+  sources: Source[];
+  asserted_at?: Timestamp;
+  warrant?: Warrant;
+  grounding: Grounding;
+}
+
+/** The whole answer to `read`: the anchor flattened, plus its memories. */
+export type Grounded = AnchorView & { memories: MemoryView[] };
+
 export type Edge =
   | { edge: "transitioned"; anchor: string; from: unknown; to: unknown;
       status: string | null; seq: Seq; at: Timestamp }
@@ -368,6 +409,13 @@ export class Gmr {
    * the same look at the world rather than two.
    */
   sample(anchor: string, how?: Instructions): Promise<Reading>;
+
+  /**
+   * The full envelope for one anchor: its state plus every bound record with
+   * warrant and grounding. `how.carry` opts into linked records, each marked
+   * `grounded: false` — bound elsewhere is not about this anchor.
+   */
+  read(anchor: string, how?: Instructions): Promise<Grounded>;
   /** What changed after this point in the journal. */
   since(cursor: Seq, status?: string): Promise<Edges>;
   /** This sentence is about these anchors. */
@@ -379,6 +427,15 @@ export class Gmr {
   open(request: OpenRequest): Promise<Opened>;
   /** Retire one. Closure is irreversible. */
   close(key: string, why: string): Promise<void>;
+
+  /** Assert a typed edge between two stored records, with its provenance. */
+  link(from: Address, to: Address, kind: string, source: Source): Promise<void>;
+
+  /**
+   * Revoke every live assertion of this edge, whoever asserted it; returns
+   * how many rows the revocation named. The rows stay — reads stop seeing them.
+   */
+  unlink(from: Address, to: Address, kind: string, source: Source): Promise<number>;
 }
 
 export function open(options: Opening): Promise<Gmr>;

@@ -139,8 +139,10 @@ pub enum Command {
     },
 
     /// Do the conclusions recorded here still stand? Exit 1 if any does not.
-    #[command(display_order = 7)]
-    Standing {
+    /// `ground` is the contract's name for this question; `standing` remains
+    /// as the older spelling of the same verb.
+    #[command(display_order = 7, visible_alias = "standing")]
+    Ground {
         /// One conclusion, by the id `said` printed. Default: all of them.
         id: Option<String>,
         /// Stop asking about this one. What it said stays in the table — an
@@ -179,6 +181,18 @@ pub enum Command {
     /// Ask every anchor whether the world still matches. Exit 1 if any moved.
     #[command(hide = true)]
     Observe { key: Option<String> },
+
+    /// One reading of an anchor, served fresh, with the address an answer
+    /// built from it must cite. The cheap fold-only read: no memories are
+    /// fetched.
+    #[command(hide = true)]
+    Sample {
+        /// Anchor key, or `path:line` for a position.
+        key: String,
+        /// Look again first if the reading on record is older than this.
+        #[arg(long)]
+        fresher_than_secs: Option<u64>,
+    },
 
     /// Each anchor's current state. A key names an anchor; `path:line` names
     /// a position, resolving to the anchor whose symbol starts at or above
@@ -325,8 +339,9 @@ pub enum Command {
     },
 
     /// Transitions, terminals and stalls since a point in the journal.
-    #[command(hide = true)]
-    Edges {
+    /// `since` is the contract's name; `edges` remains as the older spelling.
+    #[command(hide = true, visible_alias = "edges")]
+    Since {
         #[arg(long, default_value = "0")]
         since: u64,
         #[arg(long)]

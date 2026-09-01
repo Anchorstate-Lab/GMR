@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 gmr = { path = "../../crates/gmr", features = ["sqlite"] }
+chrono = { workspace = true }
 gmr-provider = { path = "../../batteries/provider", features = ["git", "claude-code", "mem0"] }
 gmr-transport = { path = "../../batteries/transport", features = ["shell", "script", "http", "file", "sql", "postgres"] }
 napi = { version = "3", default-features = false, features = ["napi4", "async", "serde-json"] }

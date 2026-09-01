@@ -185,6 +185,58 @@ impl Gmr {
     }
 
     #[napi]
+    pub async fn read(&self, anchor: String, how: Option<Value>) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let key = AnchorKey::new(anchor);
+        let how = asked(how)?;
+        spawned(async move { answered(rt.grounded_within(&key, &how).await) }).await
+    }
+
+    #[napi]
+    pub async fn link(&self, from: String, to: String, kind: String, source: String) -> Result<()> {
+        let rt = Arc::clone(&self.rt);
+        let from = stored(from)?;
+        let to = stored(to)?;
+        let kind = gmr::LinkKind(kind);
+        let source = attested(&source)?;
+        spawned(async move {
+            rt.link(&from, &to, kind, source)
+                .await
+                .map_err(|e| failed(e.to_string()))
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn unlink(
+        &self,
+        from: String,
+        to: String,
+        kind: String,
+        source: String,
+    ) -> Result<i64> {
+        let rt = Arc::clone(&self.rt);
+        let from = stored(from)?;
+        let to = stored(to)?;
+        let kind = gmr::LinkKind(kind);
+        let source = attested(&source)?;
+        spawned(async move {
+            rt.unlink(&gmr::LinkRevocation {
+                from,
+                to,
+                kind,
+                asserted_as: None,
+                source,
+                when: chrono::Utc::now(),
+            })
+            .await
+            .map(|n| n as i64)
+            .map_err(|e| failed(e.to_string()))
+        })
+        .await
+    }
+
+    #[napi]
     pub async fn open(&self, request: Value) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let request = said(request)?;
@@ -307,6 +359,17 @@ fn looked(address: String) -> Result<FactAddress> {
             "`saw` is the address of a reading, as `sample` handed it back: {e}"
         ))
     })
+}
+
+fn stored(address: String) -> Result<gmr::Ref> {
+    match named(address)? {
+        Claim::Stored(reference) => Ok(reference),
+        Claim::Said { id, .. } => Err(failed(format!(
+            "`said:{id}` is an utterance, and a link runs between stored records; an \
+             utterance has no store-side identity for the far end of an edge to name",
+            id = id.as_str()
+        ))),
+    }
 }
 
 fn attested(source: &str) -> Result<Source> {

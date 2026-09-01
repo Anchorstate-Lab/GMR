@@ -79,7 +79,7 @@ gmr read <key> --json                     the anchor's state, and `fact_address`
 gmr said "<what you concluded>" \         one conclusion, held to that reading
   --on <key> --saw <fact_address> \
   --depends 'all(anchors, not state.v.sig)'
-gmr standing                              do the recorded conclusions still stand?
+gmr ground                                do the recorded conclusions still stand?
                                           exit 1 if any does not
 ```
 
@@ -97,9 +97,9 @@ count(anchors, state.v.roll)
 
 Inside the quantifier, `state` is the anchor being asked about, so anything that works over one anchor works over the set. Say the narrowest thing that is true: `Holding` compares the whole state, so any edit to a watched coordinate reports moved, while a `depends` naming only what you relied on lets a finding about a signature survive an edit to the body. An invariant nothing in the world can reach — `true`, `1 == 1`, `all(anchors, true)` — is reported as `vacuous` and counted with the broken ones, not with the quiet ones.
 
-`gmr standing` prints, per conclusion, what each anchor's ground did, whether the reading you cited was one the anchor actually took, and what your invariant says now. It exits 1 when a conclusion's ground no longer settles it (`depends` broken, vacuous or unevaluable; or nothing stated and the ground moved) or when one cites a reading no anchor took. Conclusions that cited nothing are counted and reported but do not fail the run.
+`gmr ground` (older spelling: `standing`) prints, per conclusion, what each anchor's ground did, whether the reading you cited was one the anchor actually took, and what your invariant says now. It exits 1 when a conclusion's ground no longer settles it (`depends` broken, vacuous or unevaluable; or nothing stated and the ground moved) or when one cites a reading no anchor took. Conclusions that cited nothing are counted and reported but do not fail the run.
 
-`gmr standing <id> --retire` stops asking about one. What it said stays in the table — an append-only record of what was believed — and nothing reads it again.
+`gmr ground <id> --retire` stops asking about one. What it said stays in the table — an append-only record of what was believed — and nothing reads it again.
 
 The two loops do not merge. A memory that drifted goes to a person; a conclusion that lost its ground is simply no longer supported, and you re-conclude rather than re-read.
 

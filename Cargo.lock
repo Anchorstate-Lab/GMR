@@ -697,6 +697,7 @@ dependencies = [
 name = "gmr-node"
 version = "0.6.0"
 dependencies = [
+ "chrono",
  "gmr",
  "gmr-provider",
  "gmr-transport",

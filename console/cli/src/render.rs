@@ -207,3 +207,25 @@ fn unseen(why: &Blind) -> &'static str {
         Blind::Unevaluable { .. } => "the last look could not be judged — the rules' to fix",
     }
 }
+
+pub fn reading(r: &gmr::Reading) -> String {
+    let mut out = format!("{}", r.key);
+    if let Some(addr) = &r.fact_address {
+        out.push_str(&format!("\n  cite   {addr}"));
+    }
+    match &r.facts {
+        Some(facts) => {
+            let text = facts.as_value().to_string();
+            let short: String = text.chars().take(160).collect();
+            let mark = if text.chars().count() > 160 {
+                "…"
+            } else {
+                ""
+            };
+            out.push_str(&format!("\n  facts  {short}{mark}"));
+        }
+        None => out.push_str("\n  facts  (none on record)"),
+    }
+    out.push('\n');
+    out
+}

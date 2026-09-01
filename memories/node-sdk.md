@@ -8,13 +8,17 @@ about:
 watch: [sig, logic]
 ---
 
-# Seven verbs, one recipe entrance, and nothing that decides anything
+# The console verb table, one recipe entrance, and nothing that decides anything
 
-`Runtime` has sixty-odd `pub async fn`. The binding exposes seven of them, plus
-one way to say what a probe is:
+`Runtime` has sixty-odd `pub async fn`. The binding exposes the console table —
+the verbs every transport of the console serves, under the contract's names —
+plus one way to say what a probe is:
 
 ```
 sample(anchor, how)    read an anchor, and get the address of that reading
+read(anchor, how)      the full envelope: state plus every bound record with
+                       warrant and grounding; how.carry opts into linked
+                       records, each marked ungrounded here
 ground(claims, how)    do these sentences still stand. An address asks about
                        what the store holds; an object asks about a turn nobody
                        stored, and writes nothing
@@ -23,11 +27,18 @@ bind(claim, anchors, source, version, saw, asserts)
                        this sentence is about these anchors, and this is what
                        it was looking at when it said so
 revoke(claim, source)  it is not any more
+link / unlink          assert a typed edge between stored records, with its
+                       provenance; revoke every live assertion of one
 open(request)          open an anchor
 close(key, why)        retire one, irreversibly
 ```
 
-`sample` is the seventh, and it is the one that makes the other six worth
+What stays out is as deliberate as what is in: `check`, `accept`, `sync`,
+`adopt`, `doctor` are the coding pack's delivery and criteria loop — watch
+subscriptions, note scanning, a repository's declaration channel — and a
+transport that shipped them would drag pack policy into the console.
+
+`sample` is the one that makes the rest worth
 anything to a product that talks. Grounding answers whether the fact still
 stands; it cannot answer whether the sentence was built from that fact at all,
 and a caller that reads the world itself and binds afterwards is two readings
