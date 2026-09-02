@@ -86,7 +86,10 @@ class Verbs(unittest.TestCase):
         ])
 
         dropped = g.unlink(
-            "git:memories/replicas.md", "git:memories/why.md", "rests-on", "adjudicated"
+            from_="git:memories/replicas.md",
+            to="git:memories/why.md",
+            kind="rests-on",
+            source="adjudicated",
         )
         self.assertEqual(dropped, 1)
         after = g.read("prod-replicas")

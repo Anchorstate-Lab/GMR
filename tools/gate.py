@@ -487,6 +487,80 @@ def check_typed_surface_names_the_contract():
     return out
 
 
+PYTHON_DOOR = ROOT / "console" / "python" / "src" / "lib.rs"
+PYTHON_STUB = ROOT / "console" / "python" / "gmr.pyi"
+
+
+def check_python_stub_spells_the_door():
+    """The stub's callable surface is the door's, name for name and arg for arg.
+
+    gmr.pyi is a second hand-written declaration of the python door, and the
+    contract check above only reads the version string out of it -- which is
+    how the stub once said `from_` while the compiled method said `from`, a
+    keyword call per the stub raising TypeError with every test passing,
+    because the suite only ever called positionally. Signatures drift exactly
+    like comments do; this makes the drift fail the build instead.
+    """
+    if not PYTHON_DOOR.exists() or not PYTHON_STUB.exists():
+        return [
+            "the python door or its stub is gone -- gmr.pyi is the callable "
+            "surface's only declaration"
+        ]
+
+    def spelled(block, drop):
+        out = {}
+        for attrs, name, params in re.findall(
+            r"((?:#\[pyo3[^\]]*\]\s*)*)(?:pub )?fn (\w+)\s*\(([^)]*)\)", block, re.S
+        ):
+            renamed = re.search(r'name\s*=\s*"(\w+)"', attrs)
+            out[renamed.group(1) if renamed else name] = [
+                a for a in re.findall(r"(\w+)\s*:", params) if a not in drop
+            ]
+        return out
+
+    def declared(block, drop):
+        return {
+            name: [
+                a for a in re.findall(r"(\w+)\s*:", params) if a not in drop
+            ]
+            for name, params in re.findall(r"def (\w+)\(([^)]*)\)", block)
+        }
+
+    door = PYTHON_DOOR.read_text()
+    stub = PYTHON_STUB.read_text()
+    methods_src = door.split("#[pymethods]", 1)[1].split("#[pymodule]", 1)[0]
+    door_functions = spelled(
+        "\n".join(re.findall(r"#\[pyfunction\][^{]*", door)), {"py"}
+    )
+    door_methods = spelled(methods_src, {"py"})
+    stub_class = stub.split("class Gmr", 1)
+    stub_functions = declared(stub_class[0], {"self"})
+    stub_methods = declared(stub_class[1] if len(stub_class) > 1 else "", {"self"})
+
+    errors = []
+    for what, ours, theirs in (
+        ("module function", door_functions, stub_functions),
+        ("method", door_methods, stub_methods),
+    ):
+        for name in sorted(set(ours) | set(theirs)):
+            if name not in theirs:
+                errors.append(
+                    f"the door serves {what} `{name}` and gmr.pyi does not declare it"
+                )
+            elif name not in ours:
+                errors.append(
+                    f"gmr.pyi declares {what} `{name}` and the door does not serve it"
+                )
+            elif ours[name] != theirs[name]:
+                errors.append(
+                    f"{what} `{name}` takes ({', '.join(ours[name])}) at the door and "
+                    f"({', '.join(theirs[name])}) in gmr.pyi -- a keyword caller "
+                    "trusting the stub is refused at runtime"
+                )
+    return errors
+
+
+
 TRAIT_ROSTERS = {"gmr-store": "crates/gmr-store", "gmr-content": "crates/gmr-content"}
 
 
@@ -726,6 +800,7 @@ CHECKS = [
     ("every trait a rostered crate defines is named in CLAUDE.md", check_trait_roster),
     ("the contract's shape is the one its version claims", check_contract_shape_is_earned),
 ("the published types name the contract they describe", check_typed_surface_names_the_contract),
+    ("the python stub spells the door's own callable surface", check_python_stub_spells_the_door),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),

@@ -180,12 +180,12 @@ impl Gmr {
     fn link(
         &self,
         py: Python<'_>,
-        from: String,
+        from_: String,
         to: String,
         kind: String,
         source: String,
     ) -> PyResult<()> {
-        let from = ok(core::stored(from))?;
+        let from = ok(core::stored(from_))?;
         let to = ok(core::stored(to))?;
         let kind = gmr_api::LinkKind(kind);
         let source = ok(core::attested(&source))?;
@@ -200,12 +200,12 @@ impl Gmr {
     fn unlink(
         &self,
         py: Python<'_>,
-        from: String,
+        from_: String,
         to: String,
         kind: String,
         source: String,
     ) -> PyResult<u64> {
-        let from = ok(core::stored(from))?;
+        let from = ok(core::stored(from_))?;
         let to = ok(core::stored(to))?;
         let kind = gmr_api::LinkKind(kind);
         let source = ok(core::attested(&source))?;
