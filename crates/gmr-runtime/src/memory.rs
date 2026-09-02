@@ -150,6 +150,7 @@ impl MemoryLens {
         &self,
         held: Held,
         budget: &Budget,
+        lean: bool,
     ) -> Result<MemoryView, RuntimeError> {
         let Held { reference, bound } = held;
         let baseline = bound
@@ -171,7 +172,7 @@ impl MemoryLens {
                 .collect(),
             grounded: !bound.anchors().is_empty(),
             grounding: self
-                .grounding_of(&reference, bound_version.as_ref(), budget)
+                .grounding_of(&reference, bound_version.as_ref(), budget, lean)
                 .await,
             reference,
             bound_version,
@@ -188,6 +189,7 @@ impl MemoryLens {
         reference: &Ref,
         bound_version: Option<&Version>,
         budget: &Budget,
+        lean: bool,
     ) -> Grounding {
         let Some(provider) = self.provider_for(reference) else {
             return Grounding::NoProvider {
@@ -211,21 +213,23 @@ impl MemoryLens {
             Ok(None) => return Grounding::Gone,
             Ok(Some(fetched)) => fetched,
         };
+        let kept = |bytes: Vec<u8>| (!lean).then_some(bytes);
         let Some(bound_version) = bound_version else {
             return Grounding::Unverified {
                 version: fetched.version,
-                content: fetched.bytes,
+                content: kept(fetched.bytes),
             };
         };
         if &fetched.version == bound_version {
             return Grounding::Current {
                 version: fetched.version,
-                content: fetched.bytes,
+                content: kept(fetched.bytes),
             };
         }
-        let before = match provider.history() {
-            None => Before::NoHistory,
-            Some(history) => {
+        let before = match (lean, provider.history()) {
+            (true, _) => Before::NotAsked,
+            (false, None) => Before::NoHistory,
+            (false, Some(history)) => {
                 match history
                     .fetch_at(&reference.external_id, bound_version, budget)
                     .await
@@ -241,7 +245,7 @@ impl MemoryLens {
         };
         Grounding::Rewritten {
             version: fetched.version,
-            content: fetched.bytes,
+            content: kept(fetched.bytes),
             before,
         }
     }
@@ -251,6 +255,7 @@ impl MemoryLens {
         memories: &mut Vec<MemoryView>,
         total: &Budget,
         call: std::time::Duration,
+        lean: bool,
     ) -> Result<(), RuntimeError> {
         let linked: Vec<Ref> = memories
             .iter()
@@ -264,7 +269,7 @@ impl MemoryLens {
             let Some(held) = self.binding_of(&Claim::Stored(reference)).await?.held() else {
                 continue;
             };
-            let mut carried = self.fetch_memory(held, &total.narrowed(call)).await?;
+            let mut carried = self.fetch_memory(held, &total.narrowed(call), lean).await?;
             carried.grounded = false;
             memories.push(carried);
         }

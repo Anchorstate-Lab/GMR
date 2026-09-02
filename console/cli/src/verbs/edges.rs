@@ -70,6 +70,7 @@ pub async fn run(
                         let tail = match before {
                             Before::Retrieved { .. } => "",
                             Before::NotRetained => "  the bound version was not kept",
+                            Before::NotAsked => "  history was not asked for",
                             Before::NoHistory => "  this provider keeps no history",
                             Before::Unreachable { .. } => {
                                 "  the bound version could not be reached"

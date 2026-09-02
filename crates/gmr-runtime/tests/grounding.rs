@@ -316,7 +316,10 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
         },
         "judging whether it still says the same thing requires both before and after"
     );
-    assert_eq!(content, b"Changed claim: the roster is only a shadow.");
+    assert_eq!(
+        content.as_deref(),
+        Some(b"Changed claim: the roster is only a shadow.".as_slice())
+    );
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
@@ -2135,4 +2138,58 @@ async fn carrying_linked_records_is_asked_for_and_they_come_back_marked() {
          guarantee"
     );
     assert!(by_id("memories/other.md").warrant.is_none());
+}
+
+#[tokio::test]
+async fn a_lean_read_serves_the_warrant_and_leaves_the_body_home() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas, because eight cannot survive a rolling restart.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+
+    let how = gmr_runtime::Instructions {
+        lean: true,
+        ..Default::default()
+    };
+    let view = w
+        .runtime
+        .grounded_within(&AnchorKey::new("a"), &how)
+        .await
+        .unwrap();
+    let m = &view.memories[0];
+    assert!(
+        m.content().is_none(),
+        "lean hands over no body: the reference and version are the delivery"
+    );
+    let Grounding::Current { version, .. } = &m.grounding else {
+        panic!("the record is unchanged, so lean still reports Current: {:?}", m.grounding);
+    };
+    assert!(!version.as_str().is_empty(), "the version still travels");
+    assert!(m.warrant.is_some(), "the warrant is the answer, and it still arrives");
+
+    let full = w
+        .runtime
+        .grounded(&AnchorKey::new("a"))
+        .await
+        .unwrap();
+    assert!(
+        full.memories[0].content().is_some(),
+        "without lean the body arrives exactly as before"
+    );
+
+    w.memory("a.md", "Ten now.");
+    let moved = w
+        .runtime
+        .grounded_within(&AnchorKey::new("a"), &how)
+        .await
+        .unwrap();
+    let Grounding::Rewritten { content, before, .. } = &moved.memories[0].grounding else {
+        panic!("the record moved under its binding");
+    };
+    assert!(content.is_none(), "lean carries neither the new body");
+    assert_eq!(
+        before,
+        &Before::NotAsked,
+        "nor a second one from history -- lean asks history nothing"
+    );
 }

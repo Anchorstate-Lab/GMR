@@ -12,6 +12,7 @@ fn an_instruction_states_its_span_in_milliseconds_and_says_so_in_the_name() {
             budget: None,
             reach: None,
             carry: false,
+            lean: false,
         },
         "a Duration's own serde shape is {{secs, nanos}}, which no caller outside Rust \
          would write and none should have to read. The unit is in the name because a bare \

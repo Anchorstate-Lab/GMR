@@ -137,6 +137,7 @@ fn was(before: &Before) -> &'static str {
     match before {
         Before::Retrieved { .. } => "",
         Before::NotRetained => " the bound version was not kept",
+        Before::NotAsked => " history was not asked for on this lean read",
         Before::NoHistory => " this provider keeps no history, so there is nothing to diff against",
         Before::Unreachable { .. } => " and the bound version could not be reached",
     }

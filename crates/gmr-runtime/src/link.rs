@@ -82,7 +82,7 @@ pub(crate) async fn reaching(
             path.push(link.kind.clone());
             let bound = memory.binding_of(&link.to.clone().into()).await?;
             let footing = memory
-                .grounding_of(&link.to, bound.bound_version(), &total.narrowed(call))
+                .grounding_of(&link.to, bound.bound_version(), &total.narrowed(call), false)
                 .await
                 .footing();
             queue.push_back((link.to.clone(), path.clone()));

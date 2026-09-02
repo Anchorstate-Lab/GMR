@@ -39,6 +39,8 @@ pub struct Instructions {
     pub reach: Option<usize>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub carry: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub lean: bool,
 }
 
 mod millis {
@@ -170,18 +172,18 @@ pub struct MemoryView {
 pub enum Grounding {
     Current {
         version: Version,
-        #[serde(serialize_with = "as_text")]
-        content: Vec<u8>,
+        #[serde(serialize_with = "as_text_held", skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<u8>>,
     },
     Unverified {
         version: Version,
-        #[serde(serialize_with = "as_text")]
-        content: Vec<u8>,
+        #[serde(serialize_with = "as_text_held", skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<u8>>,
     },
     Rewritten {
         version: Version,
-        #[serde(serialize_with = "as_text")]
-        content: Vec<u8>,
+        #[serde(serialize_with = "as_text_held", skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<u8>>,
         before: Before,
     },
     Gone,
@@ -530,6 +532,7 @@ pub enum Before {
     },
     NotRetained,
     NoHistory,
+    NotAsked,
     Unreachable {
         code: ContentErrorCode,
         why: String,
@@ -540,7 +543,7 @@ impl MemoryView {
     pub fn content(&self) -> Option<&[u8]> {
         match &self.grounding {
             Grounding::Current { content, .. } | Grounding::Rewritten { content, .. } => {
-                Some(content)
+                content.as_deref()
             }
             _ => None,
         }
@@ -559,6 +562,13 @@ fn as_text<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> 
     match std::str::from_utf8(bytes) {
         Ok(text) => s.serialize_some(text),
         Err(_) => s.serialize_none(),
+    }
+}
+
+fn as_text_held<S: serde::Serializer>(bytes: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
+    match bytes {
+        Some(held) => as_text(held, s),
+        None => s.serialize_none(),
     }
 }
 
@@ -611,6 +621,7 @@ impl Runtime {
             &reaching(policy, how),
             policy.content_call(),
             how.carry,
+            how.lean,
         )
         .await
     }
@@ -679,7 +690,7 @@ impl Runtime {
 
         let (stood, records) = try_join(
             self.stood_all(&keys, how, &probing),
-            self.records_of(asked, &rests, &reading, policy.content_call()),
+            self.records_of(asked, &rests, &reading, policy.content_call(), how.lean),
         )
         .await?;
 
@@ -767,6 +778,7 @@ impl Runtime {
         rests: &[Rests<'_>],
         total: &Budget,
         call: Duration,
+        lean: bool,
     ) -> Result<Vec<Option<Grounding>>, RuntimeError> {
         let mut out = Vec::with_capacity(asked.len());
         for (one, held) in asked.iter().zip(rests) {
@@ -774,7 +786,7 @@ impl Runtime {
                 None => None,
                 Some(reference) => Some(
                     self.memory
-                        .grounding_of(reference, held.bound_version(), &total.narrowed(call))
+                        .grounding_of(reference, held.bound_version(), &total.narrowed(call), lean)
                         .await,
                 ),
             });
@@ -815,6 +827,7 @@ impl Runtime {
                     &total,
                     call,
                     how.carry,
+                    how.lean,
                 )
                 .await?,
             );
@@ -1148,18 +1161,21 @@ async fn ground(
     total: &Budget,
     call: Duration,
     carry: bool,
+    lean: bool,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
         let Some(stored) = asserted.held() else {
             continue;
         };
-        let mut held = memory.fetch_memory(stored, &total.narrowed(call)).await?;
+        let mut held = memory
+            .fetch_memory(stored, &total.narrowed(call), lean)
+            .await?;
         held.warrant = Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
         memories.push(held);
     }
     if carry {
-        memory.carry_linked(&mut memories, total, call).await?;
+        memory.carry_linked(&mut memories, total, call, lean).await?;
     }
     Ok(Grounded { view, memories })
 }

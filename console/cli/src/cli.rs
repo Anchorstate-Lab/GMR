@@ -204,6 +204,11 @@ pub enum Command {
         /// Unset, the stored reading is served whatever its age.
         #[arg(long)]
         fresher_than_secs: Option<u64>,
+        /// Serve warrants and versions without record bodies. The envelope stays
+        /// small however large the bound memories are; fetch a body by address
+        /// when a warrant makes it worth reading.
+        #[arg(long)]
+        lean: bool,
     },
 
     /// Accept what an anchor now shows: re-pin its baseline, or take the
