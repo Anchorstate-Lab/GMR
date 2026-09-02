@@ -19,7 +19,9 @@ fn ok<T>(outcome: Result<T, core::Fault>) -> PyResult<T> {
 fn taken(py: Python<'_>, value: Option<Bound<'_, PyAny>>) -> PyResult<Option<Value>> {
     let _ = py;
     value
-        .map(|v| pythonize::depythonize(&v).map_err(|e| failed(core::Fault::refused(e.to_string()))))
+        .map(|v| {
+            pythonize::depythonize(&v).map_err(|e| failed(core::Fault::refused(e.to_string())))
+        })
         .transpose()
 }
 
@@ -57,7 +59,11 @@ fn open(py: Python<'_>, options: Bound<'_, PyAny>) -> PyResult<Gmr> {
     let loop_ = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|e| failed(core::Fault::assembly(format!("cannot start the runtime loop: {e}"))))?;
+        .map_err(|e| {
+            failed(core::Fault::assembly(format!(
+                "cannot start the runtime loop: {e}"
+            )))
+        })?;
     let rt = py.allow_threads(|| loop_.block_on(core::opened(asked)));
     Ok(Gmr {
         rt: Arc::new(rt.map_err(failed)?),
@@ -126,7 +132,12 @@ impl Gmr {
         let status = status.map(StatusId::new);
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::served(&rt, "since", rt.changed_since(cursor, status.as_ref()).await).await)
+            ok(core::served(
+                &rt,
+                "since",
+                rt.changed_since(cursor, status.as_ref()).await,
+            )
+            .await)
         })?;
         handed(py, out)
     }
@@ -147,7 +158,12 @@ impl Gmr {
         let (binding, bound_version, saw, source) = ok(core::bound(claim, anchors, &source, how))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::served(&rt, "bind", rt.bind(binding, bound_version, saw, source).await).await)
+            ok(core::served(
+                &rt,
+                "bind",
+                rt.bind(binding, bound_version, saw, source).await,
+            )
+            .await)
         })?;
         handed(py, out)
     }
@@ -210,33 +226,35 @@ impl Gmr {
 
     fn anchors(&self, py: Python<'_>) -> PyResult<PyObject> {
         let rt = Arc::clone(&self.rt);
-        let out = self.run(py, async move { ok(core::served(&rt, "anchors", rt.sample_all().await).await) })?;
+        let out = self.run(py, async move {
+            ok(core::served(&rt, "anchors", rt.sample_all().await).await)
+        })?;
         handed(py, out)
     }
 
     fn claims(&self, py: Python<'_>) -> PyResult<PyObject> {
         let rt = Arc::clone(&self.rt);
-        let out = self.run(py, async move { ok(core::served(&rt, "claims", rt.claims().await).await) })?;
+        let out = self.run(py, async move {
+            ok(core::served(&rt, "claims", rt.claims().await).await)
+        })?;
         handed(py, out)
     }
 
     fn cobound(&self, py: Python<'_>, claim: String) -> PyResult<PyObject> {
         let claim = ok(core::named(claim))?;
         let rt = Arc::clone(&self.rt);
-        let out = self.run(
-            py,
-            async move { ok(core::served(&rt, "cobound", rt.cobound(&claim).await).await) },
-        )?;
+        let out = self.run(py, async move {
+            ok(core::served(&rt, "cobound", rt.cobound(&claim).await).await)
+        })?;
         handed(py, out)
     }
 
     fn links(&self, py: Python<'_>, record: String) -> PyResult<PyObject> {
         let record = ok(core::stored(record))?;
         let rt = Arc::clone(&self.rt);
-        let out = self.run(
-            py,
-            async move { ok(core::served(&rt, "links", rt.links(&record).await).await) },
-        )?;
+        let out = self.run(py, async move {
+            ok(core::served(&rt, "links", rt.links(&record).await).await)
+        })?;
         handed(py, out)
     }
 
@@ -263,10 +281,9 @@ impl Gmr {
             taken(py, Some(request))?.expect("an argument was passed"),
         ))?;
         let rt = Arc::clone(&self.rt);
-        let out = self.run(
-            py,
-            async move { ok(core::served(&rt, "open", rt.open(request).await).await) },
-        )?;
+        let out = self.run(py, async move {
+            ok(core::served(&rt, "open", rt.open(request).await).await)
+        })?;
         handed(py, out)
     }
 

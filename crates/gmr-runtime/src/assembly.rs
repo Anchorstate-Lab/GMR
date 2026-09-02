@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use gmr_store::{Journal, Ledger, LinkStore, Queue, Sealer, Settings, Sightings, Usage};
 use gmr_store::BindingStore;
+use gmr_store::{Journal, Ledger, LinkStore, Queue, Sealer, Settings, Sightings, Usage};
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
@@ -64,9 +64,7 @@ impl Runtime {
         Ok(usage.usage_of(claim).await?)
     }
 
-    pub async fn all_usage(
-        &self,
-    ) -> Result<Vec<(gmr_core::Claim, gmr_store::Used)>, RuntimeError> {
+    pub async fn all_usage(&self) -> Result<Vec<(gmr_core::Claim, gmr_store::Used)>, RuntimeError> {
         let Some(usage) = &self.usage else {
             return Ok(Vec::new());
         };

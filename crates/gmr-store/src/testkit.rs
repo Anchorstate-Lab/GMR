@@ -170,7 +170,9 @@ impl crate::usage::Usage for MemoryQueue {
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), StoreError> {
         let mut held = self.usage.lock().unwrap();
-        let entry = held.entry(claim.to_string()).or_insert((claim.clone(), crate::Used::default()));
+        let entry = held
+            .entry(claim.to_string())
+            .or_insert((claim.clone(), crate::Used::default()));
         entry.1.count += 1;
         entry.1.last_at = Some(at);
         Ok(())

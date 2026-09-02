@@ -1,12 +1,12 @@
 pub mod bindings;
 pub mod journal;
+pub mod ledger;
 pub mod links;
 pub mod portable;
 pub mod queue;
 pub mod schema;
 pub mod settings;
 pub mod sightings;
-pub mod ledger;
 pub mod usage;
 
 use std::path::Path;

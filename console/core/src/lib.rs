@@ -114,8 +114,9 @@ pub async fn opened(asked: Opening) -> Result<Runtime, Fault> {
         None => root.join(".anchor").join("state").join("memory.db"),
     };
     if let Some(parent) = db.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| Fault::assembly(format!("cannot make room for the store at {parent:?}: {e}")))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            Fault::assembly(format!("cannot make room for the store at {parent:?}: {e}"))
+        })?;
     }
 
     let store = gmr::sqlite::open(db.clone())
@@ -166,7 +167,9 @@ pub fn said<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Fault> {
     serde_json::from_value(value).map_err(|e| Fault::refused(e.to_string()))
 }
 
-pub fn answered<T: serde::Serialize>(outcome: Result<T, gmr::RuntimeError>) -> Result<Value, Fault> {
+pub fn answered<T: serde::Serialize>(
+    outcome: Result<T, gmr::RuntimeError>,
+) -> Result<Value, Fault> {
     let held = outcome.map_err(fault)?;
     serde_json::to_value(held).map_err(|e| Fault::internal(e.to_string()))
 }
