@@ -1,8 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gmr::{AnchorKey, Asked, Claim, FactAddress, Instructions, Policy, ProbeName, Runtime, Source};
+use chrono::{DateTime, Utc};
+use gmr::{
+    AnchorKey, Asked, Binding, Claim, FactAddress, Instructions, LinkKind, LinkRevocation, Policy,
+    ProbeName, Runtime, Source, Version,
+};
 use gmr_transport::recipes::Recipes;
 use serde::Deserialize;
 use serde_json::Value;
@@ -202,6 +206,46 @@ pub fn stored(address: String) -> Result<gmr::Ref, Fault> {
             id = id.as_str()
         )),
     }
+}
+
+pub fn bound(
+    claim: String,
+    anchors: Vec<String>,
+    source: &str,
+    how: Asserting,
+) -> Result<(Binding, Option<Version>, BTreeSet<FactAddress>, Source), Fault> {
+    let claim = asserting(named(claim)?, how.asserts)?;
+    let anchors = anchors.into_iter().map(AnchorKey::new).collect();
+    let mut binding = Binding::on(claim, anchors);
+    if let Some(condition) = how.depends {
+        invariant(&condition)?;
+        binding = binding.depending(condition);
+    }
+    let source = attested(source)?;
+    let bound_version = how.bound_version.map(Version::new);
+    let saw = how
+        .saw
+        .into_iter()
+        .map(looked)
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    Ok((binding, bound_version, saw, source))
+}
+
+pub fn revoking(
+    from: String,
+    to: String,
+    kind: String,
+    source: &str,
+    when: DateTime<Utc>,
+) -> Result<LinkRevocation, Fault> {
+    Ok(LinkRevocation {
+        from: stored(from)?,
+        to: stored(to)?,
+        kind: LinkKind(kind),
+        asserted_as: None,
+        source: attested(source)?,
+        when,
+    })
 }
 
 pub fn attested(source: &str) -> Result<Source, Fault> {

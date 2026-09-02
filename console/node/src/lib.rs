@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gmr::{AnchorKey, Binding, Runtime, StatusId, Version};
+use gmr::{AnchorKey, Runtime, StatusId};
 use gmr_console as core;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -85,20 +85,7 @@ impl Gmr {
             Some(stated) => ok(core::said(stated))?,
             None => core::Asserting::default(),
         };
-        let claim = ok(core::asserting(ok(core::named(claim))?, how.asserts))?;
-        let anchors = anchors.into_iter().map(AnchorKey::new).collect();
-        let mut binding = Binding::on(claim, anchors);
-        if let Some(source) = how.depends {
-            ok(core::invariant(&source))?;
-            binding = binding.depending(source);
-        }
-        let source = ok(core::attested(&source))?;
-        let bound_version = how.bound_version.map(Version::new);
-        let saw = how
-            .saw
-            .into_iter()
-            .map(|s| ok(core::looked(s)))
-            .collect::<Result<_>>()?;
+        let (binding, bound_version, saw, source) = ok(core::bound(claim, anchors, &source, how))?;
         spawned(async move {
             ok(core::answered(
                 rt.bind(binding, bound_version, saw, source).await,
@@ -139,22 +126,12 @@ impl Gmr {
         source: String,
     ) -> Result<i64> {
         let rt = Arc::clone(&self.rt);
-        let from = ok(core::stored(from))?;
-        let to = ok(core::stored(to))?;
-        let kind = gmr::LinkKind(kind);
-        let source = ok(core::attested(&source))?;
+        let revocation = ok(core::revoking(from, to, kind, &source, chrono::Utc::now()))?;
         spawned(async move {
-            rt.unlink(&gmr::LinkRevocation {
-                from,
-                to,
-                kind,
-                asserted_as: None,
-                source,
-                when: chrono::Utc::now(),
-            })
-            .await
-            .map(|n| n as i64)
-            .map_err(|e| failed(e.to_string()))
+            rt.unlink(&revocation)
+                .await
+                .map(|n| n as i64)
+                .map_err(|e| failed(e.to_string()))
         })
         .await
     }

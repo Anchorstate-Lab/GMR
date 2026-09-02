@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gmr_api::{AnchorKey, Binding, Runtime, StatusId, Version};
+use gmr_api::{AnchorKey, Runtime, StatusId};
 use gmr_console as core;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -144,20 +144,7 @@ impl Gmr {
             Some(stated) => ok(core::said(stated))?,
             None => core::Asserting::default(),
         };
-        let claim = ok(core::asserting(ok(core::named(claim))?, how.asserts))?;
-        let anchors = anchors.into_iter().map(AnchorKey::new).collect();
-        let mut binding = Binding::on(claim, anchors);
-        if let Some(source_expr) = how.depends {
-            ok(core::invariant(&source_expr))?;
-            binding = binding.depending(source_expr);
-        }
-        let source = ok(core::attested(&source))?;
-        let bound_version = how.bound_version.map(Version::new);
-        let saw = how
-            .saw
-            .into_iter()
-            .map(|s| ok(core::looked(s)))
-            .collect::<PyResult<_>>()?;
+        let (binding, bound_version, saw, source) = ok(core::bound(claim, anchors, &source, how))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
             ok(core::answered(
@@ -205,22 +192,12 @@ impl Gmr {
         kind: String,
         source: String,
     ) -> PyResult<u64> {
-        let from = ok(core::stored(from_))?;
-        let to = ok(core::stored(to))?;
-        let kind = gmr_api::LinkKind(kind);
-        let source = ok(core::attested(&source))?;
+        let revocation = ok(core::revoking(from_, to, kind, &source, chrono::Utc::now()))?;
         let rt = Arc::clone(&self.rt);
         self.run(py, async move {
-            rt.unlink(&gmr_api::LinkRevocation {
-                from,
-                to,
-                kind,
-                asserted_as: None,
-                source,
-                when: chrono::Utc::now(),
-            })
-            .await
-            .map_err(|e| failed(e.to_string()))
+            rt.unlink(&revocation)
+                .await
+                .map_err(|e| failed(e.to_string()))
         })
     }
 
