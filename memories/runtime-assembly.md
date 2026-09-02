@@ -17,7 +17,11 @@ watch: [sig, logic]
 
 `Runtime` is deliberately not one struct with every store injected into it;
 it is a facade over `AnchorLog`, `Observer`, `MemoryLens`, and `Scheduler`,
-each holding only the stores relevant to what it does. A verb module takes
+each holding only the stores relevant to what it does. The two refusable
+capabilities — `Usage` and `Ledger` — sit beside the four as `Option`s on the
+facade, reachable only through `Runtime`'s own methods (`used`, `spent`), and
+`None` means the store declined, not that something is missing: internal verb
+functions still take the services they need and cannot reach either one. A verb module takes
 whichever of these four it needs as a parameter, rather than a handle to
 the whole `Runtime` — that way adding a new verb never accidentally gives
 it the ability to touch, say, the queue when all it needed was the

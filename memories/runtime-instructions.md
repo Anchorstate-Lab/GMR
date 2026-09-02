@@ -20,7 +20,13 @@ max_staleness   re-probe, or serve what is on record        changes what we do
 budget          how long this call may spend reaching out   changes what we do
 reach           how many link hops to follow, if any        changes what we do
 carry           whether an anchor read brings linked records changes what we do
+lean            whether record bodies travel in the envelope changes what we do
 ```
+
+`lean` passes the same test: it says whether to ship bodies, not what any body
+means. The warrant and version still arrive; a body worth reading is fetched by
+address afterwards, which keeps the envelope a few hundred tokens however large
+the bound memories are.
 
 `reach` passes the same test the other two do. It says how far to walk, not what
 to conclude about anything found out there — [[runtime-reaching]] reports the

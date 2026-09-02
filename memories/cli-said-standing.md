@@ -16,7 +16,11 @@ an agent concludes something for the task in front of it — ran through this
 repository dozens of times a day and left nothing behind. Nobody could ask which
 of last week's findings rested on the function that just changed.
 
-`said` records one. `standing` asks whether they still hold.
+`said` records one. `standing` asks whether they still hold. `condense` is the
+loop's exit: when a conclusion earns permanence, it becomes a stored record
+bound where the utterance stood — `saw` and `depends` carried over, the origin
+readable off the new binding, the utterance revoked in the same motion. Before
+it, every promotion to a real store broke the lineage by hand.
 
 ```
 gmr read <key> --json          → fact_address, per anchor

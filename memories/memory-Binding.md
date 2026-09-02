@@ -15,6 +15,12 @@ the same anchors any number of times is one and the same fact — while "which t
 it was bound, which version was seen" is ordered and accumulates. Mix them and
 binding stops being idempotent.
 
+`origin` is the one field that is neither aboutness nor occasion: it names the
+utterance this relation condensed from, when it grew out of one. Ancestry of
+the relation itself is part of the relation — every re-assertion of the
+condensed claim carries the same origin, so it is idempotent the way `claim`
+and `anchors` are, which is the test that put it here and not on `Asserted`.
+
 That rule is what decided where `saw` went. It is the fact address the asserter
 was in front of, and two assertions of the same sentence made a week apart were
 in front of different ones — so it is a property of the occasion and it lives on
