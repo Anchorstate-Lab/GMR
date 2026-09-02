@@ -9,7 +9,13 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let claims: Vec<Claim> = match &id {
-        Some(named) => vec![Claim::said(named.trim_start_matches("said:"))],
+        Some(named) if named.contains(':') => vec![Claim::parse(named).ok_or_else(|| {
+            CliError(format!(
+                "`{named}` names nothing -- a stored record is `<provider>:<id>`, a \
+                 conclusion is `said:<id>`"
+            ))
+        })?],
+        Some(named) => vec![Claim::said(named.as_str())],
         None => rt
             .claims()
             .await?

@@ -618,6 +618,15 @@ impl Runtime {
             .0)
     }
 
+    pub async fn sample_all(&self) -> Result<Vec<Reading>, RuntimeError> {
+        Ok(self
+            .read_all()
+            .await?
+            .into_iter()
+            .map(Reading::from)
+            .collect())
+    }
+
     pub async fn read_all(&self) -> Result<Vec<AnchorView>, RuntimeError> {
         let seen = self.scheduler.all_seen().await?;
         let mut out = Vec::new();

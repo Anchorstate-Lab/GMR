@@ -137,6 +137,25 @@ impl Gmr {
     }
 
     #[napi]
+    pub async fn anchors(&self) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        spawned(async move { ok(core::answered(rt.sample_all().await)) }).await
+    }
+
+    #[napi]
+    pub async fn claims(&self) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        spawned(async move { ok(core::answered(rt.claims().await)) }).await
+    }
+
+    #[napi]
+    pub async fn cobound(&self, claim: String) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let claim = ok(core::named(claim))?;
+        spawned(async move { ok(core::answered(rt.cobound(&claim).await)) }).await
+    }
+
+    #[napi]
     pub async fn links(&self, record: String) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let record = ok(core::stored(record))?;

@@ -201,6 +201,28 @@ impl Gmr {
         })
     }
 
+    fn anchors(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move { ok(core::answered(rt.sample_all().await)) })?;
+        handed(py, out)
+    }
+
+    fn claims(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move { ok(core::answered(rt.claims().await)) })?;
+        handed(py, out)
+    }
+
+    fn cobound(&self, py: Python<'_>, claim: String) -> PyResult<PyObject> {
+        let claim = ok(core::named(claim))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(
+            py,
+            async move { ok(core::answered(rt.cobound(&claim).await)) },
+        )?;
+        handed(py, out)
+    }
+
     fn links(&self, py: Python<'_>, record: String) -> PyResult<PyObject> {
         let record = ok(core::stored(record))?;
         let rt = Arc::clone(&self.rt);
