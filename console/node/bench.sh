@@ -6,8 +6,8 @@ cargo build --release -p gmr-node
 
 for made in libgmr_node.dylib libgmr_node.so gmr_node.dll; do
   if [ -f "target/release/$made" ]; then
-    cp "target/release/$made" "domains/node/gmr.node"
-    GMR_ADDON="$PWD/domains/node/gmr.node" node domains/node/bench/latency.mjs
+    cp "target/release/$made" "console/node/gmr.node"
+    GMR_ADDON="$PWD/console/node/gmr.node" node console/node/bench/latency.mjs
     exit $?
   fi
 done
