@@ -133,6 +133,7 @@ pub async fn opened(asked: Opening) -> Result<Runtime, Fault> {
         .queue(Arc::new(store.queue()))
         .settings(Arc::new(store.settings()))
         .sightings(Arc::new(store.sightings()))
+        .usage(Arc::new(store.usage()))
         .transport(Arc::new(gmr_transport::shell::Shell::new(&root, probes)))
         .transport(Arc::new(gmr_transport::script::Script::new(
             &root,

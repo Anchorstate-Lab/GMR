@@ -661,7 +661,7 @@ impl Runtime {
         let policy = self.scheduler.policy();
         self.refresh(key, how).await?;
         let (view, moved_at) = stand(&self.log, key, &self.scheduler.seen(key).await?).await?;
-        ground(
+        let served = ground(
             &self.log,
             &self.memory,
             view,
@@ -671,7 +671,20 @@ impl Runtime {
             how.carry,
             how.lean,
         )
-        .await
+        .await?;
+        for held in &served.memories {
+            if held.grounded {
+                self.used(&Claim::Stored(held.reference.clone())).await?;
+            }
+        }
+        for said in &served.said {
+            self.used(&Claim::Said {
+                id: said.id.clone(),
+                asserts: None,
+            })
+            .await?;
+        }
+        Ok(served)
     }
 
     async fn refresh(&self, key: &AnchorKey, how: &Instructions) -> Result<(), RuntimeError> {
@@ -745,6 +758,9 @@ impl Runtime {
         let mut out = Vec::with_capacity(asked.len());
         for ((one, held), record) in asked.iter().zip(&rests).zip(records) {
             let claim = &one.claim;
+            if matches!(held, Rests::Stored(_)) {
+                self.used(claim).await?;
+            }
             let mut on = Vec::with_capacity(held.anchors().len());
             for key in held.anchors() {
                 on.push(anchored(&self.log, key, held, stood.get(key)).await?);

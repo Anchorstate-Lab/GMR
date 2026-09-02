@@ -133,6 +133,35 @@ impl MemoryBindings {
 }
 
 #[async_trait]
+impl crate::usage::Usage for MemoryQueue {
+    async fn used(
+        &self,
+        claim: &gmr_core::Claim,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), StoreError> {
+        let mut held = self.usage.lock().unwrap();
+        let entry = held.entry(claim.to_string()).or_insert((claim.clone(), crate::Used::default()));
+        entry.1.count += 1;
+        entry.1.last_at = Some(at);
+        Ok(())
+    }
+
+    async fn usage_of(&self, claim: &gmr_core::Claim) -> Result<crate::Used, StoreError> {
+        Ok(self
+            .usage
+            .lock()
+            .unwrap()
+            .get(&claim.to_string())
+            .map(|(_, used)| *used)
+            .unwrap_or_default())
+    }
+
+    async fn all_usage(&self) -> Result<Vec<(gmr_core::Claim, crate::Used)>, StoreError> {
+        Ok(self.usage.lock().unwrap().values().cloned().collect())
+    }
+}
+
+#[async_trait]
 impl BindingStore for MemoryBindings {
     async fn bind(&self, asserted: &Asserted) -> Result<(), StoreError> {
         let mut inner = self.inner.lock().unwrap();
@@ -285,6 +314,7 @@ pub struct MemoryQueue {
     inner: Mutex<HashMap<AnchorKey, Slot>>,
     settings: Mutex<HashMap<AnchorKey, RunSettings>>,
     sightings: Mutex<HashMap<AnchorKey, crate::Seen>>,
+    usage: Mutex<HashMap<String, (gmr_core::Claim, crate::Used)>>,
 }
 
 #[async_trait]

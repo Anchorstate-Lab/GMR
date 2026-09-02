@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 14;
+pub const SCHEMA_VERSION: i64 = 15;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -121,6 +121,16 @@ CREATE TABLE IF NOT EXISTS sighting (
     anchor   TEXT PRIMARY KEY,
     count    INTEGER NOT NULL DEFAULT 0,
     last_at  TEXT                        -- RFC3339, as the entries spell it
+);
+
+-- ── Usage: how often a claim was actually served or handed over, and when
+-- last. Residue of use, never a judgement: readers may weigh it, this store
+-- only counts. **Mutable**, same standing as sightings.
+
+CREATE TABLE IF NOT EXISTS usage (
+    claim    TEXT PRIMARY KEY,           -- canonical Claim
+    count    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT                        -- RFC3339
 );
 
 -- ── Queue: polling deployments only. **Mutable**, no pretence ──
@@ -311,4 +321,12 @@ CREATE TRIGGER IF NOT EXISTS link_revocations_no_delete BEFORE DELETE ON link_re
 pub const V13_TO_V14: &str = r#"
 ALTER TABLE links ADD COLUMN at TEXT;
 CREATE INDEX IF NOT EXISTS links_by_to ON links(to_ref);
+"#;
+
+pub const V14_TO_V15: &str = r#"
+CREATE TABLE IF NOT EXISTS usage (
+    claim    TEXT PRIMARY KEY,
+    count    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT
+);
 "#;

@@ -216,6 +216,7 @@ impl World {
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
             .sightings(Arc::new(MemoryQueue::default()))
+            .usage(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, runtime }
     }
@@ -2311,4 +2312,39 @@ async fn condensing_carries_the_grounding_and_revokes_the_utterance() {
         "not_bound",
         "a revoked utterance cannot condense twice"
     );
+}
+
+#[tokio::test]
+async fn serving_a_memory_leaves_residue_and_a_declined_store_leaves_none() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    let claim: gmr_core::Claim = Ref::new("git", "memories/a.md").into();
+
+    assert_eq!(w.runtime.usage_of(&claim).await.unwrap().count, 0);
+
+    w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    let after_read = w.runtime.usage_of(&claim).await.unwrap();
+    assert_eq!(
+        after_read.count, 1,
+        "a targeted read that served this record is residue the network can grow from"
+    );
+    assert!(after_read.last_at.is_some());
+
+    w.runtime
+        .ground(
+            &[gmr_runtime::Asked::about(claim.clone())],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        w.runtime.usage_of(&claim).await.unwrap().count,
+        2,
+        "grounding the claim by address counts too"
+    );
+
+    let everything = w.runtime.all_usage().await.unwrap();
+    assert_eq!(everything.len(), 1);
 }

@@ -144,6 +144,9 @@ pub async fn run(
             quiet += usize::from(moved);
             continue;
         }
+        for reference in &memories {
+            rt.used(&gmr::Claim::Stored(reference.clone())).await?;
+        }
         let after = rt.read(key).await?;
         handed.push((
             key.clone(),

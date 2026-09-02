@@ -6,6 +6,7 @@ pub mod queue;
 pub mod sealer;
 pub mod settings;
 pub mod sightings;
+pub mod usage;
 
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
@@ -21,3 +22,4 @@ pub use queue::{Disposition, Queue, Ticket};
 pub use sealer::Sealer;
 pub use settings::Settings;
 pub use sightings::{Seen, Sightings};
+pub use usage::{Usage, Used};
