@@ -3,6 +3,21 @@
 > 工作文档,非长期文档:指导本轮修复,修完即可删除,结论不锚定。
 > 代码位置以行号引用,行号会漂移——修复时以符号名为准,本文只是当时的地图。
 
+## 修复进度(2026-09-02)
+
+已修:六个洞全部落地(契约 v11:lean 旋钮、said 可见 + condense 血缘、反向边 + at 列、
+枚举上门、Fault kind+message;Usage 与 Ledger 两个可拒绝 store 能力,schema v14→v16),
+清扫债 1-7 全部完成。
+
+本轮**有意不做**、留待后续的:
+- CLI 各动词不入走读账本(账本只在 console `served()` 咽喉计量;CLI 由 doctor 汇总读取)。
+- transport 侧字节(五处 output_cap 已算出)未回传入账——回传链路侵入过深,首版只记信封字节+调用数。
+- `since` 的 raised 隐藏 fetch 未改:status 过滤形态已是廉价路径。raised 也仍只报记录漂移,
+  不报 said——话语没有会漂移的内容,其失效方式是 invariant 破裂,warrant 已经承载。
+- `reach` 的 BFS 内部仍整取内容再弃(link.rs),lean 不改变 reach 的语义(Rewritten/NoBefore 区分依赖 history)。
+- node `since` cursor >2^53 精度:JS number 边界,门层未拒绝,记录在案。
+- 版本号:workspace 停留 0.6.x,major.minor 由 owner 亲手动;契约字符串独立于 crate 版本移动。
+
 ## 0. 判据
 
 GMR 的定位赌注:相关性不由任何组件判断——GMR 不判断,Agent 侧也不需要专门的裁判——它在使用中从网络里长出来;Agent(哪怕弱模型)沿网行走,自行分析原子节点两两之间的关系,组装本次任务的最小信息集。最小信息集无法数学证明,但主张三个可测的不等式:比单点信息全面、比全量读取小、比自由搜索的有效信息密度高。
