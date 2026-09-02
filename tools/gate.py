@@ -790,6 +790,41 @@ def check_sentinels_still_aimed():
     return errors
 
 
+def check_the_old_world_stays_gone():
+    """Nothing tracked lives under, or points into, the retired domains/ tree.
+
+    The split renamed domains/ to console/ and packs/ and swore every tool
+    that spelled the old paths moved in the same commit. Two did not:
+    bench.sh's insides kept copying the addon to domains/node, and one probe
+    script stayed behind at the old address with probes.toml pointing at it
+    -- each unnoticed because nothing runs them on every push. Residue of a
+    rename is the same class of drift as a stale comment, so it fails the
+    build instead of waiting to be read.
+    """
+    old = "dom" + "ains/"
+    files = run(["git", "ls-files"]).stdout.splitlines()
+    errors = [
+        f"`{f}` is tracked under the retired {old} tree -- it moved to packs/ or console/"
+        for f in files
+        if f.startswith(old)
+    ]
+    for f in files:
+        if f == "tools/gate.py":
+            continue
+        if not (
+            f.startswith((".anchor/", ".github/", "tools/")) or f.endswith(".sh")
+        ):
+            continue
+        text = (ROOT / f).read_text(errors="replace")
+        if old in text:
+            errors.append(
+                f"`{f}` still spells {old} -- the tree it points into was renamed "
+                "to packs/ and console/"
+            )
+    return errors
+
+
+
 CHECKS = [
     ("pure roots: zero workspace dependencies", check_pure_roots),
     ("dependency forbidden zones", check_forbidden_dependencies),
@@ -801,6 +836,7 @@ CHECKS = [
     ("the contract's shape is the one its version claims", check_contract_shape_is_earned),
 ("the published types name the contract they describe", check_typed_surface_names_the_contract),
     ("the python stub spells the door's own callable surface", check_python_stub_spells_the_door),
+    ("the retired domains/ tree stays gone", check_the_old_world_stays_gone),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),
