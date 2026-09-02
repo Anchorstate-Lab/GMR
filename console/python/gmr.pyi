@@ -12,6 +12,15 @@ from typing import Any, Optional
 
 CONTRACT: str
 
+class Fault(ValueError):
+    """Every refusal and failure, spoken as `<kind>: <message>`.
+
+    kind is a stable snake_case token -- `refused` (the console would not
+    parse the ask), `assembly` (the runtime could not be put together),
+    `internal`, or a runtime code such as `not_bound`, `no_such_anchor`,
+    `no_provider`, `condensed_into_nothing`. Match the token, not the prose.
+    """
+
 def open(options: dict[str, Any]) -> Gmr: ...
 
 class Gmr:

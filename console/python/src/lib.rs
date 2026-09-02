@@ -6,8 +6,10 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use serde_json::Value;
 
-fn failed(message: impl Into<String>) -> PyErr {
-    PyValueError::new_err(message.into())
+pyo3::create_exception!(gmr, Fault, PyValueError);
+
+fn failed(fault: core::Fault) -> PyErr {
+    Fault::new_err(fault.to_string())
 }
 
 fn ok<T>(outcome: Result<T, core::Fault>) -> PyResult<T> {
@@ -17,14 +19,14 @@ fn ok<T>(outcome: Result<T, core::Fault>) -> PyResult<T> {
 fn taken(py: Python<'_>, value: Option<Bound<'_, PyAny>>) -> PyResult<Option<Value>> {
     let _ = py;
     value
-        .map(|v| pythonize::depythonize(&v).map_err(|e| failed(e.to_string())))
+        .map(|v| pythonize::depythonize(&v).map_err(|e| failed(core::Fault::refused(e.to_string()))))
         .transpose()
 }
 
 fn handed(py: Python<'_>, value: Value) -> PyResult<PyObject> {
     pythonize::pythonize(py, &value)
         .map(|b| b.unbind())
-        .map_err(|e| failed(e.to_string()))
+        .map_err(|e| failed(core::Fault::internal(e.to_string())))
 }
 
 #[pyclass]
@@ -55,7 +57,7 @@ fn open(py: Python<'_>, options: Bound<'_, PyAny>) -> PyResult<Gmr> {
     let loop_ = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|e| failed(format!("cannot start the runtime loop: {e}")))?;
+        .map_err(|e| failed(core::Fault::assembly(format!("cannot start the runtime loop: {e}"))))?;
     let rt = py.allow_threads(|| loop_.block_on(core::opened(asked)));
     Ok(Gmr {
         rt: Arc::new(rt.map_err(failed)?),
@@ -180,7 +182,7 @@ impl Gmr {
         self.run(py, async move {
             rt.link(&from, &to, kind, source)
                 .await
-                .map_err(|e| failed(e.to_string()))
+                .map_err(|e| failed(core::fault(e)))
         })
     }
 
@@ -197,7 +199,7 @@ impl Gmr {
         self.run(py, async move {
             rt.unlink(&revocation)
                 .await
-                .map_err(|e| failed(e.to_string()))
+                .map_err(|e| failed(core::fault(e)))
         })
     }
 
@@ -269,7 +271,7 @@ impl Gmr {
         self.run(py, async move {
             rt.close(&key, why.as_bytes())
                 .await
-                .map_err(|e| failed(e.to_string()))
+                .map_err(|e| failed(core::fault(e)))
         })
     }
 }
@@ -277,6 +279,7 @@ impl Gmr {
 #[pymodule]
 fn gmr(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("CONTRACT", gmr_api::contract::CONTRACT)?;
+    m.add("Fault", m.py().get_type::<Fault>())?;
     m.add_class::<Gmr>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     Ok(())

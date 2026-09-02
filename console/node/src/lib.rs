@@ -59,9 +59,9 @@ impl Gmr {
     pub async fn since(&self, cursor: i64, status: Option<String>) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let cursor = u64::try_from(cursor).map_err(|_| {
-            failed(format!(
+            failed(core::Fault::refused(format!(
                 "a cursor is a journal sequence and {cursor} is behind zero"
-            ))
+            )))
         })?;
         let status = status.map(StatusId::new);
         spawned(async move {
@@ -112,7 +112,7 @@ impl Gmr {
         spawned(async move {
             rt.link(&from, &to, kind, source)
                 .await
-                .map_err(|e| failed(e.to_string()))
+                .map_err(|e| failed(core::fault(e)))
         })
         .await
     }
@@ -131,7 +131,7 @@ impl Gmr {
             rt.unlink(&revocation)
                 .await
                 .map(|n| n as i64)
-                .map_err(|e| failed(e.to_string()))
+                .map_err(|e| failed(core::fault(e)))
         })
         .await
     }
@@ -185,7 +185,7 @@ impl Gmr {
         spawned(async move {
             rt.close(&key, why.as_bytes())
                 .await
-                .map_err(|e| failed(e.to_string()))
+                .map_err(|e| failed(core::fault(e)))
         })
         .await
     }
@@ -196,7 +196,9 @@ async fn spawned<T: Send + 'static>(
 ) -> Result<T> {
     match napi::tokio::spawn(work).await {
         Ok(done) => done,
-        Err(e) => Err(failed(format!("the call did not finish: {e}"))),
+        Err(e) => Err(failed(core::Fault::internal(format!(
+            "the call did not finish: {e}"
+        )))),
     }
 }
 
@@ -204,6 +206,6 @@ fn ok<T>(outcome: std::result::Result<T, core::Fault>) -> Result<T> {
     outcome.map_err(failed)
 }
 
-fn failed(message: impl Into<String>) -> napi::Error {
-    napi::Error::from_reason(message.into())
+fn failed(fault: core::Fault) -> napi::Error {
+    napi::Error::from_reason(fault.to_string())
 }

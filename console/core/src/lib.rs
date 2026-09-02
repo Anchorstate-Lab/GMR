@@ -11,7 +11,47 @@ use gmr_transport::recipes::Recipes;
 use serde::Deserialize;
 use serde_json::Value;
 
-pub type Fault = String;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fault {
+    pub kind: &'static str,
+    pub message: String,
+}
+
+impl Fault {
+    pub fn refused(message: impl Into<String>) -> Self {
+        Self {
+            kind: "refused",
+            message: message.into(),
+        }
+    }
+
+    pub fn assembly(message: impl Into<String>) -> Self {
+        Self {
+            kind: "assembly",
+            message: message.into(),
+        }
+    }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self {
+            kind: "internal",
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for Fault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.kind, self.message)
+    }
+}
+
+pub fn fault(e: gmr::RuntimeError) -> Fault {
+    Fault {
+        kind: e.code(),
+        message: e.to_string(),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -75,12 +115,12 @@ pub async fn opened(asked: Opening) -> Result<Runtime, Fault> {
     };
     if let Some(parent) = db.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot make room for the store at {parent:?}: {e}"))?;
+            .map_err(|e| Fault::assembly(format!("cannot make room for the store at {parent:?}: {e}")))?;
     }
 
     let store = gmr::sqlite::open(db.clone())
         .await
-        .map_err(|e| format!("cannot open the store at {}: {e}", db.display()))?;
+        .map_err(|e| Fault::assembly(format!("cannot open the store at {}: {e}", db.display())))?;
 
     let recipes = Arc::new(asked.recipes);
     let probes = root.join(".anchor").join("probes");
@@ -100,7 +140,7 @@ pub async fn opened(asked: Opening) -> Result<Runtime, Fault> {
         )))
         .transport(Arc::new(
             gmr_transport::http::Http::new(Arc::clone(&recipes))
-                .map_err(|e| format!("cannot build the http transport: {e}"))?,
+                .map_err(|e| Fault::assembly(format!("cannot build the http transport: {e}")))?,
         ))
         .transport(Arc::new(gmr_transport::file::Files::new(
             &root,
@@ -117,18 +157,16 @@ pub async fn opened(asked: Opening) -> Result<Runtime, Fault> {
 
     builder
         .try_build()
-        .map_err(|e| format!("cannot assemble a runtime: {e}"))
+        .map_err(|e| Fault::assembly(format!("cannot assemble a runtime: {e}")))
 }
 
 pub fn said<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Fault> {
-    serde_json::from_value(value).map_err(|e| e.to_string())
+    serde_json::from_value(value).map_err(|e| Fault::refused(e.to_string()))
 }
 
-pub fn answered<T: serde::Serialize, E: std::fmt::Display>(
-    outcome: Result<T, E>,
-) -> Result<Value, Fault> {
-    let held = outcome.map_err(|e| e.to_string())?;
-    serde_json::to_value(held).map_err(|e| e.to_string())
+pub fn answered<T: serde::Serialize>(outcome: Result<T, gmr::RuntimeError>) -> Result<Value, Fault> {
+    let held = outcome.map_err(fault)?;
+    serde_json::to_value(held).map_err(|e| Fault::internal(e.to_string()))
 }
 
 pub fn asked(how: Option<Value>) -> Result<Instructions, Fault> {
@@ -140,11 +178,11 @@ pub fn asked(how: Option<Value>) -> Result<Instructions, Fault> {
 
 pub fn named(address: String) -> Result<Claim, Fault> {
     Claim::parse(&address).ok_or_else(|| {
-        format!(
+        Fault::refused(format!(
             "`{address}` names nothing. A stored record is `<provider>:<id>` -- which store \
              to ask, and what to ask it for. Something an agent said is `said:<id>`, and it \
              is not stored anywhere: the utterance is the claim"
-        )
+        ))
     })
 }
 
@@ -152,21 +190,21 @@ pub fn asserting(claim: Claim, asserts: Option<Value>) -> Result<Claim, Fault> {
     match (claim, asserts) {
         (claim, None) => Ok(claim),
         (Claim::Said { id, .. }, asserts) => Ok(Claim::Said { id, asserts }),
-        (Claim::Stored(reference), Some(_)) => Err(format!(
+        (Claim::Stored(reference), Some(_)) => Err(Fault::refused(format!(
             "`{reference}` is a record that lives in a store, so what it asserts is its own \
              content -- reading it off the caller instead would be a second copy of the \
              same sentence, and nothing would notice the day they disagreed"
-        )),
+        ))),
     }
 }
 
 pub fn asking(one: Value) -> Result<Asked, Fault> {
     let Value::String(address) = one else {
         let stated: Inline = serde_json::from_value(one).map_err(|e| {
-            format!(
+            Fault::refused(format!(
                 "an ask is either an address, or an object naming the claim and what this \
                  turn rested on: {e}"
-            )
+            ))
         })?;
         let claim = asserting(named(stated.claim)?, stated.asserts)?;
         let saw = stated
@@ -188,23 +226,28 @@ pub fn asking(one: Value) -> Result<Asked, Fault> {
 
 pub fn invariant(source: &str) -> Result<(), Fault> {
     gmr::expr::parse(source).map(|_| ()).map_err(|e| {
-        format!("`depends` is one expression that is true while the claim still stands: {e}")
+        Fault::refused(format!(
+            "`depends` is one expression that is true while the claim still stands: {e}"
+        ))
     })
 }
 
 pub fn looked(address: String) -> Result<FactAddress, Fault> {
-    FactAddress::try_new(&address)
-        .map_err(|e| format!("`saw` is the address of a reading, as `sample` handed it back: {e}"))
+    FactAddress::try_new(&address).map_err(|e| {
+        Fault::refused(format!(
+            "`saw` is the address of a reading, as `sample` handed it back: {e}"
+        ))
+    })
 }
 
 pub fn stored(address: String) -> Result<gmr::Ref, Fault> {
     match named(address)? {
         Claim::Stored(reference) => Ok(reference),
-        Claim::Said { id, .. } => Err(format!(
+        Claim::Said { id, .. } => Err(Fault::refused(format!(
             "`said:{id}` is an utterance, and a link runs between stored records; an \
              utterance has no store-side identity for the far end of an edge to name",
             id = id.as_str()
-        )),
+        ))),
     }
 }
 
@@ -251,20 +294,20 @@ pub fn revoking(
 pub fn uttered(address: String) -> Result<gmr::SaidId, Fault> {
     match named(address)? {
         Claim::Said { id, .. } => Ok(id),
-        Claim::Stored(reference) => Err(format!(
+        Claim::Stored(reference) => Err(Fault::refused(format!(
             "`{reference}` is a stored record already -- condense runs from an utterance \
              into the record it became"
-        )),
+        ))),
     }
 }
 
 pub fn attested(source: &str) -> Result<Source, Fault> {
     Source::parse(source).ok_or_else(|| {
-        format!(
+        Fault::refused(format!(
             "`{source}` is not a provenance. A binding says where it came from: derived, \
              self_attested, adjudicated, configured, or unknown -- and `unknown` is how you \
              say you do not know, which is why silence is not offered"
-        )
+        ))
     })
 }
 

@@ -66,8 +66,14 @@ class Verbs(unittest.TestCase):
 
     def test_an_address_that_names_no_store_is_refused_before_anything_is_asked(self):
         g = opened(a_repository())
-        with self.assertRaisesRegex(ValueError, "names nothing"):
+        with self.assertRaises(gmr.Fault) as refused:
             g.ground(["memories/replicas.md"])
+        spoken = str(refused.exception)
+        self.assertTrue(
+            spoken.startswith("refused: "),
+            f"the kind is a token in front of the prose: {spoken}",
+        )
+        self.assertIn("names nothing", spoken)
 
     def test_read_hands_back_the_envelope_and_a_carried_edge_says_who_asserted_it(self):
         g = opened(a_repository())

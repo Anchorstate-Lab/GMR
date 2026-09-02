@@ -110,7 +110,11 @@ test("an instruction nobody here understands is refused, not dropped", async () 
 test("an address that names no store is refused before anything is asked", async () => {
   const root = aRepository();
   const gmr = await opened(root);
-  await assert.rejects(() => gmr.ground(["memories/replicas.md"]), /names nothing/);
+  await assert.rejects(
+    () => gmr.ground(["memories/replicas.md"]),
+    /^.*refused: .*names nothing/,
+    "the kind travels in front of the prose, so a caller matches a token, not a sentence",
+  );
 });
 
 test("read hands back the envelope, and a carried edge says who asserted it", async () => {
