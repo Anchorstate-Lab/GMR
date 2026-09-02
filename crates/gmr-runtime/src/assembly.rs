@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer, Settings, Sightings, Usage};
+use gmr_store::{Journal, Ledger, LinkStore, Queue, Sealer, Settings, Sightings, Usage};
+use gmr_store::BindingStore;
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
@@ -16,6 +17,8 @@ pub struct Runtime {
     pub(crate) memory: MemoryLens,
     pub(crate) scheduler: Scheduler,
     pub(crate) usage: Option<Arc<dyn Usage>>,
+    pub(crate) ledger: Option<Arc<dyn Ledger>>,
+    pub(crate) session: String,
 }
 
 impl Runtime {
@@ -69,6 +72,26 @@ impl Runtime {
         };
         Ok(usage.all_usage().await?)
     }
+
+    pub fn session(&self) -> &str {
+        &self.session
+    }
+
+    pub async fn spent(&self, verb: &str, bytes: u64) -> Result<(), RuntimeError> {
+        let Some(ledger) = &self.ledger else {
+            return Ok(());
+        };
+        Ok(ledger
+            .spent(&self.session, verb, bytes, chrono::Utc::now())
+            .await?)
+    }
+
+    pub async fn spending(&self) -> Result<Vec<gmr_store::Spending>, RuntimeError> {
+        let Some(ledger) = &self.ledger else {
+            return Ok(Vec::new());
+        };
+        Ok(ledger.spending().await?)
+    }
 }
 
 #[derive(Default)]
@@ -84,6 +107,7 @@ pub struct RuntimeBuilder {
     settings: Option<Arc<dyn Settings>>,
     sightings: Option<Arc<dyn Sightings>>,
     usage: Option<Arc<dyn Usage>>,
+    ledger: Option<Arc<dyn Ledger>>,
     policy: Option<Policy>,
 }
 
@@ -150,6 +174,11 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn ledger(mut self, l: Arc<dyn Ledger>) -> Self {
+        self.ledger = Some(l);
+        self
+    }
+
     pub fn policy(mut self, p: Policy) -> Self {
         self.policy = Some(p);
         self
@@ -198,6 +227,12 @@ impl RuntimeBuilder {
                 self.policy.unwrap_or_default(),
             ),
             usage: self.usage,
+            ledger: self.ledger,
+            session: format!(
+                "{}-{}",
+                chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+                std::process::id()
+            ),
         })
     }
 }

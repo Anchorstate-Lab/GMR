@@ -222,6 +222,7 @@ pub async fn run(
         .filter_map(|v| v.status.as_ref().map(|s| s.to_string()))
         .collect();
 
+    let spending = rt.spending().await?;
     if json {
         println!(
             "{}",
@@ -255,6 +256,10 @@ pub async fn run(
                 "notes": faults.iter().map(|f| serde_json::json!({
                     "note": f.note, "key": f.key, "code": f.code, "detail": f.detail,
                     "breaks": f.breaks(), "blocks": f.blocks(),
+                })).collect::<Vec<_>>(),
+                "spending": spending.iter().map(|row| serde_json::json!({
+                    "session": row.session, "verb": row.verb,
+                    "calls": row.calls, "bytes": row.bytes,
                 })).collect::<Vec<_>>(),
             })
         );
@@ -454,6 +459,17 @@ pub async fn run(
         println!(
             "cache     {fault}\n          \
              <- advisory, not broken: the next verb that probes writes a fresh one"
+        );
+    }
+    if !spending.is_empty() {
+        let sessions: std::collections::BTreeSet<&str> =
+            spending.iter().map(|row| row.session.as_str()).collect();
+        let calls: u64 = spending.iter().map(|row| row.calls).sum();
+        let bytes: u64 = spending.iter().map(|row| row.bytes).sum();
+        println!(
+            "ledger    {} session(s), {calls} call(s), {bytes} envelope byte(s) served \
+             through the doors",
+            sessions.len()
         );
     }
     Ok(exit_code)

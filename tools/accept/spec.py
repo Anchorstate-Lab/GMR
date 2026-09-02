@@ -575,6 +575,29 @@ def an_obligation_the_rules_put_away_is_still_not_discarded(c):
         )
 
 
+# ── G9 信封原子 ─────────────────────────────────────────────────────────────
+
+
+@scenario(
+    "G9",
+    "a weak model holds one node in a few hundred tokens: does sample stay small?",
+    varies=("world",),
+)
+def a_sample_envelope_fits_in_a_kilobyte(c):
+    import json as encoded
+
+    c.settle()
+    res = c.gmr.sample(c.world.signal)
+    body = res.body if isinstance(res.body, dict) else res.body[0]
+    spelled = encoded.dumps(body, separators=(",", ":"))
+    if len(spelled) > 1024:
+        raise p.Broken(
+            "G9",
+            f"sample's envelope is {len(spelled)} bytes minified -- the walk's "
+            "atomic read stopped fitting a weak model's per-hop budget",
+        )
+
+
 # ── G5 变化可辨 ─────────────────────────────────────────────────────────────
 
 

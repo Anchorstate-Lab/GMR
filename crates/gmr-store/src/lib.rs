@@ -1,6 +1,7 @@
 pub mod bindings;
 pub mod error;
 pub mod journal;
+pub mod ledger;
 pub mod links;
 pub mod queue;
 pub mod sealer;
@@ -17,6 +18,7 @@ pub mod testkit;
 pub use bindings::{Asserted, BindingRecord, BindingStore, Revocation, Tag};
 pub use error::{ErrorCode, ErrorKind, StoreError};
 pub use journal::{Chained, Expected, Fence, Journal, link};
+pub use ledger::{Ledger, Spending};
 pub use links::{LinkRecord, LinkRevocation, LinkStore};
 pub use queue::{Disposition, Queue, Ticket};
 pub use sealer::Sealer;

@@ -133,6 +133,36 @@ impl MemoryBindings {
 }
 
 #[async_trait]
+impl crate::ledger::Ledger for MemoryQueue {
+    async fn spent(
+        &self,
+        session: &str,
+        verb: &str,
+        bytes: u64,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), StoreError> {
+        let mut held = self.ledger.lock().unwrap();
+        let row = held
+            .entry((session.to_owned(), verb.to_owned()))
+            .or_insert(crate::Spending {
+                session: session.to_owned(),
+                verb: verb.to_owned(),
+                calls: 0,
+                bytes: 0,
+                last_at: None,
+            });
+        row.calls += 1;
+        row.bytes += bytes;
+        row.last_at = Some(at);
+        Ok(())
+    }
+
+    async fn spending(&self) -> Result<Vec<crate::Spending>, StoreError> {
+        Ok(self.ledger.lock().unwrap().values().cloned().collect())
+    }
+}
+
+#[async_trait]
 impl crate::usage::Usage for MemoryQueue {
     async fn used(
         &self,
@@ -315,6 +345,7 @@ pub struct MemoryQueue {
     settings: Mutex<HashMap<AnchorKey, RunSettings>>,
     sightings: Mutex<HashMap<AnchorKey, crate::Seen>>,
     usage: Mutex<HashMap<String, (gmr_core::Claim, crate::Used)>>,
+    ledger: Mutex<std::collections::BTreeMap<(String, String), crate::Spending>>,
 }
 
 #[async_trait]

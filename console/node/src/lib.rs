@@ -36,7 +36,7 @@ impl Gmr {
             .map(|c| ok(core::asking(c)))
             .collect::<Result<Vec<_>>>()?;
         let how = ok(core::asked(how))?;
-        spawned(async move { ok(core::answered(rt.ground(&claims, &how).await)) }).await
+        spawned(async move { ok(core::served(&rt, "ground", rt.ground(&claims, &how).await).await) }).await
     }
 
     #[napi]
@@ -44,7 +44,7 @@ impl Gmr {
         let rt = Arc::clone(&self.rt);
         let key = AnchorKey::new(anchor);
         let how = ok(core::asked(how))?;
-        spawned(async move { ok(core::answered(rt.sample(&key, &how).await)) }).await
+        spawned(async move { ok(core::served(&rt, "sample", rt.sample(&key, &how).await).await) }).await
     }
 
     #[napi]
@@ -52,7 +52,7 @@ impl Gmr {
         let rt = Arc::clone(&self.rt);
         let key = AnchorKey::new(anchor);
         let how = ok(core::asked(how))?;
-        spawned(async move { ok(core::answered(rt.grounded_within(&key, &how).await)) }).await
+        spawned(async move { ok(core::served(&rt, "read", rt.grounded_within(&key, &how).await).await) }).await
     }
 
     #[napi]
@@ -65,9 +65,7 @@ impl Gmr {
         })?;
         let status = status.map(StatusId::new);
         spawned(async move {
-            ok(core::answered(
-                rt.changed_since(cursor, status.as_ref()).await,
-            ))
+            ok(core::served(&rt, "since", rt.changed_since(cursor, status.as_ref()).await).await)
         })
         .await
     }
@@ -87,9 +85,7 @@ impl Gmr {
         };
         let (binding, bound_version, saw, source) = ok(core::bound(claim, anchors, &source, how))?;
         spawned(async move {
-            ok(core::answered(
-                rt.bind(binding, bound_version, saw, source).await,
-            ))
+            ok(core::served(&rt, "bind", rt.bind(binding, bound_version, saw, source).await).await)
         })
         .await
     }
@@ -99,7 +95,7 @@ impl Gmr {
         let rt = Arc::clone(&self.rt);
         let claim = ok(core::named(claim))?;
         let source = ok(core::attested(&source))?;
-        spawned(async move { ok(core::answered(rt.revoke(&claim, source).await)) }).await
+        spawned(async move { ok(core::served(&rt, "revoke", rt.revoke(&claim, source).await).await) }).await
     }
 
     #[napi]
@@ -147,27 +143,27 @@ impl Gmr {
     #[napi]
     pub async fn anchors(&self) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        spawned(async move { ok(core::answered(rt.sample_all().await)) }).await
+        spawned(async move { ok(core::served(&rt, "anchors", rt.sample_all().await).await) }).await
     }
 
     #[napi]
     pub async fn claims(&self) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
-        spawned(async move { ok(core::answered(rt.claims().await)) }).await
+        spawned(async move { ok(core::served(&rt, "claims", rt.claims().await).await) }).await
     }
 
     #[napi]
     pub async fn cobound(&self, claim: String) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let claim = ok(core::named(claim))?;
-        spawned(async move { ok(core::answered(rt.cobound(&claim).await)) }).await
+        spawned(async move { ok(core::served(&rt, "cobound", rt.cobound(&claim).await).await) }).await
     }
 
     #[napi]
     pub async fn links(&self, record: String) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let record = ok(core::stored(record))?;
-        spawned(async move { ok(core::answered(rt.links(&record).await)) }).await
+        spawned(async move { ok(core::served(&rt, "links", rt.links(&record).await).await) }).await
     }
 
     #[napi]
@@ -176,14 +172,14 @@ impl Gmr {
         let said = ok(core::uttered(said))?;
         let into = ok(core::stored(into))?;
         let source = ok(core::attested(&source))?;
-        spawned(async move { ok(core::answered(rt.condense(&said, into, source).await)) }).await
+        spawned(async move { ok(core::served(&rt, "condense", rt.condense(&said, into, source).await).await) }).await
     }
 
     #[napi]
     pub async fn open(&self, request: Value) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let request = ok(core::said(request))?;
-        spawned(async move { ok(core::answered(rt.open(request).await)) }).await
+        spawned(async move { ok(core::served(&rt, "open", rt.open(request).await).await) }).await
     }
 
     #[napi]

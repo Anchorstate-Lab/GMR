@@ -136,6 +136,7 @@ pub async fn served(
         .settings(Arc::new(store.settings()))
         .sightings(Arc::new(store.sightings()))
         .usage(Arc::new(store.usage()))
+        .ledger(Arc::new(store.ledger()))
         .journal(Arc::new(store.journal()))
         .bindings(Arc::new(store.bindings()))
         .sealer(Arc::new(store.sealer()))

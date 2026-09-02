@@ -134,6 +134,7 @@ pub async fn opened(asked: Opening) -> Result<Runtime, Fault> {
         .settings(Arc::new(store.settings()))
         .sightings(Arc::new(store.sightings()))
         .usage(Arc::new(store.usage()))
+        .ledger(Arc::new(store.ledger()))
         .transport(Arc::new(gmr_transport::shell::Shell::new(&root, probes)))
         .transport(Arc::new(gmr_transport::script::Script::new(
             &root,
@@ -168,6 +169,17 @@ pub fn said<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Fault> {
 pub fn answered<T: serde::Serialize>(outcome: Result<T, gmr::RuntimeError>) -> Result<Value, Fault> {
     let held = outcome.map_err(fault)?;
     serde_json::to_value(held).map_err(|e| Fault::internal(e.to_string()))
+}
+
+pub async fn served<T: serde::Serialize>(
+    rt: &Runtime,
+    verb: &'static str,
+    outcome: Result<T, gmr::RuntimeError>,
+) -> Result<Value, Fault> {
+    let value = answered(outcome)?;
+    let bytes = value.to_string().len() as u64;
+    rt.spent(verb, bytes).await.map_err(fault)?;
+    Ok(value)
 }
 
 pub fn asked(how: Option<Value>) -> Result<Instructions, Fault> {

@@ -6,6 +6,7 @@ pub mod queue;
 pub mod schema;
 pub mod settings;
 pub mod sightings;
+pub mod ledger;
 pub mod usage;
 
 use std::path::Path;
@@ -129,6 +130,7 @@ pub(crate) const LADDER: &[(i64, Rung)] = &[
     (12, Rung::Sql(schema::V12_TO_V13)),
     (13, Rung::Sql(schema::V13_TO_V14)),
     (14, Rung::Sql(schema::V14_TO_V15)),
+    (15, Rung::Sql(schema::V15_TO_V16)),
 ];
 
 async fn migrate(pool: &SqlitePool) -> Result<(), StoreError> {
@@ -320,6 +322,10 @@ impl SqliteStore {
     }
 
     pub fn usage(&self) -> SqliteQueue {
+        SqliteQueue::new(self.pool.clone())
+    }
+
+    pub fn ledger(&self) -> SqliteQueue {
         SqliteQueue::new(self.pool.clone())
     }
 

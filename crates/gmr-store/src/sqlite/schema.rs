@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -131,6 +131,19 @@ CREATE TABLE IF NOT EXISTS usage (
     claim    TEXT PRIMARY KEY,           -- canonical Claim
     count    INTEGER NOT NULL DEFAULT 0,
     last_at  TEXT                        -- RFC3339
+);
+
+-- ── Ledger: what each session's verbs cost in calls and envelope bytes.
+-- **Mutable** tallies; the walk-cost side of the density claim, so the
+-- three inequalities can each become a printable number.
+
+CREATE TABLE IF NOT EXISTS ledger (
+    session  TEXT NOT NULL,
+    verb     TEXT NOT NULL,
+    calls    INTEGER NOT NULL DEFAULT 0,
+    bytes    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT,                       -- RFC3339
+    PRIMARY KEY (session, verb)
 );
 
 -- ── Queue: polling deployments only. **Mutable**, no pretence ──
@@ -328,5 +341,16 @@ CREATE TABLE IF NOT EXISTS usage (
     claim    TEXT PRIMARY KEY,
     count    INTEGER NOT NULL DEFAULT 0,
     last_at  TEXT
+);
+"#;
+
+pub const V15_TO_V16: &str = r#"
+CREATE TABLE IF NOT EXISTS ledger (
+    session  TEXT NOT NULL,
+    verb     TEXT NOT NULL,
+    calls    INTEGER NOT NULL DEFAULT 0,
+    bytes    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT,
+    PRIMARY KEY (session, verb)
 );
 "#;

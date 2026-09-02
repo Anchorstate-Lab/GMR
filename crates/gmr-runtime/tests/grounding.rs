@@ -217,6 +217,7 @@ impl World {
             .settings(Arc::new(MemoryQueue::default()))
             .sightings(Arc::new(MemoryQueue::default()))
             .usage(Arc::new(MemoryQueue::default()))
+            .ledger(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, runtime }
     }
@@ -2347,4 +2348,24 @@ async fn serving_a_memory_leaves_residue_and_a_declined_store_leaves_none() {
 
     let everything = w.runtime.all_usage().await.unwrap();
     assert_eq!(everything.len(), 1);
+}
+
+#[tokio::test]
+async fn the_ledger_tallies_what_a_session_spends() {
+    let w = World::new(true);
+    w.runtime.spent("sample", 440).await.unwrap();
+    w.runtime.spent("sample", 440).await.unwrap();
+    w.runtime.spent("read", 1329).await.unwrap();
+
+    let rows = w.runtime.spending().await.unwrap();
+    let sample = rows
+        .iter()
+        .find(|r| r.verb == "sample")
+        .expect("two sample calls were tallied");
+    assert_eq!((sample.calls, sample.bytes), (2, 880));
+    assert_eq!(sample.session, w.runtime.session());
+    assert!(
+        rows.iter().any(|r| r.verb == "read" && r.bytes == 1329),
+        "each verb keeps its own row, so density is readable per question kind"
+    );
 }

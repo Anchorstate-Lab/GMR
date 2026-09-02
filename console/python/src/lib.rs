@@ -84,7 +84,7 @@ impl Gmr {
         let how = ok(core::asked(taken(py, how)?))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(rt.ground(&claims, &how).await))
+            ok(core::served(&rt, "ground", rt.ground(&claims, &how).await).await)
         })?;
         handed(py, out)
     }
@@ -100,7 +100,7 @@ impl Gmr {
         let how = ok(core::asked(taken(py, how)?))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(rt.sample(&key, &how).await))
+            ok(core::served(&rt, "sample", rt.sample(&key, &how).await).await)
         })?;
         handed(py, out)
     }
@@ -116,7 +116,7 @@ impl Gmr {
         let how = ok(core::asked(taken(py, how)?))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(rt.grounded_within(&key, &how).await))
+            ok(core::served(&rt, "read", rt.grounded_within(&key, &how).await).await)
         })?;
         handed(py, out)
     }
@@ -126,9 +126,7 @@ impl Gmr {
         let status = status.map(StatusId::new);
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(
-                rt.changed_since(cursor, status.as_ref()).await,
-            ))
+            ok(core::served(&rt, "since", rt.changed_since(cursor, status.as_ref()).await).await)
         })?;
         handed(py, out)
     }
@@ -149,9 +147,7 @@ impl Gmr {
         let (binding, bound_version, saw, source) = ok(core::bound(claim, anchors, &source, how))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(
-                rt.bind(binding, bound_version, saw, source).await,
-            ))
+            ok(core::served(&rt, "bind", rt.bind(binding, bound_version, saw, source).await).await)
         })?;
         handed(py, out)
     }
@@ -161,7 +157,7 @@ impl Gmr {
         let source = ok(core::attested(&source))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(rt.revoke(&claim, source).await))
+            ok(core::served(&rt, "revoke", rt.revoke(&claim, source).await).await)
         })?;
         handed(py, out)
     }
@@ -214,13 +210,13 @@ impl Gmr {
 
     fn anchors(&self, py: Python<'_>) -> PyResult<PyObject> {
         let rt = Arc::clone(&self.rt);
-        let out = self.run(py, async move { ok(core::answered(rt.sample_all().await)) })?;
+        let out = self.run(py, async move { ok(core::served(&rt, "anchors", rt.sample_all().await).await) })?;
         handed(py, out)
     }
 
     fn claims(&self, py: Python<'_>) -> PyResult<PyObject> {
         let rt = Arc::clone(&self.rt);
-        let out = self.run(py, async move { ok(core::answered(rt.claims().await)) })?;
+        let out = self.run(py, async move { ok(core::served(&rt, "claims", rt.claims().await).await) })?;
         handed(py, out)
     }
 
@@ -229,7 +225,7 @@ impl Gmr {
         let rt = Arc::clone(&self.rt);
         let out = self.run(
             py,
-            async move { ok(core::answered(rt.cobound(&claim).await)) },
+            async move { ok(core::served(&rt, "cobound", rt.cobound(&claim).await).await) },
         )?;
         handed(py, out)
     }
@@ -239,7 +235,7 @@ impl Gmr {
         let rt = Arc::clone(&self.rt);
         let out = self.run(
             py,
-            async move { ok(core::answered(rt.links(&record).await)) },
+            async move { ok(core::served(&rt, "links", rt.links(&record).await).await) },
         )?;
         handed(py, out)
     }
@@ -256,7 +252,7 @@ impl Gmr {
         let source = ok(core::attested(&source))?;
         let rt = Arc::clone(&self.rt);
         let out = self.run(py, async move {
-            ok(core::answered(rt.condense(&said, into, source).await))
+            ok(core::served(&rt, "condense", rt.condense(&said, into, source).await).await)
         })?;
         handed(py, out)
     }
@@ -269,7 +265,7 @@ impl Gmr {
         let rt = Arc::clone(&self.rt);
         let out = self.run(
             py,
-            async move { ok(core::answered(rt.open(request).await)) },
+            async move { ok(core::served(&rt, "open", rt.open(request).await).await) },
         )?;
         handed(py, out)
     }
