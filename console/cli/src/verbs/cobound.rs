@@ -1,4 +1,4 @@
-use gmr::{Ref, Runtime};
+use gmr::{Claim, Ref, Runtime};
 
 use crate::error::CliError;
 
@@ -9,30 +9,28 @@ pub async fn run(
     json: bool,
 ) -> Result<i32, CliError> {
     let path = names.of(&reference);
-    let others: Vec<Ref> = rt
-        .cobound(&reference.clone().into())
-        .await?
-        .into_iter()
-        .filter_map(gmr::Claim::into_stored)
-        .collect();
+    let others: Vec<Claim> = rt.cobound(&reference.clone().into()).await?;
 
     if json {
         println!(
             "{}",
             serde_json::json!({
                 "path": path,
-                "cobound": others.iter().map(crate::memories::addressed).collect::<Vec<_>>(),
+                "cobound": others.iter().map(Claim::to_string).collect::<Vec<_>>(),
             })
         );
         return Ok(0);
     }
 
     if others.is_empty() {
-        println!("{path} shares no anchor with any other bound reference");
+        println!("{path} shares no anchor with any other bound claim");
     } else {
         println!("{path} is co-bound with:");
         for other in &others {
-            println!("  {}", names.of(other));
+            match other {
+                Claim::Stored(reference) => println!("  {}", names.of(reference)),
+                said => println!("  {said}"),
+            }
         }
     }
     Ok(0)

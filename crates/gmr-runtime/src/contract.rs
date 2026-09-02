@@ -11,7 +11,8 @@ pub use crate::link::Reached;
 pub use crate::open::{OpenRequest, Opened, Supersede};
 pub use crate::read::{
     AnchorView, Anchored, Asked, Before, Blind, Depends, Evidence, Footing, Grounded, Grounding,
-    Holding, Instructions, Knowledge, Linked, MemoryView, Reading, Shown, Standing, Warrant,
+    Holding, Instructions, Knowledge, Linked, MemoryView, Reading, SaidView, Shown, Standing,
+    Warrant,
 };
 
 pub const CONTRACT: &str = "gmr.contract.v10";

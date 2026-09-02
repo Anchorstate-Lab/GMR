@@ -101,6 +101,14 @@ pub fn anchor(g: &Grounded, names: &crate::memories::Names) -> String {
         }
         out.push('\n');
     }
+    for said in &g.said {
+        out.push_str(&format!("  ~ said:{}", said.id.as_str()));
+        out.push_str(&warranting(said.warrant.as_ref()));
+        if let Some(held) = vouching(&said.sources) {
+            out.push_str(held);
+        }
+        out.push('\n');
+    }
     out
 }
 

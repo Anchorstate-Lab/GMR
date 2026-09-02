@@ -6,9 +6,9 @@ use futures_util::{StreamExt, TryStreamExt, future::try_join};
 use gmr_budget::Budget;
 use gmr_content::ContentErrorCode;
 use gmr_core::{
-    Anchor, AnchorKey, AnchorState, Claim, Derivation, Entry, FactAddress, Facts, FailureCode,
-    Faltering, LinkKind, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, Seq, Source, State,
-    StatusId, Verifiability, Version,
+    Anchor, AnchorKey, AnchorState, Claim, Derivation, Entry, Expr, FactAddress, Facts,
+    FailureCode, Faltering, LinkKind, Outcome, ProbeVersion, ProviderId, ReasonClass, Ref, SaidId,
+    Seq, Source, State, StatusId, Verifiability, Version,
 };
 use gmr_store::Seen;
 use serde::{Deserialize, Serialize};
@@ -140,6 +140,23 @@ pub struct Grounded {
     #[serde(flatten)]
     pub view: AnchorView,
     pub memories: Vec<MemoryView>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub said: Vec<SaidView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SaidView {
+    pub id: SaidId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asserts: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depends: Option<Expr>,
+    pub sources: std::collections::BTreeSet<Source>,
+    pub bound_at_seq: Option<Seq>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asserted_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warrant: Option<Warrant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1164,20 +1181,45 @@ async fn ground(
     lean: bool,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
+    let mut said = Vec::new();
     for asserted in memory.bindings_on(log, &view.key).await? {
-        let Some(stored) = asserted.held() else {
-            continue;
-        };
-        let mut held = memory
-            .fetch_memory(stored, &total.narrowed(call), lean)
-            .await?;
-        held.warrant = Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
-        memories.push(held);
+        match asserted.claim().cloned() {
+            Some(Claim::Said { id, asserts }) => {
+                let bound_at_seq = asserted.dating().and_then(|r| r.bound_at_seq);
+                said.push(SaidView {
+                    id,
+                    asserts,
+                    depends: asserted.depends().cloned(),
+                    sources: asserted.sources(),
+                    bound_at_seq,
+                    asserted_at: asserted.first_asserted(),
+                    warrant: Some(
+                        warranted(log, &view.key, bound_at_seq, &view, moved_at).await?,
+                    ),
+                });
+            }
+            Some(Claim::Stored(_)) => {
+                let Some(stored) = asserted.held() else {
+                    continue;
+                };
+                let mut held = memory
+                    .fetch_memory(stored, &total.narrowed(call), lean)
+                    .await?;
+                held.warrant =
+                    Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
+                memories.push(held);
+            }
+            None => {}
+        }
     }
     if carry {
         memory.carry_linked(&mut memories, total, call, lean).await?;
     }
-    Ok(Grounded { view, memories })
+    Ok(Grounded {
+        view,
+        memories,
+        said,
+    })
 }
 
 async fn cobound(

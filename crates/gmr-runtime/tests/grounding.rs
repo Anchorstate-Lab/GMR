@@ -2193,3 +2193,47 @@ async fn a_lean_read_serves_the_warrant_and_leaves_the_body_home() {
         "nor a second one from history -- lean asks history nothing"
     );
 }
+
+#[tokio::test]
+async fn what_an_agent_said_stands_visible_on_the_anchor() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(
+                gmr_core::Claim::said("s-1"),
+                vec![AnchorKey::new("a")],
+            ),
+            None,
+            Default::default(),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        view.said.len(),
+        1,
+        "an utterance bound to the anchor is part of what stands on it"
+    );
+    assert_eq!(view.said[0].id.as_str(), "s-1");
+    assert!(
+        view.said[0].warrant.is_some(),
+        "the walker sees whether the ground moved under the assertion, not just that it exists"
+    );
+
+    let besides = w
+        .runtime
+        .cobound(&Ref::new("git", "memories/a.md").into())
+        .await
+        .unwrap();
+    assert!(
+        besides
+            .iter()
+            .any(|c| matches!(c, gmr_core::Claim::Said { .. })),
+        "co-bound enumeration serves utterances beside records: {besides:?}"
+    );
+}
