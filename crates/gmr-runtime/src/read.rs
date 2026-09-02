@@ -164,6 +164,8 @@ pub struct Linked {
     pub to: Ref,
     pub kind: LinkKind,
     pub source: Source,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -191,17 +193,26 @@ pub struct MemoryView {
 pub enum Grounding {
     Current {
         version: Version,
-        #[serde(serialize_with = "as_text_held", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            serialize_with = "as_text_held",
+            skip_serializing_if = "Option::is_none"
+        )]
         content: Option<Vec<u8>>,
     },
     Unverified {
         version: Version,
-        #[serde(serialize_with = "as_text_held", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            serialize_with = "as_text_held",
+            skip_serializing_if = "Option::is_none"
+        )]
         content: Option<Vec<u8>>,
     },
     Rewritten {
         version: Version,
-        #[serde(serialize_with = "as_text_held", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            serialize_with = "as_text_held",
+            skip_serializing_if = "Option::is_none"
+        )]
         content: Option<Vec<u8>>,
         before: Before,
     },
@@ -1205,9 +1216,7 @@ async fn ground(
                     sources: asserted.sources(),
                     bound_at_seq,
                     asserted_at: asserted.first_asserted(),
-                    warrant: Some(
-                        warranted(log, &view.key, bound_at_seq, &view, moved_at).await?,
-                    ),
+                    warrant: Some(warranted(log, &view.key, bound_at_seq, &view, moved_at).await?),
                 });
             }
             Some(Claim::Stored(_)) => {
@@ -1225,7 +1234,9 @@ async fn ground(
         }
     }
     if carry {
-        memory.carry_linked(&mut memories, total, call, lean).await?;
+        memory
+            .carry_linked(&mut memories, total, call, lean)
+            .await?;
     }
     Ok(Grounded {
         view,

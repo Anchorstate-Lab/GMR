@@ -7,7 +7,7 @@ pub use gmr_content::ContentErrorCode;
 
 pub use crate::bind::Landed;
 pub use crate::edges::{Edge, Edges, Raised};
-pub use crate::link::Reached;
+pub use crate::link::{Inbound, Links, Reached};
 pub use crate::open::{OpenRequest, Opened, Supersede};
 pub use crate::read::{
     AnchorView, Anchored, Asked, Before, Blind, Depends, Evidence, Footing, Grounded, Grounding,

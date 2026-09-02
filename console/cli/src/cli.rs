@@ -345,10 +345,24 @@ pub enum Command {
         /// what makes reads stop seeing them.
         #[arg(long)]
         detach: bool,
+        /// Where this edge (or its revocation) comes from: derived,
+        /// self_attested, adjudicated, configured, or unknown.
+        #[arg(long, default_value = "adjudicated")]
+        source: String,
         #[arg(long)]
         from_provider: Option<String>,
         #[arg(long)]
         to_provider: Option<String>,
+    },
+
+    /// Every live edge touching a record, both directions: what it points at,
+    /// and who points at it. Accumulated connections are only discoverable
+    /// from the pointed-at end if someone serves that end.
+    Links {
+        path: String,
+        /// Which registered ContentProvider `path` is resolved through.
+        #[arg(long)]
+        provider: Option<String>,
     },
 
     /// Retire an anchor. Closure is irreversible.

@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 14;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -74,9 +74,11 @@ CREATE TABLE IF NOT EXISTS links (
     from_ref TEXT NOT NULL,     -- canonical Ref
     to_ref   TEXT NOT NULL,     -- canonical Ref
     kind     TEXT NOT NULL,
-    source   TEXT NOT NULL DEFAULT 'unknown'
+    source   TEXT NOT NULL DEFAULT 'unknown',
+    at       TEXT               -- RFC3339; NULL predates this column
 );
 CREATE INDEX IF NOT EXISTS links_by_from ON links(from_ref);
+CREATE INDEX IF NOT EXISTS links_by_to ON links(to_ref);
 
 -- Link revocations: each row kills exactly one observed link row, so a
 -- concurrent re-assertion of the same edge lands as a new seq and survives.
@@ -304,4 +306,9 @@ CREATE TRIGGER IF NOT EXISTS link_revocations_no_update BEFORE UPDATE ON link_re
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS link_revocations_no_delete BEFORE DELETE ON link_revocations
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+"#;
+
+pub const V13_TO_V14: &str = r#"
+ALTER TABLE links ADD COLUMN at TEXT;
+CREATE INDEX IF NOT EXISTS links_by_to ON links(to_ref);
 "#;

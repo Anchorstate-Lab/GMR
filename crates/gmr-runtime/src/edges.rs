@@ -166,7 +166,9 @@ async fn changed_since(
                 let Some(held) = asserted.held() else {
                     continue;
                 };
-                let view = memory.fetch_memory(held, &total.narrowed(call), false).await?;
+                let view = memory
+                    .fetch_memory(held, &total.narrowed(call), false)
+                    .await?;
                 raised.extend(Raised::of(key.clone(), view));
             }
         }

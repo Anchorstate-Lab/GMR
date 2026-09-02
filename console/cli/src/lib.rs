@@ -269,12 +269,17 @@ pub async fn served(
             to,
             kind,
             detach,
+            source,
             from_provider,
             to_provider,
         } => {
             let from = stores.locate(&from, from_provider.as_deref())?;
             let to = stores.locate(&to, to_provider.as_deref())?;
-            verbs::link::run(&rt, from, to, kind, detach, json).await
+            verbs::link::run(&rt, from, to, kind, detach, source, json).await
+        }
+        Command::Links { path, provider } => {
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::links::run(&rt, names, reference, json).await
         }
         Command::Close { key, why } => verbs::close::run(&rt, key, why).await,
         Command::Since { since, status } => {

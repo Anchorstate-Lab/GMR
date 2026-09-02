@@ -484,6 +484,7 @@ async fn links_are_scoped_to_the_from_reference<L: gmr_store::LinkStore>(l: &L) 
         &b,
         gmr_core::LinkKind("elaborates".into()),
         gmr_core::Source::Adjudicated,
+        chrono::Utc::now(),
     )
     .await
     .unwrap();
@@ -492,6 +493,7 @@ async fn links_are_scoped_to_the_from_reference<L: gmr_store::LinkStore>(l: &L) 
         &c,
         gmr_core::LinkKind("contradicts".into()),
         gmr_core::Source::Derived,
+        chrono::Utc::now(),
     )
     .await
     .unwrap();
@@ -505,6 +507,19 @@ async fn links_are_scoped_to_the_from_reference<L: gmr_store::LinkStore>(l: &L) 
         l.links_of(&b).await.unwrap().is_empty(),
         "links are directed: b was linked to, not from"
     );
+
+    let into_b = l.links_to(&b).await.unwrap();
+    assert_eq!(
+        into_b.len(),
+        1,
+        "the pointed-at end can discover who points at it"
+    );
+    assert_eq!(into_b[0].0, a, "the far end names the asserter of the edge");
+    assert!(
+        into_b[0].1.at.is_some(),
+        "when the edge grew is readable, not lost"
+    );
+    assert!(l.links_to(&a).await.unwrap().is_empty());
 }
 
 async fn an_edge_carries_who_asserted_it<L: gmr_store::LinkStore>(l: &L) {
@@ -515,6 +530,7 @@ async fn an_edge_carries_who_asserted_it<L: gmr_store::LinkStore>(l: &L) {
         &b,
         gmr_core::LinkKind("rests-on".into()),
         gmr_core::Source::Derived,
+        chrono::Utc::now(),
     )
     .await
     .unwrap();
@@ -533,9 +549,15 @@ async fn unlinking_names_only_the_rows_it_observed<L: gmr_store::LinkStore>(l: &
     let a = Ref::new("git", "memories/a.md");
     let b = Ref::new("git", "memories/b.md");
     let kind = gmr_core::LinkKind("rests-on".into());
-    l.link(&a, &b, kind.clone(), gmr_core::Source::Derived)
-        .await
-        .unwrap();
+    l.link(
+        &a,
+        &b,
+        kind.clone(),
+        gmr_core::Source::Derived,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
 
     let revoked = l
         .unlink(&gmr_store::LinkRevocation {
@@ -551,9 +573,15 @@ async fn unlinking_names_only_the_rows_it_observed<L: gmr_store::LinkStore>(l: &
     assert_eq!(revoked, 1);
     assert!(l.links_of(&a).await.unwrap().is_empty());
 
-    l.link(&a, &b, kind.clone(), gmr_core::Source::SelfAttested)
-        .await
-        .unwrap();
+    l.link(
+        &a,
+        &b,
+        kind.clone(),
+        gmr_core::Source::SelfAttested,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         l.links_of(&a).await.unwrap().len(),
         1,
@@ -570,12 +598,24 @@ async fn unlinking_derived_rows_leaves_an_agents_identical_edge_standing<
     let a = Ref::new("git", "memories/a.md");
     let b = Ref::new("git", "memories/b.md");
     let kind = gmr_core::LinkKind("rests-on".into());
-    l.link(&a, &b, kind.clone(), gmr_core::Source::Derived)
-        .await
-        .unwrap();
-    l.link(&a, &b, kind.clone(), gmr_core::Source::SelfAttested)
-        .await
-        .unwrap();
+    l.link(
+        &a,
+        &b,
+        kind.clone(),
+        gmr_core::Source::Derived,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
+    l.link(
+        &a,
+        &b,
+        kind.clone(),
+        gmr_core::Source::SelfAttested,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
 
     let revoked = l
         .unlink(&gmr_store::LinkRevocation {

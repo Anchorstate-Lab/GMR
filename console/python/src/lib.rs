@@ -201,6 +201,16 @@ impl Gmr {
         })
     }
 
+    fn links(&self, py: Python<'_>, record: String) -> PyResult<PyObject> {
+        let record = ok(core::stored(record))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(
+            py,
+            async move { ok(core::answered(rt.links(&record).await)) },
+        )?;
+        handed(py, out)
+    }
+
     fn condense(
         &self,
         py: Python<'_>,

@@ -108,8 +108,9 @@ impl MemoryLens {
         to: &Ref,
         kind: LinkKind,
         source: Source,
+        at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
-        Ok(self.links.link(from, to, kind, source).await?)
+        Ok(self.links.link(from, to, kind, source, at).await?)
     }
 
     pub async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, RuntimeError> {
@@ -122,6 +123,10 @@ impl MemoryLens {
 
     pub async fn all_links(&self) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
         Ok(self.links.all().await?)
+    }
+
+    pub async fn links_to(&self, reference: &Ref) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
+        Ok(self.links.links_to(reference).await?)
     }
 
     fn provider_for(&self, reference: &Ref) -> Option<&Arc<dyn ContentProvider>> {
@@ -284,6 +289,7 @@ fn linked(record: LinkRecord) -> crate::read::Linked {
         to: record.to,
         kind: record.kind,
         source: record.source,
+        at: record.at,
     }
 }
 

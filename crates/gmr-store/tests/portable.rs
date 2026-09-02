@@ -119,6 +119,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
             &Ref::new("git", "memories/two.md"),
             LinkKind("contradicts".into()),
             gmr_core::Source::Adjudicated,
+            chrono::Utc::now(),
         )
         .await
         .unwrap();
@@ -129,6 +130,7 @@ async fn populated() -> gmr_store::sqlite::SqliteStore {
             &Ref::new("git", "memories/gone.md"),
             LinkKind("rests-on".into()),
             gmr_core::Source::Derived,
+            chrono::Utc::now(),
         )
         .await
         .unwrap();

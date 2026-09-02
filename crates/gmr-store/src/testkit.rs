@@ -200,6 +200,7 @@ impl LinkStore for MemoryBindings {
         to: &Ref,
         kind: LinkKind,
         source: gmr_core::Source,
+        at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), StoreError> {
         self.inner.lock().unwrap().links.push((
             from.clone(),
@@ -207,6 +208,7 @@ impl LinkStore for MemoryBindings {
                 to: to.clone(),
                 kind,
                 source,
+                at: Some(at),
             },
             false,
         ));
@@ -254,6 +256,18 @@ impl LinkStore for MemoryBindings {
             .iter()
             .filter(|(from, _, dead)| from == reference && !dead)
             .map(|(_, record, _)| record.clone())
+            .collect())
+    }
+
+    async fn links_to(&self, reference: &Ref) -> Result<Vec<(Ref, LinkRecord)>, StoreError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .links
+            .iter()
+            .filter(|(_, record, dead)| &record.to == reference && !dead)
+            .map(|(from, record, _)| (from.clone(), record.clone()))
             .collect())
     }
 }

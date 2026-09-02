@@ -8,8 +8,15 @@ pub async fn run(
     to: Ref,
     kind: String,
     detach: bool,
+    source: String,
     json: bool,
 ) -> Result<i32, CliError> {
+    let source = Source::parse(&source).ok_or_else(|| {
+        CliError(format!(
+            "`{source}` is not a provenance: derived, self_attested, adjudicated, configured, \
+             or unknown"
+        ))
+    })?;
     let (from_ref, to_ref) = (from, to);
     let (from, to) = (
         from_ref.external_id.to_string(),
@@ -23,7 +30,7 @@ pub async fn run(
                 to: to_ref,
                 kind: LinkKind(kind.clone()),
                 asserted_as: None,
-                source: Source::Adjudicated,
+                source,
                 when: chrono::Utc::now(),
             })
             .await?;
@@ -41,13 +48,8 @@ pub async fn run(
         return Ok(0);
     }
 
-    rt.link(
-        &from_ref,
-        &to_ref,
-        LinkKind(kind.clone()),
-        Source::Adjudicated,
-    )
-    .await?;
+    rt.link(&from_ref, &to_ref, LinkKind(kind.clone()), source)
+        .await?;
 
     if json {
         println!(

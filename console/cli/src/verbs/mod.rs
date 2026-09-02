@@ -14,6 +14,7 @@ pub mod health;
 pub mod import;
 pub mod init;
 pub mod link;
+pub mod links;
 pub mod memories;
 pub mod observe;
 pub mod open;

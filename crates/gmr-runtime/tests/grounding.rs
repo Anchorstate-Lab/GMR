@@ -2143,7 +2143,10 @@ async fn carrying_linked_records_is_asked_for_and_they_come_back_marked() {
 #[tokio::test]
 async fn a_lean_read_serves_the_warrant_and_leaves_the_body_home() {
     let w = World::new(true);
-    w.memory("a.md", "Nine replicas, because eight cannot survive a rolling restart.");
+    w.memory(
+        "a.md",
+        "Nine replicas, because eight cannot survive a rolling restart.",
+    );
     w.open("a").await;
     w.bind("a.md", &["a"]).await;
 
@@ -2162,16 +2165,18 @@ async fn a_lean_read_serves_the_warrant_and_leaves_the_body_home() {
         "lean hands over no body: the reference and version are the delivery"
     );
     let Grounding::Current { version, .. } = &m.grounding else {
-        panic!("the record is unchanged, so lean still reports Current: {:?}", m.grounding);
+        panic!(
+            "the record is unchanged, so lean still reports Current: {:?}",
+            m.grounding
+        );
     };
     assert!(!version.as_str().is_empty(), "the version still travels");
-    assert!(m.warrant.is_some(), "the warrant is the answer, and it still arrives");
+    assert!(
+        m.warrant.is_some(),
+        "the warrant is the answer, and it still arrives"
+    );
 
-    let full = w
-        .runtime
-        .grounded(&AnchorKey::new("a"))
-        .await
-        .unwrap();
+    let full = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
     assert!(
         full.memories[0].content().is_some(),
         "without lean the body arrives exactly as before"
@@ -2183,7 +2188,10 @@ async fn a_lean_read_serves_the_warrant_and_leaves_the_body_home() {
         .grounded_within(&AnchorKey::new("a"), &how)
         .await
         .unwrap();
-    let Grounding::Rewritten { content, before, .. } = &moved.memories[0].grounding else {
+    let Grounding::Rewritten {
+        content, before, ..
+    } = &moved.memories[0].grounding
+    else {
         panic!("the record moved under its binding");
     };
     assert!(content.is_none(), "lean carries neither the new body");
@@ -2202,10 +2210,7 @@ async fn what_an_agent_said_stands_visible_on_the_anchor() {
     w.bind("a.md", &["a"]).await;
     w.runtime
         .bind(
-            gmr_core::Binding::on(
-                gmr_core::Claim::said("s-1"),
-                vec![AnchorKey::new("a")],
-            ),
+            gmr_core::Binding::on(gmr_core::Claim::said("s-1"), vec![AnchorKey::new("a")]),
             None,
             Default::default(),
             gmr_core::Source::SelfAttested,
@@ -2301,5 +2306,9 @@ async fn condensing_carries_the_grounding_and_revokes_the_utterance() {
         )
         .await
         .unwrap_err();
-    assert_eq!(err.code(), "not_bound", "a revoked utterance cannot condense twice");
+    assert_eq!(
+        err.code(),
+        "not_bound",
+        "a revoked utterance cannot condense twice"
+    );
 }
