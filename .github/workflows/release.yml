@@ -263,6 +263,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: gmr-*
           path: release-artifacts
 
       - name: Setup Node
@@ -378,6 +379,7 @@ jobs:
 
   pypi:
     needs: [bump-version, wheels, sdist]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && (needs.bump-version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/')) }}
     runs-on: ubuntu-latest
     env:
       MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
