@@ -124,9 +124,17 @@ impl Gmr {
         to: String,
         kind: String,
         source: String,
+        asserted_as: Option<String>,
     ) -> Result<i64> {
         let rt = Arc::clone(&self.rt);
-        let revocation = ok(core::revoking(from, to, kind, &source, chrono::Utc::now()))?;
+        let revocation = ok(core::revoking(
+            from,
+            to,
+            kind,
+            &source,
+            asserted_as,
+            chrono::Utc::now(),
+        ))?;
         spawned(async move {
             rt.unlink(&revocation)
                 .await

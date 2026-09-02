@@ -73,8 +73,8 @@ MUTATIONS = [
     {
         "id": "a-rewritten-memory-reads-as-current",
         "file": "crates/gmr-runtime/src/memory.rs",
-        "find": "        Grounding::Rewritten {\n            version: fetched.version,\n            content: fetched.bytes,\n            before,\n        }",
-        "replace": "        let _ = before;\n        Grounding::Current {\n            version: fetched.version,\n            content: fetched.bytes,\n        }",
+        "find": "        Grounding::Rewritten {\n            version: fetched.version,\n            content: kept(fetched.bytes),\n            before,\n        }",
+        "replace": "        let _ = before;\n        Grounding::Current {\n            version: fetched.version,\n            content: kept(fetched.bytes),\n        }",
         "breaks": ["a-rewritten-memory-does-not-read-as-current"],
         "why": "a memory edited under its binding is the quietest way this system can lie",
     },

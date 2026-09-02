@@ -146,3 +146,54 @@ test("read hands back the envelope, and a carried edge says who asserted it", as
   const after = await gmr.read("prod-replicas");
   assert.equal(after.memories[0].links.length, 0, "a revoked edge stops being served");
 });
+
+test("the walk reaches both ends, and a conclusion condenses into a memory", async () => {
+  const root = aRepository();
+  const gmr = await opened(root);
+  await gmr.open({
+    key: "prod-replicas",
+    probe: { kind: "file", name: "replicas" },
+    initial: { position: { env: "prod" } },
+    transitions: [
+      { when: "true", to: "{ position: state.position, v: obs.value }" },
+    ],
+  });
+  await gmr.bind("git:memories/replicas.md", ["prod-replicas"], "derived");
+  await gmr.bind("said:s1", ["prod-replicas"], "self_attested");
+
+  const view = await gmr.read("prod-replicas");
+  assert.deepEqual(
+    view.said.map((s) => s.id),
+    ["s1"],
+    "a conclusion bound here is visible to whoever stands on the anchor",
+  );
+  assert.ok(view.said[0].warrant, "and it carries a warrant like any record");
+
+  const roster = await gmr.anchors();
+  assert.deepEqual(roster.map((a) => a.key), ["prod-replicas"], "the first hop exists");
+  const besides = await gmr.cobound("git:memories/replicas.md");
+  assert.ok(besides.some((c) => c.said === "s1"), "cobound serves the utterance too");
+
+  await gmr.link("git:memories/replicas.md", "git:memories/why.md", "rests-on", "adjudicated");
+  const both = await gmr.links("git:memories/why.md");
+  assert.equal(both.in.length, 1, "the pointed-at end discovers who points at it");
+  assert.equal(both.in[0].from.external_id, "memories/replicas.md");
+  assert.ok(both.in[0].at, "when the edge grew is readable");
+  assert.equal(both.out.length, 0);
+
+  const lean = await gmr.read("prod-replicas", { lean: true });
+  assert.equal(
+    lean.memories[0].grounding.content,
+    undefined,
+    "lean serves the warrant and keeps the body home",
+  );
+
+  writeFileSync(join(root, "memories", "conclusion.md"), "Grown into a memory.\n");
+  await gmr.condense("said:s1", "git:memories/conclusion.md", "derived");
+  const after = await gmr.read("prod-replicas");
+  assert.equal(after.said, undefined, "the utterance no longer stands");
+  const held = after.memories.find(
+    (m) => m.reference.external_id === "memories/conclusion.md",
+  );
+  assert.equal(held.origin, "s1", "the lineage reads back off the binding");
+});

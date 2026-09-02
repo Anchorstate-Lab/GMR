@@ -48,7 +48,7 @@ def replicated(g):
 
 class Verbs(unittest.TestCase):
     def test_the_module_names_the_contract_it_serves(self):
-        self.assertEqual(gmr.CONTRACT, "gmr.contract.v10")
+        self.assertEqual(gmr.CONTRACT, "gmr.contract.v11")
 
     def test_five_lines_get_a_sentences_grounding(self):
         g = opened(a_repository())
@@ -86,10 +86,12 @@ class Verbs(unittest.TestCase):
         self.assertEqual(len(view["memories"]), 1, "carry is opt-in")
         held = view["memories"][0]
         self.assertTrue(held["grounded"])
-        self.assertEqual(held["links"], [
-            {"to": {"provider": "git", "external_id": "memories/why.md"},
-             "kind": "rests-on", "source": "adjudicated"}
-        ])
+        self.assertEqual(len(held["links"]), 1)
+        edge = held["links"][0]
+        self.assertEqual(edge["to"], {"provider": "git", "external_id": "memories/why.md"})
+        self.assertEqual(edge["kind"], "rests-on")
+        self.assertEqual(edge["source"], "adjudicated")
+        self.assertIsNotNone(edge.get("at"), "when the edge grew travels with it")
 
         dropped = g.unlink(
             from_="git:memories/replicas.md",
@@ -106,6 +108,49 @@ class Verbs(unittest.TestCase):
         replicated(g)
         seen = g.since(0)
         self.assertIsInstance(seen["edges"], list)
+
+
+
+
+class Walk(unittest.TestCase):
+    def test_the_walk_reaches_both_ends_and_a_conclusion_condenses(self):
+        root = a_repository()
+        g = opened(root)
+        replicated(g)
+        g.bind("git:memories/replicas.md", ["prod-replicas"], "derived")
+        g.bind("said:s1", ["prod-replicas"], "self_attested")
+
+        view = g.read("prod-replicas")
+        self.assertEqual([s["id"] for s in view["said"]], ["s1"])
+        self.assertIn("warrant", view["said"][0])
+
+        self.assertEqual([a["key"] for a in g.anchors()], ["prod-replicas"])
+        besides = g.cobound("git:memories/replicas.md")
+        self.assertTrue(
+            any(c == {"said": "s1"} for c in besides),
+            f"cobound serves the utterance too: {besides}",
+        )
+
+        g.link("git:memories/replicas.md", "git:memories/why.md", "rests-on", "adjudicated")
+        both = g.links("git:memories/why.md")
+        self.assertEqual(len(both["in"]), 1)
+        self.assertEqual(both["in"][0]["from"]["external_id"], "memories/replicas.md")
+        self.assertIsNotNone(both["in"][0].get("at"))
+        self.assertEqual(both["out"], [])
+
+        lean = g.read("prod-replicas", {"lean": True})
+        self.assertNotIn("content", lean["memories"][0]["grounding"])
+
+        with open(os.path.join(root, "memories", "conclusion.md"), "w") as f:
+            f.write("Grown into a memory.\n")
+        g.condense("said:s1", "git:memories/conclusion.md", "derived")
+        after = g.read("prod-replicas")
+        self.assertNotIn("said", after)
+        held = [
+            m for m in after["memories"]
+            if m["reference"]["external_id"] == "memories/conclusion.md"
+        ]
+        self.assertEqual(held[0]["origin"], "s1")
 
 
 if __name__ == "__main__":

@@ -186,6 +186,7 @@ impl Gmr {
         })
     }
 
+    #[pyo3(signature = (from_, to, kind, source, asserted_as=None))]
     fn unlink(
         &self,
         py: Python<'_>,
@@ -193,8 +194,16 @@ impl Gmr {
         to: String,
         kind: String,
         source: String,
+        asserted_as: Option<String>,
     ) -> PyResult<u64> {
-        let revocation = ok(core::revoking(from_, to, kind, &source, chrono::Utc::now()))?;
+        let revocation = ok(core::revoking(
+            from_,
+            to,
+            kind,
+            &source,
+            asserted_as,
+            chrono::Utc::now(),
+        ))?;
         let rt = Arc::clone(&self.rt);
         self.run(py, async move {
             rt.unlink(&revocation)

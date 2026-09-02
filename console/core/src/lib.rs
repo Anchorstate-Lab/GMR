@@ -279,13 +279,14 @@ pub fn revoking(
     to: String,
     kind: String,
     source: &str,
+    asserted_as: Option<String>,
     when: DateTime<Utc>,
 ) -> Result<LinkRevocation, Fault> {
     Ok(LinkRevocation {
         from: stored(from)?,
         to: stored(to)?,
         kind: LinkKind(kind),
-        asserted_as: None,
+        asserted_as: asserted_as.as_deref().map(attested).transpose()?,
         source: attested(source)?,
         when,
     })
