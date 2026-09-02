@@ -81,8 +81,8 @@ MUTATIONS = [
     {
         "id": "a-memory-loses-who-vouched-for-it",
         "file": "crates/gmr-runtime/src/read.rs",
-        "find": "    pub sources: std::collections::BTreeSet<Source>,",
-        "replace": "    #[serde(skip_serializing)]\n    pub sources: std::collections::BTreeSet<Source>,",
+        "find": "    pub baseline_at: Option<Seq>,\n    pub sources: std::collections::BTreeSet<Source>,",
+        "replace": "    pub baseline_at: Option<Seq>,\n    #[serde(skip_serializing)]\n    pub sources: std::collections::BTreeSet<Source>,",
         "breaks": ["a-memory-can-be-traced-back-to-its-signal"],
         "why": "an argument whose backing nobody can read is not traceable",
     },
