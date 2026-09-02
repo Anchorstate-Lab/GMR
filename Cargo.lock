@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "gmr"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "gmr-budget",
  "gmr-content",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-atlas"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -615,11 +615,11 @@ dependencies = [
 
 [[package]]
 name = "gmr-budget"
-version = "0.6.0"
+version = "0.6.1"
 
 [[package]]
 name = "gmr-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-coding-pack"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "gmr-budget",
  "gmr-core",
@@ -661,7 +661,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-console"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "gmr",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-content"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "gmr-budget",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "ryu",
@@ -697,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-expr"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -707,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-node"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "gmr",
@@ -723,7 +723,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-probe"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "gmr-budget",
@@ -735,7 +735,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-provider"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "gmr-budget",
@@ -752,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-python"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "gmr",
@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-runtime"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-store"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-survey"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -819,7 +819,7 @@ dependencies = [
 
 [[package]]
 name = "gmr-transport"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "gmr-budget",
