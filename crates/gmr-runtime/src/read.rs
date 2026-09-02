@@ -668,8 +668,7 @@ impl Runtime {
             moved_at,
             &reaching(policy, how),
             policy.content_call(),
-            how.carry,
-            how.lean,
+            how,
         )
         .await?;
         for held in &served.memories {
@@ -883,19 +882,7 @@ impl Runtime {
         for key in keys {
             let looks = seen.get(&key).copied().unwrap_or_default();
             let (view, moved_at) = stand(&self.log, &key, &looks).await?;
-            out.push(
-                ground(
-                    &self.log,
-                    &self.memory,
-                    view,
-                    moved_at,
-                    &total,
-                    call,
-                    how.carry,
-                    how.lean,
-                )
-                .await?,
-            );
+            out.push(ground(&self.log, &self.memory, view, moved_at, &total, call, how).await?);
         }
         Ok(out)
     }
@@ -1225,8 +1212,7 @@ async fn ground(
     moved_at: Option<Seq>,
     total: &Budget,
     call: Duration,
-    carry: bool,
-    lean: bool,
+    how: &Instructions,
 ) -> Result<Grounded, RuntimeError> {
     let mut memories = Vec::new();
     let mut said = Vec::new();
@@ -1249,7 +1235,7 @@ async fn ground(
                     continue;
                 };
                 let mut held = memory
-                    .fetch_memory(stored, &total.narrowed(call), lean)
+                    .fetch_memory(stored, &total.narrowed(call), how.lean)
                     .await?;
                 held.warrant =
                     Some(warranted(log, &view.key, held.bound_at_seq, &view, moved_at).await?);
@@ -1258,9 +1244,9 @@ async fn ground(
             None => {}
         }
     }
-    if carry {
+    if how.carry {
         memory
-            .carry_linked(&mut memories, total, call, lean)
+            .carry_linked(&mut memories, total, call, how.lean)
             .await?;
     }
     Ok(Grounded {
