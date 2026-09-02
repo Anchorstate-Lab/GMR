@@ -326,7 +326,7 @@ mod tests {
             grounding: if rewritten {
                 Grounding::Rewritten {
                     version: gmr::Version::new("v2"),
-                    content: b"body".to_vec(),
+                    content: Some(b"body".to_vec()),
                     before: Before::Retrieved {
                         content: b"was".to_vec(),
                     },
@@ -334,7 +334,7 @@ mod tests {
             } else {
                 Grounding::Current {
                     version: gmr::Version::new("v1"),
-                    content: b"body".to_vec(),
+                    content: Some(b"body".to_vec()),
                 }
             },
             grounded,
