@@ -338,6 +338,8 @@ jobs:
             target: aarch64
           - os: macos-latest
             target: universal2-apple-darwin
+          - os: windows-latest
+            target: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -354,8 +356,26 @@ jobs:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
           path: wheels/*.whl
 
+  sdist:
+    needs: bump-version
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && (needs.bump-version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.tag || github.ref_name }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: console/python
+          command: sdist
+          args: --out ../../wheels
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: wheels/*.tar.gz
+
   pypi:
-    needs: [bump-version, wheels]
+    needs: [bump-version, wheels, sdist]
     runs-on: ubuntu-latest
     env:
       MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
@@ -370,7 +390,14 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: upload
-          args: --skip-existing wheels/*.whl
-      - name: No PyPI token, wheels stay as artifacts
+          args: --skip-existing wheels/*
+      - name: No PyPI token, say so where someone will look
         if: env.MATURIN_PYPI_TOKEN == ''
-        run: echo "PYPI_TOKEN is not configured; the wheels are attached as workflow artifacts and nothing failed."
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.bump-version.outputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" --json body -q .body > body.md || exit 0
+          printf '\n\nPyPI: this version was not published -- PYPI_TOKEN is not configured. The wheels and sdist are attached to the release workflow run as artifacts.\n' >> body.md
+          gh release edit "$TAG" --notes-file body.md
