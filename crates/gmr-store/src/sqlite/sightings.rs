@@ -9,7 +9,7 @@ use super::db_err;
 use super::queue::SqliteQueue;
 use crate::{Seen, Sightings, StoreError};
 
-fn moment(text: Option<String>) -> Result<Option<DateTime<Utc>>, StoreError> {
+pub(crate) fn moment(text: Option<String>) -> Result<Option<DateTime<Utc>>, StoreError> {
     text.map(|t| {
         DateTime::parse_from_rfc3339(&t)
             .map(|d| d.with_timezone(&Utc))

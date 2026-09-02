@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/observe.rs#run
-  - domains/coding/cli/src/verbs/check.rs#run
+  - console/cli/src/verbs/observe.rs#run
+  - console/cli/src/verbs/check.rs#run
 watch: [sig]
 ---
 

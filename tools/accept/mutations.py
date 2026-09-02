@@ -21,7 +21,7 @@ way a paragraph describing the same thing would.
 MUTATIONS = [
     {
         "id": "a-store-we-cannot-name-becomes-a-record-somewhere-else",
-        "file": "domains/coding/cli/src/memories.rs",
+        "file": "console/cli/src/memories.rs",
         "find": "    if !known.contains(&named) {\n        return Err(CliError(format!(",
         "replace": "    if !known.contains(&named) {\n        return addressed_to(RESOLVED_THROUGH, &format!(\"{named}:{external_id}\"));\n    }\n    if false {\n        return Err(CliError(format!(",
         "breaks": ["a-store-this-run-cannot-name-is-never-another-stores-record"],
@@ -31,7 +31,7 @@ MUTATIONS = [
     },
     {
         "id": "the-front-door-answers-twice",
-        "file": "domains/coding/cli/src/verbs/anchor.rs",
+        "file": "console/cli/src/verbs/anchor.rs",
         "find": "    if !json {\n        crate::verbs::sync::tell(&synced, false);\n    }",
         "replace": "    crate::verbs::sync::tell(&synced, json);",
         "breaks": ["an-act-of-grounding-is-reported-as-having-happened"],
@@ -40,7 +40,7 @@ MUTATIONS = [
     },
     {
         "id": "the-memories-vanish-from-the-report",
-        "file": "domains/coding/cli/src/verbs/observe.rs",
+        "file": "console/cli/src/verbs/observe.rs",
         "find": "    refs.iter().map(crate::memories::addressed).collect()",
         "replace": "    let _ = refs;\n    Vec::new()",
         "breaks": ["the-memory-comes-back-when-its-signal-moves"],
@@ -56,7 +56,7 @@ MUTATIONS = [
     },
     {
         "id": "every-memory-is-handed-back-every-time",
-        "file": "domains/coding/cli/src/delivery.rs",
+        "file": "console/cli/src/delivery.rs",
         "find": "            gmr::expr::Evaluated::Value(Value::Bool(on)) => Ok(on),",
         "replace": "            gmr::expr::Evaluated::Value(Value::Bool(on)) => Ok(on || true),",
         "breaks": ["a-memory-that-asked-about-another-axis-stays-put"],
@@ -64,7 +64,7 @@ MUTATIONS = [
     },
     {
         "id": "a-refusal-is-swallowed",
-        "file": "domains/coding/cli/src/verbs/check.rs",
+        "file": "console/cli/src/verbs/check.rs",
         "find": "        unseen: !unseen.is_empty(),",
         "replace": "        unseen: false,",
         "breaks": ["a-spent-budget-refuses-and-never-becomes-state"],
@@ -73,16 +73,16 @@ MUTATIONS = [
     {
         "id": "a-rewritten-memory-reads-as-current",
         "file": "crates/gmr-runtime/src/memory.rs",
-        "find": "        Grounding::Rewritten {\n            version: fetched.version,\n            content: fetched.bytes,\n            before,\n        }",
-        "replace": "        let _ = before;\n        Grounding::Current {\n            version: fetched.version,\n            content: fetched.bytes,\n        }",
+        "find": "        Grounding::Rewritten {\n            version: fetched.version,\n            content: kept(fetched.bytes),\n            before,\n        }",
+        "replace": "        let _ = before;\n        Grounding::Current {\n            version: fetched.version,\n            content: kept(fetched.bytes),\n        }",
         "breaks": ["a-rewritten-memory-does-not-read-as-current"],
         "why": "a memory edited under its binding is the quietest way this system can lie",
     },
     {
         "id": "a-memory-loses-who-vouched-for-it",
         "file": "crates/gmr-runtime/src/read.rs",
-        "find": "    pub sources: std::collections::BTreeSet<Source>,",
-        "replace": "    #[serde(skip_serializing)]\n    pub sources: std::collections::BTreeSet<Source>,",
+        "find": "    pub baseline_at: Option<Seq>,\n    pub sources: std::collections::BTreeSet<Source>,",
+        "replace": "    pub baseline_at: Option<Seq>,\n    #[serde(skip_serializing)]\n    pub sources: std::collections::BTreeSet<Source>,",
         "breaks": ["a-memory-can-be-traced-back-to-its-signal"],
         "why": "an argument whose backing nobody can read is not traceable",
     },
@@ -100,7 +100,7 @@ MUTATIONS = [
     },
     {
         "id": "what-is-owed-is-only-what-is-owed-right-now",
-        "file": "domains/coding/cli/src/verbs/mod.rs",
+        "file": "console/cli/src/verbs/mod.rs",
         "find": "        let raised = entries\n            .iter()\n            .filter(|(seq, _)| *seq >= sealed)\n            .any(|(_, e)| {",
         "replace": "        let raised = entries\n            .iter()\n            .filter(|(seq, _)| *seq >= sealed)\n            .last()\n            .iter()\n            .any(|(_, e)| {",
         "breaks": ["an-obligation-the-rules-put-away-is-still-not-discarded"],
@@ -109,7 +109,7 @@ MUTATIONS = [
     },
     {
         "id": "a-position-is-only-what-was-typed",
-        "file": "domains/coding/cli/src/coord.rs",
+        "file": "console/cli/src/coord.rs",
         "find": "    if obs.identity.is_empty() {\n        return Ok(routed.position.clone());\n    }",
         "replace": "    if true {\n        let _ = &obs;\n        return Ok(routed.position.clone());\n    }",
         "breaks": ["different-changes-leave-different-reports"],
@@ -118,7 +118,7 @@ MUTATIONS = [
     },
     {
         "id": "migration-drops-what-it-was-carrying",
-        "file": "domains/coding/cli/src/verbs/import.rs",
+        "file": "console/cli/src/verbs/import.rs",
         "find": "",
         "replace": "",
         "breaks": ["migration-carries-the-whole-promise"],

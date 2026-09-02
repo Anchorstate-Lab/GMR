@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/memories.rs#superfluous
+about: console/cli/src/memories.rs#superfluous
 watch: [sig, logic]
 ---
 

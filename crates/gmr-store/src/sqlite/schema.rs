@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 16;
 
 pub const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -74,9 +74,11 @@ CREATE TABLE IF NOT EXISTS links (
     from_ref TEXT NOT NULL,     -- canonical Ref
     to_ref   TEXT NOT NULL,     -- canonical Ref
     kind     TEXT NOT NULL,
-    source   TEXT NOT NULL DEFAULT 'unknown'
+    source   TEXT NOT NULL DEFAULT 'unknown',
+    at       TEXT               -- RFC3339; NULL predates this column
 );
 CREATE INDEX IF NOT EXISTS links_by_from ON links(from_ref);
+CREATE INDEX IF NOT EXISTS links_by_to ON links(to_ref);
 
 -- Link revocations: each row kills exactly one observed link row, so a
 -- concurrent re-assertion of the same edge lands as a new seq and survives.
@@ -119,6 +121,29 @@ CREATE TABLE IF NOT EXISTS sighting (
     anchor   TEXT PRIMARY KEY,
     count    INTEGER NOT NULL DEFAULT 0,
     last_at  TEXT                        -- RFC3339, as the entries spell it
+);
+
+-- ── Usage: how often a claim was actually served or handed over, and when
+-- last. Residue of use, never a judgement: readers may weigh it, this store
+-- only counts. **Mutable**, same standing as sightings.
+
+CREATE TABLE IF NOT EXISTS usage (
+    claim    TEXT PRIMARY KEY,           -- canonical Claim
+    count    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT                        -- RFC3339
+);
+
+-- ── Ledger: what each session's verbs cost in calls and envelope bytes.
+-- **Mutable** tallies; the walk-cost side of the density claim, so the
+-- three inequalities can each become a printable number.
+
+CREATE TABLE IF NOT EXISTS ledger (
+    session  TEXT NOT NULL,
+    verb     TEXT NOT NULL,
+    calls    INTEGER NOT NULL DEFAULT 0,
+    bytes    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT,                       -- RFC3339
+    PRIMARY KEY (session, verb)
 );
 
 -- ── Queue: polling deployments only. **Mutable**, no pretence ──
@@ -304,4 +329,28 @@ CREATE TRIGGER IF NOT EXISTS link_revocations_no_update BEFORE UPDATE ON link_re
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS link_revocations_no_delete BEFORE DELETE ON link_revocations
     BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+"#;
+
+pub const V13_TO_V14: &str = r#"
+ALTER TABLE links ADD COLUMN at TEXT;
+CREATE INDEX IF NOT EXISTS links_by_to ON links(to_ref);
+"#;
+
+pub const V14_TO_V15: &str = r#"
+CREATE TABLE IF NOT EXISTS usage (
+    claim    TEXT PRIMARY KEY,
+    count    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT
+);
+"#;
+
+pub const V15_TO_V16: &str = r#"
+CREATE TABLE IF NOT EXISTS ledger (
+    session  TEXT NOT NULL,
+    verb     TEXT NOT NULL,
+    calls    INTEGER NOT NULL DEFAULT 0,
+    bytes    INTEGER NOT NULL DEFAULT 0,
+    last_at  TEXT,
+    PRIMARY KEY (session, verb)
+);
 "#;

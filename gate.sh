@@ -46,7 +46,7 @@ if ! command -v node >/dev/null 2>&1; then
   echo "      because nothing local ever ran the JavaScript side. Install node."
   exit 1
 fi
-sh domains/node/test.sh
+sh console/node/test.sh
 
 echo
 echo "══ Topology + Discipline"

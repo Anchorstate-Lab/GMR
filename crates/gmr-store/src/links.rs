@@ -9,6 +9,7 @@ pub struct LinkRecord {
     pub to: Ref,
     pub kind: LinkKind,
     pub source: Source,
+    pub at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,11 +30,14 @@ pub trait LinkStore: Send + Sync {
         to: &Ref,
         kind: LinkKind,
         source: Source,
+        at: DateTime<Utc>,
     ) -> Result<(), StoreError>;
 
     async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, StoreError>;
 
     async fn links_of(&self, reference: &Ref) -> Result<Vec<LinkRecord>, StoreError>;
+
+    async fn links_to(&self, reference: &Ref) -> Result<Vec<(Ref, LinkRecord)>, StoreError>;
 
     async fn all(&self) -> Result<Vec<(Ref, LinkRecord)>, StoreError>;
 }

@@ -166,7 +166,9 @@ async fn changed_since(
                 let Some(held) = asserted.held() else {
                     continue;
                 };
-                let view = memory.fetch_memory(held, &total.narrowed(call)).await?;
+                let view = memory
+                    .fetch_memory(held, &total.narrowed(call), false)
+                    .await?;
                 raised.extend(Raised::of(key.clone(), view));
             }
         }
@@ -257,6 +259,7 @@ mod tests {
             grounded: true,
             links: Vec::new(),
             bound_at_seq: None,
+            origin: None,
             sources: std::collections::BTreeSet::from([gmr_core::Source::Adjudicated]),
             baseline_at: None,
             asserted_at: None,
@@ -269,23 +272,23 @@ mod tests {
         vec![
             Grounding::Current {
                 version: Version::new("v1"),
-                content: b"x".to_vec(),
+                content: Some(b"x".to_vec()),
             },
             Grounding::Rewritten {
                 version: Version::new("v2"),
-                content: b"y".to_vec(),
+                content: Some(b"y".to_vec()),
                 before: Before::Retrieved {
                     content: b"x".to_vec(),
                 },
             },
             Grounding::Rewritten {
                 version: Version::new("v2"),
-                content: b"y".to_vec(),
+                content: Some(b"y".to_vec()),
                 before: Before::NotRetained,
             },
             Grounding::Rewritten {
                 version: Version::new("v2"),
-                content: b"y".to_vec(),
+                content: Some(b"y".to_vec()),
                 before: Before::NoHistory,
             },
             Grounding::Gone,

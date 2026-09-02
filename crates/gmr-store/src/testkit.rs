@@ -123,11 +123,73 @@ impl MemoryBindings {
                         claim: r.binding.claim.clone(),
                         anchors,
                         depends: r.binding.depends.clone(),
+                        origin: r.binding.origin.clone(),
                     },
                     ..r.clone()
                 })
             })
             .collect()
+    }
+}
+
+#[async_trait]
+impl crate::ledger::Ledger for MemoryQueue {
+    async fn spent(
+        &self,
+        session: &str,
+        verb: &str,
+        bytes: u64,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), StoreError> {
+        let mut held = self.ledger.lock().unwrap();
+        let row = held
+            .entry((session.to_owned(), verb.to_owned()))
+            .or_insert(crate::Spending {
+                session: session.to_owned(),
+                verb: verb.to_owned(),
+                calls: 0,
+                bytes: 0,
+                last_at: None,
+            });
+        row.calls += 1;
+        row.bytes += bytes;
+        row.last_at = Some(at);
+        Ok(())
+    }
+
+    async fn spending(&self) -> Result<Vec<crate::Spending>, StoreError> {
+        Ok(self.ledger.lock().unwrap().values().cloned().collect())
+    }
+}
+
+#[async_trait]
+impl crate::usage::Usage for MemoryQueue {
+    async fn used(
+        &self,
+        claim: &gmr_core::Claim,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), StoreError> {
+        let mut held = self.usage.lock().unwrap();
+        let entry = held
+            .entry(claim.to_string())
+            .or_insert((claim.clone(), crate::Used::default()));
+        entry.1.count += 1;
+        entry.1.last_at = Some(at);
+        Ok(())
+    }
+
+    async fn usage_of(&self, claim: &gmr_core::Claim) -> Result<crate::Used, StoreError> {
+        Ok(self
+            .usage
+            .lock()
+            .unwrap()
+            .get(&claim.to_string())
+            .map(|(_, used)| *used)
+            .unwrap_or_default())
+    }
+
+    async fn all_usage(&self) -> Result<Vec<(gmr_core::Claim, crate::Used)>, StoreError> {
+        Ok(self.usage.lock().unwrap().values().cloned().collect())
     }
 }
 
@@ -199,6 +261,7 @@ impl LinkStore for MemoryBindings {
         to: &Ref,
         kind: LinkKind,
         source: gmr_core::Source,
+        at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), StoreError> {
         self.inner.lock().unwrap().links.push((
             from.clone(),
@@ -206,6 +269,7 @@ impl LinkStore for MemoryBindings {
                 to: to.clone(),
                 kind,
                 source,
+                at: Some(at),
             },
             false,
         ));
@@ -255,6 +319,18 @@ impl LinkStore for MemoryBindings {
             .map(|(_, record, _)| record.clone())
             .collect())
     }
+
+    async fn links_to(&self, reference: &Ref) -> Result<Vec<(Ref, LinkRecord)>, StoreError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .links
+            .iter()
+            .filter(|(_, record, dead)| &record.to == reference && !dead)
+            .map(|(from, record, _)| (from.clone(), record.clone()))
+            .collect())
+    }
 }
 
 #[derive(Default)]
@@ -270,6 +346,8 @@ pub struct MemoryQueue {
     inner: Mutex<HashMap<AnchorKey, Slot>>,
     settings: Mutex<HashMap<AnchorKey, RunSettings>>,
     sightings: Mutex<HashMap<AnchorKey, crate::Seen>>,
+    usage: Mutex<HashMap<String, (gmr_core::Claim, crate::Used)>>,
+    ledger: Mutex<std::collections::BTreeMap<(String, String), crate::Spending>>,
 }
 
 #[async_trait]

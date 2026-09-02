@@ -56,3 +56,18 @@ gmr anchor 'sql://inventory.db#SELECT ingredients FROM dishes WHERE id=3' --as k
 And the memory does not have to be a file in this directory: `--record
 mem0:<id>` (or any registered provider address) binds a record that lives in
 your own memory system, with nothing copied here.
+
+## The same loops from Python
+
+```python
+import gmr
+
+g = gmr.open({"root": ".", "providers": {"git": True},
+              "recipes": {"file": {"menu": {"path": "menu.json",
+                                            "select": "$.items.2.ingredients"}}}})
+reading = g.sample("kung-pao-ingredients")
+g.bind("said:t1", ["kung-pao-ingredients"], "self_attested",
+       {"saw": [reading["fact_address"]],
+        "depends": "all(anchors, not state.v.value)"})
+print(g.ground(["said:t1"])[0]["depends"])   # "holds" — until the kitchen moves
+```

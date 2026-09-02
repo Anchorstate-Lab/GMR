@@ -732,65 +732,6 @@ async fn a_declaration_names_where_and_the_environment_names_who() {
 }
 
 #[tokio::test]
-async fn a_second_reading_of_the_same_database_does_not_open_it_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("m.db");
-    let url = format!("sqlite://{}", db.display());
-    {
-        let pool = sqlx::SqlitePool::connect(&format!("{url}?mode=rwc"))
-            .await
-            .unwrap();
-        sqlx::query("CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (1)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        pool.close().await;
-    }
-
-    let asks = std::collections::BTreeMap::from([(
-        gmr_core::ProbeName::new("count"),
-        gmr_transport::sql::Ask {
-            source: gmr_transport::sql::Source::Given(url),
-            query: "SELECT n FROM t".to_owned(),
-            column: None,
-            binds: Vec::new(),
-        },
-    )]);
-    let sql = gmr_transport::sql::Sql::new(asks);
-    let probe = gmr_core::ProbeRef::new(
-        gmr_core::Kind::new("sql"),
-        gmr_core::ProbeName::new("count"),
-        serde_json::Value::Null,
-    );
-    let budget = gmr_budget::Budget::within(std::time::Duration::from_secs(10), usize::MAX);
-
-    let mut taken = Vec::new();
-    for _ in 0..6 {
-        let at = std::time::Instant::now();
-        let outcome = sql
-            .invoke(&gmr_probe::ProbeCall {
-                probe: &probe,
-                position: &serde_json::Value::Null,
-                budget: &budget,
-            })
-            .await
-            .unwrap();
-        taken.push(at.elapsed());
-        assert!(matches!(outcome, gmr_core::Outcome::Found { .. }));
-    }
-
-    let first = taken[0];
-    let rest = taken[1..].iter().sum::<std::time::Duration>() / (taken.len() - 1) as u32;
-    assert!(
-        rest <= first,
-        "every invoke used to build a pool and close it, so a connection handshake was \
-         paid per observation -- 42 ms of one against a local postgres, against 2.5 ms for \
-         the query. The endpoint is keyed by the hash of its resolved url, never by the \
-         url, so a credential never becomes a map key: first {first:?}, then {rest:?}"
-    );
-}
-
-#[tokio::test]
 async fn a_database_that_goes_away_between_readings_is_still_an_outage() {
     let dir = tempfile::tempdir().unwrap();
     let url = a_database(dir.path()).await;

@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/prose.rs#walk
-  - domains/coding/cli/src/prose.rs#found_in
-  - domains/coding/cli/src/prose.rs#linked
+  - console/cli/src/prose.rs#walk
+  - console/cli/src/prose.rs#found_in
+  - console/cli/src/prose.rs#linked
 watch: [sig, logic]
 ---
 

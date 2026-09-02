@@ -1,6 +1,6 @@
 ---
 about:
-  - domains/coding/cli/src/render.rs#diagnosis
+  - console/cli/src/render.rs#diagnosis
   - crates/gmr-runtime/src/read.rs#AnchorView
 watch: [sig, logic]
 ---

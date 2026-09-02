@@ -1,6 +1,6 @@
 ---
 about:
-  - domains/node/bench/latency.mjs#timed
+  - console/node/bench/latency.mjs#timed
   - batteries/provider/src/git.rs#fetch
 watch: [sig, logic]
 ---
@@ -61,7 +61,7 @@ time they call it, and nothing in the signature says so.
 
 ## Re-running it
 
-`sh domains/node/bench.sh`, optionally with `GMR_BENCH_ANCHORS` to put more
+`sh console/node/bench.sh`, optionally with `GMR_BENCH_ANCHORS` to put more
 anchors on one sentence. It is not in CI: a timing that fails a build on a busy
 runner teaches people to ignore the build.
 

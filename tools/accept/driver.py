@@ -122,6 +122,9 @@ class Gmr:
     def read(self, key=None):
         return self._run(["read"] + ([key] if key else []), json_out=True)
 
+    def sample(self, key=None):
+        return self._run(["sample"] + ([key] if key else []), json_out=True)
+
     def status(self, key=None):
         return self._run(["status"] + ([key] if key else []), json_out=True)
 

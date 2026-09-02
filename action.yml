@@ -41,7 +41,7 @@ runs:
             echo "GMR_BIN=$(command -v gmr)" >> "$GITHUB_ENV"
             ;;
           cargo)
-            cargo build --release -p coding-anchor
+            cargo build --release -p gmr-cli
             echo "GMR_BIN=$PWD/target/release/gmr" >> "$GITHUB_ENV"
             ;;
           *) echo "source must be npm or cargo"; exit 1 ;;

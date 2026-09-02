@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/mod.rs#resolve_one
-  - domains/coding/cli/src/verbs/mod.rs#pick
+  - console/cli/src/verbs/mod.rs#resolve_one
+  - console/cli/src/verbs/mod.rs#pick
 ---
 
 # Read-only verbs expand a prefix; verbs that change state refuse it

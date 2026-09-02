@@ -8,8 +8,8 @@
 # not about the repository. env_from_host tells the transport layer to downgrade verifiability to Open,
 # which is exactly what this probe deserves.
 [probe.test-roster]
-stage = { probe = "domains/coding/probes/test-roster.sh" }
+stage = { probe = "packs/coding/probes/test-roster.sh" }
 entrypoint = "probe"
-sources = ["domains/coding/probes/test-roster.sh"]
+sources = ["packs/coding/probes/test-roster.sh"]
 env_from_host = ["HOME", "PATH"]
 obs = { schema = "gmr.probe-test-roster.v1", at = [], facts = [] }

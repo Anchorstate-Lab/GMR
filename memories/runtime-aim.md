@@ -3,7 +3,7 @@ about:
   - crates/gmr-runtime/src/health.rs#Aim
   - crates/gmr-runtime/src/health.rs#aimed
   - crates/gmr-runtime/tests/operations.rs#an_anchor_reports_whether_its_firing_ever_changed_a_memory
-  - domains/coding/cli/src/verbs/health.rs#run
+  - console/cli/src/verbs/health.rs#run
 watch: [sig, logic]
 ---
 

@@ -1,10 +1,10 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/anchor.rs#run
-  - domains/coding/cli/src/verbs/anchor.rs#declaration
-  - domains/coding/cli/src/verbs/anchor.rs#already_declared
-  - domains/coding/cli/src/verbs/anchor.rs#write_note
-  - domains/coding/cli/src/verbs/anchor.rs#names
+  - console/cli/src/verbs/anchor.rs#run
+  - console/cli/src/verbs/anchor.rs#declaration
+  - console/cli/src/verbs/anchor.rs#already_declared
+  - console/cli/src/verbs/anchor.rs#write_note
+  - console/cli/src/verbs/anchor.rs#names
 watch: [sig, logic]
 ---
 

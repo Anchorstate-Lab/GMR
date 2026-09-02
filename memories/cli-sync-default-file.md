@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/sync.rs#DEFAULT_FILE
+about: console/cli/src/verbs/sync.rs#DEFAULT_FILE
 watch: [sig]
 ---
 

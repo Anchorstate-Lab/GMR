@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/memories.rs#located
-  - domains/coding/cli/src/memories.rs#registered
+  - console/cli/src/memories.rs#located
+  - console/cli/src/memories.rs#registered
 watch: [sig, logic]
 ---
 

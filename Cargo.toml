@@ -12,9 +12,11 @@ members = [
     "batteries/provider",
     "batteries/survey",
     "batteries/atlas",
-    "domains/coding/extract",
-    "domains/coding/cli",
-    "domains/node",
+    "packs/coding/extract",
+    "console/core",
+    "console/cli",
+    "console/node",
+    "console/python",
 ]
 resolver = "2"
 

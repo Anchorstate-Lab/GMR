@@ -23,8 +23,8 @@ db     = ["sqlx", "rusqlite", "libsqlite3-sys", "postgres", "tokio-postgres"]
 
 # ── 层 ─────────────────────────────────────────────────────────
 # 只有 forbidden 被读。层内的依赖顺序不在这里，也不在别处声明 —— 它由
-# gate.sh 的分层检查兑现（crates < batteries < domains，底层不许依赖上层）。
-# 那条检查兑现的是「基底与电池不许知道任何一个域」：抽取器住在 domains/ 下，
+# gate.sh 的分层检查兑现（crates < batteries < packs·console，底层不许依赖上层）。
+# 那条检查兑现的是「基底与电池不许知道任何一个域」：抽取器住在 packs/·console/ 下，
 # rank 最高，crates/ 或 batteries/ 链接它就是底层依赖上层。
 
 # 基底：领域无关。
@@ -124,13 +124,13 @@ path              = "batteries/atlas"
 forbidden         = ["io"]
 
 [[member]]
-name  = "coding-extract"
+name  = "gmr-coding-pack"
 layer = "domain"
 kind  = "package"
-path  = "domains/coding/extract"
+path  = "packs/coding/extract"
 
 [[member]]
-name  = "coding-anchor"
+name  = "gmr-cli"
 layer = "domain"
 kind  = "package"
-path  = "domains/coding/cli"
+path  = "console/cli"

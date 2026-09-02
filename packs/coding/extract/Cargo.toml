@@ -1,0 +1,35 @@
+# 域的抽取器。语言知识住在这里 —— 电池不许认识任何一门语言。
+#
+# 版本由 build.rs 从语义闭包算出：源码 + 解析库的锁定版本 + 输出契约。
+# 跨平台、跨机器相同，所以两份日志比得起来。
+
+[package]
+name = "gmr-coding-pack"
+description = "coding 域的抽取器：AST · 地址 · 名字 · 散文。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gmr-core = { path = "../../../crates/gmr-core" }
+gmr-budget = { path = "../../../crates/gmr-budget" }
+gmr-probe = { path = "../../../crates/gmr-probe" }
+gmr-survey = { path = "../../../batteries/survey", features = ["sqlite", "bridge"] }
+gmr-transport = { path = "../../../batteries/transport", features = ["inproc"] }
+serde_json = { workspace = true }
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-go = "0.25.0"
+
+[build-dependencies]
+sha2 = { workspace = true }
+
+[dev-dependencies]
+gmr-survey = { path = "../../../batteries/survey", features = ["testkit"] }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,13 +1,13 @@
 ---
 about:
-  - domains/coding/extract/src/name.rs#collect
-  - domains/coding/extract/src/name.rs#merge
-  - domains/coding/extract/src/name.rs#rolled
-  - domains/coding/extract/src/name.rs#scopes_of
-  - domains/coding/extract/src/name.rs#probe
-  - domains/coding/extract/src/name.rs#scopes_are_every_prefix_of_the_path
-  - domains/coding/extract/src/name.rs#a_path_whose_scopes_are_not_its_prefixes_is_refused_not_dropped
-  - domains/coding/extract/src/name.rs#a_fresh_corpus_and_a_reused_one_agree_and_repeating_the_query_does_not_move_it
+  - packs/coding/extract/src/name.rs#collect
+  - packs/coding/extract/src/name.rs#merge
+  - packs/coding/extract/src/name.rs#rolled
+  - packs/coding/extract/src/name.rs#scopes_of
+  - packs/coding/extract/src/name.rs#probe
+  - packs/coding/extract/src/name.rs#scopes_are_every_prefix_of_the_path
+  - packs/coding/extract/src/name.rs#a_path_whose_scopes_are_not_its_prefixes_is_refused_not_dropped
+  - packs/coding/extract/src/name.rs#a_fresh_corpus_and_a_reused_one_agree_and_repeating_the_query_does_not_move_it
 watch: [sig, logic]
 ---
 

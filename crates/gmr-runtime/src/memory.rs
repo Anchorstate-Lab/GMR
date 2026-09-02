@@ -108,8 +108,9 @@ impl MemoryLens {
         to: &Ref,
         kind: LinkKind,
         source: Source,
+        at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RuntimeError> {
-        Ok(self.links.link(from, to, kind, source).await?)
+        Ok(self.links.link(from, to, kind, source, at).await?)
     }
 
     pub async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, RuntimeError> {
@@ -122,6 +123,10 @@ impl MemoryLens {
 
     pub async fn all_links(&self) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
         Ok(self.links.all().await?)
+    }
+
+    pub async fn links_to(&self, reference: &Ref) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
+        Ok(self.links.links_to(reference).await?)
     }
 
     fn provider_for(&self, reference: &Ref) -> Option<&Arc<dyn ContentProvider>> {
@@ -150,6 +155,7 @@ impl MemoryLens {
         &self,
         held: Held,
         budget: &Budget,
+        lean: bool,
     ) -> Result<MemoryView, RuntimeError> {
         let Held { reference, bound } = held;
         let baseline = bound
@@ -160,8 +166,10 @@ impl MemoryLens {
         let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
         let asserted_at = bound.first_asserted();
         let sources = bound.sources();
+        let origin = bound.origin().cloned();
 
         Ok(MemoryView {
+            origin,
             links: self
                 .links
                 .links_of(&reference)
@@ -171,7 +179,7 @@ impl MemoryLens {
                 .collect(),
             grounded: !bound.anchors().is_empty(),
             grounding: self
-                .grounding_of(&reference, bound_version.as_ref(), budget)
+                .grounding_of(&reference, bound_version.as_ref(), budget, lean)
                 .await,
             reference,
             bound_version,
@@ -188,6 +196,7 @@ impl MemoryLens {
         reference: &Ref,
         bound_version: Option<&Version>,
         budget: &Budget,
+        lean: bool,
     ) -> Grounding {
         let Some(provider) = self.provider_for(reference) else {
             return Grounding::NoProvider {
@@ -211,21 +220,23 @@ impl MemoryLens {
             Ok(None) => return Grounding::Gone,
             Ok(Some(fetched)) => fetched,
         };
+        let kept = |bytes: Vec<u8>| (!lean).then_some(bytes);
         let Some(bound_version) = bound_version else {
             return Grounding::Unverified {
                 version: fetched.version,
-                content: fetched.bytes,
+                content: kept(fetched.bytes),
             };
         };
         if &fetched.version == bound_version {
             return Grounding::Current {
                 version: fetched.version,
-                content: fetched.bytes,
+                content: kept(fetched.bytes),
             };
         }
-        let before = match provider.history() {
-            None => Before::NoHistory,
-            Some(history) => {
+        let before = match (lean, provider.history()) {
+            (true, _) => Before::NotAsked,
+            (false, None) => Before::NoHistory,
+            (false, Some(history)) => {
                 match history
                     .fetch_at(&reference.external_id, bound_version, budget)
                     .await
@@ -241,7 +252,7 @@ impl MemoryLens {
         };
         Grounding::Rewritten {
             version: fetched.version,
-            content: fetched.bytes,
+            content: kept(fetched.bytes),
             before,
         }
     }
@@ -251,6 +262,7 @@ impl MemoryLens {
         memories: &mut Vec<MemoryView>,
         total: &Budget,
         call: std::time::Duration,
+        lean: bool,
     ) -> Result<(), RuntimeError> {
         let linked: Vec<Ref> = memories
             .iter()
@@ -264,7 +276,7 @@ impl MemoryLens {
             let Some(held) = self.binding_of(&Claim::Stored(reference)).await?.held() else {
                 continue;
             };
-            let mut carried = self.fetch_memory(held, &total.narrowed(call)).await?;
+            let mut carried = self.fetch_memory(held, &total.narrowed(call), lean).await?;
             carried.grounded = false;
             memories.push(carried);
         }
@@ -277,6 +289,7 @@ fn linked(record: LinkRecord) -> crate::read::Linked {
         to: record.to,
         kind: record.kind,
         source: record.source,
+        at: record.at,
     }
 }
 
@@ -401,6 +414,10 @@ impl Bound {
 
     pub fn depends(&self) -> Option<&gmr_core::Expr> {
         self.standing().and_then(|r| r.binding.depends.as_ref())
+    }
+
+    pub fn origin(&self) -> Option<&gmr_core::SaidId> {
+        self.standing().and_then(|r| r.binding.origin.as_ref())
     }
 
     pub fn sources(&self) -> std::collections::BTreeSet<Source> {

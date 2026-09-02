@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use gmr_store::{BindingStore, Journal, LinkStore, Queue, Sealer, Settings, Sightings};
+use gmr_store::BindingStore;
+use gmr_store::{Journal, Ledger, LinkStore, Queue, Sealer, Settings, Sightings, Usage};
 
 use crate::error::RuntimeError;
 use crate::log::AnchorLog;
@@ -15,6 +16,9 @@ pub struct Runtime {
     pub(crate) observer: Observer,
     pub(crate) memory: MemoryLens,
     pub(crate) scheduler: Scheduler,
+    pub(crate) usage: Option<Arc<dyn Usage>>,
+    pub(crate) ledger: Option<Arc<dyn Ledger>>,
+    pub(crate) session: String,
 }
 
 impl Runtime {
@@ -45,6 +49,47 @@ impl Runtime {
     pub async fn anchors(&self) -> Result<Vec<gmr_core::AnchorKey>, RuntimeError> {
         self.log.anchors().await
     }
+
+    pub async fn used(&self, claim: &gmr_core::Claim) -> Result<(), RuntimeError> {
+        let Some(usage) = &self.usage else {
+            return Ok(());
+        };
+        Ok(usage.used(claim, chrono::Utc::now()).await?)
+    }
+
+    pub async fn usage_of(&self, claim: &gmr_core::Claim) -> Result<gmr_store::Used, RuntimeError> {
+        let Some(usage) = &self.usage else {
+            return Ok(gmr_store::Used::default());
+        };
+        Ok(usage.usage_of(claim).await?)
+    }
+
+    pub async fn all_usage(&self) -> Result<Vec<(gmr_core::Claim, gmr_store::Used)>, RuntimeError> {
+        let Some(usage) = &self.usage else {
+            return Ok(Vec::new());
+        };
+        Ok(usage.all_usage().await?)
+    }
+
+    pub fn session(&self) -> &str {
+        &self.session
+    }
+
+    pub async fn spent(&self, verb: &str, bytes: u64) -> Result<(), RuntimeError> {
+        let Some(ledger) = &self.ledger else {
+            return Ok(());
+        };
+        Ok(ledger
+            .spent(&self.session, verb, bytes, chrono::Utc::now())
+            .await?)
+    }
+
+    pub async fn spending(&self) -> Result<Vec<gmr_store::Spending>, RuntimeError> {
+        let Some(ledger) = &self.ledger else {
+            return Ok(Vec::new());
+        };
+        Ok(ledger.spending().await?)
+    }
 }
 
 #[derive(Default)]
@@ -59,6 +104,8 @@ pub struct RuntimeBuilder {
     queue: Option<Arc<dyn Queue>>,
     settings: Option<Arc<dyn Settings>>,
     sightings: Option<Arc<dyn Sightings>>,
+    usage: Option<Arc<dyn Usage>>,
+    ledger: Option<Arc<dyn Ledger>>,
     policy: Option<Policy>,
 }
 
@@ -120,6 +167,16 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn usage(mut self, u: Arc<dyn Usage>) -> Self {
+        self.usage = Some(u);
+        self
+    }
+
+    pub fn ledger(mut self, l: Arc<dyn Ledger>) -> Self {
+        self.ledger = Some(l);
+        self
+    }
+
     pub fn policy(mut self, p: Policy) -> Self {
         self.policy = Some(p);
         self
@@ -166,6 +223,13 @@ impl RuntimeBuilder {
                     part: Part::Sightings,
                 })?,
                 self.policy.unwrap_or_default(),
+            ),
+            usage: self.usage,
+            ledger: self.ledger,
+            session: format!(
+                "{}-{}",
+                chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+                std::process::id()
             ),
         })
     }

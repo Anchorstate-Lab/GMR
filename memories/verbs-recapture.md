@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/mod.rs#recapture
+about: console/cli/src/verbs/mod.rs#recapture
 ---
 
 # Re-pinning a baseline means going and looking again, not pinning last time's reading

@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/export.rs#run
+about: console/cli/src/verbs/export.rs#run
 watch: [logic]
 ---
 

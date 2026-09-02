@@ -1,20 +1,25 @@
 ---
 about:
-  - domains/node/src/lib.rs#open
-  - domains/node/src/lib.rs#Gmr
-  - domains/node/src/lib.rs#Opening
-  - domains/node/src/lib.rs#answered
+  - console/node/src/lib.rs#open
+  - console/node/src/lib.rs#Gmr
+  - console/core/src/lib.rs#Opening
+  - console/core/src/lib.rs#answered
   - tools/gate.py#check_typed_surface_names_the_contract
 watch: [sig, logic]
 ---
 
-# Seven verbs, one recipe entrance, and nothing that decides anything
+# The console verb table, one recipe entrance, and nothing that decides anything
 
-`Runtime` has sixty-odd `pub async fn`. The binding exposes seven of them, plus
-one way to say what a probe is:
+`Runtime` has sixty-odd `pub async fn`. The binding exposes the console table —
+the verbs every transport of the console serves, under the contract's names —
+plus one way to say what a probe is:
 
 ```
 sample(anchor, how)    read an anchor, and get the address of that reading
+read(anchor, how)      the full envelope: state, every bound record with
+                       warrant and grounding, and every said: conclusion
+                       standing there; how.carry opts into linked records,
+                       how.lean serves warrants and versions without bodies
 ground(claims, how)    do these sentences still stand. An address asks about
                        what the store holds; an object asks about a turn nobody
                        stored, and writes nothing
@@ -23,11 +28,34 @@ bind(claim, anchors, source, version, saw, asserts)
                        this sentence is about these anchors, and this is what
                        it was looking at when it said so
 revoke(claim, source)  it is not any more
+condense(said, into, source)
+                       an utterance became a memory: bind the record where it
+                       stood, carry saw and depends, record the origin, revoke
+                       the utterance
+link / unlink          assert a typed edge between stored records, with its
+                       provenance; revoke every live assertion of one, or only
+                       those asserted_as a given provenance
+links(record)          every live edge touching a record, both directions
+anchors()              the roster, one sample-shaped reading per anchor
+claims()               every claim with a live binding, records and utterances
+cobound(claim)         every claim sharing an anchor with this one
 open(request)          open an anchor
 close(key, why)        retire one, irreversibly
 ```
 
-`sample` is the seventh, and it is the one that makes the other six worth
+The enumerations and both-ends `links` earn their rows differently from the
+rest: they are the walk's first hop. An SDK agent assembling the minimal
+information set for a task has to get onto the network before it can walk it,
+and before these arrived the only entrances were an anchor key handed in from
+outside. They pass through runtime methods that already existed; the doors
+still decide nothing.
+
+What stays out is as deliberate as what is in: `check`, `accept`, `sync`,
+`adopt`, `doctor` are the coding pack's delivery and criteria loop — watch
+subscriptions, note scanning, a repository's declaration channel — and a
+transport that shipped them would drag pack policy into the console.
+
+`sample` is the one that makes the rest worth
 anything to a product that talks. Grounding answers whether the fact still
 stands; it cannot answer whether the sentence was built from that fact at all,
 and a caller that reads the world itself and binds afterwards is two readings
@@ -44,8 +72,8 @@ Deliberately absent, and not to be added back: `observe`/`look` (`max_staleness`
 already says whether to go and look — see [[runtime-instructions]]), `pass`
 (scheduling belongs to whichever process runs the loop, not to every caller),
 `revise` and `accept --criteria` (**changing criteria is an owner's judgement**
-and belongs in a reviewed commit, not in product code), and `health`/`links`/
-`atlas` (operations and pictures, not a hot path).
+and belongs in a reviewed commit, not in product code), and `health`/`atlas`
+(operations and pictures, not a hot path).
 
 This crate folds nothing, judges nothing, and retries nothing. It parses,
 calls one runtime method, and serialises. Anything else it did would be a second
@@ -82,8 +110,9 @@ A `#[napi(object)]` silently ignores a property it does not know. `{ maxStalenes
 60000 }` would be dropped and the caller would get an answer served from the
 record under a freshness bound they believe they set — invisible from outside,
 indistinguishable from a fresh answer. Every input here is a `serde_json::Value`
-deserialised with `deny_unknown_fields`, so the same typo is an error naming the
-field it could not place. TypeScript would catch it at compile time for some
+deserialised with `deny_unknown_fields` — the shapes and refusals now live once
+in [[console-core]], and each door only adapts the error type — so the same typo
+is an error naming the field it could not place. TypeScript would catch it at compile time for some
 callers; the refusal catches it for all of them.
 
 ## What a caller may not hand in
@@ -101,7 +130,7 @@ JavaScript for an array of byte values would be asking it to do the encoding.
 
 ## `open` is a generic domain, so what a domain owns has to be passed in
 
-`domains/coding` owns extractors, a coordinate syntax and `probes.toml`. This
+`packs/coding` owns extractors, a coordinate syntax and `probes.toml`. This
 domain owns none of that — its ontology arrives in the call:
 
 ```
@@ -121,10 +150,13 @@ is what that would take.
 
 ## When this changes, ask
 
-Does an eighth verb arrive? Ask which of the four exclusions above it belongs
-to, and if it belongs to none, why the seven were the seven. `sample` is the
-precedent and it is a narrow one: it was added because there was a question
-none of the six could answer, not because a caller found one of them awkward.
+Does a new verb arrive? Ask which of the exclusions above it belongs to, and
+if it belongs to none, which question a walking agent could not answer without
+it. `sample` set the precedent and the v11 arrivals kept its shape: each one is
+a question the table could not answer (who points at this record; what stands
+on this anchor including conclusions; what exists at all), never a convenience
+wrapper. A verb that folds, judges, or retries still belongs on the caller's
+side.
 
 Does the binding start reading a field to decide something — a retry, a
 threshold, a fallback? That is judgement, and the whole point of the boundary is

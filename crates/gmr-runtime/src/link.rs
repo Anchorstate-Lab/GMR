@@ -13,6 +13,22 @@ use crate::read::Footing;
 pub const REACHED_AT_MOST: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Links {
+    pub out: Vec<crate::read::Linked>,
+    #[serde(rename = "in")]
+    pub incoming: Vec<Inbound>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Inbound {
+    pub from: Ref,
+    pub kind: gmr_core::LinkKind,
+    pub source: gmr_core::Source,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Reached {
     pub reference: Ref,
     pub via: Vec<LinkKind>,
@@ -28,7 +44,9 @@ impl Runtime {
         kind: LinkKind,
         source: Source,
     ) -> Result<(), RuntimeError> {
-        self.memory.link(from, to, kind, source).await
+        self.memory
+            .link(from, to, kind, source, chrono::Utc::now())
+            .await
     }
 
     pub async fn unlink(&self, revocation: &LinkRevocation) -> Result<u64, RuntimeError> {
@@ -41,6 +59,34 @@ impl Runtime {
 
     pub async fn all_links(&self) -> Result<Vec<(Ref, LinkRecord)>, RuntimeError> {
         self.memory.all_links().await
+    }
+
+    pub async fn links(&self, reference: &Ref) -> Result<Links, RuntimeError> {
+        let out = self
+            .memory
+            .links_of(reference)
+            .await?
+            .into_iter()
+            .map(|r| crate::read::Linked {
+                to: r.to,
+                kind: r.kind,
+                source: r.source,
+                at: r.at,
+            })
+            .collect();
+        let incoming = self
+            .memory
+            .links_to(reference)
+            .await?
+            .into_iter()
+            .map(|(from, r)| Inbound {
+                from,
+                kind: r.kind,
+                source: r.source,
+                at: r.at,
+            })
+            .collect();
+        Ok(Links { out, incoming })
     }
 
     pub async fn reaching(&self, from: &Ref, depth: usize) -> Result<Vec<Reached>, RuntimeError> {
@@ -82,7 +128,12 @@ pub(crate) async fn reaching(
             path.push(link.kind.clone());
             let bound = memory.binding_of(&link.to.clone().into()).await?;
             let footing = memory
-                .grounding_of(&link.to, bound.bound_version(), &total.narrowed(call))
+                .grounding_of(
+                    &link.to,
+                    bound.bound_version(),
+                    &total.narrowed(call),
+                    false,
+                )
                 .await
                 .footing();
             queue.push_back((link.to.clone(), path.clone()));

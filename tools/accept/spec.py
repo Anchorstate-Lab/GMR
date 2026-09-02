@@ -575,6 +575,32 @@ def an_obligation_the_rules_put_away_is_still_not_discarded(c):
         )
 
 
+# ── G9 信封原子 ─────────────────────────────────────────────────────────────
+
+
+@scenario(
+    "G9",
+    "a weak model holds one node in a few hundred tokens: does sample add only framing?",
+    varies=("world",),
+)
+def a_sample_envelope_is_facts_plus_bounded_framing(c):
+    import json as encoded
+
+    c.settle()
+    res = c.gmr.sample(c.world.signal)
+    body = res.body if isinstance(res.body, dict) else res.body[0]
+    spelled = encoded.dumps(body, separators=(",", ":"))
+    facts = encoded.dumps(body.get("facts"), separators=(",", ":")) if "facts" in body else ""
+    framing = len(spelled) - len(facts)
+    if framing > 1024:
+        raise p.Broken(
+            "G9",
+            f"sample wraps its facts in {framing} bytes of framing -- the facts are "
+            "the domain's payload and may be any size, but the envelope around them "
+            "stopped fitting a weak model's per-hop budget",
+        )
+
+
 # ── G5 变化可辨 ─────────────────────────────────────────────────────────────
 
 

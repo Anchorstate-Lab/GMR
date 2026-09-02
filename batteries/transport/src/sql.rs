@@ -615,3 +615,38 @@ fn from_postgres(row: &sqlx::postgres::PgRow, at: usize) -> Result<Value, ProbeE
         _ => Err(unreadable(&kind, &column)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_kept_endpoint_is_the_same_pool_and_not_a_second_handshake() {
+        let kept: Kept<std::sync::Arc<u8>> = Kept::default();
+        let key = endpoint("sqlite:///tmp/m.db");
+        let pool = std::sync::Arc::new(7u8);
+        kept.put(key.clone(), std::sync::Arc::clone(&pool));
+
+        let held = kept.get(&key).expect("the endpoint was just kept");
+        assert!(
+            std::sync::Arc::ptr_eq(&held, &pool),
+            "get hands back the pool that was put, not a rebuilt one -- every invoke \
+             used to build a pool and close it, a connection handshake paid per \
+             observation"
+        );
+        assert!(kept.get(&endpoint("sqlite:///tmp/other.db")).is_none());
+    }
+
+    #[test]
+    fn a_credential_never_becomes_a_map_key() {
+        let secret = "postgres://user:hunter2@db.internal/prod";
+        let key = endpoint(secret);
+        let spelled = format!("{key}");
+        assert!(
+            !spelled.contains("hunter2") && !spelled.contains("db.internal"),
+            "the endpoint is keyed by the hash of its resolved url, never by the url, \
+             so holding the map never means holding the password: {spelled}"
+        );
+        assert_ne!(key, endpoint("postgres://user:different@db.internal/prod"));
+    }
+}

@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/extract/src/ast.rs#carries
-  - domains/coding/extract/src/ast.rs#spell
-  - domains/coding/extract/src/ast.rs#canonical
+  - packs/coding/extract/src/ast.rs#carries
+  - packs/coding/extract/src/ast.rs#spell
+  - packs/coding/extract/src/ast.rs#canonical
 watch: [sig, logic]
 ---
 

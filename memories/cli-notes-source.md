@@ -1,13 +1,13 @@
 ---
 about:
-  - domains/coding/cli/src/notes.rs#Notes
-  - domains/coding/cli/src/notes.rs#Claim
-  - domains/coding/cli/src/notes.rs#Stated
-  - domains/coding/cli/src/notes.rs#declared
-  - domains/coding/cli/src/notes.rs#name_of
-  - domains/coding/cli/src/notes.rs#versions_of
-  - domains/coding/cli/src/memories.rs#claims_of
-  - domains/coding/cli/src/memories.rs#stated_or_empty
+  - console/cli/src/notes.rs#Notes
+  - console/cli/src/notes.rs#Claim
+  - console/cli/src/notes.rs#Stated
+  - console/cli/src/notes.rs#declared
+  - console/cli/src/notes.rs#name_of
+  - console/cli/src/notes.rs#versions_of
+  - console/cli/src/memories.rs#claims_of
+  - console/cli/src/memories.rs#stated_or_empty
 watch: [sig, logic]
 ---
 

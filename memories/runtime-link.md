@@ -18,6 +18,12 @@ observed — so declaration reconciliation owns its `Derived` edges while an
 agent's identical `SelfAttested` assertion stands, exactly the OR-set
 discipline bindings live by ([[store-orset-projection]]).
 
+An edge also records `at` — when it grew — and is readable from both ends:
+`links_of` from the asserter, `links_to` from the pointed-at record. The
+reverse index exists because `contradicts` and `supersedes` are worth the most
+at the record they point at, and accumulated edges were undiscoverable from
+that end. Neither direction interprets `LinkKind`.
+
 ## When this changes, ask
 
 Does a new code path assume linking two references also affects, or

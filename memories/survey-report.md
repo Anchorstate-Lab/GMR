@@ -12,7 +12,7 @@ What `report()` emits comes in two layers, divided by **who it is about**:
 - `PER_CANDIDATE` (`at` · `facts`) is the coordinate and the facts of **the one
   that was selected**; rules read them as `obs.at.x` / `obs.facts.x`
 
-There is only one copy of `REPORT`. `domains/coding/cli/src/contract.rs`
+There is only one copy of `REPORT`. `console/cli/src/contract.rs`
 `pub use`s it from here, and `unmet()` uses it to judge "does the probe emit the
 field this rule reads". **It used to be two hand-written lists**, one here and one
 copied into contract.rs, with a comment here that said in so many words "Not

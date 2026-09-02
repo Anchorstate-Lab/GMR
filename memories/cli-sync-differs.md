@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/verbs/sync.rs#differs
+about: console/cli/src/verbs/sync.rs#differs
 watch: [sig, logic]
 ---
 

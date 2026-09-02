@@ -9,7 +9,7 @@ about:
   - batteries/survey/src/corpus.rs#rescan
   - batteries/survey/src/corpus.rs#Halt
   - batteries/survey/src/corpus.rs#deterministic
-  - domains/coding/extract/src/lib.rs#every_probe_stops_when_nobody_is_waiting_for_it_any_more
+  - packs/coding/extract/src/lib.rs#every_probe_stops_when_nobody_is_waiting_for_it_any_more
 watch: [sig, logic]
 ---
 

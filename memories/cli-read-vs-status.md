@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/read.rs#run
-  - domains/coding/cli/src/verbs/status.rs#run
+  - console/cli/src/verbs/read.rs#run
+  - console/cli/src/verbs/status.rs#run
   - crates/gmr-runtime/src/read.rs#AnchorView
   - crates/gmr-runtime/src/read.rs#MemoryView
 watch: [sig]

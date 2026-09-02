@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/extract/src/lib.rs#Vocabulary
-  - domains/coding/extract/src/lib.rs#every_key_a_probe_declares_comes_back_from_a_real_run
+  - packs/coding/extract/src/lib.rs#Vocabulary
+  - packs/coding/extract/src/lib.rs#every_key_a_probe_declares_comes_back_from_a_real_run
 watch: [sig, logic]
 ---
 

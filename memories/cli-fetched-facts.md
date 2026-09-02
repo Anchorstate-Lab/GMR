@@ -1,12 +1,12 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/anchor.rs#fetched
-  - domains/coding/cli/src/verbs/anchor.rs#derive_name
-  - domains/coding/cli/src/verbs/anchor.rs#slug
-  - domains/coding/cli/src/verbs/anchor.rs#fetch_declared
-  - domains/coding/cli/tests/fetched.rs#a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_memory
-  - domains/coding/cli/src/probes.rs#Declared
-  - domains/coding/cli/src/probes.rs#declare_http
+  - console/cli/src/verbs/anchor.rs#fetched
+  - console/cli/src/verbs/anchor.rs#derive_name
+  - console/cli/src/verbs/anchor.rs#slug
+  - console/cli/src/verbs/anchor.rs#fetch_declared
+  - console/cli/tests/fetched.rs#a_fetched_anchor_is_declared_in_the_file_even_when_a_note_carries_its_memory
+  - console/cli/src/probes.rs#Declared
+  - console/cli/src/probes.rs#declare_http
 watch: [sig, logic]
 ---
 

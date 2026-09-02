@@ -1,12 +1,12 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/sync.rs#Standing
-  - domains/coding/cli/src/verbs/sync.rs#Audit
-  - domains/coding/cli/src/verbs/sync.rs#standing
-  - domains/coding/cli/src/verbs/sync.rs#audit
-  - domains/coding/cli/src/verbs/check.rs#criteria
-  - domains/coding/cli/src/verbs/doctor.rs#undeclared
-  - domains/coding/cli/src/verbs/mod.rs#swapped
+  - console/cli/src/verbs/sync.rs#Standing
+  - console/cli/src/verbs/sync.rs#Audit
+  - console/cli/src/verbs/sync.rs#standing
+  - console/cli/src/verbs/sync.rs#audit
+  - console/cli/src/verbs/check.rs#criteria
+  - console/cli/src/verbs/doctor.rs#undeclared
+  - console/cli/src/verbs/mod.rs#swapped
 watch: [sig, logic]
 ---
 

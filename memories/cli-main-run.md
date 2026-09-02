@@ -1,8 +1,8 @@
 ---
 about:
-  - domains/coding/cli/src/lib.rs#run
-  - domains/coding/cli/src/lib.rs#served
-  - domains/coding/cli/src/main.rs#main
+  - console/cli/src/lib.rs#run
+  - console/cli/src/lib.rs#served
+  - console/cli/src/main.rs#main
 watch: [logic]
 ---
 

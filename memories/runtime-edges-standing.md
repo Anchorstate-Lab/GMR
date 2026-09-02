@@ -3,7 +3,7 @@ about:
   - crates/gmr-runtime/src/edges.rs#Raised
   - crates/gmr-runtime/src/edges.rs#Edges
   - crates/gmr-runtime/tests/operations.rs#an_event_is_handed_over_once_a_condition_is_reported_every_time
-  - domains/coding/cli/src/verbs/edges.rs#run
+  - console/cli/src/verbs/edges.rs#run
 watch: [sig, logic]
 ---
 
@@ -37,7 +37,7 @@ They stay separate rather than collapsing into one "could not check"
 because they are not the same person's problem, and that decides whether CI
 should go red; [[runtime-grounding]] carries that split.
 
-`domains/coding/cli/src/verbs/edges.rs#run` is where this reaches the
+`console/cli/src/verbs/edges.rs#run` is where this reaches the
 terminal: it prints edges and standing conditions in separate sections
 ("Current standing conditions (cursor-independent; repeated every time)"),
 and prints a distinct message when `out.raised` is `None` versus an

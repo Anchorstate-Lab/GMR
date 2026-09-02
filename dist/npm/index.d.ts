@@ -1,12 +1,19 @@
 /**
- * @anchorstate-lab/gmr — the seven verbs.
+ * @anchorstate-lab/gmr — the verb table.
  *
- * These declarations describe `gmr.contract.v10`. That string is what a caller
+ * These declarations describe `gmr.contract.v11`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
+ *
+ * Every refusal and failure is thrown with a message of the form
+ * `<kind>: <message>`, where kind is a stable snake_case token — `refused`
+ * (the console would not parse the ask), `assembly` (the runtime could not be
+ * put together), `internal`, or a runtime code such as `not_bound`,
+ * `no_such_anchor`, `no_provider`, `condensed_into_nothing`. Match the token,
+ * not the prose.
  */
-export const CONTRACT: "gmr.contract.v10";
+export const CONTRACT: "gmr.contract.v11";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -83,11 +90,15 @@ export type FailureCode =
 
 export type ContentErrorCode = "provider_failed" | "budget_spent";
 
-/** What the record itself is doing, independently of any anchor. */
+/**
+ * What the record itself is doing, independently of any anchor. Under a
+ * `lean` read `content` is absent: the reference and version are the
+ * delivery, and a body worth reading is fetched by address.
+ */
 export type Grounding =
-  | { grounding: "current"; version: Version; content: string }
-  | { grounding: "unverified"; version: Version; content: string }
-  | { grounding: "rewritten"; version: Version; content: string; before: Before }
+  | { grounding: "current"; version: Version; content?: string }
+  | { grounding: "unverified"; version: Version; content?: string }
+  | { grounding: "rewritten"; version: Version; content?: string; before: Before }
   | { grounding: "gone" }
   | { grounding: "no_provider"; provider: string }
   | { grounding: "unreachable"; code: ContentErrorCode; why: string };
@@ -116,6 +127,8 @@ export type Before =
   | { before: "retrieved"; content: string }
   | { before: "not_retained" }
   | { before: "no_history" }
+  /** A lean read asks history nothing, and says so rather than lying. */
+  | { before: "not_asked" }
   | { before: "unreachable"; code: ContentErrorCode; why: string };
 
 /** Whether the fact still stands where the memory was bound to it. */
@@ -185,6 +198,8 @@ export type Standing = {
   claim: Claim;
   /** Absent for `said:` — an utterance is stored nowhere, so nothing to fetch. */
   record?: Grounding;
+  /** The utterance this record condensed from, when it grew out of one. */
+  origin?: string;
   on: Anchored[];
   /** Empty unless `reach` was asked for; only what is not `current`. */
   reached?: Reached[];
@@ -200,6 +215,83 @@ export interface Reading {
   at: Timestamp | null;
   knowledge: Knowledge;
 }
+
+/** One edge as `read` delivers it: who it points at, what kind, who said so. */
+export interface Linked {
+  to: Ref;
+  kind: string;
+  source: Source;
+  /** When the edge grew. Absent on rows older than the column. */
+  at?: Timestamp;
+}
+
+/** An edge arriving at a record: who points at it, from the pointed-at end. */
+export interface Inbound {
+  from: Ref;
+  kind: string;
+  source: Source;
+  at?: Timestamp;
+}
+
+/** Every live edge touching one record, both directions. */
+export interface Links {
+  out: Linked[];
+  in: Inbound[];
+}
+
+/** An anchor's current state, as `read` frames it. */
+export interface AnchorView {
+  key: string;
+  anchor: unknown;
+  state: unknown;
+  status: string | null;
+  sighting: "found" | "absent";
+  closed: boolean;
+  faltering?: unknown;
+  entered_at: Timestamp | null;
+  last_sighting: Timestamp | null;
+  sightings: number;
+  derivation: Derivation | null;
+  fact_address?: FactAddress;
+  facts?: unknown;
+}
+
+/** One bound record, delivered with its warrant and grounding. */
+export interface MemoryView {
+  reference: Ref;
+  /** The utterance this record condensed from, when it grew out of one. */
+  origin?: string;
+  bound_version?: Version;
+  grounded: boolean;
+  links: Linked[];
+  bound_at_seq: Seq | null;
+  baseline_at?: Seq;
+  sources: Source[];
+  asserted_at?: Timestamp;
+  warrant?: Warrant;
+  grounding: Grounding;
+}
+
+/**
+ * A conclusion standing on the anchor: what an agent said, bound here, with
+ * the same warrant a stored record gets. It has no body to fetch — the
+ * utterance is the claim.
+ */
+export interface SaidView {
+  id: string;
+  asserts?: unknown;
+  depends?: Invariant;
+  sources: Source[];
+  bound_at_seq: Seq | null;
+  asserted_at?: Timestamp;
+  warrant?: Warrant;
+}
+
+/**
+ * The whole answer to `read`: the anchor flattened, plus its memories, plus
+ * every conclusion asserted on it. `said` is absent when nothing was said.
+ */
+export type Grounded = AnchorView & { memories: MemoryView[]; said?: SaidView[] };
 
 export type Edge =
   | { edge: "transitioned"; anchor: string; from: unknown; to: unknown;
@@ -257,6 +349,12 @@ export interface Instructions {
    * `reach`, the caller says whether to walk.
    */
   carry?: boolean;
+  /**
+   * Serve warrants and versions without record bodies. The envelope stays a
+   * few hundred tokens however large the memories are; fetch a body by
+   * address when a warrant makes it worth reading.
+   */
+  lean?: boolean;
 }
 
 /** Where a binding came from. `unknown` is how you say you do not know. */
@@ -368,6 +466,13 @@ export class Gmr {
    * the same look at the world rather than two.
    */
   sample(anchor: string, how?: Instructions): Promise<Reading>;
+
+  /**
+   * The full envelope for one anchor: its state plus every bound record with
+   * warrant and grounding. `how.carry` opts into linked records, each marked
+   * `grounded: false` — bound elsewhere is not about this anchor.
+   */
+  read(anchor: string, how?: Instructions): Promise<Grounded>;
   /** What changed after this point in the journal. */
   since(cursor: Seq, status?: string): Promise<Edges>;
   /** This sentence is about these anchors. */
@@ -379,6 +484,33 @@ export class Gmr {
   open(request: OpenRequest): Promise<Opened>;
   /** Retire one. Closure is irreversible. */
   close(key: string, why: string): Promise<void>;
+
+  /** Assert a typed edge between two stored records, with its provenance. */
+  link(from: Address, to: Address, kind: string, source: Source): Promise<void>;
+
+  /**
+   * Revoke every live assertion of this edge — or, with `asserted_as`, only
+   * the assertions carrying that provenance; returns how many rows the
+   * revocation named. The rows stay — reads stop seeing them.
+   */
+  unlink(from: Address, to: Address, kind: string, source: Source,
+         asserted_as?: Source): Promise<number>;
+
+  /** The roster: one sample-shaped reading per anchor. The walk's first hop. */
+  anchors(): Promise<Reading[]>;
+  /** Every claim the store holds a live binding for, records and utterances both. */
+  claims(): Promise<Claim[]>;
+  /** Every claim sharing an anchor with this one — utterances included. */
+  cobound(claim: Address): Promise<Claim[]>;
+  /** Every live edge touching a record, from both ends. */
+  links(record: Address): Promise<Links>;
+  /**
+   * An utterance became a memory: bind the record on every anchor the
+   * `said:` claim stood on, carrying its `saw` and `depends` and recording
+   * the utterance as `origin`, then revoke the utterance. The lineage
+   * survives in the new binding.
+   */
+  condense(said: Address, into: Address, source: Source): Promise<Landed>;
 }
 
 export function open(options: Opening): Promise<Gmr>;

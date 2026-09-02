@@ -1,6 +1,6 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/probes.rs#bundle
+  - console/cli/src/verbs/probes.rs#bundle
 watch: [logic]
 ---
 

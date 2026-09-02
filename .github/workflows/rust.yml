@@ -36,7 +36,7 @@ jobs:
       run: sh gate.sh
     - name: The menu walkthrough still holds
       run: |
-        cargo build --release -p coding-anchor
+        cargo build --release -p gmr-cli
         PATH="$PWD/target/release:$PATH" bash examples/menu/walkthrough.sh --ci
 
   # Kept out of the gate on purpose. gate.sh only checks the substrate and the
@@ -66,6 +66,16 @@ jobs:
   # The addon is a cdylib, so `cargo test` never loads it and never learns
   # whether Node can. This job builds it and drives the six verbs from
   # JavaScript -- the only place the binding's own translation is exercised.
+  python:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: The same table, through the Python door
+      run: sh console/python/test.sh
+
   node:
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +84,7 @@ jobs:
       with:
         node-version: '24'
     - name: The six verbs, from JavaScript
-      run: sh domains/node/test.sh
+      run: sh console/node/test.sh
 
   # The postgres branch cannot be exercised without a postgres, so the tests
   # that reach one are #[ignore]d and this job is where they run. Without it
@@ -117,5 +127,5 @@ jobs:
     - uses: actions/checkout@v4
     - name: Do the promises still have teeth?
       run: |
-        cargo build --release -p coding-anchor
+        cargo build --release -p gmr-cli
         python3 tools/acceptance.py --sentinels-only

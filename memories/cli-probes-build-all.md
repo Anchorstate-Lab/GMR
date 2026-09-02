@@ -1,5 +1,5 @@
 ---
-about: domains/coding/cli/src/probes.rs#build_all
+about: console/cli/src/probes.rs#build_all
 watch: [logic]
 ---
 

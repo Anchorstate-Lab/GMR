@@ -39,7 +39,7 @@ NO_CONCRETE_IMPL = {
     "gmr-store": {"sqlx", "rusqlite", "libsqlite3", "postgres", "tokio-postgres"},
 }
 
-DIR_LAYERS = {"crates": 0, "batteries": 1, "domains": 2}
+DIR_LAYERS = {"crates": 0, "batteries": 1, "packs": 2, "console": 2}
 
 CLEAN_ZONES = [
     "crates/gmr-core",
@@ -53,11 +53,13 @@ CLEAN_ZONES = [
     "batteries/atlas",
     "batteries/provider",
     "batteries/transport",
-    "domains/coding/extract",
-    "domains/coding/cli",
-    "domains/node",
+    "packs/coding/extract",
+    "console/cli",
+    "console/core",
+    "console/node",
+    "console/python",
 ]
-EXEMPT_FILES = ["domains/coding/cli/src/cli.rs"]
+EXEMPT_FILES = ["console/cli/src/cli.rs"]
 
 
 def run(cmd, **kwargs):
@@ -445,6 +447,7 @@ def check_contract_shape_is_earned():
 TYPED_SURFACES = [
     ROOT / "dist" / "npm" / "index.d.ts",
     ROOT / "dist" / "npm" / "index.js",
+    ROOT / "console" / "python" / "gmr.pyi",
 ]
 
 
@@ -482,6 +485,80 @@ def check_typed_surface_names_the_contract():
                 "may match on"
             )
     return out
+
+
+PYTHON_DOOR = ROOT / "console" / "python" / "src" / "lib.rs"
+PYTHON_STUB = ROOT / "console" / "python" / "gmr.pyi"
+
+
+def check_python_stub_spells_the_door():
+    """The stub's callable surface is the door's, name for name and arg for arg.
+
+    gmr.pyi is a second hand-written declaration of the python door, and the
+    contract check above only reads the version string out of it -- which is
+    how the stub once said `from_` while the compiled method said `from`, a
+    keyword call per the stub raising TypeError with every test passing,
+    because the suite only ever called positionally. Signatures drift exactly
+    like comments do; this makes the drift fail the build instead.
+    """
+    if not PYTHON_DOOR.exists() or not PYTHON_STUB.exists():
+        return [
+            "the python door or its stub is gone -- gmr.pyi is the callable "
+            "surface's only declaration"
+        ]
+
+    def spelled(block, drop):
+        out = {}
+        for attrs, name, params in re.findall(
+            r"((?:#\[pyo3[^\]]*\]\s*)*)(?:pub )?fn (\w+)\s*\(([^)]*)\)", block, re.S
+        ):
+            renamed = re.search(r'name\s*=\s*"(\w+)"', attrs)
+            out[renamed.group(1) if renamed else name] = [
+                a for a in re.findall(r"(\w+)\s*:", params) if a not in drop
+            ]
+        return out
+
+    def declared(block, drop):
+        return {
+            name: [
+                a for a in re.findall(r"(\w+)\s*:", params) if a not in drop
+            ]
+            for name, params in re.findall(r"def (\w+)\(([^)]*)\)", block)
+        }
+
+    door = PYTHON_DOOR.read_text()
+    stub = PYTHON_STUB.read_text()
+    methods_src = door.split("#[pymethods]", 1)[1].split("#[pymodule]", 1)[0]
+    door_functions = spelled(
+        "\n".join(re.findall(r"#\[pyfunction\][^{]*", door)), {"py"}
+    )
+    door_methods = spelled(methods_src, {"py"})
+    stub_class = stub.split("class Gmr", 1)
+    stub_functions = declared(stub_class[0], {"self"})
+    stub_methods = declared(stub_class[1] if len(stub_class) > 1 else "", {"self"})
+
+    errors = []
+    for what, ours, theirs in (
+        ("module function", door_functions, stub_functions),
+        ("method", door_methods, stub_methods),
+    ):
+        for name in sorted(set(ours) | set(theirs)):
+            if name not in theirs:
+                errors.append(
+                    f"the door serves {what} `{name}` and gmr.pyi does not declare it"
+                )
+            elif name not in ours:
+                errors.append(
+                    f"gmr.pyi declares {what} `{name}` and the door does not serve it"
+                )
+            elif ours[name] != theirs[name]:
+                errors.append(
+                    f"{what} `{name}` takes ({', '.join(ours[name])}) at the door and "
+                    f"({', '.join(theirs[name])}) in gmr.pyi -- a keyword caller "
+                    "trusting the stub is refused at runtime"
+                )
+    return errors
+
 
 
 TRAIT_ROSTERS = {"gmr-store": "crates/gmr-store", "gmr-content": "crates/gmr-content"}
@@ -649,7 +726,7 @@ def check_criteria_inside_the_closure():
     say what the probe reports, and the CLI uses them to route. `identity` says
     what the probe decides on. The two look alike and belong on opposite sides.
     """
-    extractors = ROOT / "domains" / "coding" / "extract" / "src"
+    extractors = ROOT / "packs" / "coding" / "extract" / "src"
     build = (extractors.parent / "build.rs").read_text()
     closure = re.findall(r'^\s*\(\s*"(\w+)",', build, re.MULTILINE)
     errors = []
@@ -713,6 +790,41 @@ def check_sentinels_still_aimed():
     return errors
 
 
+def check_the_old_world_stays_gone():
+    """Nothing tracked lives under, or points into, the retired domains/ tree.
+
+    The split renamed domains/ to console/ and packs/ and swore every tool
+    that spelled the old paths moved in the same commit. Two did not:
+    bench.sh's insides kept copying the addon to domains/node, and one probe
+    script stayed behind at the old address with probes.toml pointing at it
+    -- each unnoticed because nothing runs them on every push. Residue of a
+    rename is the same class of drift as a stale comment, so it fails the
+    build instead of waiting to be read.
+    """
+    old = "dom" + "ains/"
+    files = run(["git", "ls-files"]).stdout.splitlines()
+    errors = [
+        f"`{f}` is tracked under the retired {old} tree -- it moved to packs/ or console/"
+        for f in files
+        if f.startswith(old)
+    ]
+    for f in files:
+        if f == "tools/gate.py":
+            continue
+        if not (
+            f.startswith((".anchor/", ".github/", "tools/")) or f.endswith(".sh")
+        ):
+            continue
+        text = (ROOT / f).read_text(errors="replace")
+        if old in text:
+            errors.append(
+                f"`{f}` still spells {old} -- the tree it points into was renamed "
+                "to packs/ and console/"
+            )
+    return errors
+
+
+
 CHECKS = [
     ("pure roots: zero workspace dependencies", check_pure_roots),
     ("dependency forbidden zones", check_forbidden_dependencies),
@@ -723,6 +835,8 @@ CHECKS = [
     ("every trait a rostered crate defines is named in CLAUDE.md", check_trait_roster),
     ("the contract's shape is the one its version claims", check_contract_shape_is_earned),
 ("the published types name the contract they describe", check_typed_surface_names_the_contract),
+    ("the python stub spells the door's own callable surface", check_python_stub_spells_the_door),
+    ("the retired domains/ tree stays gone", check_the_old_world_stays_gone),
     ("facade builds with no default features", check_build_gmr),
     ("no comments in the clean zones", check_comments_clean),
     ("the acceptance sentinel exists and CI checks its count", check_acceptance_intact),

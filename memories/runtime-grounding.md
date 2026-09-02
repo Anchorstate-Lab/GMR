@@ -44,8 +44,13 @@ arrives here rather than as its own state.
 Retrieved      here is the bound version
 NotRetained    this provider has history, and that version is not in it
 NoHistory      this provider has no history at all
+NotAsked       a lean read asks history nothing, and says so
 Unreachable    we could not ask
 ```
+
+`NotAsked` exists so that `lean` does not lie: a lean read skips the history
+fetch entirely, and reporting `NotRetained` or `NoHistory` there would state
+a fact about the backend that nobody established.
 
 `NoHistory` is settled by asking `history()` once at construction — it is a
 static fact about the backend, not an answer smuggled back through a call
@@ -61,9 +66,12 @@ history cannot be reached. The rewrite is a fact we already established
 from the current version; losing it because the *second* question failed
 would throw away the actionable half of the answer.
 
-## Bytes, not `String`
+## Bytes, not `String`, and under `lean` no bytes at all
 
-Content is `Vec<u8>` all the way through the runtime. Deciding what to do
+Content is `Option<Vec<u8>>` through the runtime: `Some` bytes on a full read,
+`None` when `Instructions.lean` asked for warrants and versions without bodies
+— the variant and version still travel, so a lean `Rewritten` is still a
+rewrite you can act on, just not one whose text was shipped unasked. Deciding what to do
 about bytes that are not text is a rendering question, and pushing it down
 here is what created the contradictory triple above. The JSON surface
 serialises lossily and the terminal renderer says so when it happens; both

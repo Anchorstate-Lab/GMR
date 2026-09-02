@@ -18,7 +18,7 @@
 9. Memories are bound to anchors. *Binding* says “about what”; *subscription* says “when to hand it over”.
 10. Transition conditions are written as a rule table: guard → complete new state; first match wins.
 11. `state` is an addressable JSON structure, not a black box. The base can read fields but does not interpret their meaning.
-12. Physical layers: the base produces no binary; batteries supply reusable implementations; domains own plugins, anchors, assembly, and CLI.
+12. Physical layers: the base produces no binary; batteries supply reusable implementations; packs own the probes and shapes for their slice of reality; the console owns assembly and the front doors (CLI and SDK bindings).
 13. The expression language must be able to construct objects – each transition must produce a complete `state`, not a patch.
 
 ---
@@ -80,7 +80,7 @@ Clean zones grow monotonically; once cleaned, add a line to `CLEAN_ZONES` in `to
 - **`gmr-budget`**: `Budget` and `Spent`, and nothing else. The vocabulary every outbound call shares — a deadline, an output cap, and a cancellation that inherits. It depends on **nothing**, not even `serde`, which is what makes it cheap for anyone to name.
 - **`gmr-probe`**: probe invocation contract. No concrete transport implementation. `Budget` lived here while it had two users; `gmr-content` and `batteries/survey` reached for it without wanting the transport contract at all, and the rule written here said to move it at the third. It moved.
 - **`gmr-content`**: retrieval and discovery contracts. What every store must do sits in `ContentProvider` itself; what only some can do gets its own trait (`History`, `MemorySource`), so declining a capability means not implementing it rather than answering "I have none". No concrete provider implementation, and no opinion about which store to enumerate or how much of it.
-- **`gmr-store`**: storage traits and feature‑gated backends, in the two tiers `gmr-content` has. Contracts every store must implement, sliced by **mutability**: `Journal` / `BindingStore` / `Sealer` / `LinkStore` / `Queue` / `Settings` / `Sightings`. Capabilities a store declines by not implementing them: `Chained`. Which tier a new trait joins is decided by one question — **can a store refuse it and still be a complete store?** A journal with no `Chained` is still a journal; a journal with no `append` is not.
+- **`gmr-store`**: storage traits and feature‑gated backends, in the two tiers `gmr-content` has. Contracts every store must implement, sliced by **mutability**: `Journal` / `BindingStore` / `Sealer` / `LinkStore` / `Queue` / `Settings` / `Sightings`. Capabilities a store declines by not implementing them: `Chained`, `Usage`, `Ledger`. Which tier a new trait joins is decided by one question — **can a store refuse it and still be a complete store?** A journal with no `Chained` is still a journal; a journal with no `append` is not.
 - **`gmr-runtime`**: sole orchestration layer. May depend on core / expr / probe / content / store, but must not make domain decisions.
 - **`gmr`**: only re‑exports.
 
@@ -146,7 +146,7 @@ Every trait named above is compared against the crate by `tools/gate.py`. A rost
 
 One workspace version. major.minor is human‑only — a deliberate stability promise, not a fact any parser gets to infer from commit messages. patch belongs to CI alone.
 
-- **Ordinary change**: do not touch `Cargo.toml`’s `workspace.package.version` at all. `.github/workflows/release.yml`’s `bump-version` job bumps the patch digit on every push to `main`, commits, tags, and releases it — a merge to `main` *is* a release. This only fires when the push actually touches a path that reaches the shipped binary or npm package (`crates/`, `batteries/`, `domains/`, `dist/`, `Cargo.toml`, `Cargo.lock`) — a push that only moves CI config, docs, or `tools/` produces no new tag, because the binary it would tag is byte-identical to the one already released.
+- **Ordinary change**: do not touch `Cargo.toml`’s `workspace.package.version` at all. `.github/workflows/release.yml`’s `bump-version` job bumps the patch digit on every push to `main`, commits, tags, and releases it — a merge to `main` *is* a release. This only fires when the push actually touches a path that reaches the shipped binary or npm package (`crates/`, `batteries/`, `console/`, `packs/`, `dist/`, `Cargo.toml`, `Cargo.lock`) — a push that only moves CI config, docs, or `tools/` produces no new tag, because the binary it would tag is byte-identical to the one already released.
 - **Deliberate major or minor line**: edit `Cargo.toml`’s version to `X.(Y+1).0` (or `(X+1).0.0`) by hand, in the PR that earns it. CI sees `(major, minor)` has moved past the latest tag and tags exactly that version instead of bumping patch.
 - `tools/gate.py`’s `check_version_bump` enforces the shape of a manual edit — major.minor must move strictly forward of the latest tag, patch must be `0` — it does not compute an expected version from commit messages. (It used to, via `git-cliff --bumped-version`; a squash‑merged PR collapsed `!`‑marked breaking commits into one non‑`!` PR‑title commit, git‑cliff read only that flattened title, and the bump size was wrong without gate.sh noticing. The fix was to stop asking a commit‑message parser to decide version numbers, not to make it read squashed history correctly.)
 

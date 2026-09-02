@@ -1,7 +1,7 @@
 ---
 about:
-  - domains/coding/cli/src/verbs/revise.rs#run
-  - domains/coding/cli/src/verbs/revise.rs#choose
+  - console/cli/src/verbs/revise.rs#run
+  - console/cli/src/verbs/revise.rs#choose
 watch: [sig]
 ---
 

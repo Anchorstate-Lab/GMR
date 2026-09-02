@@ -1,6 +1,6 @@
 ---
 about:
-  - domains/coding/cli/tests/embeddable.rs#the_four_things_only_the_binary_could_reach_are_reachable_from_outside_it
+  - console/cli/tests/embeddable.rs#the_four_things_only_the_binary_could_reach_are_reachable_from_outside_it
 watch: [sig, logic]
 ---
 

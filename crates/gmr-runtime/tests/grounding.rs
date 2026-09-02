@@ -216,6 +216,8 @@ impl World {
             .links(bindings)
             .settings(Arc::new(MemoryQueue::default()))
             .sightings(Arc::new(MemoryQueue::default()))
+            .usage(Arc::new(MemoryQueue::default()))
+            .ledger(Arc::new(MemoryQueue::default()))
             .build();
         Self { dir, runtime }
     }
@@ -316,7 +318,10 @@ async fn a_rewritten_record_emits_an_edge_with_both_versions() {
         },
         "judging whether it still says the same thing requires both before and after"
     );
-    assert_eq!(content, b"Changed claim: the roster is only a shadow.");
+    assert_eq!(
+        content.as_deref(),
+        Some(b"Changed claim: the roster is only a shadow.".as_slice())
+    );
 
     let after = w.runtime.changed_since(0, None).await.unwrap();
     assert!(
@@ -2135,4 +2140,232 @@ async fn carrying_linked_records_is_asked_for_and_they_come_back_marked() {
          guarantee"
     );
     assert!(by_id("memories/other.md").warrant.is_none());
+}
+
+#[tokio::test]
+async fn a_lean_read_serves_the_warrant_and_leaves_the_body_home() {
+    let w = World::new(true);
+    w.memory(
+        "a.md",
+        "Nine replicas, because eight cannot survive a rolling restart.",
+    );
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+
+    let how = gmr_runtime::Instructions {
+        lean: true,
+        ..Default::default()
+    };
+    let view = w
+        .runtime
+        .grounded_within(&AnchorKey::new("a"), &how)
+        .await
+        .unwrap();
+    let m = &view.memories[0];
+    assert!(
+        m.content().is_none(),
+        "lean hands over no body: the reference and version are the delivery"
+    );
+    let Grounding::Current { version, .. } = &m.grounding else {
+        panic!(
+            "the record is unchanged, so lean still reports Current: {:?}",
+            m.grounding
+        );
+    };
+    assert!(!version.as_str().is_empty(), "the version still travels");
+    assert!(
+        m.warrant.is_some(),
+        "the warrant is the answer, and it still arrives"
+    );
+
+    let full = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert!(
+        full.memories[0].content().is_some(),
+        "without lean the body arrives exactly as before"
+    );
+
+    w.memory("a.md", "Ten now.");
+    let moved = w
+        .runtime
+        .grounded_within(&AnchorKey::new("a"), &how)
+        .await
+        .unwrap();
+    let Grounding::Rewritten {
+        content, before, ..
+    } = &moved.memories[0].grounding
+    else {
+        panic!("the record moved under its binding");
+    };
+    assert!(content.is_none(), "lean carries neither the new body");
+    assert_eq!(
+        before,
+        &Before::NotAsked,
+        "nor a second one from history -- lean asks history nothing"
+    );
+}
+
+#[tokio::test]
+async fn what_an_agent_said_stands_visible_on_the_anchor() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(gmr_core::Claim::said("s-1"), vec![AnchorKey::new("a")]),
+            None,
+            Default::default(),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert_eq!(
+        view.said.len(),
+        1,
+        "an utterance bound to the anchor is part of what stands on it"
+    );
+    assert_eq!(view.said[0].id.as_str(), "s-1");
+    assert!(
+        view.said[0].warrant.is_some(),
+        "the walker sees whether the ground moved under the assertion, not just that it exists"
+    );
+
+    let besides = w
+        .runtime
+        .cobound(&Ref::new("git", "memories/a.md").into())
+        .await
+        .unwrap();
+    assert!(
+        besides
+            .iter()
+            .any(|c| matches!(c, gmr_core::Claim::Said { .. })),
+        "co-bound enumeration serves utterances beside records: {besides:?}"
+    );
+}
+
+#[tokio::test]
+async fn condensing_carries_the_grounding_and_revokes_the_utterance() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas.");
+    w.open("a").await;
+
+    let gmr_core::Claim::Said { id, .. } = gmr_core::Claim::said("s-1") else {
+        unreachable!()
+    };
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(gmr_core::Claim::said("s-1"), vec![AnchorKey::new("a")])
+                .depending("true"),
+            None,
+            Default::default(),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    w.memory("s1.md", "The conclusion, grown into a memory.");
+    let landed = w
+        .runtime
+        .condense(
+            &id,
+            Ref::new("git", "memories/s1.md"),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    assert!(landed.recorded);
+    assert_eq!(landed.anchors, vec![AnchorKey::new("a")]);
+
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert!(
+        view.said.is_empty(),
+        "the utterance no longer stands -- it became the record"
+    );
+    let held = view
+        .memories
+        .iter()
+        .find(|m| m.reference.external_id.as_str() == "memories/s1.md")
+        .expect("the condensed record is bound where the utterance stood");
+    assert_eq!(
+        held.origin.as_ref().map(|o| o.as_str()),
+        Some("s-1"),
+        "the lineage is readable off the binding, not sealed away"
+    );
+    assert!(
+        matches!(held.grounding, Grounding::Current { .. }),
+        "condensing pinned the version it condensed into: {:?}",
+        held.grounding
+    );
+
+    let err = w
+        .runtime
+        .condense(
+            &id,
+            Ref::new("git", "memories/nowhere.md"),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.code(),
+        "not_bound",
+        "a revoked utterance cannot condense twice"
+    );
+}
+
+#[tokio::test]
+async fn serving_a_memory_leaves_residue_and_a_declined_store_leaves_none() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas.");
+    w.open("a").await;
+    w.bind("a.md", &["a"]).await;
+    let claim: gmr_core::Claim = Ref::new("git", "memories/a.md").into();
+
+    assert_eq!(w.runtime.usage_of(&claim).await.unwrap().count, 0);
+
+    w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    let after_read = w.runtime.usage_of(&claim).await.unwrap();
+    assert_eq!(
+        after_read.count, 1,
+        "a targeted read that served this record is residue the network can grow from"
+    );
+    assert!(after_read.last_at.is_some());
+
+    w.runtime
+        .ground(
+            &[gmr_runtime::Asked::about(claim.clone())],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        w.runtime.usage_of(&claim).await.unwrap().count,
+        2,
+        "grounding the claim by address counts too"
+    );
+
+    let everything = w.runtime.all_usage().await.unwrap();
+    assert_eq!(everything.len(), 1);
+}
+
+#[tokio::test]
+async fn the_ledger_tallies_what_a_session_spends() {
+    let w = World::new(true);
+    w.runtime.spent("sample", 440).await.unwrap();
+    w.runtime.spent("sample", 440).await.unwrap();
+    w.runtime.spent("read", 1329).await.unwrap();
+
+    let rows = w.runtime.spending().await.unwrap();
+    let sample = rows
+        .iter()
+        .find(|r| r.verb == "sample")
+        .expect("two sample calls were tallied");
+    assert_eq!((sample.calls, sample.bytes), (2, 880));
+    assert_eq!(sample.session, w.runtime.session());
+    assert!(
+        rows.iter().any(|r| r.verb == "read" && r.bytes == 1329),
+        "each verb keeps its own row, so density is readable per question kind"
+    );
 }
