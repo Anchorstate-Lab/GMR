@@ -202,6 +202,8 @@ pub struct Binding {
     pub anchors: Vec<AnchorKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depends: Option<Expr>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<SaidId>,
 }
 
 impl Binding {
@@ -210,6 +212,7 @@ impl Binding {
             claim: claim.into(),
             anchors,
             depends: None,
+            origin: None,
         }
     }
 

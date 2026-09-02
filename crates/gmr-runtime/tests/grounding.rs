@@ -2237,3 +2237,69 @@ async fn what_an_agent_said_stands_visible_on_the_anchor() {
         "co-bound enumeration serves utterances beside records: {besides:?}"
     );
 }
+
+#[tokio::test]
+async fn condensing_carries_the_grounding_and_revokes_the_utterance() {
+    let w = World::new(true);
+    w.memory("a.md", "Nine replicas.");
+    w.open("a").await;
+
+    let gmr_core::Claim::Said { id, .. } = gmr_core::Claim::said("s-1") else {
+        unreachable!()
+    };
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(gmr_core::Claim::said("s-1"), vec![AnchorKey::new("a")])
+                .depending("true"),
+            None,
+            Default::default(),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    w.memory("s1.md", "The conclusion, grown into a memory.");
+    let landed = w
+        .runtime
+        .condense(
+            &id,
+            Ref::new("git", "memories/s1.md"),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap();
+    assert!(landed.recorded);
+    assert_eq!(landed.anchors, vec![AnchorKey::new("a")]);
+
+    let view = w.runtime.grounded(&AnchorKey::new("a")).await.unwrap();
+    assert!(
+        view.said.is_empty(),
+        "the utterance no longer stands -- it became the record"
+    );
+    let held = view
+        .memories
+        .iter()
+        .find(|m| m.reference.external_id.as_str() == "memories/s1.md")
+        .expect("the condensed record is bound where the utterance stood");
+    assert_eq!(
+        held.origin.as_ref().map(|o| o.as_str()),
+        Some("s-1"),
+        "the lineage is readable off the binding, not sealed away"
+    );
+    assert!(
+        matches!(held.grounding, Grounding::Current { .. }),
+        "condensing pinned the version it condensed into: {:?}",
+        held.grounding
+    );
+
+    let err = w
+        .runtime
+        .condense(
+            &id,
+            Ref::new("git", "memories/nowhere.md"),
+            gmr_core::Source::Derived,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "not_bound", "a revoked utterance cannot condense twice");
+}

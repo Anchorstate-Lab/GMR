@@ -137,6 +137,15 @@ impl Gmr {
     }
 
     #[napi]
+    pub async fn condense(&self, said: String, into: String, source: String) -> Result<Value> {
+        let rt = Arc::clone(&self.rt);
+        let said = ok(core::uttered(said))?;
+        let into = ok(core::stored(into))?;
+        let source = ok(core::attested(&source))?;
+        spawned(async move { ok(core::answered(rt.condense(&said, into, source).await)) }).await
+    }
+
+    #[napi]
     pub async fn open(&self, request: Value) -> Result<Value> {
         let rt = Arc::clone(&self.rt);
         let request = ok(core::said(request))?;

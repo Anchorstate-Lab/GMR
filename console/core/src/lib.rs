@@ -248,6 +248,16 @@ pub fn revoking(
     })
 }
 
+pub fn uttered(address: String) -> Result<gmr::SaidId, Fault> {
+    match named(address)? {
+        Claim::Said { id, .. } => Ok(id),
+        Claim::Stored(reference) => Err(format!(
+            "`{reference}` is a stored record already -- condense runs from an utterance \
+             into the record it became"
+        )),
+    }
+}
+
 pub fn attested(source: &str) -> Result<Source, Fault> {
     Source::parse(source).ok_or_else(|| {
         format!(

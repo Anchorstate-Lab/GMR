@@ -170,6 +170,8 @@ pub struct Linked {
 pub struct MemoryView {
     pub reference: Ref,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<SaidId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bound_version: Option<Version>,
     pub grounded: bool,
     pub links: Vec<Linked>,
@@ -392,6 +394,13 @@ impl Rests<'_> {
         }
     }
 
+    fn origin(&self) -> Option<&SaidId> {
+        match self {
+            Self::Stored(bound) => bound.origin(),
+            Self::Inline(_) => None,
+        }
+    }
+
     fn bound_at(&self) -> Option<Seq> {
         match self {
             Self::Stored(bound) => bound.dating().and_then(|r| r.bound_at_seq),
@@ -419,6 +428,8 @@ pub struct Standing {
     pub claim: Claim,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<Grounding>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<SaidId>,
     #[serde(flatten)]
     pub depends: Depends,
     pub on: Vec<Anchored>,
@@ -734,6 +745,7 @@ impl Runtime {
             out.push(Standing {
                 claim: held.claim(claim).clone(),
                 record,
+                origin: held.origin().cloned(),
                 depends: depends(held, &stood),
                 on,
                 reached,

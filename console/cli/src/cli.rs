@@ -314,6 +314,22 @@ pub enum Command {
         provider: Option<String>,
     },
 
+    /// An utterance became a memory: bind the record where the said: claim
+    /// stood, carrying its saw and depends and sealed to its origin, then
+    /// revoke the utterance. The lineage survives in the new binding.
+    Condense {
+        /// The utterance, as `said:<id>`.
+        said: String,
+        /// The record it became, resolved like any memory path.
+        path: String,
+        /// Which registered ContentProvider `path` is resolved through.
+        #[arg(long)]
+        provider: Option<String>,
+        /// Where the condensed assertion comes from.
+        #[arg(long, default_value = "derived")]
+        source: String,
+    },
+
     /// Record that `from` relates to `to`. Independent of anchoring — linking
     /// two references says nothing about which anchors either is bound to.
     /// The two ends may sit in different providers: a memory in one store can

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use std::collections::BTreeSet;
 
-use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Source, Version};
+use gmr_core::{AnchorKey, Binding, Claim, FactAddress, Ref, SaidId, Source, Version};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -21,6 +21,7 @@ impl Runtime {
             claim,
             anchors,
             depends,
+            origin,
         } = binding;
         let mut landed = Landed::default();
         for named in anchors {
@@ -37,6 +38,7 @@ impl Runtime {
             claim,
             anchors: landed.anchors.clone(),
             depends,
+            origin,
         };
         if bound.says(&asking, bound_version.as_ref(), &saw, source) {
             return Ok(landed);
@@ -144,6 +146,38 @@ impl Runtime {
         Ok(())
     }
 
+    pub async fn condense(
+        &self,
+        said: &SaidId,
+        reference: Ref,
+        source: Source,
+    ) -> Result<Landed, RuntimeError> {
+        let claim = Claim::Said {
+            id: said.clone(),
+            asserts: None,
+        };
+        let bound = self.memory.binding_of(&claim).await?;
+        if bound.anchors().is_empty() {
+            return Err(RuntimeError::NotBound { claim });
+        }
+        let Some(version) = self.current_version(&reference).await? else {
+            return Err(RuntimeError::CondensedIntoNothing {
+                id: said.clone(),
+                reference,
+            });
+        };
+        let binding = Binding {
+            claim: Claim::Stored(reference),
+            anchors: bound.anchors().to_vec(),
+            depends: bound.depends().cloned(),
+            origin: Some(said.clone()),
+        };
+        let saw = bound.saw().clone();
+        let landed = self.bind(binding, Some(version), saw, source).await?;
+        self.revoke(&claim, source).await?;
+        Ok(landed)
+    }
+
     pub async fn claims(&self) -> Result<Vec<Claim>, RuntimeError> {
         Ok(crate::memory::by_claim(self.memory.all().await?)
             .into_iter()
@@ -184,6 +218,7 @@ async fn reaffirm(
         claim: claim.clone(),
         anchors: bound.anchors().to_vec(),
         depends: bound.depends().cloned(),
+        origin: bound.origin().cloned(),
     };
     memory
         .bind(

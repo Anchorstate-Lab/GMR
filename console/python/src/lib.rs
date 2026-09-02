@@ -201,6 +201,23 @@ impl Gmr {
         })
     }
 
+    fn condense(
+        &self,
+        py: Python<'_>,
+        said: String,
+        into: String,
+        source: String,
+    ) -> PyResult<PyObject> {
+        let said = ok(core::uttered(said))?;
+        let into = ok(core::stored(into))?;
+        let source = ok(core::attested(&source))?;
+        let rt = Arc::clone(&self.rt);
+        let out = self.run(py, async move {
+            ok(core::answered(rt.condense(&said, into, source).await))
+        })?;
+        handed(py, out)
+    }
+
     #[pyo3(name = "open")]
     fn open_anchor(&self, py: Python<'_>, request: Bound<'_, PyAny>) -> PyResult<PyObject> {
         let request = ok(core::said(

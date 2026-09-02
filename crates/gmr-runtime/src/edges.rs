@@ -257,6 +257,7 @@ mod tests {
             grounded: true,
             links: Vec::new(),
             bound_at_seq: None,
+            origin: None,
             sources: std::collections::BTreeSet::from([gmr_core::Source::Adjudicated]),
             baseline_at: None,
             asserted_at: None,

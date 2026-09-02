@@ -255,6 +255,15 @@ pub async fn served(
             let reference = stores.locate(&path, provider.as_deref())?;
             verbs::cobound::run(&rt, names, reference, json).await
         }
+        Command::Condense {
+            said,
+            path,
+            provider,
+            source,
+        } => {
+            let reference = stores.locate(&path, provider.as_deref())?;
+            verbs::condense::run(&rt, names, said, reference, source, json).await
+        }
         Command::Link {
             from,
             to,

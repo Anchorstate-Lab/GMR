@@ -340,6 +340,7 @@ mod tests {
             grounded,
             links: Vec::new(),
             bound_at_seq: None,
+            origin: None,
             warrant,
         }
     }

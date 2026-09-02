@@ -161,8 +161,10 @@ impl MemoryLens {
         let baseline_at = baseline.bound_version.as_ref().map(|_| baseline.seq);
         let asserted_at = bound.first_asserted();
         let sources = bound.sources();
+        let origin = bound.origin().cloned();
 
         Ok(MemoryView {
+            origin,
             links: self
                 .links
                 .links_of(&reference)
@@ -406,6 +408,10 @@ impl Bound {
 
     pub fn depends(&self) -> Option<&gmr_core::Expr> {
         self.standing().and_then(|r| r.binding.depends.as_ref())
+    }
+
+    pub fn origin(&self) -> Option<&gmr_core::SaidId> {
+        self.standing().and_then(|r| r.binding.origin.as_ref())
     }
 
     pub fn sources(&self) -> std::collections::BTreeSet<Source> {

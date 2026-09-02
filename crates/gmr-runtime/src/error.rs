@@ -49,6 +49,14 @@ pub enum RuntimeError {
     )]
     Undigested { key: AnchorKey },
 
+    #[error(
+        "`said:{id}` would condense into `{reference}`, and the store answers there is no          such record — write the memory first, then condense; a lineage cannot point at          nothing"
+    )]
+    CondensedIntoNothing {
+        id: gmr_core::SaidId,
+        reference: gmr_core::Ref,
+    },
+
     #[error("this deployment has no Queue — pass is a polling-only verb")]
     NoQueue,
 
@@ -83,6 +91,7 @@ impl RuntimeError {
             Self::AlreadyAsserted { .. } => "already_asserted",
             Self::CannotOpen { .. } => "cannot_open",
             Self::Undigested { .. } => "undigested",
+            Self::CondensedIntoNothing { .. } => "condensed_into_nothing",
             Self::NoQueue => "no_queue",
             Self::Leased { .. } => "leased",
             Self::Store(e) => e.code(),

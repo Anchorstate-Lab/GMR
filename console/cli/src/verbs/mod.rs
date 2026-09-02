@@ -6,6 +6,7 @@ pub mod bind;
 pub mod check;
 pub mod close;
 pub mod cobound;
+pub mod condense;
 pub mod doctor;
 pub mod edges;
 pub mod export;
