@@ -16,9 +16,9 @@ This document presents the design as a coherent system rather than as a package 
 
 ### On this document's standing
 
-`GMR.md` is the source of truth for the architectural decisions themselves, and it is written under a rule this document does not follow: it names no type, field, function, file, or call path, on the grounds that a document which names them begins to rot the moment the code moves, and rots in a specific way — a reader finds an interface described here that no longer exists, takes it for the present, and designs against it. This document accepts that cost in exchange for being concrete enough to argue with. The exchange only holds under two conditions.
+This document is the source of truth for the architectural decisions themselves — an earlier companion document held that role under a no-names rule and was retired, its constraints re-anchored as notes under `memories/`. Being the SSOT does not change what kind of document this is: it names types, fields, functions, and call paths, and a document that names them begins to rot the moment the code moves, and rots in a specific way — a reader finds an interface described here that no longer exists, takes it for the present, and designs against it. This document accepts that cost in exchange for being concrete enough to argue with. The exchange only holds under one condition.
 
-Where the two disagree about a decision, `GMR.md` is right and this document has drifted. Where this document describes the implementation, the code is right and this document is a claim about the code, not evidence of it. Read §14 in that spirit: it is a map from responsibilities to their current addresses, useful for finding things and worthless as proof that they are correct. Nothing here should be trusted over a probe, and no mechanically checkable constraint stated here belongs here rather than in the gate.
+Where this document describes the implementation, the code is right and this document is a claim about the code, not evidence of it; the decisions themselves are supervised by the anchored notes in `memories/`, which drift audibly where this prose drifts in silence. Read §14 in that spirit: it is a map from responsibilities to their current addresses, useful for finding things and worthless as proof that they are correct. Nothing here should be trusted over a probe, and no mechanically checkable constraint stated here belongs here rather than in the gate.
 
 ## 1. Introduction
 
@@ -512,7 +512,7 @@ A store stamped older than the running build is carried forward one rung at a ti
 
 Where the ladder cannot carry a store — a stamp from the future, a shape no rung reaches, or simply a move to another machine — an export and a replaying import are the escape hatch. Four properties make them a contract rather than a convenience.
 
-The export carries the append-only tables only: journal, bindings, their reverse index, links, and sealed records. Run settings and queue state are deliberately left out, on the same grounds as §9.4 — they say how an Anchor is run, not what it judged, and declaration synchronization reconstructs them. Carrying them would import one deployment's operational choices along with another's history.
+The export carries the append-only tables only: journal, bindings, their reverse index and revocations, links and their revocations, and sealed records — a revocation is a judgment somebody already made, and a crossing that dropped it would hand the next instance a binding its owner ended, alive again. Run settings and queue state are deliberately left out, on the same grounds as §9.4 — they say how an Anchor is run, not what it judged, and declaration synchronization reconstructs them. Carrying them would import one deployment's operational choices along with another's history.
 
 The export format versions itself independently of the storage schema. The two change for unrelated reasons: a table can gain a column without any exported row changing shape, and a row shape can change without the tables moving. Tying them together would either refuse compatible files or accept incompatible ones.
 

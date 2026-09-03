@@ -91,6 +91,39 @@ def told_at_the_door_it_supervises_nothing(gmr, res, key):
         )
 
 
+def not_bound_anywhere(gmr, key, address):
+    """A detached memory stays detached: the crossing must not undo an ending."""
+    held = gmr.bound_addresses(key)
+    if address in held:
+        raise Broken(
+            "G2",
+            f"`{address}` was detached before the move and is bound again after it — "
+            f"a judgment the owner already made, undone by the crossing: {sorted(held)}",
+        )
+
+
+def the_revocation_names_its_source(dump_path, expected):
+    """The export carries who ended a binding, and it is the writer when it was."""
+    import json
+
+    found = []
+    with open(dump_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("table") == "binding_revocations":
+                found.append(row.get("source"))
+    if expected not in found:
+        raise Broken(
+            "G4a",
+            f"the export holds no binding revocation with source `{expected}` — "
+            f"either the revocation rows do not travel, or ending your own conclusion "
+            f"was filed as somebody else's judgment: {found}",
+        )
+
+
 def told_apart_by_what_they_looked_at(gmr, res, seen, unseen, silent):
     """Three conclusions, three answers: looked, looked elsewhere, did not say.
 

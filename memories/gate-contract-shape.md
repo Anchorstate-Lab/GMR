@@ -42,11 +42,21 @@ catches the field you added this afternoon.
 
 It does not catch updating `SHAPE` alone. So the second half reads
 `contract.rs` at the latest release tag: a shape that moved since then without
-`CONTRACT` moving with it is the case the check is named for — callers pin that
+`CONTRACT` **advancing** is the case the check is named for — callers pin that
 string to know what they may match on, so a shape that moves under it is a break
 they were told did not happen. It skips when there is no tag and when the module
 did not exist at that one, which is how it stays quiet on the commit that
 introduced it.
+
+The version has two segments — `gmr.contract.v<breaking>.<additive>` — and
+which segment a change deserves is a human judgment the gate refuses to make:
+parsing the answer out of a diff is the same mistake §10 retired for
+Cargo.toml when git-cliff misread squashed history. The gate checks only what
+is mechanical — the parsed tuple went forward, and a breaking move zeroed the
+additive count. What buys additive changes their cheap segment is the
+fallback-arm rule in the declaration headers; without that rule a new variant
+is a break like any other, which is what the flat counter used to price it
+as, twelve bumps in the contract's first nine days.
 
 ## The shape is the declaration verbatim, deliberately over-wide
 

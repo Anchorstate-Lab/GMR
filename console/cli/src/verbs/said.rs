@@ -78,6 +78,16 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
         })
         .map(|a| a.key().to_string())
         .collect();
+    let finished: Vec<String> = stood
+        .first()
+        .into_iter()
+        .flat_map(|s| &s.on)
+        .filter(|a| {
+            a.warrant()
+                .is_some_and(|w| matches!(w.holding, gmr::Holding::Finished))
+        })
+        .map(|a| a.key().to_string())
+        .collect();
 
     if json {
         println!(
@@ -88,6 +98,7 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
                 "saw": saw.iter().map(FactAddress::as_str).collect::<Vec<_>>(),
                 "unseen": unseen,
                 "superseded": superseded,
+                "finished": finished,
                 "recorded": landed.recorded,
             })
         );
@@ -121,6 +132,13 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
             "  {key} had already replaced the reading you cited before this conclusion \
              landed — it will read `superseded`. Re-read with `gmr read {key}` and \
              conclude from what the anchor is showing now"
+        );
+    }
+    for key in &finished {
+        println!(
+            "  {key} has finished — its journal is frozen and nothing will ever observe \
+             this conclusion. `gmr ground` will report it as no longer settled; conclude \
+             on the anchor that succeeded it, or retire this once it has served"
         );
     }
     if !landed.recorded {

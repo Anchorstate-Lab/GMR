@@ -73,6 +73,15 @@ async fn asserted(
         .filter(|a| !known.contains(a))
         .map(AnchorKey::to_string)
         .collect();
+    let mut finished: Vec<String> = Vec::new();
+    for key in &anchors {
+        if !known.contains(key) {
+            continue;
+        }
+        if rt.read(key).await?.closed {
+            finished.push(key.to_string());
+        }
+    }
 
     if json {
         println!(
@@ -81,6 +90,7 @@ async fn asserted(
                 "bound": address, "version": version, "anchors": anchors,
                 "source": source.as_str(), "vouched": source.independent(),
                 "unopened": unopened,
+                "finished": finished,
                 "recorded": landed.recorded,
             })
         );
@@ -119,6 +129,13 @@ async fn asserted(
             "  {key} was never opened here — this binding supervises nothing until it is. \
              `gmr doctor` reports it as unsupervised; check the key for a typo, or open \
              the anchor"
+        );
+    }
+    for key in &finished {
+        println!(
+            "  {key} has finished and nothing succeeded it — its journal is frozen, so \
+             this binding will never be observed. Supersede the anchor into a new \
+             generation, or bind where something still watches"
         );
     }
     if !landed.recorded {

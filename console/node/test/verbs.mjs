@@ -197,3 +197,46 @@ test("the walk reaches both ends, and a conclusion condenses into a memory", asy
   );
   assert.equal(held.origin, "s1", "the lineage reads back off the binding");
 });
+
+test("a conclusion's citation and invariant walk their own discriminants", async () => {
+  const root = aRepository();
+  const gmr = await opened(root);
+  await gmr.open({
+    key: "prod-replicas",
+    probe: { kind: "file", name: "replicas" },
+    initial: { position: { env: "prod" } },
+    transitions: [
+      { when: "true", to: "{ position: state.position, v: obs.value }" },
+    ],
+  });
+
+  await gmr.bind("said:looked", ["prod-replicas"], "self_attested", {
+    saw: ["a".repeat(64)],
+    depends: "all(anchors, state.v == 9)",
+    asserts: { text: "nine replicas hold" },
+  });
+  await gmr.bind("said:silent", ["prod-replicas"], "self_attested", {});
+
+  const [looked, silent] = await gmr.ground(["said:looked", "said:silent"], {
+    max_staleness_ms: 0,
+  });
+
+  const shownOf = (s) => s.on[0].evidence.shown;
+  assert.ok(
+    ["seen", "superseded", "unseen", "not_said"].includes(shownOf(looked)),
+    "index.d.ts declares four citation discriminants and this walk is what keeps " +
+      "the roster honest: " + JSON.stringify(looked.on[0].evidence),
+  );
+  assert.equal(shownOf(looked), "unseen", "a fabricated address was never taken");
+  assert.equal(shownOf(silent), "not_said", "citing nothing is an absence, not a defect");
+
+  const dependsOf = (s) => s.depends;
+  assert.ok(
+    ["holds", "broken", "ungrounded", "vacuous", "unevaluable", "unstated"].includes(
+      dependsOf(looked),
+    ),
+    JSON.stringify(looked.depends),
+  );
+  assert.equal(dependsOf(looked), "holds", "the invariant reads the anchor and it holds");
+  assert.equal(dependsOf(silent), "unstated");
+});
