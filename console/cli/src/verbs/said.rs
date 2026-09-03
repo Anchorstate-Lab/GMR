@@ -68,6 +68,16 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
         .filter(|a| a.evidence().is_some_and(|e| e.shown == gmr::Shown::Unseen))
         .map(|a| a.key().to_string())
         .collect();
+    let superseded: Vec<String> = stood
+        .first()
+        .into_iter()
+        .flat_map(|s| &s.on)
+        .filter(|a| {
+            a.evidence()
+                .is_some_and(|e| matches!(e.shown, gmr::Shown::Superseded { .. }))
+        })
+        .map(|a| a.key().to_string())
+        .collect();
 
     if json {
         println!(
@@ -77,6 +87,7 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
                 "on": landed.anchors.iter().map(AnchorKey::to_string).collect::<Vec<_>>(),
                 "saw": saw.iter().map(FactAddress::as_str).collect::<Vec<_>>(),
                 "unseen": unseen,
+                "superseded": superseded,
                 "recorded": landed.recorded,
             })
         );
@@ -105,6 +116,13 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
              is what a conclusion built beside an anchor rather than through it looks like"
         );
     }
+    for key in &superseded {
+        println!(
+            "  {key} had already replaced the reading you cited before this conclusion \
+             landed — it will read `superseded`. Re-read with `gmr read {key}` and \
+             conclude from what the anchor is showing now"
+        );
+    }
     if !landed.recorded {
         println!("  nothing written: this claim already stands, on these anchors, saying this");
     }
@@ -112,5 +130,27 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
 }
 
 fn minted() -> String {
-    chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string()
+    static NTH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let now = chrono::Utc::now();
+    format!(
+        "{}-{:x}-{:x}",
+        now.format("%Y%m%dT%H%M%S"),
+        now.timestamp_subsec_nanos().wrapping_add(nth),
+        std::process::id()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn two_conclusions_minted_in_the_same_instant_get_different_ids() {
+        assert_ne!(
+            super::minted(),
+            super::minted(),
+            "a second-resolution timestamp is one shared name per second. Two agents \
+             concluding in the same instant would fold into one claim identity: the \
+             anchors union, and the later saw and depends silently shadow the earlier"
+        );
+    }
 }

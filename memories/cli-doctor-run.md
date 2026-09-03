@@ -76,9 +76,9 @@ says is `gone`, a binding through a provider this binary lacks, a stale
 installed SKILL.md, and a record left `unsupervised` all pass that test — a
 rebuild, an unbind, an edit, a re-init, a supersede.
 
-`unsupervised` is a record every one of whose anchors has closed, or which names
-an anchor nobody ever opened: a note still claiming something about the code with
-nothing observing it — the exact state this tool exists to make visible — and the
+`unsupervised` is a claim — a stored record or an uttered conclusion — every one
+of whose anchors has closed, or which names an anchor nobody ever opened: still
+claiming something about the code with nothing observing it — the exact state this tool exists to make visible — and the
 owner can act on it three ways. [[runtime-corpus]] has the mechanism.
 
 `chain_broken` passes the same test and is the sharpest case of it. The journal

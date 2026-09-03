@@ -149,6 +149,11 @@ pub enum Command {
         /// append-only record of what was believed — and nothing reads it again.
         #[arg(long, requires = "id")]
         retire: bool,
+        /// Look at the world again first if any anchor's last sighting is older
+        /// than this many seconds. Unset, conclusions are answered against the
+        /// stored readings, whatever their age.
+        #[arg(long)]
+        fresher_than_secs: Option<u64>,
     },
 
     /// Write every anchor, every memory and what binds them as one HTML page.

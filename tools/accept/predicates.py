@@ -73,6 +73,24 @@ def a_conclusion_no_longer_stands(gmr, res):
         )
 
 
+def told_at_the_door_it_supervises_nothing(gmr, res, key):
+    """A binding onto a key nothing opened is recorded, and the door says so.
+
+    The record layer stays judgment-free -- a binding is a declaration, and a
+    deployment may legitimately declare before it opens. What it must not do is
+    stay silent at the one moment the writer is present to hear it: a typo'd
+    key otherwise supervises nothing until a later doctor run finds it.
+    """
+    body = res.body or {}
+    unopened = set(body.get("unopened") or [])
+    if key not in unopened:
+        raise Broken(
+            "G3",
+            f"a binding landed on `{key}`, which nothing ever opened, and the door said "
+            f"nothing -- silence published as a supervised look that will never happen: {body}",
+        )
+
+
 def told_apart_by_what_they_looked_at(gmr, res, seen, unseen, silent):
     """Three conclusions, three answers: looked, looked elsewhere, did not say.
 

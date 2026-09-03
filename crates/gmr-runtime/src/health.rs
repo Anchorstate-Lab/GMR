@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
-use gmr_core::{AnchorKey, Change, ChangeKind, ContentHash, Entry, Ref, Seq, State, scan};
+use gmr_core::{
+    AnchorKey, Change, ChangeKind, Claim, ContentHash, Entry, Ref, SaidId, Seq, State, scan,
+};
 use serde::Serialize;
 
 use crate::assembly::Runtime;
@@ -46,7 +48,7 @@ pub struct CorpusHealth {
     pub active_anchors: usize,
     pub memories_per_anchor: BTreeMap<String, usize>,
     pub barren_anchors: Vec<AnchorKey>,
-    pub unsupervised: Vec<Ref>,
+    pub unsupervised: Vec<Claim>,
     pub footings: BTreeMap<Footing, Vec<Ref>>,
     pub holdings: BTreeMap<HoldingKind, BTreeMap<AnchorKey, Vec<Ref>>>,
     pub knowings: BTreeMap<KnowledgeKind, Vec<AnchorKey>>,
@@ -253,11 +255,19 @@ async fn corpus_health(
         .filter(|g| !g.view.closed)
         .flat_map(|g| g.memories.iter().map(|m| &m.reference))
         .collect();
-    let unsupervised: Vec<Ref> = bindings
+    let delivered_said: BTreeSet<&SaidId> = grounded
+        .iter()
+        .filter(|g| !g.view.closed)
+        .flat_map(|g| g.said.iter().map(|s| &s.id))
+        .collect();
+    let unsupervised: Vec<Claim> = bindings
         .iter()
         .filter(|b| !b.anchors().is_empty())
-        .filter_map(|b| b.stored().cloned())
-        .filter(|reference| !delivered.contains(reference))
+        .filter_map(|b| b.claim().cloned())
+        .filter(|claim| match claim {
+            Claim::Stored(reference) => !delivered.contains(reference),
+            Claim::Said { id, .. } => !delivered_said.contains(id),
+        })
         .collect();
 
     let mut footings: BTreeMap<Footing, Vec<Ref>> = BTreeMap::new();

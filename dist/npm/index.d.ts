@@ -1,7 +1,7 @@
 /**
  * @anchorstate-lab/gmr — the verb table.
  *
- * These declarations describe `gmr.contract.v11`. That string is what a caller
+ * These declarations describe `gmr.contract.v12`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
@@ -13,7 +13,7 @@
  * `no_such_anchor`, `no_provider`, `condensed_into_nothing`. Match the token,
  * not the prose.
  */
-export const CONTRACT: "gmr.contract.v11";
+export const CONTRACT: "gmr.contract.v12";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a
@@ -52,6 +52,8 @@ export type Invariant = string;
 export type Depends =
   | { depends: "holds" }
   | { depends: "broken" }
+  /** Names anchors that were never opened here, so it cannot be answered. */
+  | { depends: "ungrounded"; missing: string[] }
   /** Reads no anchor, so no state of the world could break it. */
   | { depends: "vacuous"; wrote: Invariant }
   | { depends: "unevaluable"; why: string }
@@ -134,6 +136,8 @@ export type Before =
 /** Whether the fact still stands where the memory was bound to it. */
 export type Holding =
   | { holding: "holds" }
+  /** The anchor finished; its journal is frozen and this can never change. */
+  | { holding: "finished" }
   | { holding: "moved"; axes: string[]; at: Seq }
   | { holding: "incomparable"; took: ProbeVersion; reads: ProbeVersion }
   | { holding: "absent" }
@@ -163,6 +167,8 @@ export interface Warrant {
  */
 export type Shown =
   | { shown: "seen"; at: Seq }
+  /** A real reading, already replaced when the conclusion landed. */
+  | { shown: "superseded"; at: Seq }
   | { shown: "unseen" }
   | { shown: "not_said" };
 

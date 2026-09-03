@@ -49,10 +49,26 @@ fn addresses(refs: &[gmr::Ref]) -> Vec<String> {
     refs.iter().map(crate::memories::addressed).collect()
 }
 
+fn claimed(claims: &[gmr::Claim]) -> Vec<String> {
+    claims.iter().map(gmr::Claim::to_string).collect()
+}
+
+fn spelled_claims(claims: &[gmr::Claim], names: &crate::memories::Names) -> String {
+    claims
+        .iter()
+        .map(|c| match c.stored() {
+            Some(reference) => names.of(reference),
+            None => c.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn grounds_json(ground: &gmr::CorpusHealth) -> serde_json::Value {
     let mut out = serde_json::Map::new();
     for kind in [
         HoldingKind::Holds,
+        HoldingKind::Finished,
         HoldingKind::Moved,
         HoldingKind::Incomparable,
         HoldingKind::Absent,
@@ -242,7 +258,7 @@ pub async fn run(
                 "bound": ground.grounded_records(),
                 "no_before": addresses(ground.on(Footing::NoBefore)),
                 "unverified": addresses(ground.on(Footing::Unverified)),
-                "unsupervised": addresses(&ground.unsupervised),
+                "unsupervised": claimed(&ground.unsupervised),
                 "edges": kinds.iter().map(|((kind, source), count)| serde_json::json!({
                     "kind": kind, "source": source, "count": count,
                 })).collect::<Vec<_>>(),
@@ -342,6 +358,11 @@ pub async fn run(
     }
     for (kind, label, whose) in [
         (
+            HoldingKind::Finished,
+            "finished  ",
+            "the anchor under these has finished; its journal is frozen, so this warrant can never change again",
+        ),
+        (
             HoldingKind::Incomparable,
             "incomparable",
             "a different extractor took the reading these are dated against, so a diff would answer `the instrument changed shape`, not `the world moved`",
@@ -396,7 +417,7 @@ pub async fn run(
     if !ground.unsupervised.is_empty() {
         println!(
             "unsupervised {}\n             <- every anchor these are bound to has finished, or was never opened. The record still claims something about the code and nothing observes it any more — which is the state this tool exists to make visible. Supersede the anchor into a new generation, point the note somewhere still watched, or unbind it",
-            spelled(&ground.unsupervised, names)
+            spelled_claims(&ground.unsupervised, names)
         );
     }
     if !ground.on(Footing::Gone).is_empty() {

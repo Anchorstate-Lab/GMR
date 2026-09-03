@@ -74,6 +74,18 @@ not the exception — it is the moment the link is most accurate — so
 `asserted` binds with no version rather than refusing; see
 [[runtime-standing-baseline]] for what a later reading does with that.
 
+## The door says when a key was never opened here
+
+`asserted` compares the landed anchors against the keys this store has opened
+and names the ones it does not know — in prose and under `unopened` in `--json`.
+It warns and still writes, because the record layer stays judgment-free: a
+deployment may legitimately declare before it opens, and `attest`'s whole point
+is running the moment the store hands an id back. What must not happen is
+silence at the one moment the writer is present to hear it — a typo'd key
+otherwise supervises nothing until a later `doctor` run finds it under
+`unsupervised`, and `ground` answers `Ungrounded` about every invariant that
+names it.
+
 ## A link nothing independent stands behind says so where it is read
 
 `render.rs` marks a memory whose live assertions are all non-independent, so

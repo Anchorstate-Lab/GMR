@@ -67,12 +67,20 @@ async fn asserted(
     let (version, landed) = assert_on(rt, reference, anchors, source).await?;
     let anchors = landed.anchors.clone();
 
+    let known = rt.anchors().await?;
+    let unopened: Vec<String> = anchors
+        .iter()
+        .filter(|a| !known.contains(a))
+        .map(AnchorKey::to_string)
+        .collect();
+
     if json {
         println!(
             "{}",
             serde_json::json!({
                 "bound": address, "version": version, "anchors": anchors,
                 "source": source.as_str(), "vouched": source.independent(),
+                "unopened": unopened,
                 "recorded": landed.recorded,
             })
         );
@@ -105,6 +113,13 @@ async fn asserted(
     }
     for (named, living) in &landed.moved {
         println!("  {named} is closed and superseded; this landed on {living}");
+    }
+    for key in &unopened {
+        println!(
+            "  {key} was never opened here — this binding supervises nothing until it is. \
+             `gmr doctor` reports it as unsupervised; check the key for a typo, or open \
+             the anchor"
+        );
     }
     if !landed.recorded {
         println!("  nothing written: these anchors, this version and this reading already stand");

@@ -138,10 +138,24 @@ padding.
 and reports one of three things:
 
 ```
-Seen { at }   this anchor recorded that exact reading, at that seq
-Unseen        it cited a reading this anchor never took
-NotSaid       it cited none, which is what a note a person wrote does
+Seen { at }        this anchor recorded that exact reading, and was still
+                   showing it when the claim was bound
+Superseded { at }  a real reading, already replaced when the claim landed
+Unseen             it cited a reading this anchor never took
+NotSaid            it cited none, which is what a note a person wrote does
 ```
+
+`Superseded` is the same defect as `Unseen` arriving late: the reading is real,
+but the anchor had moved past it before the conclusion was recorded, so the
+conclusion was built on the anchor's past. The comparison point is the binding's
+own `bound_at_seq` — fold the journal to that seq and ask whether any cited
+address is the reading the anchor was showing *then*. Later movement stays
+`Moved`'s answer, and a test pins the honest path: a citation current when bound
+stays `Seen` however far the world moves afterwards. Content addressing gives
+this one free kindness — a world that flaps back restores the old address, and a
+citation of it is `Seen` again, because the anchor really is showing that
+reading. An undated binding has no comparison point and stays `Seen`; honest,
+because nothing can be said either way.
 
 `Unseen` is the shape of a **second computation of the same fact**, running
 beside the anchor instead of through it. That is not hypothetical: a probe

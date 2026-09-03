@@ -290,6 +290,7 @@ pub struct Evidence {
 #[serde(tag = "shown", rename_all = "snake_case")]
 pub enum Shown {
     Seen { at: Seq },
+    Superseded { at: Seq },
     Unseen,
     NotSaid,
 }
@@ -453,6 +454,7 @@ pub struct Standing {
 pub enum Depends {
     Holds,
     Broken,
+    Ungrounded { missing: Vec<AnchorKey> },
     Vacuous { wrote: String },
     Unevaluable { why: String },
     Unstated,
@@ -468,6 +470,7 @@ impl Depends {
 #[serde(tag = "holding", rename_all = "snake_case")]
 pub enum Holding {
     Holds,
+    Finished,
     Moved {
         axes: Vec<String>,
         at: Seq,
@@ -507,6 +510,7 @@ pub enum Blind {
 #[serde(rename_all = "snake_case")]
 pub enum HoldingKind {
     Holds,
+    Finished,
     Moved,
     Incomparable,
     Absent,
@@ -528,6 +532,7 @@ impl Holding {
     pub fn kind(&self) -> HoldingKind {
         match self {
             Self::Holds => HoldingKind::Holds,
+            Self::Finished => HoldingKind::Finished,
             Self::Moved { .. } => HoldingKind::Moved,
             Self::Incomparable { .. } => HoldingKind::Incomparable,
             Self::Absent => HoldingKind::Absent,
@@ -899,7 +904,7 @@ async fn anchored(
     };
     let bound_at = held.bound_at();
     let saw = held.saw().clone();
-    let shown = shown_at(log, key, &saw).await?;
+    let shown = shown_at(log, key, &saw, bound_at).await?;
     Ok(Anchored::On {
         key: key.clone(),
         warrant: Box::new(warranted(log, key, bound_at, view, *moved_at).await?),
@@ -931,6 +936,15 @@ fn depends(held: &Rests<'_>, stood: &BTreeMap<AnchorKey, (AnchorView, Option<Seq
             wrote: source.source.clone(),
         };
     }
+    let missing: Vec<AnchorKey> = held
+        .anchors()
+        .iter()
+        .filter(|key| !stood.contains_key(*key))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Depends::Ungrounded { missing };
+    }
     let states: Vec<serde_json::Value> = held
         .anchors()
         .iter()
@@ -958,23 +972,42 @@ async fn shown_at(
     log: &AnchorLog,
     key: &AnchorKey,
     saw: &BTreeSet<FactAddress>,
+    bound_at: Option<Seq>,
 ) -> Result<Shown, RuntimeError> {
     if saw.is_empty() {
         return Ok(Shown::NotSaid);
     }
-    Ok(recorded_at(&log.entries(key, 0).await?, saw))
+    Ok(recorded_at(&log.entries(key, 0).await?, saw, bound_at))
 }
 
-fn recorded_at(entries: &[(Seq, Entry)], saw: &BTreeSet<FactAddress>) -> Shown {
-    let looked = entries.iter().find_map(|(seq, entry)| match entry {
-        Entry::Open { observation, .. } | Entry::Transition { observation, .. } => {
-            saw.contains(&observation.fact_address).then_some(*seq)
-        }
-        _ => None,
-    });
-    match looked {
-        Some(at) => Shown::Seen { at },
-        None => Shown::Unseen,
+fn recorded_at(
+    entries: &[(Seq, Entry)],
+    saw: &BTreeSet<FactAddress>,
+    bound_at: Option<Seq>,
+) -> Shown {
+    let taken: Vec<(Seq, &FactAddress)> = entries
+        .iter()
+        .filter_map(|(seq, entry)| match entry {
+            Entry::Open { observation, .. } | Entry::Transition { observation, .. } => saw
+                .contains(&observation.fact_address)
+                .then_some((*seq, &observation.fact_address)),
+            _ => None,
+        })
+        .collect();
+    let Some(&(first, _)) = taken.first() else {
+        return Shown::Unseen;
+    };
+    let showing = bound_at
+        .and_then(|bound| folded_at(entries, bound))
+        .and_then(|state| state.latest.map(|o| o.fact_address));
+    match showing {
+        None => Shown::Seen { at: first },
+        Some(current) => match taken.iter().find(|(_, address)| **address == current) {
+            Some(&(at, _)) => Shown::Seen { at },
+            None => Shown::Superseded {
+                at: taken.last().map_or(first, |&(seq, _)| seq),
+            },
+        },
     }
 }
 
@@ -1104,6 +1137,9 @@ async fn holding(
     view: &AnchorView,
     moved_at: Option<Seq>,
 ) -> Result<Holding, RuntimeError> {
+    if view.closed {
+        return Ok(Holding::Finished);
+    }
     if view.sighting == Sighting::Absent {
         return Ok(Holding::Absent);
     }

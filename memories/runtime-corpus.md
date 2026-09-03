@@ -37,12 +37,19 @@ through `by_claim` before counting anything — one [[runtime-bound]] per claim,
 which makes the property structural rather than a dedup each list has to
 remember.
 
-The lists themselves stay `Ref`-shaped, and drop any claim that is not stored.
-Every question here is about a corpus of records — is it delivered, is it
-rewritten, is it gone — and an utterance has no answer to any of them: nothing
-holds it, so nothing can have moved it. Counting them would make `unsupervised`
-grow with every sentence an agent ever said, which is the number this list exists
-to keep small.
+The content lists stay `Ref`-shaped, and drop any claim that is not stored:
+`footings` asks whether bytes can still be retrieved, and an utterance has no
+bytes, no version, nothing a store could lose.
+
+`unsupervised` is the one list that is claim-shaped, because its question is not
+about content at all — it asks whether anything still observes what was claimed,
+and an uttered conclusion is exactly as observable as a stored note. For a while
+it filtered to `stored()` and a `said:` claim on a closed or never-opened anchor
+escaped the census entirely — the only red exit anywhere for that state, gone
+because the claim lived in the binding table instead of a store. It does not
+grow with every sentence an agent ever says: a conclusion on a live anchor is
+delivered, and a retired one has no anchors left to be unsupervised on. What
+remains is precisely the set still claiming something that nothing watches.
 
 **The counts read that same delivered set.** `per_anchor`, `barren` and
 `unsupervised` all come from `grounded`, never from scanning `all()` for

@@ -6,6 +6,7 @@ pub async fn run(
     rt: &Runtime,
     id: Option<String>,
     retire: bool,
+    fresher_than_secs: Option<u64>,
     json: bool,
 ) -> Result<i32, CliError> {
     let claims: Vec<Claim> = match &id {
@@ -27,7 +28,13 @@ pub async fn run(
         let Some(one) = claims.first() else {
             return Err(CliError("name the conclusion to retire".into()));
         };
-        let cleared = rt.revoke(one, gmr::Source::Adjudicated).await?;
+        let sources = rt.memory().binding_of(one).await?.sources();
+        let source =
+            match !sources.is_empty() && sources.iter().all(|s| *s == gmr::Source::SelfAttested) {
+                true => gmr::Source::SelfAttested,
+                false => gmr::Source::Adjudicated,
+            };
+        let cleared = rt.revoke(one, source).await?;
         println!(
             "{one} retired on {}",
             cleared
@@ -48,7 +55,12 @@ pub async fn run(
                     .cloned()
                     .map(gmr::Asked::about)
                     .collect::<Vec<_>>(),
-                &gmr::Instructions::default(),
+                &match fresher_than_secs {
+                    Some(secs) => {
+                        gmr::Instructions::fresher_than(std::time::Duration::from_secs(secs))
+                    }
+                    None => gmr::Instructions::default(),
+                },
             )
             .await?
             .into_iter()
@@ -75,6 +87,10 @@ pub async fn run(
             };
             let shown = match anchored.evidence().map(|e| e.shown.clone()) {
                 Some(Shown::Seen { at }) => format!("saw its reading at {at}"),
+                Some(Shown::Superseded { at }) => format!(
+                    "cited a reading (at {at}) the anchor had already replaced when this \
+                     conclusion landed"
+                ),
                 Some(Shown::Unseen) => "cited a reading this anchor never took".to_owned(),
                 _ => "cited no reading".to_owned(),
             };
@@ -85,6 +101,14 @@ pub async fn run(
         match &one.depends {
             Depends::Holds => println!("    depends: still holds"),
             Depends::Broken => println!("    depends: no longer holds"),
+            Depends::Ungrounded { missing } => println!(
+                "    depends: cannot be answered — {} named and never opened here",
+                missing
+                    .iter()
+                    .map(|k| k.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Depends::Vacuous { wrote } => {
                 println!("    depends: `{wrote}` reads no anchor, so nothing could ever break it")
             }
@@ -119,16 +143,32 @@ fn said_text(one: &Standing) -> String {
     }
 }
 
+fn dead_ground(one: &Standing) -> bool {
+    one.on.iter().any(|a| {
+        matches!(a, gmr::Anchored::Unopened { .. })
+            || a.warrant()
+                .is_some_and(|w| matches!(w.holding, gmr::Holding::Finished))
+    })
+}
+
 fn moved(one: &Standing) -> bool {
     one.on.iter().any(|a| {
         a.warrant()
             .is_some_and(|w| !matches!(w.holding, gmr::Holding::Holds))
+            || a.evidence()
+                .is_some_and(|e| matches!(e.shown, Shown::Superseded { .. }))
     })
 }
 
 fn unsettled(one: &Standing) -> bool {
+    if dead_ground(one) {
+        return true;
+    }
     match &one.depends {
-        Depends::Broken | Depends::Unevaluable { .. } | Depends::Vacuous { .. } => true,
+        Depends::Broken
+        | Depends::Unevaluable { .. }
+        | Depends::Vacuous { .. }
+        | Depends::Ungrounded { .. } => true,
         Depends::Holds => false,
         Depends::Unstated => moved(one),
     }
