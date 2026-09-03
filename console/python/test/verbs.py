@@ -48,7 +48,7 @@ def replicated(g):
 
 class Verbs(unittest.TestCase):
     def test_the_module_names_the_contract_it_serves(self):
-        self.assertEqual(gmr.CONTRACT, "gmr.contract.v12")
+        self.assertEqual(gmr.CONTRACT, "gmr.contract.v12.0")
 
     def test_five_lines_get_a_sentences_grounding(self):
         g = opened(a_repository())

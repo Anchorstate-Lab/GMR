@@ -1,10 +1,21 @@
 /**
  * @anchorstate-lab/gmr — the verb table.
  *
- * These declarations describe `gmr.contract.v12`. That string is what a caller
+ * These declarations describe `gmr.contract.v12.0`. That string is what a caller
  * pins to know which shapes they may match on: a contract type that changes
  * shape without it moving is a break they were told did not happen, and
  * tools/gate.py fails the build when the two disagree.
+ *
+ * The version has two segments: `v<breaking>.<additive>`. The additive segment
+ * moves when an output type gains a variant or an optional field - survivable
+ * by any consumer, under one rule this surface asks of every reader (the same
+ * rule protobuf asks with unknown fields): **an exhaustive match over a
+ * discriminant must keep a fallback arm**, because a runtime one additive step
+ * ahead of these declarations may hand you a discriminant they do not name
+ * yet. The breaking segment moves when anything is removed, renamed, or
+ * re-meant - the only changes a fallback arm cannot survive. The same rule
+ * holds for scripts parsing the CLI's `--json` output, whose binary upgrades
+ * independently of anything pinning this file.
  *
  * Every refusal and failure is thrown with a message of the form
  * `<kind>: <message>`, where kind is a stable snake_case token — `refused`
@@ -13,7 +24,7 @@
  * `no_such_anchor`, `no_provider`, `condensed_into_nothing`. Match the token,
  * not the prose.
  */
-export const CONTRACT: "gmr.contract.v12";
+export const CONTRACT: "gmr.contract.v12.0";
 
 /**
  * What a binding is about. `<provider>:<id>` names a record that lives in a

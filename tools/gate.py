@@ -425,6 +425,14 @@ def check_contract_shape_is_earned():
             f"`{version}` and record the new digest; if they need not, record it alone"
         ]
 
+    parsed = contract_tuple(version)
+    if parsed is None:
+        return [
+            f"`CONTRACT` is `{version}`, which does not parse as "
+            "gmr.contract.v<breaking>[.<additive>] -- the two segments are how a "
+            "caller tells a variant they must handle from one they may ignore"
+        ]
+
     tag = latest_version_tag()
     if tag is None:
         return []
@@ -434,14 +442,29 @@ def check_contract_shape_is_earned():
     was_version, was_shape = recorded(r.stdout)
     if was_shape is None or was_shape == shape:
         return []
-    if was_version == version:
+    was = contract_tuple(was_version)
+    if was is not None and parsed <= was:
         return [
             f"the contract's shape moved since {tag} ({was_shape} -> {shape}) and "
-            f"`CONTRACT` is still `{version}` -- callers pin that string to know "
-            "what they may match on, so a shape that moves under it is a break "
-            "they were told did not happen"
+            f"`CONTRACT` went from `{was_version}` to `{version}` without advancing "
+            "-- an additive change (a new variant or optional field, survivable by "
+            "any consumer keeping a fallback arm) bumps the second segment; a "
+            "breaking one (anything removed, renamed, or re-meant) bumps the first "
+            "and zeroes the second. Which it is stays a human judgment; this only "
+            "refuses a shape that moved while the string stood still"
+        ]
+    if was is not None and parsed[0] > was[0] and parsed[1] != 0:
+        return [
+            f"`CONTRACT` moved its breaking segment ({was_version} -> {version}) "
+            "without zeroing the additive one -- the second segment counts additions "
+            "within one breaking line, so it starts over when that line does"
         ]
     return []
+
+
+def contract_tuple(version):
+    m = re.match(r"gmr\.contract\.v(\d+)(?:\.(\d+))?$", version or "")
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else None
 
 
 TYPED_SURFACES = [
@@ -478,7 +501,7 @@ def check_typed_surface_names_the_contract():
         if not path.exists():
             out.append(f"{where} is gone -- it is the published surface's only type declaration")
             continue
-        named = set(re.findall(r'"(gmr\.contract\.v\d+)"', path.read_text()))
+        named = set(re.findall(r'"(gmr\.contract\.v\d+(?:\.\d+)?)"', path.read_text()))
         if named != {version}:
             out.append(
                 f"{where} names {sorted(named) or 'no contract'} and the runtime is "

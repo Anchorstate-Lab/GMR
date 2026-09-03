@@ -1,7 +1,14 @@
 """
-These declarations describe "gmr.contract.v12". That string is what a caller
+These declarations describe "gmr.contract.v12.0". That string is what a caller
 pins to know which shapes they may match on; tools/gate.py fails the build
 when this file and the runtime disagree about it.
+
+The version has two segments: v<breaking>.<additive>. The additive segment
+moves when an output type gains a variant or an optional field - survivable
+by any consumer that keeps a fallback arm in every match over a discriminant,
+which is the one rule this surface asks of its readers. The breaking segment
+moves when anything is removed, renamed, or re-meant. The same rule holds for
+scripts parsing the CLI's --json output.
 
 Values cross as plain dicts/lists shaped exactly like the JSON the node
 binding serves — dist/npm/index.d.ts is the field-level reference; this stub
