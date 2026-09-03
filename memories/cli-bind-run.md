@@ -84,7 +84,10 @@ is running the moment the store hands an id back. What must not happen is
 silence at the one moment the writer is present to hear it — a typo'd key
 otherwise supervises nothing until a later `doctor` run finds it under
 `unsupervised`, and `ground` answers `Ungrounded` about every invariant that
-names it.
+names it. The same door names the keys that have finished with nothing
+succeeding them: a frozen journal will never observe the binding, which is
+the `unopened` warning's twin — one key nothing ever watched, one key nothing
+will ever watch again.
 
 ## A link nothing independent stands behind says so where it is read
 

@@ -5,7 +5,7 @@ watch: [sig, logic]
 
 # Import only ever replays into a store that is provably empty, and atomically
 
-`import_jsonl` counts every one of the six tables before touching
+`import_jsonl` counts every one of the eight tables before touching
 anything, and refuses outright if any of them has existing rows. Replaying
 recreates history at the exact `seq` values the export recorded (see
 [[store-portable-expect-seq]]), and that only produces the right history
@@ -20,7 +20,9 @@ Inside the loop, a `BindingAnchors` row's `seq` is trusted as-is, with no
 `expect_seq` check of its own — that is safe specifically because the
 `Bindings` arm immediately above it already proved (via `expect_seq`) that
 the row it names landed at exactly that `seq`. Trusting it a second time
-would be redundant, not safer.
+would be redundant, not safer. `BindingRevokedTags` leans on the same proof
+twice over: its `revocation` was pinned by the `BindingRevocations` arm's own
+`expect_seq`, and its `binding` by the `Bindings` arm above that.
 
 ## When this changes, ask
 
