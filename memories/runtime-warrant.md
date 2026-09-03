@@ -31,10 +31,17 @@ has started failing**: the transition is in the log and the observing has
 stopped.
 
 ```
-holding    Holds · Moved{axes, at} · Incomparable{took, reads} ·
+holding    Holds · Finished · Moved{axes, at} · Incomparable{took, reads} ·
            Absent · NeverEstablished · Undated
 knowledge  Seen{at, verifiability} · Blind{since, why}
 ```
+
+`Finished` is checked before anything else, including `Absent`: a closed
+anchor's journal is frozen, so every other variant would be an answer about a
+comparison that can never change again. `Holds` there did not mean verified —
+it meant nobody can look any more, and a reader could not tell those apart.
+The claim's ground has not moved; it has ended, and what to do about a
+conclusion whose ground ended is the caller's policy, not this enum's.
 
 `holding` is the main axis, for three reasons. The product answers "do these
 grounds still hold", and holding is always relative to the moment of binding.

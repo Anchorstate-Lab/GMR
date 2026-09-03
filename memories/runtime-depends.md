@@ -23,8 +23,8 @@ down — a fold every caller reimplements, with the type unchanged either way, s
 nothing reports the disagreement.
 
 `Binding.depends` is one expression, written by the asserter, and `ground`
-answers it: `Holds` · `Broken` · `Vacuous{wrote}` · `Unevaluable{why}` ·
-`Unstated`.
+answers it: `Holds` · `Broken` · `Ungrounded{missing}` · `Vacuous{wrote}` ·
+`Unevaluable{why}` · `Unstated`.
 
 ## The polarity is inverted from a subscription because the layer is different
 
@@ -95,6 +95,17 @@ An empty set keeps `all` and breaks `any`, which is what an invariant over
 nothing has to mean: a claim bound to no anchor has nothing that could have
 broken it, and reporting `Broken` would file every unbound claim beside the ones
 whose ground moved.
+
+That sentence is about the evaluator, and for a while it was quietly deciding a
+different question one layer up: a claim that *named* anchors none of which this
+store ever opened evaluated over the empty set and reported `Holds`. Naming a
+ground that is not there is not the same act as naming no ground — the author
+asked a question and the runtime answered a smaller one without saying so, which
+is the exact narrowing `Vacuous` refuses one variant over. So the runtime checks
+the roster before it evaluates: any named anchor missing from this store is
+`Ungrounded{missing}`, the invariant unanswered rather than vacuously kept, and
+the evaluator's empty-set semantics stays untouched where it is correct — a
+claim that names nothing at all.
 
 An anchor that cannot answer **abstains**, out of the numerator and the
 denominator both. State reads lenient, so an anchor of a different shape has no

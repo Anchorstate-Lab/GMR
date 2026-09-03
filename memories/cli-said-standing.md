@@ -67,12 +67,23 @@ set the exit code: citing nothing is an absence, not a defect.
 **Who decides whether a moved ground reaches a conclusion is the author.**
 
 ```
+ground dead (unopened/finished)  due        nothing observes the claim any more
 depends broken / unevaluable   due          its own stated condition failed
 depends vacuous                due          what was written could not have failed
+depends ungrounded             due          it names an anchor never opened here
 depends holds                  fine         the author said it survives this
 depends unstated + ground moved  due        nobody said it survives
+depends unstated + citation superseded  due   built on the anchor's past, nobody said it survives
 depends unstated + ground still  fine
 ```
+
+The first line outranks `depends`, and that is the one place the author's
+invariant is overruled: a frozen journal answers `Holds` forever, so on a
+finished or unopened anchor `Holds` stops meaning verified and starts meaning
+nobody-can-look. Every other line is the author's own condition deciding. A
+superseded citation sits with a moved ground because it is the same fact
+arriving earlier: the conclusion was built on a reading the anchor had already
+replaced when it landed.
 
 `vacuous` sits with `broken` rather than with `unstated`, and it does not wait
 on the ground having moved: an invariant the world cannot reach is a green light
@@ -95,7 +106,11 @@ retiring it is the job of whoever fixed it.
 
 `standing --retire` revokes the binding. What the conclusion said stays in the
 table — it is evidence of what was believed and nothing deletes that — and
-nothing asks about it again. Without it the verb accumulates every conclusion
+nothing asks about it again. The revocation's `Source` is derived from the
+assertions it ends: a claim only its writer ever vouched for retires as
+`SelfAttested`, anything a person touched retires as `Adjudicated` — the same
+line [[cli-bind-run]] draws between `attest` and `bind`, so retiring your own
+say-so does not launder it into a judgement. Without it the verb accumulates every conclusion
 ever made, forever, which is the shape in which a report stops being read.
 
 `Runtime::claims` is what makes the argument-free form possible: `ground` answers
@@ -113,3 +128,8 @@ always passes.
 Does `standing` start marking a conclusion `broken` and handing it to a person to
 re-read? That is the memory loop's processing applied to an inference, and the
 `--why` seal exists because the two are not the same act.
+
+Does `minted` go back to a bare second-resolution timestamp? Two agents
+concluding in the same instant would fold into one claim identity — anchors
+union, the later `saw` and `depends` silently shadowing the earlier — which is
+why the id carries subsecond entropy and the process id.
