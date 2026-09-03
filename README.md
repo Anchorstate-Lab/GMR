@@ -225,11 +225,16 @@ said:20260830T205425  createSession returns a 30-minute ttl
 1 conclusion(s) · 1 the ground no longer settles · 0 built beside an anchor rather than through it · 0 that cited no reading at all
 ```
 
-`standing` exits 1 when a conclusion's ground no longer settles it, or when one
-cites a reading no anchor ever took — the shape of an answer computed *beside*
-an anchor rather than through it. Build the answer from what `read` returned and
-cite the address it came with, and the delivery path and the anchor are one look
-at the world instead of two.
+`standing` exits 1 when a conclusion's ground no longer settles it: its stated
+invariant broke or names an anchor never opened here, its ground moved with
+nothing stated, an anchor under it finished — a frozen journal is not a ground
+that holds, it is a ground nobody can look at — or it cites a reading no anchor
+ever took, or one the anchor had already replaced when the conclusion landed.
+The unseen citation is the shape of an answer computed *beside* an anchor
+rather than through it. Build the answer from what `read` returned and cite the
+address it came with, and the delivery path and the anchor are one look at the
+world instead of two; `--fresher-than-secs` makes `standing` look at the world
+again first instead of answering from the readings on record.
 
 `--saw` and `--depends` are both optional and reported separately when absent: a
 conclusion that vouched for nothing is counted, not assumed to be fine.
@@ -393,9 +398,14 @@ A deployment that only calls `since` will see nothing change unless something is
 observing: either pass `max_staleness_ms` so `ground` and `sample` look while
 they answer, or run `gmr pass` on a schedule.
 
-`CONTRACT` is the version of the shapes a caller may match on
-(`index.d.ts` declares them, and the build fails if a contract type changes shape
-while the string stands still).
+`CONTRACT` is the version of the shapes a caller may match on, in two
+segments — `gmr.contract.v<breaking>.<additive>`. The additive segment moves
+when an output type gains a variant or an optional field, which any consumer
+survives under one rule: every exhaustive match over a discriminant keeps a
+fallback arm, scripts parsing the CLI's `--json` output included. The breaking
+segment moves when anything is removed, renamed, or re-meant. `index.d.ts`
+declares the shapes, and the build fails if a contract type changes shape while
+the string stands still.
 
 Probes are declared in the call — `recipes` for `http`, `file` and `sql` probes,
 `scripts` for shell ones — so a caller with no repository and no Rust can still
