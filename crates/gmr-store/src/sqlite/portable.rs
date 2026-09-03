@@ -14,6 +14,10 @@ pub struct PortableSummary {
     pub journal: usize,
     pub bindings: usize,
     pub binding_anchors: usize,
+    #[serde(default)]
+    pub binding_revocations: usize,
+    #[serde(default)]
+    pub binding_revoked_tags: usize,
     pub links: usize,
     pub link_revocations: usize,
     pub sealed: usize,
@@ -46,6 +50,18 @@ enum Line {
     },
     BindingAnchors {
         seq: i64,
+        anchor: String,
+    },
+    BindingRevocations {
+        seq: i64,
+        reference: String,
+        anchor: String,
+        source: String,
+        revoked_at: Option<String>,
+    },
+    BindingRevokedTags {
+        revocation: i64,
+        binding: i64,
         anchor: String,
     },
     Links {
@@ -170,6 +186,45 @@ impl SqliteStore {
             summary.binding_anchors += 1;
         }
 
+        let rows = sqlx::query(
+            "SELECT seq, reference, anchor, source, revoked_at FROM binding_revocations ORDER BY seq",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        for r in rows {
+            write_line(
+                out,
+                &Line::BindingRevocations {
+                    seq: r.get("seq"),
+                    reference: r.get("reference"),
+                    anchor: r.get("anchor"),
+                    source: r.get("source"),
+                    revoked_at: r.get("revoked_at"),
+                },
+            )?;
+            summary.binding_revocations += 1;
+        }
+
+        let rows = sqlx::query(
+            "SELECT revocation, binding, anchor FROM binding_revoked_tags \
+             ORDER BY revocation, binding, anchor",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        for r in rows {
+            write_line(
+                out,
+                &Line::BindingRevokedTags {
+                    revocation: r.get("revocation"),
+                    binding: r.get("binding"),
+                    anchor: r.get("anchor"),
+                },
+            )?;
+            summary.binding_revoked_tags += 1;
+        }
+
         let rows =
             sqlx::query("SELECT seq, from_ref, to_ref, kind, source FROM links ORDER BY seq")
                 .fetch_all(&mut *tx)
@@ -230,6 +285,14 @@ impl SqliteStore {
             ("journal", "SELECT COUNT(*) FROM journal"),
             ("bindings", "SELECT COUNT(*) FROM bindings"),
             ("binding_anchors", "SELECT COUNT(*) FROM binding_anchors"),
+            (
+                "binding_revocations",
+                "SELECT COUNT(*) FROM binding_revocations",
+            ),
+            (
+                "binding_revoked_tags",
+                "SELECT COUNT(*) FROM binding_revoked_tags",
+            ),
             ("links", "SELECT COUNT(*) FROM links"),
             ("link_revocations", "SELECT COUNT(*) FROM link_revocations"),
             ("sealed", "SELECT COUNT(*) FROM sealed"),
@@ -318,6 +381,44 @@ impl SqliteStore {
                         .await
                         .map_err(db_err)?;
                     summary.binding_anchors += 1;
+                }
+                Line::BindingRevocations {
+                    seq,
+                    reference,
+                    anchor,
+                    source,
+                    revoked_at,
+                } => {
+                    let landed: i64 = sqlx::query_scalar(
+                        "INSERT INTO binding_revocations (reference, anchor, source, revoked_at) \
+                         VALUES (?1, ?2, ?3, ?4) RETURNING seq",
+                    )
+                    .bind(&reference)
+                    .bind(&anchor)
+                    .bind(&source)
+                    .bind(&revoked_at)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+                    expect_seq("binding_revocations", seq, landed)?;
+                    summary.binding_revocations += 1;
+                }
+                Line::BindingRevokedTags {
+                    revocation,
+                    binding,
+                    anchor,
+                } => {
+                    sqlx::query(
+                        "INSERT INTO binding_revoked_tags (revocation, binding, anchor) \
+                         VALUES (?1, ?2, ?3)",
+                    )
+                    .bind(revocation)
+                    .bind(binding)
+                    .bind(&anchor)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+                    summary.binding_revoked_tags += 1;
                 }
                 Line::Links {
                     seq,

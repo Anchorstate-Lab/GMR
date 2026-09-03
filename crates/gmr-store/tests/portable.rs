@@ -233,3 +233,59 @@ async fn export_does_not_require_the_body_to_match_this_builds_entry_enum() {
     let text = String::from_utf8(buf).unwrap();
     assert!(text.contains("some_future_variant"));
 }
+
+#[tokio::test]
+async fn a_revoked_binding_stays_revoked_across_the_trip() {
+    let original = populated().await;
+    let claim: gmr_core::Claim = Ref::new("git", "memories/one.md").into();
+    let live = original.bindings().binding_of(&claim).await.unwrap();
+    assert!(!live.is_empty());
+    let tags: Vec<gmr_store::Tag> = live
+        .iter()
+        .flat_map(|r| {
+            r.binding.anchors.iter().map(|a| gmr_store::Tag {
+                binding: r.seq,
+                anchor: a.clone(),
+            })
+        })
+        .collect();
+    original
+        .bindings()
+        .revoke(&gmr_store::Revocation {
+            claim: claim.clone(),
+            at: AnchorKey::new("a::one"),
+            tags,
+            source: gmr_core::Source::SelfAttested,
+            when: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
+    let anchored = |records: &[gmr_store::BindingRecord]| {
+        records.iter().any(|r| !r.binding.anchors.is_empty())
+    };
+    assert!(
+        !anchored(&original.bindings().binding_of(&claim).await.unwrap()),
+        "the revocation took at home"
+    );
+
+    let mut dump = Vec::new();
+    original.export_jsonl(&mut dump).await.unwrap();
+    let restored = gmr_store::sqlite::open_in_memory().await.unwrap();
+    restored.import_jsonl(dump.as_slice()).await.unwrap();
+
+    assert!(
+        !anchored(&restored.bindings().binding_of(&claim).await.unwrap()),
+        "a retirement or a detach is a judgment its owner already made. An export that \
+         drops the revocation rows hands the next instance a binding the owner ended, \
+         alive again and saying nothing about it - the one thing a migration channel \
+         must not do to append-only history"
+    );
+
+    let mut again = Vec::new();
+    restored.export_jsonl(&mut again).await.unwrap();
+    assert_eq!(
+        without_manifest_line(&dump),
+        without_manifest_line(&again),
+        "the revocation rows travel too, so the second trip is byte-identical"
+    );
+}

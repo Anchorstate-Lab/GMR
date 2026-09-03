@@ -248,6 +248,42 @@ def migration_carries_the_whole_promise(c):
     p.content_reaches(fresh.gmr, fresh.world.signal, address, text)
 
 
+@scenario("G2", "does a retired conclusion stay retired across the crossing?")
+def migration_does_not_resurrect_a_retired_conclusion(c):
+    c.settle()
+    seen = c.reading()
+    c.gmr.said("served its purpose before the move", on=[c.world.signal], saw=[seen], ident="done")
+    c.gmr.standing("said:done", retire=True)
+    p.nothing_is_still_being_asked_about(c.gmr, c.gmr.standing())
+
+    fresh = c.migrate()
+    p.nothing_is_still_being_asked_about(
+        fresh.gmr,
+        fresh.gmr.standing(),
+    )
+
+
+@scenario("G4a", "a retirement records who ended it: the writer's say-so stays the writer's")
+def retiring_your_own_conclusion_does_not_become_an_adjudication(c):
+    c.settle()
+    c.gmr.said("mine to end", on=[c.world.signal], ident="mine")
+    c.gmr.standing("said:mine", retire=True)
+    dump = c.root / "retire-source.jsonl"
+    c.gmr.export(dump)
+    p.the_revocation_names_its_source(dump, "self_attested")
+
+
+@scenario("G2", "does a detached memory stay detached across the crossing?")
+def migration_does_not_resurrect_a_detached_binding(c):
+    address, _ = c.put("ended.md")
+    c.bind(address)
+    c.settle()
+    c.gmr.bind(address, detach=True)
+
+    fresh = c.migrate()
+    p.not_bound_anywhere(fresh.gmr, fresh.world.signal, address)
+
+
 @scenario("G2", "does replaying into a live instance get refused rather than merged?")
 def migration_refuses_to_merge_into_a_live_instance(c):
     address, _ = c.put("why.md")
