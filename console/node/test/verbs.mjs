@@ -72,7 +72,7 @@ test("five lines get a sentence's grounding", async () => {
       "to be walked by something: " + JSON.stringify(standing.record),
   );
   assert.ok(
-    ["holds", "moved", "incomparable", "absent", "never_established", "undated"]
+    ["holds", "finished", "moved", "incomparable", "absent", "never_established", "undated"]
       .includes(standing.on[0].warrant.holding.holding),
     JSON.stringify(standing.on[0].warrant),
   );
