@@ -321,7 +321,7 @@ A grounding is absent, not failed, for an uttered claim. There is no document to
 The warrant is a pair of enums rather than one, because both halves are routinely true together — a statute observed to change to a new version, and a registry that has been down since. Reporting only the outage discards the one certain thing; reporting only the move claims a currency the system does not have.
 
 ```text
-holding    Holds · Moved{axes, at} · Incomparable{took, reads} ·
+holding    Holds · Finished · Moved{axes, at} · Incomparable{took, reads} ·
            Absent · NeverEstablished · Undated
 knowledge  Seen{at, verifiability} · Blind{since, why}
 ```
@@ -332,7 +332,7 @@ Holding is decided by a diff, not by a sequence comparison. The binding sequence
 
 Staleness and verifiability are deliberately not variants. How old an observation may be is the caller's threshold; a freshness bound may be handed in as an *instruction* that decides whether to look again before answering, but no verdict about age is returned. Verifiability is a field on a seen observation, because it grades how the observation was obtained and is true simultaneously with whatever the fact did.
 
-Shown is the axis that the citation literature does not have. `Seen` means this Anchor recorded that exact reading at that sequence; `Unseen` means the claim cited a reading this Anchor never took; `NotSaid` means it cited none, which is what a note a person wrote looks like. `Unseen` is the shape of a second computation of the same fact running beside the Anchor instead of through it, and it is why the runtime offers a sampling operation that returns a reading together with its address: the delivery path and the Anchor are then one look at the world rather than two. Shown is kept out of holding on purpose. A fact that changed and an answer assembled somewhere else want opposite responses, and a reader who cannot tell them apart has lost the distinction that made the check worth running.
+Shown is the axis that the citation literature does not have. `Seen` means this Anchor recorded that exact reading at that sequence and was still showing it when the claim was bound; `Superseded` means the reading is real but the Anchor had already replaced it before the claim landed, so the conclusion was built on the Anchor's past; `Unseen` means the claim cited a reading this Anchor never took; `NotSaid` means it cited none, which is what a note a person wrote looks like. `Unseen` is the shape of a second computation of the same fact running beside the Anchor instead of through it, and it is why the runtime offers a sampling operation that returns a reading together with its address: the delivery path and the Anchor are then one look at the world rather than two. Shown is kept out of holding on purpose. A fact that changed and an answer assembled somewhere else want opposite responses, and a reader who cannot tell them apart has lost the distinction that made the check worth running.
 
 Depends is the invariant its author wrote down, evaluated over all the Anchors the claim names at once. The expression language gains quantifiers for this rather than a wildcard path, so that inside a quantifier the state root is the Anchor being asked about and every expression that already worked over one Anchor works unchanged over a set.
 
@@ -464,7 +464,7 @@ The runtime represents these possibilities in `MemoryView`. It can expose the bo
 
 Binding has two dimensions that must not be merged. The structural dimension is the relation between a memory reference and one or more Anchors. The temporal dimension is the occasion on which that relation was recorded, including the version then in view and, for a single Anchor, its Journal sequence.
 
-For a single-anchor binding, `bound_at_seq` allows a read to determine whether the Anchor has advanced since the binding. For a binding naming several Anchors, there is no one correct sequence number; the runtime therefore leaves this field absent rather than inventing a false comparison point.
+`bound_at_seq` allows a read to determine whether an Anchor has advanced since the binding. The sequence is global to the Journal rather than per Anchor, so one recorded head is a valid comparison point for every Anchor a binding names, and the runtime stamps it on every occasion; older stores may hold occasions from before this field existed, which read as undated rather than being backfilled.
 
 Reaffirmation appends a new binding record. It does not erase the older occasion, and it does not alter the Anchor's observation history. This preserves the difference between “the memory was bound at version V1” and “the author later reaffirmed it at version V2”.
 
@@ -558,7 +558,7 @@ An Anchor remains grounded even if the current memory text changed, because the 
 
 Grounding loss is the inference-layer counterpart of memory drift, and it is not the same condition. A memory drifts and remains a memory: somebody must read it again and decide. An inference loses its ground, and there is nothing to re-read — the sentence was produced once, from a particular reading, under a condition its author stated.
 
-It has three independent forms, each reported separately. The Anchor's ground moved away from what the claim was bound to. The claim cited a reading the Anchor never took, which means the answer was assembled beside the Anchor rather than through it, and the Anchor was decorative for that claim from the beginning. The invariant the author stated stopped holding. A claim can be in any combination of these, which is why they are not a single field, and none of them is a statement that the sentence is false.
+It has three independent forms, each reported separately. The Anchor's ground moved away from what the claim was bound to — or finished outright, freezing the journal so that nothing can ever settle the claim again. The claim cited a reading the Anchor never took, which means the answer was assembled beside the Anchor rather than through it, and the Anchor was decorative for that claim from the beginning — or cited one the Anchor had already replaced, which is the same defect arriving late. The invariant the author stated stopped holding, or named an Anchor that was never opened, so it cannot be answered at all. A claim can be in any combination of these, which is why they are not a single field, and none of them is a statement that the sentence is false.
 
 ### 10.7 Operational and semantic failure
 
