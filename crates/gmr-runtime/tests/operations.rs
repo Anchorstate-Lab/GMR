@@ -596,7 +596,7 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
     let corpus = w.runtime.corpus().await.unwrap();
     assert_eq!(
         corpus.health().unsupervised,
-        vec![note.clone()],
+        vec![gmr_core::Claim::from(note.clone())],
         "closing the last anchor a record hangs on is how a memory leaves the supervised \
          set, and it used to leave without a word: every corpus-level list filtered to the \
          open anchors first, so the record stopped being counted rather than being reported. \
@@ -615,7 +615,7 @@ async fn a_record_left_behind_by_the_anchor_that_watched_it_is_named() {
         .unwrap();
     assert_eq!(
         w.runtime.corpus().await.unwrap().health().unsupervised,
-        vec![note.clone()],
+        vec![gmr_core::Claim::from(note.clone())],
         "one memory is named once however many assertions stand behind it. This list is \
          read as a roster of records, and a reference repeated once per assertion reads as \
          several memories in trouble where there is one"
@@ -649,7 +649,7 @@ async fn a_record_bound_to_an_anchor_nobody_ever_opened_is_stranded_too() {
     let corpus = w.runtime.corpus().await.unwrap();
     assert_eq!(
         corpus.health().unsupervised,
-        vec![note],
+        vec![gmr_core::Claim::from(note)],
         "`supervised` is one predicate — at least one anchor this record names is open — so \
          a key that closed and a key that never existed answer it the same way. Deriving the \
          list by walking anchors instead of records could only ever see the first"

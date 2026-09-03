@@ -197,7 +197,11 @@ pub async fn served(
             )
             .await
         }
-        Command::Ground { id, retire } => verbs::standing::run(&rt, id, retire, json).await,
+        Command::Ground {
+            id,
+            retire,
+            fresher_than_secs,
+        } => verbs::standing::run(&rt, id, retire, fresher_than_secs, json).await,
         Command::Sample {
             key,
             fresher_than_secs,

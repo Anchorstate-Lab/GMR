@@ -173,6 +173,11 @@ fn warranting(w: Option<&Warrant>) -> String {
 pub fn holding(h: &Holding) -> Option<String> {
     match h {
         Holding::Holds => None,
+        Holding::Finished => Some(
+            "the anchor under this has finished; its journal is frozen and nothing observes \
+             this claim any more"
+                .to_owned(),
+        ),
         Holding::Moved { axes, .. } => Some(format!(
             "the ground moved since this was bound: {}",
             axes.join(" · ")

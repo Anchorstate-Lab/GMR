@@ -1,5 +1,5 @@
 """
-These declarations describe "gmr.contract.v11". That string is what a caller
+These declarations describe "gmr.contract.v12". That string is what a caller
 pins to know which shapes they may match on; tools/gate.py fails the build
 when this file and the runtime disagree about it.
 

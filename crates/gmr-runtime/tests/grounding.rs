@@ -2388,7 +2388,13 @@ async fn an_invariant_over_anchors_nothing_opened_is_not_reported_as_holding() {
 async fn an_invariant_is_not_settled_by_the_subset_of_anchors_that_exist() {
     let w = World::new(true);
     w.open("a").await;
-    let claim = depending(&w, "turn-half", &["a", "ghost"], "all(anchors, state.x == 1)").await;
+    let claim = depending(
+        &w,
+        "turn-half",
+        &["a", "ghost"],
+        "all(anchors, state.x == 1)",
+    )
+    .await;
     assert_ne!(
         stands(&w, &claim).await,
         gmr_runtime::Depends::Holds,
