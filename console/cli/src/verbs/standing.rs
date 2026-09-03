@@ -29,12 +29,7 @@ pub async fn run(
             return Err(CliError("name the conclusion to retire".into()));
         };
         let sources = rt.memory().binding_of(one).await?.sources();
-        let source =
-            match !sources.is_empty() && sources.iter().all(|s| *s == gmr::Source::SelfAttested) {
-                true => gmr::Source::SelfAttested,
-                false => gmr::Source::Adjudicated,
-            };
-        let cleared = rt.revoke(one, source).await?;
+        let cleared = rt.revoke(one, retirement_source(&sources)).await?;
         println!(
             "{one} retired on {}",
             cleared
@@ -203,6 +198,49 @@ fn exit_of(stood: &[Standing]) -> i32 {
     }
 }
 
+fn retirement_source(sources: &std::collections::BTreeSet<gmr::Source>) -> gmr::Source {
+    match !sources.is_empty() && sources.iter().all(|s| *s == gmr::Source::SelfAttested) {
+        true => gmr::Source::SelfAttested,
+        false => gmr::Source::Adjudicated,
+    }
+}
+
 fn render(e: serde_json::Error) -> CliError {
     CliError(e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use gmr::Source;
+
+    use super::retirement_source;
+
+    #[test]
+    fn ending_your_own_say_so_stays_your_say_so() {
+        assert_eq!(
+            retirement_source(&BTreeSet::from([Source::SelfAttested])),
+            Source::SelfAttested,
+            "a claim only its writer ever vouched for retires as the writer's act; \
+             recording it as adjudicated would launder the same agent's say-so into \
+             a person's judgment"
+        );
+    }
+
+    #[test]
+    fn anything_a_person_touched_retires_as_a_judgment() {
+        for held in [
+            BTreeSet::from([Source::Adjudicated]),
+            BTreeSet::from([Source::Derived]),
+            BTreeSet::from([Source::SelfAttested, Source::Adjudicated]),
+        ] {
+            assert_eq!(retirement_source(&held), Source::Adjudicated, "{held:?}");
+        }
+    }
+
+    #[test]
+    fn a_claim_bound_to_nothing_retires_as_a_judgment_not_a_guess() {
+        assert_eq!(retirement_source(&BTreeSet::new()), Source::Adjudicated);
+    }
 }

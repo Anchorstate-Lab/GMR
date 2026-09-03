@@ -448,6 +448,7 @@ TYPED_SURFACES = [
     ROOT / "dist" / "npm" / "index.d.ts",
     ROOT / "dist" / "npm" / "index.js",
     ROOT / "console" / "python" / "gmr.pyi",
+    ROOT / "console" / "python" / "test" / "verbs.py",
 ]
 
 
