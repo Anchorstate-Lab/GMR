@@ -114,3 +114,17 @@ pub async fn run(rt: &Runtime, asked: Said, json: bool) -> Result<i32, CliError>
 fn minted() -> String {
     chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn two_conclusions_minted_in_the_same_instant_get_different_ids() {
+        assert_ne!(
+            super::minted(),
+            super::minted(),
+            "a second-resolution timestamp is one shared name per second. Two agents \
+             concluding in the same instant would fold into one claim identity: the \
+             anchors union, and the later saw and depends silently shadow the earlier"
+        );
+    }
+}

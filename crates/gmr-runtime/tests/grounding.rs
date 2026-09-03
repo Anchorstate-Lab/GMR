@@ -2369,3 +2369,204 @@ async fn the_ledger_tallies_what_a_session_spends() {
         "each verb keeps its own row, so density is readable per question kind"
     );
 }
+
+#[tokio::test]
+async fn an_invariant_over_anchors_nothing_opened_is_not_reported_as_holding() {
+    let w = World::new(true);
+    let claim = depending(&w, "turn-ghost", &["ghost"], "all(anchors, state.x == 1)").await;
+    assert_ne!(
+        stands(&w, &claim).await,
+        gmr_runtime::Depends::Holds,
+        "every anchor this claim names is missing from this store, so the quantifier ran \
+         over an empty set. `all` over nothing is true at the evaluator, and that is the \
+         evaluator's correct answer -- but reporting it as the invariant holding tells the \
+         caller a ground that does not exist was checked and agreed"
+    );
+}
+
+#[tokio::test]
+async fn an_invariant_is_not_settled_by_the_subset_of_anchors_that_exist() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = depending(&w, "turn-half", &["a", "ghost"], "all(anchors, state.x == 1)").await;
+    assert_ne!(
+        stands(&w, &claim).await,
+        gmr_runtime::Depends::Holds,
+        "the author named two anchors and only one could be read. Answering from the \
+         readable subset silently narrows the invariant to a question the author did not \
+         write, and the narrowing is invisible in the answer"
+    );
+}
+
+#[tokio::test]
+async fn a_conclusion_on_a_finished_anchor_is_not_reported_as_still_held() {
+    let w = World::new(true);
+    w.open("a").await;
+    let saw = w
+        .runtime
+        .sample(&AnchorKey::new("a"), &gmr_runtime::Instructions::default())
+        .await
+        .unwrap()
+        .fact_address
+        .unwrap();
+    let claim = gmr_core::Claim::said("turn-orphaned");
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
+            None,
+            std::collections::BTreeSet::from([saw]),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+    w.runtime
+        .close(&AnchorKey::new("a"), b"served its purpose")
+        .await
+        .unwrap();
+
+    let out = w
+        .runtime
+        .ground(
+            &[Asked::about(claim.clone())],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    let gmr_runtime::Anchored::On { warrant, .. } = &out[0].on[0] else {
+        panic!("{:?}", out[0].on)
+    };
+    assert_ne!(
+        warrant.holding,
+        gmr_runtime::Holding::Holds,
+        "the journal under this claim is frozen, so nothing can ever move it again. \
+         `Holds` here does not mean verified -- it means nobody can look any more, and a \
+         reader cannot tell those apart"
+    );
+}
+
+#[tokio::test]
+async fn a_citation_already_superseded_when_the_conclusion_landed_is_not_reported_as_seen() {
+    let w = World::new(true);
+    w.open("a").await;
+    let old = w
+        .runtime
+        .sample(&AnchorKey::new("a"), &gmr_runtime::Instructions::default())
+        .await
+        .unwrap()
+        .fact_address
+        .unwrap();
+    std::fs::write(w.dir.path().join("world.json"), r#"{"x":2}"#).unwrap();
+    w.runtime.observe(&AnchorKey::new("a")).await.unwrap();
+
+    let claim = gmr_core::Claim::said("turn-stale");
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
+            None,
+            std::collections::BTreeSet::from([old]),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    let out = w
+        .runtime
+        .ground(
+            &[Asked::about(claim.clone())],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    let gmr_runtime::Anchored::On { evidence, .. } = &out[0].on[0] else {
+        panic!("{:?}", out[0].on)
+    };
+    assert!(
+        !evidence.shown.is_seen(),
+        "the cited reading is real, and it was already replaced when this conclusion \
+         landed. Reporting it as seen makes a conclusion built on the anchor's past \
+         indistinguishable from one built on what the anchor was showing: {:?}",
+        evidence.shown
+    );
+}
+
+#[tokio::test]
+async fn a_citation_current_when_bound_stays_seen_after_the_world_later_moves() {
+    let w = World::new(true);
+    w.open("a").await;
+    let saw = w
+        .runtime
+        .sample(&AnchorKey::new("a"), &gmr_runtime::Instructions::default())
+        .await
+        .unwrap()
+        .fact_address
+        .unwrap();
+    let claim = gmr_core::Claim::said("turn-honest");
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
+            None,
+            std::collections::BTreeSet::from([saw]),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+
+    std::fs::write(w.dir.path().join("world.json"), r#"{"x":3}"#).unwrap();
+    w.runtime.observe(&AnchorKey::new("a")).await.unwrap();
+
+    let out = w
+        .runtime
+        .ground(
+            &[Asked::about(claim.clone())],
+            &gmr_runtime::Instructions::default(),
+        )
+        .await
+        .unwrap();
+    let gmr_runtime::Anchored::On {
+        warrant, evidence, ..
+    } = &out[0].on[0]
+    else {
+        panic!("{:?}", out[0].on)
+    };
+    assert!(
+        evidence.shown.is_seen(),
+        "this author looked at exactly what the anchor was showing when the conclusion \
+         landed. Movement afterwards is `Moved`'s answer, and stealing it into the \
+         citation column would punish the honest path for the world changing later: {:?}",
+        evidence.shown
+    );
+    assert!(
+        matches!(warrant.holding, gmr_runtime::Holding::Moved { .. }),
+        "{:?}",
+        warrant.holding
+    );
+}
+
+#[tokio::test]
+async fn a_conclusion_whose_every_anchor_finished_is_counted_as_unsupervised() {
+    let w = World::new(true);
+    w.open("a").await;
+    let claim = gmr_core::Claim::said("turn-unwatched");
+    w.runtime
+        .bind(
+            gmr_core::Binding::on(claim.clone(), vec![AnchorKey::new("a")]),
+            None,
+            Default::default(),
+            gmr_core::Source::SelfAttested,
+        )
+        .await
+        .unwrap();
+    w.runtime
+        .close(&AnchorKey::new("a"), b"served its purpose")
+        .await
+        .unwrap();
+
+    let corpus = w.runtime.corpus().await.unwrap();
+    assert_eq!(
+        corpus.health().unsupervised.len(),
+        1,
+        "this conclusion still claims something and nothing observes it any more. A \
+         stored record in the same position is reported; a conclusion must not slip \
+         through because it lives in the binding table instead of a store"
+    );
+}

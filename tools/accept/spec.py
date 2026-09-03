@@ -102,6 +102,42 @@ def a_retired_conclusion_stops_being_asked_about(c):
     p.nothing_is_still_being_asked_about(c.gmr, c.gmr.standing())
 
 
+@scenario("G1", "a conclusion whose signal has finished: is it still reported as standing?")
+def a_conclusion_does_not_outlive_the_signal_it_rests_on(c):
+    c.settle()
+    seen = c.reading()
+    c.gmr.said(
+        "rests on a signal that later finished", on=[c.world.signal], saw=[seen], ident="orphaned"
+    )
+    p.a_conclusion_stands(c.gmr, c.gmr.standing())
+
+    c.gmr.retire(c.world.signal, "this signal has served its purpose")
+    p.a_conclusion_no_longer_stands(c.gmr, c.gmr.standing())
+
+
+@scenario("G1", "a conclusion citing a reading the signal had already replaced: is that told?")
+def a_conclusion_citing_an_already_replaced_reading_does_not_stand(c):
+    c.settle()
+    old = c.reading()
+    c.happen("reading_changed")
+    c.gmr.observe()
+
+    c.gmr.said(
+        "built from a reading the signal had already replaced",
+        on=[c.world.signal],
+        saw=[old],
+        ident="stale",
+    )
+    p.a_conclusion_no_longer_stands(c.gmr, c.gmr.standing())
+
+
+@scenario("G3", "a binding lands on a signal nothing opened: does the door say so?")
+def binding_to_a_signal_nothing_opened_is_told_at_the_door(c):
+    address, _ = c.put("dangling.md")
+    res = c.gmr.attest(address, anchors=["no-such-signal"])
+    p.told_at_the_door_it_supervises_nothing(c.gmr, res, "no-such-signal")
+
+
 @scenario("G1", "the signal moved: does the memory itself come back?")
 def the_memory_comes_back_when_its_signal_moves(c):
     address, text = c.put("why.md")
