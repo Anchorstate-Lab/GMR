@@ -309,6 +309,17 @@ jobs:
             npm publish "$tgz" --access public
           done
 
+      - name: No npm token, say so where someone will look
+        if: env.NPM_TOKEN == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.bump-version.outputs.tag || github.ref_name }}
+          WHAT: npm
+          WHY: NPM_TOKEN is not configured
+          WHERE: The platform binaries are attached to the release
+        run: sh .github/say-it-was-not-published.sh
+
       - name: Publish wrapper package
         if: env.NPM_TOKEN != ''
         run: |
@@ -378,7 +389,7 @@ jobs:
           path: wheels/*.tar.gz
 
   pypi:
-    needs: [bump-version, wheels, sdist]
+    needs: [bump-version, wheels, sdist, create-release]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && (needs.bump-version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/')) }}
     runs-on: ubuntu-latest
     env:
@@ -401,7 +412,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.bump-version.outputs.tag || github.ref_name }}
-        run: |
-          gh release view "$TAG" --json body -q .body > body.md || exit 0
-          printf '\n\nPyPI: this version was not published -- PYPI_TOKEN is not configured. The wheels and sdist are attached to the release workflow run as artifacts.\n' >> body.md
-          gh release edit "$TAG" --notes-file body.md
+          WHAT: PyPI
+          WHY: PYPI_TOKEN is not configured
+          WHERE: The wheels and sdist are attached to this workflow run as artifacts
+        run: sh .github/say-it-was-not-published.sh
